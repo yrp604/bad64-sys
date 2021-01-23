@@ -1,10 +1,14 @@
 use std::env;
+use std::ffi::OsStr;
 use std::path::PathBuf;
 
 fn main() {
+    let blacklist = &[OsStr::new("test.c")];
+
     let dotc_files = glob::glob("arch-arm64/disassembler/*.c")
         .expect("Failed to read glob pattern")
-        .map(|x| x.unwrap());
+        .map(|x| x.unwrap())
+        .filter(|x| !blacklist.contains(&x.file_name().unwrap()));
 
     // Compile the library
     cc::Build::new()
