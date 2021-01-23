@@ -34,6 +34,11 @@ fn main() {
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
+        // common derives
+        .derive_debug(true)
+        .derive_eq(true)
+        .derive_hash(true)
+        .derive_partialeq(true)
         // Finish the builder and generate the bindings.
         .generate()
         // Unwrap the Result and panic on failure.
