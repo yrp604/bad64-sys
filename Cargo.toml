@@ -1,5 +1,5 @@
 [package]
-name = "ba64d-sys"
+name = "bad64-sys"
 version = "0.1.0"
 authors = ["yrp <yrp604@protonmail.com>"]
 edition = "2018"
@@ -7,3 +7,8 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+
+[build-dependencies]
+bindgen = "0.53"
+cc = "1"
+glob = "0.3"
