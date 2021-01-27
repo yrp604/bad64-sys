@@ -1,8 +1,11 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "sysregs.h"
+#include "operations.h"
+#include "encodings.h"
 
 #ifdef _MSC_VER
 #undef REG_NONE // collides with winnt's define
