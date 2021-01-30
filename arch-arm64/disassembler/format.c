@@ -4,11 +4,11 @@
 #include <stdint.h>
 #include <inttypes.h>
 
-#include "arm64dis.h"
+#include "format.h"
 #include "pcode.h"
 
 //-----------------------------------------------------------------------------
-// registers (non-system)
+// registers (and related) to string
 //-----------------------------------------------------------------------------
 
 static const char *RegisterString[] =
@@ -264,64 +264,26 @@ int get_register_full(Register reg, const InstructionOperand *operand, char *res
 	return 0;
 }
 
-unsigned get_register_size(Register r)
+//-----------------------------------------------------------------------------
+// miscellany to string
+//-----------------------------------------------------------------------------
+
+uint32_t get_implementation_specific(const InstructionOperand *operand, char *outBuffer, uint32_t outBufferSize)
 {
-	//Comparison done in order of likelyhood to occur
-	if ((r >= REG_X0 && r <= REG_SP) || (r >= REG_D0 && r <= REG_D31))
-		return 8;
-	else if ((r >= REG_W0 && r <= REG_WSP) || (r >= REG_S0 && r <= REG_S31))
-		return 4;
-	else if (r >= REG_B0 && r <= REG_B31)
-		return 1;
-	else if (r >= REG_H0 && r <= REG_H31)
-		return 2;
-	else if ((r >= REG_Q0 && r <= REG_Q31) || (r >= REG_V0 && r <= REG_V31))
-		return 16;
-	else if (r >= REG_V0_B0 && r <= REG_V31_B15)
-		return 1;
-	else if (r >= REG_V0_H0 && r <= REG_V31_H7)
-		return 2;
-	else if (r >= REG_V0_S0 && r <= REG_V31_S3)
-		return 4;
-	else if (r >= REG_V0_D0 && r <= REG_V31_D1)
-		return 8;
-	return 0;
+	return snprintf(outBuffer,
+			outBufferSize,
+			"s%d_%d_c%d_c%d_%d",
+			operand->implspec[0],
+			operand->implspec[1],
+			operand->implspec[2],
+			operand->implspec[3],
+			operand->implspec[4]) >= outBufferSize;
 }
 
-//-----------------------------------------------------------------------------
-// decode or decompose
-//-----------------------------------------------------------------------------
-
-int decode_spec(context *ctx, Instruction *dec); // decode0.cpp
-int decode_scratchpad(context *ctx, Instruction *dec); // decode_scratchpad.cpp
-
-int aarch64_decompose(uint32_t instructionValue, Instruction *instr, uint64_t address)
+const char *get_operation(const Instruction *inst)
 {
-	context ctx;
-	memset(&ctx, 0, sizeof(ctx));
-	ctx.halted = 1; // enabled disassembly of exception instructions like DCPS1
-	ctx.insword = instructionValue;
-	ctx.address = address;
-	ctx.features0 = 0xFFFFFFFFFFFFFFFF;
-	ctx.features1 = 0xFFFFFFFFFFFFFFFF;
-	ctx.EDSCR_HDE = 1;
-
-	/* have the spec-generated code populate all the pcode variables */
-	int rc = decode_spec(&ctx, instr);
-	if(rc != DECODE_STATUS_OK)
-		return rc;
-
-	/* if UDF encoding, return undefined */
-	if(instr->encoding == ENC_UDF_ONLY_PERM_UNDEF)
-		return DECODE_STATUS_UNDEFINED;
-
-	/* convert the pcode variables to list of operands, etc. */
-	return decode_scratchpad(&ctx, instr);
+	return operation_to_str(inst->operation);
 }
-
-//-----------------------------------------------------------------------------
-// disassemble helpers
-//-----------------------------------------------------------------------------
 
 static const char *ConditionString[] = {
 	"eq", "ne", "cs", "cc",
@@ -352,6 +314,10 @@ const char *get_shift(ShiftType shift)
 
 	return ShiftString[shift];
 }
+
+//-----------------------------------------------------------------------------
+// operand processing helpers
+//-----------------------------------------------------------------------------
 
 static inline uint32_t get_shifted_register(
 	const InstructionOperand *operand,
@@ -467,7 +433,7 @@ uint32_t get_memory_operand(
 			if (operand->shiftType != ShiftType_NONE)
 			{
 				if (snprintf(extendBuff, sizeof(extendBuff), ", %s%s",
-							ShiftString[operand->shiftType], immBuff) >= sizeof(extendBuff))
+							get_shift(operand->shiftType), immBuff) >= sizeof(extendBuff))
 				{
 					return FAILED_TO_DISASSEMBLE_OPERAND;
 				}
@@ -635,23 +601,6 @@ uint32_t get_shifted_immediate(const InstructionOperand *instructionOperand, cha
 			return FAILED_TO_DISASSEMBLE_OPERAND;
 	}
 	return DISASM_SUCCESS;
-}
-
-uint32_t get_implementation_specific(const InstructionOperand *operand, char *outBuffer, uint32_t outBufferSize)
-{
-	return snprintf(outBuffer,
-			outBufferSize,
-			"s%d_%d_c%d_c%d_%d",
-			operand->implspec[0],
-			operand->implspec[1],
-			operand->implspec[2],
-			operand->implspec[3],
-			operand->implspec[4]) >= outBufferSize;
-}
-
-const char *get_operation(const Instruction *inst)
-{
-	return operation_to_str(inst->operation);
 }
 
 //-----------------------------------------------------------------------------

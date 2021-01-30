@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#include "arm64dis.h"
+#include "decode.h"
 #include "pcode.h"
 
 int BitCount(uint32_t x)
