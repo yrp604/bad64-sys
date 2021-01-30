@@ -4,7 +4,8 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include "arm64dis.h"
+#include "decode.h"
+#include "format.h"
 
 void disassemble(uint64_t addr, uint8_t *data, int len, char *result, bool verbose)
 {
@@ -12,9 +13,6 @@ void disassemble(uint64_t addr, uint8_t *data, int len, char *result, bool verbo
 	memset(&instr, 0, sizeof(instr));
 
 	aarch64_decompose(*(uint32_t *)data, &instr, addr);
-
-	if(verbose)
-		print_instruction(&instr);
 
 	aarch64_disassemble(&instr, result, 1024);
 }
