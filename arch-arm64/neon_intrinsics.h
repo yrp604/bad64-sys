@@ -3,7 +3,9 @@
 #include <vector>
 #include <string>
 
-#include "il.h" /* for ARM64_INTRIN_NORMAL_END */
+// from api
+#include "lowlevelilinstruction.h"
+#include "il.h" /* for ARM64_INTRIN_NORMAL_END, ExtractRegister() */
 
 using namespace std;
 using namespace BinaryNinja;
@@ -3919,4 +3921,5 @@ enum NeonIntrinsic : uint32_t
 vector<uint32_t> NeonGetAllIntrinsics();
 string NeonGetIntrinsicName(uint32_t intrinsic);
 vector<NameAndType> NeonGetIntrinsicInputs(uint32_t intrinsic);
-vector<NameAndType> NeonGetIntrinsicOutputs(uint32_t intrinsic);
+vector<Confidence<Ref<Type>>> NeonGetIntrinsicOutputs(uint32_t intrinsic);
+bool NeonGetLowLevelILForInstruction(Architecture *arch, uint64_t addr, LowLevelILFunction &il, Instruction &instr, size_t addrSize);

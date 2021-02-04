@@ -1,7 +1,7 @@
-#include <stdio.h>
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <strings.h>
 
 #include "decode.h"
 #include "pcode.h"
@@ -1149,7 +1149,9 @@ int decode_scratchpad(context *ctx, Instruction *dec)
 	dec->operation = enc_to_oper(dec->encoding);
 
 	/* default to 0 operands */
-	memset(&(dec->operands), 0, sizeof(dec->operands));
+	InstructionOperand zero = { 0 };
+	for (uint32_t ii = 0; ii < MAX_REGISTERS; ++ii)
+		dec->operands[ii] = zero;
 
 	switch(dec->encoding) {
 		case ENC_AUTIA1716_HI_HINTS:
