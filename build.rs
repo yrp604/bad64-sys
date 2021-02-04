@@ -3,7 +3,12 @@ use std::ffi::OsStr;
 use std::path::PathBuf;
 
 fn main() {
-    let blacklist = &[OsStr::new("test.c")];
+    let blacklist = &[
+        OsStr::new("test.c"),
+        OsStr::new("gofer.c"),
+        OsStr::new("format.c"),
+        OsStr::new("encodings_fmt.c"),
+    ];
 
     let dotc_files = glob::glob("arch-arm64/disassembler/*.c")
         .expect("Failed to read glob pattern")
@@ -39,6 +44,8 @@ fn main() {
         .derive_eq(true)
         .derive_hash(true)
         .derive_partialeq(true)
+        .rustified_enum("OperandClass")
+        .rustified_enum("ShiftType")
         // Finish the builder and generate the bindings.
         .generate()
         // Unwrap the Result and panic on failure.
