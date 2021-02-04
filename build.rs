@@ -46,6 +46,7 @@ fn main() {
         .derive_partialeq(true)
         .rustified_enum("OperandClass")
         .rustified_enum("ShiftType")
+        .rustified_enum("ArrangementSpec")
         // Finish the builder and generate the bindings.
         .generate()
         // Unwrap the Result and panic on failure.
