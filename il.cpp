@@ -60,6 +60,42 @@ static void GenIfElse(LowLevelILFunction& il, ExprId clause, ExprId trueCase, Ex
 	return;
 }
 
+ExprId ExtractImmediate(LowLevelILFunction& il, InstructionOperand& operand, int sizeof_imm)
+{
+	if(operand.operandClass!=IMM32 && operand.operandClass!=IMM64)
+		return il.Unimplemented();
+
+	uint64_t imm = operand.immediate;
+
+	if(operand.shiftValueUsed) {
+		switch(operand.shiftType) {
+			case ShiftType_LSL:
+				imm = imm << operand.shiftValue;
+				break;
+			case ShiftType_LSR:
+				imm = imm >> operand.shiftValue;
+				break;
+			case ShiftType_MSL:
+				imm = (imm << operand.shiftValue) | ONES(operand.shiftValue);
+				break;
+			case ShiftType_ASR:
+			case ShiftType_ROR:
+			case ShiftType_UXTW:
+			case ShiftType_SXTW:
+			case ShiftType_SXTX:
+			case ShiftType_UXTX:
+			case ShiftType_SXTB:
+			case ShiftType_SXTH:
+			case ShiftType_UXTH:
+			case ShiftType_UXTB:
+			case ShiftType_END:
+			default:
+				return il.Unimplemented();
+		}
+	}
+
+	return ILCONST(sizeof_imm, imm & ONES(sizeof_imm*8));
+}
 
 ExprId ExtractRegister(LowLevelILFunction& il, InstructionOperand& operand, size_t regNum, size_t extractSize, bool signExtend, size_t resultSize)
 {
@@ -101,23 +137,19 @@ ExprId ExtractRegister(LowLevelILFunction& il, InstructionOperand& operand, size
 
 static ExprId GetFloat(LowLevelILFunction& il, InstructionOperand& operand, int float_sz)
 {
-	ExprId res;
-
-	switch(float_sz) {
-		case 2:
-			res = il.FloatConstRaw(2, operand.immediate);
-			break;
-		case 4:
-			res = il.FloatConstSingle(*(float *)&(operand.immediate));
-			break;
-		case 8:
-			res = il.FloatConstDouble(*(float *)&(operand.immediate));
-			break;
-		default:
-			res = il.Unimplemented();
+	if(operand.operandClass == FIMM32) {
+		switch(float_sz) {
+			case 2: return il.FloatConstRaw(2, operand.immediate);
+			case 4: return il.FloatConstSingle(*(float *)&(operand.immediate));
+			case 8: return il.FloatConstDouble(*(float *)&(operand.immediate));
+			default: break;
+		}
+	}
+	else if(operand.operandClass == REG) {
+		return il.FloatConvert(float_sz, ExtractRegister(il, operand, 0, REGSZ_O(operand), false, REGSZ_O(operand)));
 	}
 
-	return res;
+	return il.Unimplemented();
 }
 
 static ExprId GetShiftedRegister(LowLevelILFunction& il, InstructionOperand& operand, size_t regNum, size_t resultSize)
@@ -309,6 +341,7 @@ static size_t ReadILOperand(LowLevelILFunction& il, InstructionOperand& operand,
 	case MEM_POST_IDX:
 	case MULTI_REG:
 	case FIMM32:
+		return GetFloat(il, operand, resultSize);
 	case NONE:
 	default:
 		return il.Unimplemented();
@@ -1197,6 +1230,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, uint64_t addr, LowLevelILFu
 		}
 		break;
 	case ARM64_CSEL:
+	case ARM64_FCSEL:
 		GenIfElse(il, GetCondition(il, operand4.cond),
 			ILSETREG_O(operand1, ILREG_O(operand2)),
 			ILSETREG_O(operand1, ILREG_O(operand3)));
@@ -1274,17 +1308,62 @@ bool GetLowLevelILForInstruction(Architecture* arch, uint64_t addr, LowLevelILFu
 						il.Const(1, IMM_O(operand4)))));
 		break;
 	case ARM64_FADD:
-		switch(instr.encoding) {
+		switch(instr.encoding)
+		{
 			case ENC_FADD_H_FLOATDP2:
 			case ENC_FADD_S_FLOATDP2:
 			case ENC_FADD_D_FLOATDP2:
 				il.AddInstruction(ILSETREG_O(operand1,
 					il.FloatAdd(REGSZ_O(operand1), ILREG_O(operand2), ILREG_O(operand3))));
 				break;
+			case ENC_FADD_ASIMDSAME_ONLY:
+			case ENC_FADD_ASIMDSAMEFP16_ONLY:
+			{
+				Register srcs[16], dsts[16];
+				int dst_n = unpack_vector(operand1, dsts);
+				int src_n = unpack_vector(operand2, srcs);
+				if((dst_n != src_n) || dst_n==0)
+					ABORT_LIFT;
+
+				int rsize = get_register_size(dsts[0]);
+				for(int i=0; i<dst_n; ++i)
+					il.AddInstruction(il.FloatAdd(rsize, ILREG(dsts[i]), ILREG(srcs[i])));
+			}
+				break;
 			default:
 				il.AddInstruction(il.Unimplemented());
 		}
 		break;
+	case ARM64_FCCMP:
+	case ARM64_FCCMPE:
+		{
+			LowLevelILLabel trueCode, falseCode, done;
+
+			il.AddInstruction(il.If(GetCondition(il, operand4.cond), trueCode, falseCode));
+
+			il.MarkLabel(trueCode);
+			il.AddInstruction(il.FloatSub(REGSZ_O(operand1),
+						ILREG_O(operand1),
+						ReadILOperand(il, operand2, REGSZ_O(operand1)), SETFLAGS));
+			il.AddInstruction(il.Goto(done));
+
+			il.MarkLabel(falseCode);
+			il.AddInstruction(il.SetFlag(IL_FLAG_N, il.Const(0, (IMM_O(operand3) >> 3) & 1)));
+			il.AddInstruction(il.SetFlag(IL_FLAG_Z, il.Const(0, (IMM_O(operand3) >> 2) & 1)));
+			il.AddInstruction(il.SetFlag(IL_FLAG_C, il.Const(0, (IMM_O(operand3) >> 1) & 1)));
+			il.AddInstruction(il.SetFlag(IL_FLAG_V, il.Const(0, (IMM_O(operand3) >> 0) & 1)));
+
+			il.AddInstruction(il.Goto(done));
+
+			il.MarkLabel(done);
+		}
+		break;		
+	case ARM64_FCMP:
+	case ARM64_FCMPE:
+		il.AddInstruction(il.FloatSub(REGSZ_O(operand1),
+					ILREG_O(operand1),
+					ReadILOperand(il, operand2, REGSZ_O(operand1)), SETFLAGS));
+		break;		
 	case ARM64_FSUB:
 		switch(instr.encoding) {
 			case ENC_FSUB_H_FLOATDP2:
@@ -1293,22 +1372,46 @@ bool GetLowLevelILForInstruction(Architecture* arch, uint64_t addr, LowLevelILFu
 				il.AddInstruction(ILSETREG_O(operand1,
 					il.FloatSub(REGSZ_O(operand1), ILREG_O(operand2), ILREG_O(operand3))));
 				break;
-			default:
-				il.AddInstruction(il.Unimplemented());
-		}
-		break;
-	case ARM64_FMUL:
-		switch(instr.encoding) {
-			case ENC_FMUL_H_FLOATDP2:
-			case ENC_FMUL_S_FLOATDP2:
-			case ENC_FMUL_D_FLOATDP2:
-				il.AddInstruction(ILSETREG_O(operand1,
-					il.FloatMult(REGSZ_O(operand1), ILREG_O(operand2), ILREG_O(operand3))));
+			case ENC_FSUB_ASIMDSAME_ONLY:
+			case ENC_FSUB_ASIMDSAMEFP16_ONLY:
+			{
+				Register srcs[16], dsts[16];
+				int dst_n = unpack_vector(operand1, dsts);
+				int src_n = unpack_vector(operand2, srcs);
+				if((dst_n != src_n) || dst_n==0)
+					ABORT_LIFT;
+
+				int rsize = get_register_size(dsts[0]);
+				for(int i=0; i<dst_n; ++i)
+					il.AddInstruction(il.FloatSub(rsize, ILREG(dsts[i]), ILREG(srcs[i])));
+			}
 				break;
 			default:
 				il.AddInstruction(il.Unimplemented());
 		}
 		break;
+	case ARM64_FCVT:
+	{
+		int float_sz = 0;
+		switch(instr.encoding) {
+			/* non-SVE is straight register-to-register */
+			case ENC_FCVT_HS_FLOATDP1: // convert to half (2-byte)
+			case ENC_FCVT_HD_FLOATDP1:
+				float_sz = 2;
+			case ENC_FCVT_SH_FLOATDP1: // convert to single (4-byte)
+			case ENC_FCVT_SD_FLOATDP1:
+				if(!float_sz) float_sz = 4;
+			case ENC_FCVT_DH_FLOATDP1: // convert to double (8-byte)
+			case ENC_FCVT_DS_FLOATDP1:
+				if(!float_sz) float_sz = 8;
+				il.AddInstruction(ILSETREG_O(operand1, GetFloat(il, operand2, float_sz)));
+				break;
+			/* future: support SVE versions with predicated execution and z register file */
+			default:
+				ABORT_LIFT;
+		}
+		break;
+	}
 	case ARM64_FDIV:
 		switch(instr.encoding) {
 			case ENC_FDIV_H_FLOATDP2:
@@ -1376,6 +1479,18 @@ bool GetLowLevelILForInstruction(Architecture* arch, uint64_t addr, LowLevelILFu
 					il.AddInstruction(ILSETREG(regs[i], GetFloat(il, operand2, float_sz)));
 				break;
 			}
+			default:
+				il.AddInstruction(il.Unimplemented());
+		}
+		break;
+	case ARM64_FMUL:
+		switch(instr.encoding) {
+			case ENC_FMUL_H_FLOATDP2:
+			case ENC_FMUL_S_FLOATDP2:
+			case ENC_FMUL_D_FLOATDP2:
+				il.AddInstruction(ILSETREG_O(operand1,
+					il.FloatMult(REGSZ_O(operand1), ILREG_O(operand2), ILREG_O(operand3))));
+				break;
 			default:
 				il.AddInstruction(il.Unimplemented());
 		}
@@ -1457,6 +1572,14 @@ bool GetLowLevelILForInstruction(Architecture* arch, uint64_t addr, LowLevelILFu
 					REG_O(operand1),
 					ReadILOperand(il, instr.operands[1], REGSZ_O(operand1))));
 		break;
+	case ARM64_MOVI:
+	{
+		Register regs[16];
+		int n = unpack_vector(operand1, regs);
+		for(int i=0; i<n; ++i)
+			il.AddInstruction(ILSETREG(regs[i], ILCONST_O(get_register_size(regs[i]), operand2)));
+	}
+	break;
 	case ARM64_MVN:
 		il.AddInstruction(ILSETREG_O(operand1,
 						il.Not(REGSZ_O(operand1), ReadILOperand(il, operand2, REGSZ_O(operand1)))));
