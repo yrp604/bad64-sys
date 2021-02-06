@@ -1285,6 +1285,9 @@ bool GetLowLevelILForInstruction(Architecture* arch, uint64_t addr, LowLevelILFu
 	case ARM64_CLZ:
 		il.AddInstruction(il.Intrinsic({RegisterOrFlag::Register(REG_O(operand1))}, ARM64_INTRIN_CLZ, {ILREG_O(operand2)}));
 		break;
+	case ARM64_DC:
+		il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_DC, {ILREG_O(operand2)})); /* operand1 is <dc_op> */
+		break;
 	case ARM64_DMB:
 		il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_DMB, {}));
 		break;
@@ -1961,6 +1964,26 @@ bool GetLowLevelILForInstruction(Architecture* arch, uint64_t addr, LowLevelILFu
 						il.Const(8, 0),
 						il.MultDoublePrecUnsigned(REGSZ_O(operand1), ILREG_O(operand2), ILREG_O(operand3)))));
 		break;
+	case ARM64_UXTL:
+	case ARM64_UXTL2:
+	{
+		Register srcs[16], dsts[16];
+		int dst_n = unpack_vector(operand1, dsts);
+		int src_n = unpack_vector(operand2, srcs);
+
+		if(src_n==0 || dst_n==0) ABORT_LIFT;
+		if(instr.operation==ARM64_UXTL && (src_n != dst_n)) ABORT_LIFT;
+		if(instr.operation==ARM64_UXTL2 && (src_n != 2*dst_n)) ABORT_LIFT;
+
+		for(int i=0; i<dst_n; ++i) {
+			if(instr.operation==ARM64_UXTL)
+				il.AddInstruction(ILSETREG(dsts[i], ILREG(srcs[i])));
+			else
+				il.AddInstruction(ILSETREG(dsts[i], ILREG(srcs[i + src_n/2])));
+		}
+
+		break;
+	}
 	case ARM64_SMADDL:
 		il.AddInstruction(ILSETREG_O(operand1,
 					il.Add(REGSZ_O(operand1),
