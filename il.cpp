@@ -36,7 +36,6 @@ static ExprId GetCondition(LowLevelILFunction& il, Condition cond)
 	}
 }
 
-
 static void GenIfElse(LowLevelILFunction& il, ExprId clause, ExprId trueCase, ExprId falseCase)
 {
 	if(falseCase) {
@@ -97,6 +96,8 @@ ExprId ExtractImmediate(LowLevelILFunction& il, InstructionOperand& operand, int
 	return ILCONST(sizeof_imm, imm & ONES(sizeof_imm*8));
 }
 
+// extractSize can be smaller than the register, generating an LLIL_LOWPART
+// resultSize can be larger than the register, generating sign or zero extension
 ExprId ExtractRegister(LowLevelILFunction& il, InstructionOperand& operand, size_t regNum, size_t extractSize, bool signExtend, size_t resultSize)
 {
 	size_t opsz = get_register_size(operand.reg[regNum]);
@@ -276,26 +277,26 @@ static ExprId GetILOperandEffectiveAddress(LowLevelILFunction& il, InstructionOp
 	switch (oclass) {
 		case MEM_REG: // ldr x0, [x1]
 		case MEM_POST_IDX: // ldr w0, [x1], #4
-			addr = il.Register(addrSize, operand.reg[0]);
+			addr = ILREG_O(operand);
 			if(extra_offset)
 				addr = il.Add(addrSize, addr, il.Const(addrSize, extra_offset));
 			break;
 		case MEM_OFFSET: // ldr w0, [x1, #4]
 		case MEM_PRE_IDX: // ldr w0, [x1, #4]!
-			addr = il.Add(addrSize, il.Register(addrSize, operand.reg[0]), il.Const(addrSize, operand.immediate + extra_offset));
+			addr = il.Add(addrSize, ILREG_O(operand), il.Const(addrSize, operand.immediate + extra_offset));
 			break;
 		case MEM_EXTENDED:
 			if(operand.shiftType == ShiftType_NONE) {
-				addr = il.Add(addrSize, il.Register(addrSize, operand.reg[0]), il.Const(addrSize, operand.immediate + extra_offset));
+				addr = il.Add(addrSize, ILREG_O(operand), il.Const(addrSize, operand.immediate + extra_offset));
 			}
 			else if (operand.shiftType == ShiftType_LSL) {
 				if(extra_offset) {
-					addr = il.Add(addrSize, il.Register(addrSize, operand.reg[0]),
+					addr = il.Add(addrSize, ILREG_O(operand),
 						il.Add(addrSize, il.ShiftLeft(addrSize, il.Const(addrSize, operand.immediate), il.Const(0, operand.shiftValue)),
 							il.Const(addrSize, extra_offset)));
 				}
 				else {
-					addr = il.Add(addrSize, il.Register(addrSize, operand.reg[0]),
+					addr = il.Add(addrSize, ILREG_O(operand),
 						il.ShiftLeft(addrSize, il.Const(addrSize, operand.immediate), il.Const(0, operand.shiftValue)));
 				}
 			}
@@ -557,8 +558,8 @@ static void LoadStoreOperandPair(
 
 	/* compute addresses */
 	OperandClass oclass = (operand3.operandClass == MEM_PRE_IDX) ? MEM_REG : operand3.operandClass;
-	ExprId addr0 = GetILOperandEffectiveAddress(il, operand3, sz, oclass, 0);
-	ExprId addr1 = GetILOperandEffectiveAddress(il, operand3, sz, oclass, sz);
+	ExprId addr0 = GetILOperandEffectiveAddress(il, operand3, 8, oclass, 0);
+	ExprId addr1 = GetILOperandEffectiveAddress(il, operand3, 8, oclass, sz);
 
 	/* load/store */
 	if(load) {
@@ -614,9 +615,13 @@ static void LoadStoreVector(
 static void LoadStoreOperand(
 		LowLevelILFunction& il,
 		bool load,
-		InstructionOperand& operand1,
-		InstructionOperand& operand2)
+		InstructionOperand& operand1, /* register that gets read/written */
+		InstructionOperand& operand2, /* location the read/write occurs */
+		int load_store_sz)
 {
+	if(!load_store_sz)
+		load_store_sz = REGSZ_O(operand1);
+
 	ExprId tmp;
 	if (load)
 	{
@@ -625,9 +630,11 @@ static void LoadStoreOperand(
 		case MEM_REG:
 			//operand1.reg = [operand2.reg]
 			il.AddInstruction(ILSETREG_O(operand1,
-						il.Operand(1, il.Load(REGSZ_O(operand1), ILREG_O(operand2)))));
+						il.Operand(1, il.Load(load_store_sz, ILREG_O(operand2)))));
 			break;
 		case MEM_OFFSET:
+			if(!load_store_sz) load_store_sz = REGSZ_O(operand1);
+
 			//operand1.reg = [operand2.reg + operand2.imm]
 			if (IMM_O(operand2) == 0)
 				tmp = ILREG_O(operand2);
@@ -635,7 +642,7 @@ static void LoadStoreOperand(
 				tmp = ILADDREG_O(operand2, il.Const(REGSZ_O(operand2), IMM_O(operand2)));
 
 			il.AddInstruction(ILSETREG_O(operand1,
-						il.Operand(1, il.Load(REGSZ_O(operand1), tmp))));
+						il.Operand(1, il.Load(load_store_sz, tmp))));
 			break;
 		case MEM_PRE_IDX:
 			//operand2.reg += operand2.imm
@@ -646,12 +653,12 @@ static void LoadStoreOperand(
 								il.Const(REGSZ_O(operand2), IMM_O(operand2)))));
 			//operand1.reg = [operand2.reg]
 			il.AddInstruction(ILSETREG_O(operand1,
-						il.Operand(1, il.Load(REGSZ_O(operand1), ILREG_O(operand2)))));
+						il.Operand(1, il.Load(load_store_sz, ILREG_O(operand2)))));
 			break;
 		case MEM_POST_IDX:
 			//operand1.reg = [operand2.reg]
 			il.AddInstruction(ILSETREG_O(operand1,
-						il.Operand(1, il.Load(REGSZ_O(operand1), ILREG_O(operand2)))));
+						il.Operand(1, il.Load(load_store_sz, ILREG_O(operand2)))));
 			//operand2.reg += operand2.imm
 			if (IMM_O(operand2) != 0)
 				il.AddInstruction(ILSETREG_O(operand2,
@@ -663,7 +670,7 @@ static void LoadStoreOperand(
 			il.AddInstruction(
 					ILSETREG_O(operand1,
 						il.Operand(1,
-							il.Load(REGSZ_O(operand1),
+							il.Load(load_store_sz,
 								il.Add(REGSZ_O(operand2),
 									ILREG_O(operand2),
 									GetShiftedRegister(il, operand2, 1, REGSZ_O(operand2))
@@ -671,7 +678,7 @@ static void LoadStoreOperand(
 			break;
 		case LABEL:
 			il.AddInstruction(ILSETREG_O(operand1,
-						il.Operand(1, il.Load(REGSZ_O(operand1), il.ConstPointer(8, IMM_O(operand2))))));
+						il.Operand(1, il.Load(load_store_sz, il.ConstPointer(8, IMM_O(operand2))))));
 			break;
 		case IMM32:
 		case IMM64:
@@ -687,7 +694,7 @@ static void LoadStoreOperand(
 		switch (operand2.operandClass)
 		{
 		case MEM_REG:
-			il.AddInstruction(il.Operand(1, il.Store(REGSZ_O(operand1), ILREG_O(operand2), ILREG_O(operand1))));
+			il.AddInstruction(il.Operand(1, il.Store(load_store_sz, ILREG_O(operand2), ILREG_O(operand1))));
 			break;
 		case MEM_OFFSET:
 			//[operand2.reg + operand2.immediate] = operand1.reg
@@ -696,7 +703,7 @@ static void LoadStoreOperand(
 			else
 				tmp = ILADDREG_O(operand2, il.Const(REGSZ_O(operand2), IMM_O(operand2)));
 
-			il.AddInstruction(il.Operand(1, il.Store(REGSZ_O(operand1), tmp, ILREG_O(operand1))));
+			il.AddInstruction(il.Operand(1, il.Store(load_store_sz, tmp, ILREG_O(operand1))));
 			break;
 		case MEM_PRE_IDX:
 			//operand2.reg = operand2.reg + operand2.immediate
@@ -704,18 +711,18 @@ static void LoadStoreOperand(
 				il.AddInstruction(ILSETREG_O(operand2,
 					ILADDREG_O(operand2, il.Const(REGSZ_O(operand2), IMM_O(operand2)))));
 			//[operand2.reg] = operand1.reg
-			il.AddInstruction(il.Operand(1, il.Store(REGSZ_O(operand1), ILREG_O(operand2), ILREG_O(operand1))));
+			il.AddInstruction(il.Operand(1, il.Store(load_store_sz, ILREG_O(operand2), ILREG_O(operand1))));
 			break;
 		case MEM_POST_IDX:
 			//[operand2.reg] = operand1.reg
-			il.AddInstruction(il.Operand(1, il.Store(REGSZ_O(operand1), ILREG_O(operand2), ILREG_O(operand1))));
+			il.AddInstruction(il.Operand(1, il.Store(load_store_sz, ILREG_O(operand2), ILREG_O(operand1))));
 			//operand2.reg = operand2.reg + operand2.immediate
 			if (IMM_O(operand2) != 0)
 				il.AddInstruction(ILSETREG_O(operand2,
 					ILADDREG_O(operand2, il.Const(REGSZ_O(operand2), IMM_O(operand2)))));
 			break;
 		case MEM_EXTENDED:
-			il.AddInstruction(il.Operand(1, il.Store(REGSZ_O(operand1),
+			il.AddInstruction(il.Operand(1, il.Store(load_store_sz,
 					il.Add(REGSZ_O(operand2),
 						il.Register(REGSZ_O(operand2), operand2.reg[0]),
 						GetShiftedRegister(il, operand2, 1, REGSZ_O(operand2))),
@@ -1357,13 +1364,13 @@ bool GetLowLevelILForInstruction(Architecture* arch, uint64_t addr, LowLevelILFu
 
 			il.MarkLabel(done);
 		}
-		break;		
+		break;
 	case ARM64_FCMP:
 	case ARM64_FCMPE:
 		il.AddInstruction(il.FloatSub(REGSZ_O(operand1),
 					ILREG_O(operand1),
 					ReadILOperand(il, operand2, REGSZ_O(operand1)), SETFLAGS));
-		break;		
+		break;
 	case ARM64_FSUB:
 		switch(instr.encoding) {
 			case ENC_FSUB_H_FLOATDP2:
@@ -1506,7 +1513,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, uint64_t addr, LowLevelILFu
 		break;
 	case ARM64_LDAR:
 	case ARM64_LDAXR:
-		LoadStoreOperand(il, true, instr.operands[0], instr.operands[1]);
+		LoadStoreOperand(il, true, instr.operands[0], instr.operands[1], 0);
 		break;
 	case ARM64_LDARB:
 	case ARM64_LDAXRB:
@@ -1517,13 +1524,14 @@ bool GetLowLevelILForInstruction(Architecture* arch, uint64_t addr, LowLevelILFu
 		LoadStoreOperandSize(il, true, false, 2, instr.operands[0], instr.operands[1]);
 		break;
 	case ARM64_LDP:
+	case ARM64_LDNP:
 		LoadStoreOperandPair(il, true, instr.operands[0], instr.operands[1], instr.operands[2]);
 		break;
 	case ARM64_LDR:
 	case ARM64_LDUR:
 	case ARM64_LDRAA:
 	case ARM64_LDRAB:
-		LoadStoreOperand(il, true, instr.operands[0], instr.operands[1]);
+		LoadStoreOperand(il, true, instr.operands[0], instr.operands[1], 0);
 		break;
 	case ARM64_LDRB:
 	case ARM64_LDURB:
@@ -1546,15 +1554,32 @@ bool GetLowLevelILForInstruction(Architecture* arch, uint64_t addr, LowLevelILFu
 		LoadStoreOperandSize(il, true, true, 4, instr.operands[0], instr.operands[1]);
 		break;
 	case ARM64_LD1:
-	{
 		LoadStoreVector(il, true, instr.operands[0], instr.operands[1]);
 		break;
-	}
-	case ARM64_ST1:
-	{
-		LoadStoreVector(il, false, instr.operands[0], instr.operands[1]);
+	case ARM64_LDADD:
+	case ARM64_LDADDA:
+	case ARM64_LDADDL:
+	case ARM64_LDADDAL:
+		LoadStoreOperand(il, true, operand2, operand3, 0);
+		il.AddInstruction(il.Store(REGSZ_O(operand3), ILREG_O(operand3),
+			il.Add(REGSZ_O(operand1), ILREG_O(operand1), ILREG_O(operand2))));
 		break;
-	}
+	case ARM64_LDADDB:
+	case ARM64_LDADDAB:
+	case ARM64_LDADDLB:
+	case ARM64_LDADDALB:
+		LoadStoreOperand(il, true, operand2, operand3, 1);
+		il.AddInstruction(il.Store(REGSZ_O(operand3), ILREG_O(operand3),
+			il.Add(1, il.LowPart(1,ILREG_O(operand1)), il.LowPart(1,ILREG_O(operand2)))));
+		break;
+	case ARM64_LDADDH:
+	case ARM64_LDADDAH:
+	case ARM64_LDADDLH:
+	case ARM64_LDADDALH:
+		LoadStoreOperand(il, true, operand2, operand3, 2);
+		il.AddInstruction(il.Store(REGSZ_O(operand3), ILREG_O(operand3),
+			il.Add(2, il.LowPart(2,ILREG_O(operand1)), il.LowPart(2,ILREG_O(operand2)))));
+		break;
 	case ARM64_LSL:
 		il.AddInstruction(ILSETREG_O(operand1,
 					il.ShiftLeft(REGSZ_O(operand2),
@@ -1830,18 +1855,25 @@ bool GetLowLevelILForInstruction(Architecture* arch, uint64_t addr, LowLevelILFu
 
 		break;
 	}
+	case ARM64_ST1:
+		LoadStoreVector(il, false, instr.operands[0], instr.operands[1]);
+		break;
 	case ARM64_STP:
+	case ARM64_STNP:
 		LoadStoreOperandPair(il, false, instr.operands[0], instr.operands[1], instr.operands[2]);
 		break;
 	case ARM64_STR:
+	case ARM64_STLR:
 	case ARM64_STUR:
-		LoadStoreOperand(il, false, instr.operands[0], instr.operands[1]);
+		LoadStoreOperand(il, false, instr.operands[0], instr.operands[1], 0);
 		break;
 	case ARM64_STRB:
+	case ARM64_STLRB:
 	case ARM64_STURB:
 		LoadStoreOperandSize(il, false, false, 1, instr.operands[0], instr.operands[1]);
 		break;
 	case ARM64_STRH:
+	case ARM64_STLRH:
 	case ARM64_STURH:
 		LoadStoreOperandSize(il, false, false, 2, instr.operands[0], instr.operands[1]);
 		break;
@@ -1854,6 +1886,27 @@ bool GetLowLevelILForInstruction(Architecture* arch, uint64_t addr, LowLevelILFu
 	case ARM64_SVC:
 		il.AddInstruction(il.SetRegister(2, FAKEREG_SYSCALL_IMM, il.Const(2, IMM_O(operand1))));
 		il.AddInstruction(il.SystemCall());
+		break;
+	case ARM64_SWP: /* word (4) or doubleword (8) */
+	case ARM64_SWPA:
+	case ARM64_SWPL:
+	case ARM64_SWPAL:
+		LoadStoreOperand(il, true, operand2, operand3, 0);
+		LoadStoreOperand(il, false, operand1, operand3, 0);
+		break;
+	case ARM64_SWPB: /* byte (1) */
+	case ARM64_SWPAB:
+	case ARM64_SWPLB:
+	case ARM64_SWPALB:
+		LoadStoreOperand(il, true, operand2, operand3, 1);
+		il.AddInstruction(il.Store(1, ILREG_O(operand3), il.LowPart(1, ILREG_O(operand1))));
+		break;
+	case ARM64_SWPH: /* half-word (2) */
+	case ARM64_SWPAH:
+	case ARM64_SWPLH:
+	case ARM64_SWPALH:
+		LoadStoreOperand(il, true, operand2, operand3, 2);
+		il.AddInstruction(il.Store(2, ILREG_O(operand3), il.LowPart(2, ILREG_O(operand1))));
 		break;
 	case ARM64_SXTB:
 		il.AddInstruction(ILSETREG_O(operand1,
@@ -2003,6 +2056,17 @@ bool GetLowLevelILForInstruction(Architecture* arch, uint64_t addr, LowLevelILFu
 	case ARM64_BRK:
 		il.AddInstruction(il.Trap(IMM_O(operand1))); // FIXME Breakpoint may need a parameter (IMM_O(operand1)));
 		return false;
+	case ARM64_DUP:
+		{
+			if(instr.encoding != ENC_DUP_ASIMDINS_DR_R) ABORT_LIFT;
+			Register regs[16];
+			int regs_n = unpack_vector(operand1, regs);
+			if(regs_n <= 0) ABORT_LIFT;
+			int lane_sz = REGSZ(regs[0]);
+			for(int i=0; i<regs_n; ++i)
+				il.AddInstruction(ILSETREG(regs[i], ExtractRegister(il, operand2, 0, lane_sz, 0, lane_sz)));
+		}
+		break;
 	case ARM64_DGH:
 		il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_HINT_DGH, {}));
 		break;
