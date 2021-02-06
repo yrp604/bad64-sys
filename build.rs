@@ -41,6 +41,7 @@ fn main() {
         .derive_eq(true)
         .derive_hash(true)
         .derive_partialeq(true)
+        .use_core()
         .rustified_enum("OperandClass")
         .rustified_enum("ShiftType")
         .rustified_enum("ArrangementSpec")
