@@ -3,28 +3,25 @@ use std::ffi::OsStr;
 use std::path::PathBuf;
 
 fn main() {
-    let blacklist = &[
-        OsStr::new("test.c"),
-        OsStr::new("gofer.c"),
-        OsStr::new("format.c"),
-        OsStr::new("encodings_fmt.c"),
-    ];
+    let ignorelist: Vec<&OsStr> = [
+        "test.c", "gofer.c", "format.c", "encodings_fmt.c",
+    ].iter().map(OsStr::new).collect();
 
     let dotc_files = glob::glob("arch-arm64/disassembler/*.c")
         .expect("Failed to read glob pattern")
         .map(|x| x.unwrap())
-        .filter(|x| !blacklist.contains(&x.file_name().unwrap()));
+        .filter(|x| !ignorelist.as_slice().contains(&x.file_name().unwrap()));
 
     // Compile the library
     cc::Build::new()
         .files(dotc_files)
         .include("arch-arm64/disassembler")
-        .compile("arm64dis");
+        .compile("arm64decode");
 
     // Generate the bindings
 
     // Tell cargo to tell rustc to link the compiled disassembler
-    println!("cargo:rustc-link-lib=arm64dis");
+    println!("cargo:rustc-link-lib=arm64decode");
 
     // Tell cargo to invalidate the built crate whenever the wrapper changes
     println!("cargo:rerun-if-changed=wrapper.h");
