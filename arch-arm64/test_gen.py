@@ -59,7 +59,6 @@ def tests_for_mnemonics(mnems):
 # example:
 # ./test_gen mnemonic ld1
 if sys.argv[1] == 'mnemonic':
-	N_SAMPLES = 2
 	mnem = sys.argv[2]
 	print('searching for mnemonic -%s-' % mnem)
 	tests_for_mnemonics([mnem])
