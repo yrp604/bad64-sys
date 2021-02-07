@@ -2,6 +2,25 @@
 
 RET = b'\xc0\x03\x5f\xd6'
 
+tests_xtn_xtn2 = [
+	# xtn v17.4h, v24.4s                                               XTN_ASIMDMISC_N
+	(b'\x11\x2B\x61\x0E', 'LLIL_INTRINSIC([v17],vmovn_u32,LLIL_CALL_PARAM([LLIL_REG.o(v24)]))'),
+	# xtn v13.4h, v30.4s                                               XTN_ASIMDMISC_N
+	(b'\xCD\x2B\x61\x0E', 'LLIL_INTRINSIC([v13],vmovn_u32,LLIL_CALL_PARAM([LLIL_REG.o(v30)]))'),
+	# xtn v30.4h, v20.4s                                               XTN_ASIMDMISC_N
+	(b'\x9E\x2A\x61\x0E', 'LLIL_INTRINSIC([v30],vmovn_u32,LLIL_CALL_PARAM([LLIL_REG.o(v20)]))'),
+	# xtn v13.2s, v10.2d                                               XTN_ASIMDMISC_N
+	(b'\x4D\x29\xA1\x0E', 'LLIL_INTRINSIC([v13],vmovn_u64,LLIL_CALL_PARAM([LLIL_REG.o(v10)]))'),
+	# xtn2 v27.8h, v19.4s                                              XTN_ASIMDMISC_N
+	(b'\x7B\x2A\x61\x4E', 'LLIL_INTRINSIC([v27],vmovn_high_u32,LLIL_CALL_PARAM([LLIL_REG.o(v19)]))'),
+	# xtn2 v26.4s, v7.2d                                               XTN_ASIMDMISC_N
+	(b'\xFA\x28\xA1\x4E', 'LLIL_INTRINSIC([v26],vmovn_high_u64,LLIL_CALL_PARAM([LLIL_REG.o(v7)]))'),
+	# xtn2 v3.4s, v22.2d                                               XTN_ASIMDMISC_N
+	(b'\xC3\x2A\xA1\x4E', 'LLIL_INTRINSIC([v3],vmovn_high_u64,LLIL_CALL_PARAM([LLIL_REG.o(v22)]))'),
+	# xtn2 v13.8h, v23.4s                                              XTN_ASIMDMISC_N
+	(b'\xED\x2A\x61\x4E', 'LLIL_INTRINSIC([v13],vmovn_high_u32,LLIL_CALL_PARAM([LLIL_REG.o(v23)]))'),
+]
+
 tests_dc = [
 	# dc cvadp, x26                                                    DC_SYS_CR_SYSTEMINSTRS
 	(b'\x3A\x7D\x0B\xD5', 'LLIL_INTRINSIC([],__dc,LLIL_CALL_PARAM([LLIL_REG.q(x26)]))'),
@@ -1304,6 +1323,7 @@ tests_st1 = [
 ]
 
 test_cases = \
+	tests_xtn_xtn2 + \
 	tests_dc + \
 	tests_uxtl_uxtl2 + \
 	tests_ldadd + \
