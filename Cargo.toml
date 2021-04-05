@@ -12,6 +12,6 @@ categories = ["external-ffi-bindings"]
 [dependencies]
 
 [build-dependencies]
-bindgen = { version = "0.57", default-features = false, features = ["runtime"] }
+bindgen = { version = "0.58", default-features = false, features = ["runtime"] }
 cc = { version = "1", features = ["parallel"] }
 glob = "0.3"
