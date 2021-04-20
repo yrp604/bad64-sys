@@ -2453,6 +2453,10 @@ public:
 	}
 };
 
+#define PAGE(x) (uint32_t)((x) >> 12)
+#define PAGE_OFF(x) (uint32_t)((x) & 0xfff)
+#define PAGE_NO_OFF(x) (uint32_t)((x) & 0xFFFFF000)
+
 class Arm64MachoRelocationHandler: public RelocationHandler
 {
 public:
@@ -2463,9 +2467,60 @@ public:
 		(void)arch;
 		(void)len;
 
+		uint32_t insword = *(uint32_t *)dest;
 		auto info = reloc->GetInfo();
-		if (info.nativeType == (uint64_t) -2) // Magic number defined in MachOView.cpp
+
+		//printf("insword: 0x%X\n", insword);
+		//printf("reloc->GetTarget(): 0x%llX\n", reloc->GetTarget());
+		//printf("reloc->GetAddress(): 0x%llX\n", reloc->GetAddress());
+
+		if (info.nativeType == (uint64_t) -2) { // Magic number defined in MachOView.cpp for tagged pointers
 			*(uint64_t *) dest = info.target;
+		}
+		else if(info.nativeType == ARM64_RELOC_PAGE21) {
+			// 21 bits across IMMHI:IMMLO
+			// OP=1|IMMLO=XX|10000|IMMHI=XXXXXXXXXXXXXXXXXXX|RD=XXXXX
+			int64_t page_delta = PAGE(reloc->GetTarget()) - PAGE(reloc->GetAddress());
+			insword = insword & 0b10011111000000000000000000011111;
+			insword = insword | ((page_delta & 3) << 29); // IMMLO
+			insword = insword | ((page_delta >> 2) << 5); // IMMHI
+			*(uint32_t *)dest = insword;
+		}
+		else if(info.nativeType == ARM64_RELOC_PAGEOFF12) {
+			/* verify relocation point to qualifying instructions */
+			if((insword & 0x3B000000) != 0x39000000 && (insword & 0x11C00000) != 0x11000000)
+				return false;
+
+			/* verify it's a positive/forward jump (the imm12 is unsigned) */
+			int64_t delta = reloc->GetTarget() - PAGE_NO_OFF(reloc->GetAddress());
+			if(delta < 0)
+				return false;
+
+			/* disassemble instruction, is last operand an immediate? is there a shift? */
+			Instruction instr;
+			if(aarch64_decompose(*(uint32_t*)dest, &instr, reloc->GetAddress()) != 0)
+				return false;
+
+			int n_operands = 0;
+			while(instr.operands[n_operands].operandClass != NONE)
+				n_operands++;
+
+			if(instr.operands[n_operands-1].operandClass != IMM32 &&
+			  instr.operands[n_operands-1].operandClass != IMM64)
+				return false;
+
+			int left_shift = (instr.operands[n_operands-1].shiftValueUsed) ?
+			  instr.operands[n_operands-1].shiftValue : 0;
+
+			/* re-encode */
+			/* left shift is upon DECODING, we right shift to bias this */
+			delta = delta >> left_shift;
+			// SF=X|OP=0|S=0|100010|SH=X|IMM12=XXXXXXXXXXXX|RN=XXXXX|RD=XXXXX
+			uint16_t imm12 = (insword & 0x3FFC00)>>10;
+			imm12 = PAGE_OFF(imm12 + delta);
+			insword = (insword & 0xFFC003FF) | (imm12 << 10);
+			*(uint32_t *)dest = insword;
+		}
 
 		return true;
 	}
@@ -2474,6 +2529,7 @@ public:
 	{
 		(void)view;
 		(void)arch;
+
 		set<MachoArm64RelocationType> unsupportedRelocations;
 		for (size_t i = 0; i < result.size(); i++)
 		{
@@ -2503,9 +2559,15 @@ public:
 				result[i].truncateSize = 8;
 				result[i].hasSign = false;
 				break;
-			case ARM64_RELOC_BRANCH26:
 			case ARM64_RELOC_PAGE21:
+				// eg: the number of pages to get to <addr> in "adrp x1, <addr>"
+				//printf("GetRelocationInfo(): ARM64_RELOC_PAGE21 .address=0x%llX\n", result[i].address);
+				break;
 			case ARM64_RELOC_PAGEOFF12:
+				// eg: the 12-bit <immediate> in "add x8, x8, #<immediate>"
+				//printf("GetRelocationInfo(): ARM64_RELOC_PAGEOFF12 .address=0x%llX\n", result[i].address);
+				break;
+			case ARM64_RELOC_BRANCH26:
 			case ARM64_RELOC_GOT_LOAD_PAGE21:
 			case ARM64_RELOC_GOT_LOAD_PAGEOFF12:
 			case ARM64_RELOC_TLVP_LOAD_PAGE21:
@@ -2576,8 +2638,6 @@ public:
 		//auto swap = [&arch](uint32_t x) { return (arch->GetEndianness() == LittleEndian)? x : bswap32(x); };
 		uint64_t target = reloc->GetTarget();
 		Instruction inst;
-		#define PAGE(x) (uint32_t)((x) >> 12)
-		#define PAGE_OFF(x) (uint32_t)((x) & 0xfff)
 		switch (info.nativeType)
 		{
 		case R_ARM_NONE:
