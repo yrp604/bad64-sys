@@ -1,111 +1,115 @@
 #define _CRT_SECURE_NO_WARNINGS
 #define NOMINMAX
 
+#include <cstdint>
 #include <inttypes.h>
+#include <map>
 #include <stdio.h>
 #include <string.h>
-#include <cstdint>
-#include <map>
 
-#include "binaryninjaapi.h"
-#include "lowlevelilinstruction.h"
 #include "arm64dis.h"
+#include "binaryninjaapi.h"
 #include "il.h"
+#include "lowlevelilinstruction.h"
 #include "neon_intrinsics.h"
 
 using namespace BinaryNinja;
 using namespace std;
 
 #if defined(_MSC_VER)
-#define snprintf _snprintf
+	#define snprintf _snprintf
 #endif
 
-#define EMPTY(S) (S[0]=='\0')
+#define EMPTY(S) (S[0] == '\0')
 
 enum MachoArm64RelocationType : uint32_t
 {
-	ARM64_RELOC_UNSIGNED            = 0,
-	ARM64_RELOC_SUBTRACTOR          = 1,
-	ARM64_RELOC_BRANCH26            = 2,
-	ARM64_RELOC_PAGE21              = 3,
-	ARM64_RELOC_PAGEOFF12           = 4,
-	ARM64_RELOC_GOT_LOAD_PAGE21     = 5,
-	ARM64_RELOC_GOT_LOAD_PAGEOFF12  = 6,
-	ARM64_RELOC_POINTER_TO_GOT      = 7,
-	ARM64_RELOC_TLVP_LOAD_PAGE21    = 8,
+	ARM64_RELOC_UNSIGNED = 0,
+	ARM64_RELOC_SUBTRACTOR = 1,
+	ARM64_RELOC_BRANCH26 = 2,
+	ARM64_RELOC_PAGE21 = 3,
+	ARM64_RELOC_PAGEOFF12 = 4,
+	ARM64_RELOC_GOT_LOAD_PAGE21 = 5,
+	ARM64_RELOC_GOT_LOAD_PAGEOFF12 = 6,
+	ARM64_RELOC_POINTER_TO_GOT = 7,
+	ARM64_RELOC_TLVP_LOAD_PAGE21 = 8,
 	ARM64_RELOC_TLVP_LOAD_PAGEOFF12 = 9,
-	ARM64_RELOC_ADDEND              = 10,
-	MACHO_MAX_ARM64_RELOCATION      = 11
+	ARM64_RELOC_ADDEND = 10,
+	MACHO_MAX_ARM64_RELOCATION = 11
 };
 
 enum ElfArm64RelocationType : uint32_t
 {
 	R_ARM_NONE                    = 0,
+	R_AARCH64_P32_COPY            = 180,
+	R_AARCH64_P32_GLOB_DAT        = 181,
+	R_AARCH64_P32_JUMP_SLOT       = 182,
+	R_AARCH64_P32_RELATIVE        = 183,
 	R_AARCH64_NONE                = 256,
 	// Data
-	R_AARCH64_ABS64               = 257,
-	R_AARCH64_ABS32               = 258,
-	R_AARCH64_ABS16               = 259,
-	R_AARCH64_PREL64              = 260,
-	R_AARCH64_PREL32              = 261,
-	R_AARCH64_PREL16              = 262,
+	R_AARCH64_ABS64 = 257,
+	R_AARCH64_ABS32 = 258,
+	R_AARCH64_ABS16 = 259,
+	R_AARCH64_PREL64 = 260,
+	R_AARCH64_PREL32 = 261,
+	R_AARCH64_PREL16 = 262,
 	// Instructions
-	R_AARCH64_MOVW_UABS_G0        = 263,
-	R_AARCH64_MOVW_UABS_G0_NC     = 264,
-	R_AARCH64_MOVW_UABS_G1        = 265,
-	R_AARCH64_MOVW_UABS_G1_NC     = 266,
-	R_AARCH64_MOVW_UABS_G2        = 267,
-	R_AARCH64_MOVW_UABS_G2_NC     = 268,
-	R_AARCH64_MOVW_UABS_G3        = 269,
-	R_AARCH64_MOVW_SABS_G0        = 270,
-	R_AARCH64_MOVW_SABS_G1        = 271,
-	R_AARCH64_MOVW_SABS_G2        = 272,
-	R_AARCH64_LD_PREL_LO19        = 273,
-	R_AARCH64_ADR_PREL_LO21       = 274,
-	R_AARCH64_ADR_PREL_PG_HI21    = 275,
+	R_AARCH64_MOVW_UABS_G0 = 263,
+	R_AARCH64_MOVW_UABS_G0_NC = 264,
+	R_AARCH64_MOVW_UABS_G1 = 265,
+	R_AARCH64_MOVW_UABS_G1_NC = 266,
+	R_AARCH64_MOVW_UABS_G2 = 267,
+	R_AARCH64_MOVW_UABS_G2_NC = 268,
+	R_AARCH64_MOVW_UABS_G3 = 269,
+	R_AARCH64_MOVW_SABS_G0 = 270,
+	R_AARCH64_MOVW_SABS_G1 = 271,
+	R_AARCH64_MOVW_SABS_G2 = 272,
+	R_AARCH64_LD_PREL_LO19 = 273,
+	R_AARCH64_ADR_PREL_LO21 = 274,
+	R_AARCH64_ADR_PREL_PG_HI21 = 275,
 	R_AARCH64_ADR_PREL_PG_HI21_NC = 276,
-	R_AARCH64_ADD_ABS_LO12_NC     = 277,
-	R_AARCH64_LDST8_ABS_LO12_NC   = 278,
-	R_AARCH64_TSTBR14             = 279,
-	R_AARCH64_CONDBR19            = 280,
-	R_AARCH64_JUMP26              = 282,
-	R_AARCH64_CALL26              = 283,
-	R_AARCH64_LDST16_ABS_LO12_NC  = 284,
-	R_AARCH64_LDST32_ABS_LO12_NC  = 285,
-	R_AARCH64_LDST64_ABS_LO12_NC  = 286,
+	R_AARCH64_ADD_ABS_LO12_NC = 277,
+	R_AARCH64_LDST8_ABS_LO12_NC = 278,
+	R_AARCH64_TSTBR14 = 279,
+	R_AARCH64_CONDBR19 = 280,
+	R_AARCH64_JUMP26 = 282,
+	R_AARCH64_CALL26 = 283,
+	R_AARCH64_LDST16_ABS_LO12_NC = 284,
+	R_AARCH64_LDST32_ABS_LO12_NC = 285,
+	R_AARCH64_LDST64_ABS_LO12_NC = 286,
 	R_AARCH64_LDST128_ABS_LO12_NC = 299,
-	R_AARCH64_MOVW_PREL_G0        = 287,
-	R_AARCH64_MOVW_PREL_G0_NC     = 288,
-	R_AARCH64_MOVW_PREL_G1        = 289,
-	R_AARCH64_MOVW_PREL_G1_NC     = 290,
-	R_AARCH64_MOVW_PREL_G2        = 291,
-	R_AARCH64_MOVW_PREL_G2_NC     = 292,
-	R_AARCH64_MOVW_PREL_G3        = 293,
-	R_AARCH64_MOVW_GOTOFF_G0      = 300,
-	R_AARCH64_MOVW_GOTOFF_G0_NC   = 301,
-	R_AARCH64_MOVW_GOTOFF_G1      = 302,
-	R_AARCH64_MOVW_GOTOFF_G1_NC   = 303,
-	R_AARCH64_MOVW_GOTOFF_G2      = 304,
-	R_AARCH64_MOVW_GOTOFF_G2_NC   = 305,
-	R_AARCH64_MOVW_GOTOFF_G3      = 306,
-	R_AARCH64_GOTREL64            = 307,
-	R_AARCH64_GOTREL32            = 308,
-	R_AARCH64_GOT_LD_PREL19       = 309,
-	R_AARCH64_LD64_GOTOFF_LO15    = 310,
-	R_AARCH64_ADR_GOT_PAGE        = 311,
-	R_AARCH64_LD64_GOT_LO12_NC    = 312,
-	R_AARCH64_LD64_GOTPAGE_LO15   = 313,
+	R_AARCH64_MOVW_PREL_G0 = 287,
+	R_AARCH64_MOVW_PREL_G0_NC = 288,
+	R_AARCH64_MOVW_PREL_G1 = 289,
+	R_AARCH64_MOVW_PREL_G1_NC = 290,
+	R_AARCH64_MOVW_PREL_G2 = 291,
+	R_AARCH64_MOVW_PREL_G2_NC = 292,
+	R_AARCH64_MOVW_PREL_G3 = 293,
+	R_AARCH64_MOVW_GOTOFF_G0 = 300,
+	R_AARCH64_MOVW_GOTOFF_G0_NC = 301,
+	R_AARCH64_MOVW_GOTOFF_G1 = 302,
+	R_AARCH64_MOVW_GOTOFF_G1_NC = 303,
+	R_AARCH64_MOVW_GOTOFF_G2 = 304,
+	R_AARCH64_MOVW_GOTOFF_G2_NC = 305,
+	R_AARCH64_MOVW_GOTOFF_G3 = 306,
+	R_AARCH64_GOTREL64 = 307,
+	R_AARCH64_GOTREL32 = 308,
+	R_AARCH64_GOT_LD_PREL19 = 309,
+	R_AARCH64_LD64_GOTOFF_LO15 = 310,
+	R_AARCH64_ADR_GOT_PAGE = 311,
+	R_AARCH64_LD64_GOT_LO12_NC = 312,
+	R_AARCH64_LD64_GOTPAGE_LO15 = 313,
 
-	R_AARCH64_COPY                = 1024,
-	R_AARCH64_GLOB_DAT            = 1025,  // Create GOT entry.
-	R_AARCH64_JUMP_SLOT           = 1026,  // Create PLT entry.
-	R_AARCH64_RELATIVE            = 1027,  // Adjust by program base.
-	R_AARCH64_TLS_DTPREL64        = 1028,
-	R_AARCH64_TLS_DTPMOD64        = 1029,
-	R_AARCH64_TLS_TPREL64         = 1030,
-	R_AARCH64_TLS_DTPREL32        = 1031,
-	R_AARCH64_TLSDESC             = 1031,
-	R_AARCH64_IRELATIVE           = 1032,
+	R_AARCH64_COPY = 1024,
+	R_AARCH64_GLOB_DAT = 1025,   // Create GOT entry.
+	R_AARCH64_JUMP_SLOT = 1026,  // Create PLT entry.
+	R_AARCH64_RELATIVE = 1027,   // Adjust by program base.
+	R_AARCH64_TLS_DTPREL64 = 1028,
+	R_AARCH64_TLS_DTPMOD64 = 1029,
+	R_AARCH64_TLS_TPREL64 = 1030,
+	R_AARCH64_TLS_DTPREL32 = 1031,
+	R_AARCH64_TLSDESC = 1031,
+	R_AARCH64_IRELATIVE = 1032,
 };
 
 enum PeArm64RelocationType : uint32_t
@@ -127,24 +131,16 @@ enum PeArm64RelocationType : uint32_t
 	PE_IMAGE_REL_ARM64_ADDR64         = 0x000E, //	The 64-bit VA of the relocation target.
 	PE_IMAGE_REL_ARM64_BRANCH19       = 0x000F, //	The 19-bit offset to the relocation target, for conditional B instruction.
 	PE_IMAGE_REL_ARM64_BRANCH14       = 0x0010, //	The 14-bit offset to the relocation target, for instructions TBZ and TBNZ.
-	MAX_PE_ARM64_RELOCATION           = 0x0011
+	IMAGE_REL_ARM64_REL32             = 0x0011, //	The 32-bit relative address from the byte following the relocation.
+	MAX_PE_ARM64_RELOCATION           = 0x0012
 };
 
 static const char* GetRelocationString(MachoArm64RelocationType rel)
 {
-	static const char* relocTable[] = {
-		"ARM64_RELOC_UNSIGNED",
-		"ARM64_RELOC_SUBTRACTOR",
-		"ARM64_RELOC_BRANCH26",
-		"ARM64_RELOC_PAGE21",
-		"ARM64_RELOC_PAGEOFF12",
-		"ARM64_RELOC_GOT_LOAD_PAGE21",
-		"ARM64_RELOC_GOT_LOAD_PAGEOFF12",
-		"ARM64_RELOC_POINTER_TO_GOT",
-		"ARM64_RELOC_TLVP_LOAD_PAGE21",
-		"ARM64_RELOC_TLVP_LOAD_PAGEOFF12",
-		"ARM64_RELOC_ADDEND"
-	};
+	static const char* relocTable[] = {"ARM64_RELOC_UNSIGNED", "ARM64_RELOC_SUBTRACTOR",
+	    "ARM64_RELOC_BRANCH26", "ARM64_RELOC_PAGE21", "ARM64_RELOC_PAGEOFF12",
+	    "ARM64_RELOC_GOT_LOAD_PAGE21", "ARM64_RELOC_GOT_LOAD_PAGEOFF12", "ARM64_RELOC_POINTER_TO_GOT",
+	    "ARM64_RELOC_TLVP_LOAD_PAGE21", "ARM64_RELOC_TLVP_LOAD_PAGEOFF12", "ARM64_RELOC_ADDEND"};
 	if (rel < MACHO_MAX_ARM64_RELOCATION)
 	{
 		return relocTable[rel];
@@ -172,8 +168,10 @@ static const char* GetRelocationString(PeArm64RelocationType rel)
 		"IMAGE_REL_ARM64_SECTION",
 		"IMAGE_REL_ARM64_ADDR64",
 		"IMAGE_REL_ARM64_BRANCH19",
-		"IMAGE_REL_ARM64_BRANCH14"
+		"IMAGE_REL_ARM64_BRANCH14",
+		"IMAGE_REL_ARM64_REL32"
 	};
+
 	if (rel < MAX_PE_ARM64_RELOCATION)
 	{
 		return relocTable[rel];
@@ -186,6 +184,10 @@ static const char* GetRelocationString(ElfArm64RelocationType rel)
 {
 	static map<ElfArm64RelocationType, const char*> relocMap = {
 		{R_ARM_NONE,                    "R_ARM_NONE"},
+		{R_AARCH64_P32_COPY,            "R_AARCH64_P32_COPY"},
+		{R_AARCH64_P32_GLOB_DAT,        "R_AARCH64_P32_GLOB_DAT"},
+		{R_AARCH64_P32_JUMP_SLOT,       "R_AARCH64_P32_JUMP_SLOT"},
+		{R_AARCH64_P32_RELATIVE,        "R_AARCH64_P32_RELATIVE"},
 		{R_AARCH64_NONE,                "R_AARCH64_NONE"},
 		{R_AARCH64_ABS64,               "R_AARCH64_ABS64"},
 		{R_AARCH64_ABS32,               "R_AARCH64_ABS32"},
@@ -256,9 +258,9 @@ static const char* GetRelocationString(ElfArm64RelocationType rel)
 }
 
 
-class Arm64Architecture: public Architecture
+class Arm64Architecture : public Architecture
 {
-protected:
+ protected:
 	size_t m_bits;
 
 	virtual bool Disassemble(const uint8_t* data, uint64_t addr, size_t maxLen, Instruction& result)
@@ -272,22 +274,13 @@ protected:
 	}
 
 
-	virtual size_t GetAddressSize() const override
-	{
-		return 8;
-	}
+	virtual size_t GetAddressSize() const override { return 8; }
 
 
-	virtual size_t GetInstructionAlignment() const override
-	{
-		return 4;
-	}
+	virtual size_t GetInstructionAlignment() const override { return 4; }
 
 
-	virtual size_t GetMaxInstructionLength() const override
-	{
-		return 4;
-	}
+	virtual size_t GetMaxInstructionLength() const override { return 4; }
 
 
 	bool IsTestAndBranch(const Instruction& instr)
@@ -335,7 +328,8 @@ protected:
 	}
 
 
-	void SetInstructionInfoForInstruction(uint64_t addr, const Instruction& instr, InstructionInfo& result)
+	void SetInstructionInfoForInstruction(
+	    uint64_t addr, const Instruction& instr, InstructionInfo& result)
 	{
 		result.length = 4;
 		switch (instr.operation)
@@ -409,7 +403,8 @@ protected:
 	}
 
 
-	uint32_t tokenize_shift(const InstructionOperand* __restrict operand, vector<InstructionTextToken>& result)
+	uint32_t tokenize_shift(
+	    const InstructionOperand* __restrict operand, vector<InstructionTextToken>& result)
 	{
 		if (operand->shiftType != ShiftType_NONE)
 		{
@@ -431,7 +426,8 @@ protected:
 	}
 
 
-	uint32_t tokenize_shifted_immediate(const InstructionOperand* __restrict operand,	vector<InstructionTextToken>& result)
+	uint32_t tokenize_shifted_immediate(
+	    const InstructionOperand* __restrict operand, vector<InstructionTextToken>& result)
 	{
 		char buf[64] = {0};
 		const char* sign = "";
@@ -448,7 +444,7 @@ protected:
 		switch (operand->operandClass)
 		{
 		case FIMM32:
-			{
+		{
 			union
 			{
 				uint32_t intValue;
@@ -459,19 +455,19 @@ protected:
 			result.emplace_back(TextToken, "#");
 			result.emplace_back(FloatingPointToken, buf);
 			break;
-			}
+		}
 		case IMM32:
 			snprintf(buf, sizeof(buf), "%s%#x", sign, (uint32_t)imm);
 			result.emplace_back(TextToken, "#");
 			result.emplace_back(IntegerToken, buf, operand->immediate);
 			break;
 		case IMM64:
-			snprintf(buf, sizeof(buf), "%s%#" PRIx64 , sign, imm);
+			snprintf(buf, sizeof(buf), "%s%#" PRIx64, sign, imm);
 			result.emplace_back(TextToken, "#");
 			result.emplace_back(IntegerToken, buf, operand->immediate);
 			break;
 		case LABEL:
-			snprintf(buf, sizeof(buf), "%#" PRIx64 , operand->immediate);
+			snprintf(buf, sizeof(buf), "%#" PRIx64, operand->immediate);
 			result.emplace_back(PossibleAddressToken, buf, operand->immediate);
 			break;
 		default:
@@ -483,31 +479,27 @@ protected:
 	}
 
 
-	uint32_t tokenize_shifted_register(
-		const InstructionOperand* restrict operand,
-		uint32_t registerNumber,
-		vector<InstructionTextToken>& result)
+	uint32_t tokenize_shifted_register(const InstructionOperand* restrict operand,
+	    uint32_t registerNumber, vector<InstructionTextToken>& result)
 	{
-		const char *reg = get_register_name(operand->reg[registerNumber]);
-		if(EMPTY(reg)) return FAILED_TO_DISASSEMBLE_REGISTER;
+		const char* reg = get_register_name(operand->reg[registerNumber]);
+		if (EMPTY(reg))
+			return FAILED_TO_DISASSEMBLE_REGISTER;
 
 		result.emplace_back(RegisterToken, reg);
 		tokenize_shift(operand, result);
 		return DISASM_SUCCESS;
 	}
 
-	uint32_t tokenize_register(
-			const InstructionOperand* restrict operand,
-			uint32_t registerNumber,
-			vector<InstructionTextToken>& result)
+	uint32_t tokenize_register(const InstructionOperand* restrict operand, uint32_t registerNumber,
+	    vector<InstructionTextToken>& result)
 	{
 		char buf[64] = {0};
 
 		/* case: system registers */
 		if (operand->operandClass == SYS_REG)
 		{
-			snprintf(buf, sizeof(buf), "%s",
-				get_system_register_name((SystemReg)operand->sysreg));
+			snprintf(buf, sizeof(buf), "%s", get_system_register_name((SystemReg)operand->sysreg));
 			result.emplace_back(RegisterToken, buf);
 			return DISASM_SUCCESS;
 		}
@@ -521,11 +513,13 @@ protected:
 			return tokenize_shifted_register(operand, registerNumber, result);
 		}
 
-		const char *reg = get_register_name(operand->reg[registerNumber]);
-		if(EMPTY(reg)) return FAILED_TO_DISASSEMBLE_REGISTER;
+		const char* reg = get_register_name(operand->reg[registerNumber]);
+		if (EMPTY(reg))
+			return FAILED_TO_DISASSEMBLE_REGISTER;
 
 		/* case: predicate registers */
-		if(operand->pred_qual && operand->reg[registerNumber] >= REG_P0 && operand->reg[registerNumber] <= REG_P31)
+		if (operand->pred_qual && operand->reg[registerNumber] >= REG_P0 &&
+		    operand->reg[registerNumber] <= REG_P31)
 		{
 			result.emplace_back(RegisterToken, reg);
 			result.emplace_back(TextToken, "/");
@@ -535,12 +529,13 @@ protected:
 
 		/* case other regs */
 		result.emplace_back(RegisterToken, reg);
-		const char *arrspec = get_register_arrspec(operand->reg[registerNumber], operand);
-		if(arrspec)
+		const char* arrspec = get_register_arrspec(operand->reg[registerNumber], operand);
+		if (arrspec)
 			result.emplace_back(TextToken, arrspec);
 
 		/* only use index if this is isolated REG (not, for example, MULTIREG */
-		if(operand->operandClass == REG && operand->laneUsed) {
+		if (operand->operandClass == REG && operand->laneUsed)
+		{
 			sprintf(buf, "%u", operand->lane);
 			result.emplace_back(TextToken, "[");
 			result.emplace_back(IntegerToken, buf);
@@ -552,15 +547,15 @@ protected:
 
 
 	uint32_t tokenize_memory_operand(
-		const InstructionOperand* restrict operand,
-		vector<InstructionTextToken>& result)
+	    const InstructionOperand* restrict operand, vector<InstructionTextToken>& result)
 	{
 		char immBuff[32] = {0};
 		char paramBuff[32] = {0};
 		const char *reg0, *reg1;
 
 		reg0 = get_register_name(operand->reg[0]);
-		if(EMPTY(reg0)) return FAILED_TO_DISASSEMBLE_REGISTER;
+		if (EMPTY(reg0))
+			return FAILED_TO_DISASSEMBLE_REGISTER;
 
 		const char* sign = "";
 		int64_t imm = operand->immediate;
@@ -569,24 +564,25 @@ protected:
 			sign = "-";
 			imm = -imm;
 		}
-		const char *startToken = "[";
-		const char *endToken = "]";
+		const char* startToken = "[";
+		const char* endToken = "]";
 		result.emplace_back(BeginMemoryOperandToken, startToken);
 		result.emplace_back(RegisterToken, reg0);
 		result.emplace_back(TextToken, get_register_arrspec(operand->reg[0], operand));
 
 		switch (operand->operandClass)
 		{
-		case MEM_REG: break;
+		case MEM_REG:
+			break;
 		case MEM_PRE_IDX:
 			endToken = "]!";
 			snprintf(immBuff, sizeof(immBuff), "%s%#" PRIx64, sign, (uint64_t)imm);
 			result.emplace_back(TextToken, ", #");
 			result.emplace_back(IntegerToken, immBuff, operand->immediate);
 			break;
-		case MEM_POST_IDX: // [<reg>], <reg|imm>
+		case MEM_POST_IDX:  // [<reg>], <reg|imm>
 			endToken = NULL;
-			if(operand->reg[1] == REG_NONE)
+			if (operand->reg[1] == REG_NONE)
 			{
 				snprintf(paramBuff, sizeof(paramBuff), "%s%#" PRIx64, sign, (uint64_t)imm);
 				result.emplace_back(EndMemoryOperandToken, "], #");
@@ -595,27 +591,29 @@ protected:
 			else
 			{
 				reg1 = get_register_name(operand->reg[1]);
-				if(EMPTY(reg1)) return FAILED_TO_DISASSEMBLE_REGISTER;
+				if (EMPTY(reg1))
+					return FAILED_TO_DISASSEMBLE_REGISTER;
 				result.emplace_back(EndMemoryOperandToken, "], ");
 				result.emplace_back(RegisterToken, reg1);
 				result.emplace_back(TextToken, get_register_arrspec(operand->reg[1], operand));
 			}
 			break;
-		case MEM_OFFSET: // [<reg> optional(imm)]
+		case MEM_OFFSET:  // [<reg> optional(imm)]
 			if (operand->immediate != 0)
 			{
 				snprintf(immBuff, sizeof(immBuff), "%s%#" PRIx64, sign, (uint64_t)imm);
 				result.emplace_back(TextToken, ", #");
 				result.emplace_back(IntegerToken, immBuff, operand->immediate);
 
-				if(operand->mul_vl)
+				if (operand->mul_vl)
 					result.emplace_back(TextToken, ", mul vl");
 			}
 			break;
-		case MEM_EXTENDED: // [<reg>, <reg> optional(shift optional(imm))]
+		case MEM_EXTENDED:  // [<reg>, <reg> optional(shift optional(imm))]
 			result.emplace_back(TextToken, ", ");
 			reg1 = get_register_name(operand->reg[1]);
-			if(EMPTY(reg1)) return FAILED_TO_DISASSEMBLE_REGISTER;
+			if (EMPTY(reg1))
+				return FAILED_TO_DISASSEMBLE_REGISTER;
 			result.emplace_back(RegisterToken, reg1);
 			result.emplace_back(TextToken, get_register_arrspec(operand->reg[1], operand));
 			tokenize_shift(operand, result);
@@ -629,8 +627,8 @@ protected:
 	}
 
 
-	uint32_t tokenize_multireg_operand(const InstructionOperand* restrict operand,
-		vector<InstructionTextToken>& result)
+	uint32_t tokenize_multireg_operand(
+	    const InstructionOperand* restrict operand, vector<InstructionTextToken>& result)
 	{
 		char index[32] = {0};
 		uint32_t elementCount = 0;
@@ -646,7 +644,7 @@ protected:
 		}
 		result.emplace_back(TextToken, "}");
 
-		if(operand->laneUsed)
+		if (operand->laneUsed)
 		{
 			result.emplace_back(TextToken, "[");
 			snprintf(index, sizeof(index), "%d", operand->lane);
@@ -657,8 +655,8 @@ protected:
 	}
 
 
-	uint32_t tokenize_condition(const InstructionOperand* restrict operand,
-		vector<InstructionTextToken>& result)
+	uint32_t tokenize_condition(
+	    const InstructionOperand* restrict operand, vector<InstructionTextToken>& result)
 	{
 		const char* condStr = get_condition((Condition)operand->cond);
 		if (condStr == NULL)
@@ -669,8 +667,8 @@ protected:
 	}
 
 
-	uint32_t tokenize_implementation_specific(const InstructionOperand* restrict operand,
-		vector<InstructionTextToken>& result)
+	uint32_t tokenize_implementation_specific(
+	    const InstructionOperand* restrict operand, vector<InstructionTextToken>& result)
 	{
 		char buf[32] = {0};
 		get_implementation_specific(operand, buf, sizeof(buf));
@@ -679,7 +677,8 @@ protected:
 	}
 
 
-	BNRegisterInfo RegisterInfo(uint32_t fullWidthReg, size_t offset, size_t size, bool zeroExtend = false)
+	BNRegisterInfo RegisterInfo(
+	    uint32_t fullWidthReg, size_t offset, size_t size, bool zeroExtend = false)
 	{
 		BNRegisterInfo result;
 		result.fullWidthRegister = fullWidthReg;
@@ -690,32 +689,28 @@ protected:
 	}
 
 
-public:
-	Arm64Architecture(): Architecture("aarch64"), m_bits(64)
-	{
-	}
+ public:
+	Arm64Architecture() : Architecture("aarch64"), m_bits(64) {}
 
-	bool CanAssemble() override
-	{
-		return true;
-	}
+	bool CanAssemble() override { return true; }
 
 	bool Assemble(const string& code, uint64_t addr, DataBuffer& result, string& errors) override
 	{
 		(void)addr;
 
 		int assembleResult;
-		char *instrBytes=NULL, *err=NULL;
-		int instrBytesLen=0, errLen=0;
+		char *instrBytes = NULL, *err = NULL;
+		int instrBytesLen = 0, errLen = 0;
 
 		BNLlvmServicesInit();
 
 		errors.clear();
-		assembleResult = BNLlvmServicesAssemble(code.c_str(), LLVM_SVCS_DIALECT_UNSPEC,
-		  "aarch64-none-none", LLVM_SVCS_CM_DEFAULT, LLVM_SVCS_RM_STATIC,
-		  &instrBytes, &instrBytesLen, &err, &errLen);
+		assembleResult =
+		    BNLlvmServicesAssemble(code.c_str(), LLVM_SVCS_DIALECT_UNSPEC, "aarch64-none-none",
+		        LLVM_SVCS_CM_DEFAULT, LLVM_SVCS_RM_STATIC, &instrBytes, &instrBytesLen, &err, &errLen);
 
-		if(assembleResult || errLen) {
+		if (assembleResult || errLen)
+		{
 			errors = err;
 			BNLlvmServicesAssembleFree(instrBytes, err);
 			return false;
@@ -727,13 +722,11 @@ public:
 		return true;
 	}
 
-	virtual BNEndianness GetEndianness() const override
-	{
-		return LittleEndian;
-	}
+	virtual BNEndianness GetEndianness() const override { return LittleEndian; }
 
 
-	virtual bool GetInstructionInfo(const uint8_t* data, uint64_t addr, size_t maxLen, InstructionInfo& result) override
+	virtual bool GetInstructionInfo(
+	    const uint8_t* data, uint64_t addr, size_t maxLen, InstructionInfo& result) override
 	{
 		if (maxLen < 4)
 			return false;
@@ -747,7 +740,8 @@ public:
 	}
 
 
-	virtual bool GetInstructionText(const uint8_t* data, uint64_t addr, size_t& len, vector<InstructionTextToken>& result) override
+	virtual bool GetInstructionText(const uint8_t* data, uint64_t addr, size_t& len,
+	    vector<InstructionTextToken>& result) override
 	{
 		len = 4;
 		Instruction instr;
@@ -764,7 +758,7 @@ public:
 		size_t operationLen = strlen(operation);
 		if (operationLen < 8)
 		{
-			buf[8-operationLen] = '\0';
+			buf[8 - operationLen] = '\0';
 		}
 		else
 			buf[1] = '\0';
@@ -956,23 +950,20 @@ public:
 	{
 		vector<uint32_t> result = NeonGetAllIntrinsics();
 
-		vector<uint32_t> tmp = {
-			ARM64_INTRIN_AUTDA, ARM64_INTRIN_AUTDB, ARM64_INTRIN_AUTDZA, ARM64_INTRIN_AUTDZB,
-			ARM64_INTRIN_AUTIA, ARM64_INTRIN_AUTIB, ARM64_INTRIN_AUTIZA, ARM64_INTRIN_AUTIZB,
-			ARM64_INTRIN_AUTIB1716, ARM64_INTRIN_AUTIBSP, ARM64_INTRIN_AUTIBZ, ARM64_INTRIN_DC,
-			ARM64_INTRIN_DMB, ARM64_INTRIN_DSB, ARM64_INTRIN_ESB, ARM64_INTRIN_HINT_BTI, ARM64_INTRIN_HINT_CSDB,
-			ARM64_INTRIN_HINT_DGH, ARM64_INTRIN_HINT_TSB, ARM64_INTRIN_ISB, ARM64_INTRIN_MRS, ARM64_INTRIN_MSR,
-			ARM64_INTRIN_PACDA, ARM64_INTRIN_PACDB, ARM64_INTRIN_PACDZA, ARM64_INTRIN_PACDZB,
-			ARM64_INTRIN_PACGA, ARM64_INTRIN_PACIA, ARM64_INTRIN_PACIA1716, ARM64_INTRIN_PACIASP,
-			ARM64_INTRIN_PACIAZ, ARM64_INTRIN_PACIZA,
-			ARM64_INTRIN_PACIB, ARM64_INTRIN_PACIB1716, ARM64_INTRIN_PACIBSP,
-			ARM64_INTRIN_PACIBZ, ARM64_INTRIN_PACIZB,
-			ARM64_INTRIN_PRFM, ARM64_INTRIN_PSBCSYNC, ARM64_INTRIN_SEV, ARM64_INTRIN_SEVL, ARM64_INTRIN_WFE,
-			ARM64_INTRIN_WFI, ARM64_INTRIN_YIELD,
-			ARM64_INTRIN_XPACD, ARM64_INTRIN_XPACI, ARM64_INTRIN_XPACLRI,
-			ARM64_INTRIN_ERET, ARM64_INTRIN_CLZ, ARM64_INTRIN_CLREX, ARM64_INTRIN_REV, ARM64_INTRIN_RBIT,
-			ARM64_INTRIN_AESD, ARM64_INTRIN_AESE
-		};
+		vector<uint32_t> tmp = {ARM64_INTRIN_AUTDA, ARM64_INTRIN_AUTDB, ARM64_INTRIN_AUTDZA,
+		    ARM64_INTRIN_AUTDZB, ARM64_INTRIN_AUTIA, ARM64_INTRIN_AUTIB, ARM64_INTRIN_AUTIZA,
+		    ARM64_INTRIN_AUTIZB, ARM64_INTRIN_AUTIB1716, ARM64_INTRIN_AUTIBSP, ARM64_INTRIN_AUTIBZ,
+		    ARM64_INTRIN_DC, ARM64_INTRIN_DMB, ARM64_INTRIN_DSB, ARM64_INTRIN_ESB,
+		    ARM64_INTRIN_HINT_BTI, ARM64_INTRIN_HINT_CSDB, ARM64_INTRIN_HINT_DGH, ARM64_INTRIN_HINT_TSB,
+		    ARM64_INTRIN_ISB, ARM64_INTRIN_MRS, ARM64_INTRIN_MSR, ARM64_INTRIN_PACDA,
+		    ARM64_INTRIN_PACDB, ARM64_INTRIN_PACDZA, ARM64_INTRIN_PACDZB, ARM64_INTRIN_PACGA,
+		    ARM64_INTRIN_PACIA, ARM64_INTRIN_PACIA1716, ARM64_INTRIN_PACIASP, ARM64_INTRIN_PACIAZ,
+		    ARM64_INTRIN_PACIZA, ARM64_INTRIN_PACIB, ARM64_INTRIN_PACIB1716, ARM64_INTRIN_PACIBSP,
+		    ARM64_INTRIN_PACIBZ, ARM64_INTRIN_PACIZB, ARM64_INTRIN_PRFM, ARM64_INTRIN_PSBCSYNC,
+		    ARM64_INTRIN_SEV, ARM64_INTRIN_SEVL, ARM64_INTRIN_WFE, ARM64_INTRIN_WFI, ARM64_INTRIN_YIELD,
+		    ARM64_INTRIN_XPACD, ARM64_INTRIN_XPACI, ARM64_INTRIN_XPACLRI, ARM64_INTRIN_ERET,
+		    ARM64_INTRIN_CLZ, ARM64_INTRIN_CLREX, ARM64_INTRIN_REV, ARM64_INTRIN_RBIT,
+		    ARM64_INTRIN_AESD, ARM64_INTRIN_AESE};
 
 		result.insert(result.end(), tmp.begin(), tmp.end());
 		return result;
@@ -983,29 +974,29 @@ public:
 	{
 		switch (intrinsic)
 		{
-		case ARM64_INTRIN_AUTDA: // reads <Xn|SP>
-		case ARM64_INTRIN_AUTDB: // reads <Xn|SP>
-		case ARM64_INTRIN_AUTIA: // reads <Xn|SP>
-		case ARM64_INTRIN_AUTIB: // reads <Xn|SP>
-		case ARM64_INTRIN_AUTIB1716: // reads x16
-		case ARM64_INTRIN_CLZ: // reads <Xn>
-		case ARM64_INTRIN_DC: // reads <Xt>
+		case ARM64_INTRIN_AUTDA:      // reads <Xn|SP>
+		case ARM64_INTRIN_AUTDB:      // reads <Xn|SP>
+		case ARM64_INTRIN_AUTIA:      // reads <Xn|SP>
+		case ARM64_INTRIN_AUTIB:      // reads <Xn|SP>
+		case ARM64_INTRIN_AUTIB1716:  // reads x16
+		case ARM64_INTRIN_CLZ:        // reads <Xn>
+		case ARM64_INTRIN_DC:         // reads <Xt>
 		case ARM64_INTRIN_MSR:
 		case ARM64_INTRIN_MRS:
-		case ARM64_INTRIN_PACDA: // reads <Xn>
-		case ARM64_INTRIN_PACDB: // reads <Xn>
-		case ARM64_INTRIN_PACIA: // reads <Xn>
-		case ARM64_INTRIN_PACIA1716: // reads x16
-		case ARM64_INTRIN_PACIB: // reads <Xn>
-		case ARM64_INTRIN_PACIB1716: // reads x16
+		case ARM64_INTRIN_PACDA:      // reads <Xn>
+		case ARM64_INTRIN_PACDB:      // reads <Xn>
+		case ARM64_INTRIN_PACIA:      // reads <Xn>
+		case ARM64_INTRIN_PACIA1716:  // reads x16
+		case ARM64_INTRIN_PACIB:      // reads <Xn>
+		case ARM64_INTRIN_PACIB1716:  // reads x16
 		case ARM64_INTRIN_PRFM:
-		case ARM64_INTRIN_REV: // reads <Xn>
-		case ARM64_INTRIN_RBIT: // reads <Xn>
+		case ARM64_INTRIN_REV:   // reads <Xn>
+		case ARM64_INTRIN_RBIT:  // reads <Xn>
 			return {NameAndType(Type::IntegerType(8, false))};
-		case ARM64_INTRIN_AUTIBSP: // reads x30, sp
-		case ARM64_INTRIN_PACGA: // reads <Xn>, <Xm|SP>
-		case ARM64_INTRIN_PACIASP: // reads x30, sp
-		case ARM64_INTRIN_PACIBSP: // reads x30, sp
+		case ARM64_INTRIN_AUTIBSP:  // reads x30, sp
+		case ARM64_INTRIN_PACGA:    // reads <Xn>, <Xm|SP>
+		case ARM64_INTRIN_PACIASP:  // reads x30, sp
+		case ARM64_INTRIN_PACIBSP:  // reads x30, sp
 			return {NameAndType(Type::IntegerType(8, false)), NameAndType(Type::IntegerType(8, false))};
 		case ARM64_INTRIN_AESD:
 		case ARM64_INTRIN_AESE:
@@ -1023,39 +1014,39 @@ public:
 		switch (intrinsic)
 		{
 		case ARM64_INTRIN_MSR:
-		case ARM64_INTRIN_AUTDA: // writes <Xd>
-		case ARM64_INTRIN_AUTDB: // writes <Xd>
-		case ARM64_INTRIN_AUTIA: // writes <Xd>
-		case ARM64_INTRIN_AUTIB: // writes <Xd>
-		case ARM64_INTRIN_AUTIB1716: // writes x17
-		case ARM64_INTRIN_AUTIBSP: // writes x30
-		case ARM64_INTRIN_AUTIBZ: // writes x30
-		case ARM64_INTRIN_AUTDZA: // writes <Xd>
-		case ARM64_INTRIN_AUTDZB: // writes <Xd>
-		case ARM64_INTRIN_AUTIZA: // writes <Xd>
-		case ARM64_INTRIN_AUTIZB: // writes <Xd>
+		case ARM64_INTRIN_AUTDA:      // writes <Xd>
+		case ARM64_INTRIN_AUTDB:      // writes <Xd>
+		case ARM64_INTRIN_AUTIA:      // writes <Xd>
+		case ARM64_INTRIN_AUTIB:      // writes <Xd>
+		case ARM64_INTRIN_AUTIB1716:  // writes x17
+		case ARM64_INTRIN_AUTIBSP:    // writes x30
+		case ARM64_INTRIN_AUTIBZ:     // writes x30
+		case ARM64_INTRIN_AUTDZA:     // writes <Xd>
+		case ARM64_INTRIN_AUTDZB:     // writes <Xd>
+		case ARM64_INTRIN_AUTIZA:     // writes <Xd>
+		case ARM64_INTRIN_AUTIZB:     // writes <Xd>
 		case ARM64_INTRIN_MRS:
-		case ARM64_INTRIN_PACDA: // writes <Xd>
-		case ARM64_INTRIN_PACDB: // writes <Xd>
-		case ARM64_INTRIN_PACDZA: // writes <Xd>
-		case ARM64_INTRIN_PACDZB: // writes <Xd>
-		case ARM64_INTRIN_PACIA: // writes <Xd>
-		case ARM64_INTRIN_PACGA: // writes <Xd>
-		case ARM64_INTRIN_PACIA1716: // writes x17
-		case ARM64_INTRIN_PACIASP: // writes x30
-		case ARM64_INTRIN_PACIAZ: // writes x30
-		case ARM64_INTRIN_PACIB1716: // writes x17
-		case ARM64_INTRIN_PACIB: // writes <Xd>
-		case ARM64_INTRIN_PACIBSP: // writes x30
-		case ARM64_INTRIN_PACIBZ: // writes x30
-		case ARM64_INTRIN_PACIZA: // writes <Xd>
-		case ARM64_INTRIN_PACIZB: // writes <Xd>
-		case ARM64_INTRIN_XPACD: // writes <Xd>
-		case ARM64_INTRIN_XPACI: // writes <Xd>
-		case ARM64_INTRIN_XPACLRI: // writes x30
-		case ARM64_INTRIN_CLZ: // writes <Xd>
-		case ARM64_INTRIN_REV: // writes <Xd>
-		case ARM64_INTRIN_RBIT: // writes <Xd>
+		case ARM64_INTRIN_PACDA:      // writes <Xd>
+		case ARM64_INTRIN_PACDB:      // writes <Xd>
+		case ARM64_INTRIN_PACDZA:     // writes <Xd>
+		case ARM64_INTRIN_PACDZB:     // writes <Xd>
+		case ARM64_INTRIN_PACIA:      // writes <Xd>
+		case ARM64_INTRIN_PACGA:      // writes <Xd>
+		case ARM64_INTRIN_PACIA1716:  // writes x17
+		case ARM64_INTRIN_PACIASP:    // writes x30
+		case ARM64_INTRIN_PACIAZ:     // writes x30
+		case ARM64_INTRIN_PACIB1716:  // writes x17
+		case ARM64_INTRIN_PACIB:      // writes <Xd>
+		case ARM64_INTRIN_PACIBSP:    // writes x30
+		case ARM64_INTRIN_PACIBZ:     // writes x30
+		case ARM64_INTRIN_PACIZA:     // writes <Xd>
+		case ARM64_INTRIN_PACIZB:     // writes <Xd>
+		case ARM64_INTRIN_XPACD:      // writes <Xd>
+		case ARM64_INTRIN_XPACI:      // writes <Xd>
+		case ARM64_INTRIN_XPACLRI:    // writes x30
+		case ARM64_INTRIN_CLZ:        // writes <Xd>
+		case ARM64_INTRIN_REV:        // writes <Xd>
+		case ARM64_INTRIN_RBIT:       // writes <Xd>
 			return {Type::IntegerType(8, false)};
 		case ARM64_INTRIN_AESD:
 		case ARM64_INTRIN_AESE:
@@ -1095,30 +1086,34 @@ public:
 	}
 
 
-	virtual bool IsSkipAndReturnZeroPatchAvailable(const uint8_t* data, uint64_t addr, size_t len) override
+	virtual bool IsSkipAndReturnZeroPatchAvailable(
+	    const uint8_t* data, uint64_t addr, size_t len) override
 	{
 		Instruction instr;
 		if (!Disassemble(data, addr, len, instr))
 			return false;
-		return instr.operation == ARM64_BL || instr.operation == ARM64_BR || instr.operation == ARM64_BLR;
+		return instr.operation == ARM64_BL || instr.operation == ARM64_BR ||
+		       instr.operation == ARM64_BLR;
 	}
 
 
-	virtual bool IsSkipAndReturnValuePatchAvailable(const uint8_t* data, uint64_t addr, size_t len) override
+	virtual bool IsSkipAndReturnValuePatchAvailable(
+	    const uint8_t* data, uint64_t addr, size_t len) override
 	{
 		Instruction instr;
 		if (!Disassemble(data, addr, len, instr))
 			return false;
-		return instr.operation == ARM64_BL || instr.operation == ARM64_BR || instr.operation == ARM64_BLR;
+		return instr.operation == ARM64_BL || instr.operation == ARM64_BR ||
+		       instr.operation == ARM64_BLR;
 	}
 
 
 	virtual bool ConvertToNop(uint8_t* data, uint64_t, size_t len) override
 	{
-		uint32_t arm64_nop =	0xd503201f;
+		uint32_t arm64_nop = 0xd503201f;
 		if (len < sizeof(arm64_nop))
 			return false;
-		for (size_t i = 0; i < len/sizeof(arm64_nop); i++)
+		for (size_t i = 0; i < len / sizeof(arm64_nop); i++)
 			((uint32_t*)data)[i] = arm64_nop;
 		return true;
 	}
@@ -1130,9 +1125,9 @@ public:
 		if (!Disassemble(data, addr, len, instr))
 			return false;
 
-		uint32_t *value = (uint32_t*)data;
-		//Combine the immediate in the first operand with the unconditional branch opcode to form
-		//an unconditional branch instruction
+		uint32_t* value = (uint32_t*)data;
+		// Combine the immediate in the first operand with the unconditional branch opcode to form
+		// an unconditional branch instruction
 		*value = (5 << 26) | (uint32_t)((instr.operands[0].immediate - addr) >> 2);
 		return true;
 	}
@@ -1144,15 +1139,15 @@ public:
 		if (!Disassemble(data, addr, len, instr))
 			return false;
 
-		uint32_t *value = (uint32_t*)data;
+		uint32_t* value = (uint32_t*)data;
 		if (IsConditionalBranch(instr))
 		{
-			//The inverted branch is the inversion of the low order nibble
+			// The inverted branch is the inversion of the low order nibble
 			*value ^= 1;
 		}
 		else if (IsTestAndBranch(instr) || IsCompareAndBranch(instr))
 		{
-			//invert bit 24
+			// invert bit 24
 			*value ^= (1 << 24);
 		}
 		return true;
@@ -1162,18 +1157,19 @@ public:
 	virtual bool SkipAndReturnValue(uint8_t* data, uint64_t addr, size_t len, uint64_t value) override
 	{
 		(void)addr;
-		//Return value is put in X0. The largest value that we can put into a single integer is 16 bits
+		// Return value is put in X0. The largest value that we can put into a single integer is 16 bits
 		if (value > 0xffff || len > 4)
 			return false;
 
 		uint32_t movValueR0 = 0xd2800000;
-		uint32_t *inst = (uint32_t*)data;
+		uint32_t* inst = (uint32_t*)data;
 		*inst = movValueR0 | ((uint32_t)value << 5);
 		return true;
 	}
 
 
-	virtual bool GetInstructionLowLevelIL(const uint8_t* data, uint64_t addr, size_t& len, LowLevelILFunction& il) override
+	virtual bool GetInstructionLowLevelIL(
+	    const uint8_t* data, uint64_t addr, size_t& len, LowLevelILFunction& il) override
 	{
 		Instruction instr;
 		if (!Disassemble(data, addr, len, instr))
@@ -1191,9 +1187,7 @@ public:
 
 	virtual vector<uint32_t> GetAllFlags() override
 	{
-		return vector<uint32_t>{
-			IL_FLAG_N, IL_FLAG_Z, IL_FLAG_C, IL_FLAG_V
-		};
+		return vector<uint32_t> {IL_FLAG_N, IL_FLAG_Z, IL_FLAG_C, IL_FLAG_V};
 	}
 
 
@@ -1241,9 +1235,7 @@ public:
 
 	virtual vector<uint32_t> GetAllFlagWriteTypes() override
 	{
-		return vector<uint32_t>{
-			IL_FLAGWRITE_ALL
-		};
+		return vector<uint32_t> {IL_FLAGWRITE_ALL};
 	}
 
 
@@ -1264,7 +1256,7 @@ public:
 		switch (flags)
 		{
 		case IL_FLAGWRITE_ALL:
-			return vector<uint32_t> { IL_FLAG_N, IL_FLAG_Z, IL_FLAG_C, IL_FLAG_V };
+			return vector<uint32_t> {IL_FLAG_N, IL_FLAG_Z, IL_FLAG_C, IL_FLAG_V};
 		default:
 			return vector<uint32_t> {};
 		}
@@ -1273,31 +1265,32 @@ public:
 
 	/* connect flags to conditional statements */
 
-	virtual vector<uint32_t> GetFlagsRequiredForFlagCondition(BNLowLevelILFlagCondition cond, uint32_t) override
+	virtual vector<uint32_t> GetFlagsRequiredForFlagCondition(
+	    BNLowLevelILFlagCondition cond, uint32_t) override
 	{
 		switch (cond)
 		{
 		case LLFC_E:
 		case LLFC_NE:
-			return vector<uint32_t>{ IL_FLAG_Z };
+			return vector<uint32_t> {IL_FLAG_Z};
 		case LLFC_SLT:
 		case LLFC_SGE:
-			return vector<uint32_t>{ IL_FLAG_N, IL_FLAG_V };
+			return vector<uint32_t> {IL_FLAG_N, IL_FLAG_V};
 		case LLFC_ULT:
 		case LLFC_UGE:
-			return vector<uint32_t>{ IL_FLAG_C };
+			return vector<uint32_t> {IL_FLAG_C};
 		case LLFC_SLE:
 		case LLFC_SGT:
-			return vector<uint32_t>{ IL_FLAG_Z, IL_FLAG_N, IL_FLAG_V };
+			return vector<uint32_t> {IL_FLAG_Z, IL_FLAG_N, IL_FLAG_V};
 		case LLFC_ULE:
 		case LLFC_UGT:
-			return vector<uint32_t>{ IL_FLAG_C, IL_FLAG_Z };
+			return vector<uint32_t> {IL_FLAG_C, IL_FLAG_Z};
 		case LLFC_NEG:
 		case LLFC_POS:
-			return vector<uint32_t>{ IL_FLAG_N };
+			return vector<uint32_t> {IL_FLAG_N};
 		case LLFC_O:
 		case LLFC_NO:
-			return vector<uint32_t>{ IL_FLAG_V };
+			return vector<uint32_t> {IL_FLAG_V};
 		default:
 			return vector<uint32_t>();
 		}
@@ -1306,41 +1299,43 @@ public:
 
 	/* override default flag setting expressions */
 
-	virtual size_t GetFlagWriteLowLevelIL(BNLowLevelILOperation op, size_t size, uint32_t flagWriteType,
-		uint32_t flag, BNRegisterOrConstant* operands, size_t operandCount, LowLevelILFunction& il) override
+	virtual size_t GetFlagWriteLowLevelIL(BNLowLevelILOperation op, size_t size,
+	    uint32_t flagWriteType, uint32_t flag, BNRegisterOrConstant* operands, size_t operandCount,
+	    LowLevelILFunction& il) override
 	{
 		switch (op)
 		{
-			case LLIL_AND:
-				switch (flag) {
-					case IL_FLAG_V:
-						return il.CompareNotEqual(0,
-								il.Xor(0,
-									il.CompareSignedLessThan(size,
-										il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount),
-										il.Const(size, 0)),
-									il.Flag(IL_FLAG_V)),
-								il.Const(0, 0));
-					case IL_FLAG_C:
-						return il.Const(0, 0);
-				}
-			case LLIL_SBB:
-				switch (flag) {
-					case IL_FLAG_C:
-						// r u< a || (r == a && flag_c)
-						return il.Or(0,
-								il.CompareUnsignedLessThan(size,
-									il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount),
-									il.GetExprForRegisterOrConstant(operands[0], size)),
-								il.And(0,
-									il.CompareEqual(size,
-										il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount),
-										il.GetExprForRegisterOrConstant(operands[0], size)),
-									il.Flag(IL_FLAG_C)));
-
-				}
-			default:
-				break;
+		case LLIL_AND:
+			switch (flag)
+			{
+			case IL_FLAG_V:
+				return il.CompareNotEqual(0,
+				    il.Xor(0,
+				        il.CompareSignedLessThan(size,
+				            il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount),
+				            il.Const(size, 0)),
+				        il.Flag(IL_FLAG_V)),
+				    il.Const(0, 0));
+			case IL_FLAG_C:
+				return il.Const(0, 0);
+			}
+		case LLIL_SBB:
+			switch (flag)
+			{
+			case IL_FLAG_C:
+				// r u< a || (r == a && flag_c)
+				return il.Or(0,
+				    il.CompareUnsignedLessThan(size,
+				        il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount),
+				        il.GetExprForRegisterOrConstant(operands[0], size)),
+				    il.And(0,
+				        il.CompareEqual(size,
+				            il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount),
+				            il.GetExprForRegisterOrConstant(operands[0], size)),
+				        il.Flag(IL_FLAG_C)));
+			}
+		default:
+			break;
 		}
 
 		BNFlagRole role = GetFlagRole(flag, GetSemanticClassForFlagWriteType(flagWriteType));
@@ -1350,13 +1345,16 @@ public:
 
 	virtual string GetRegisterName(uint32_t reg_) override
 	{
-		if(reg_ > REG_NONE && reg_ < REG_END)
+		if (reg_ > REG_NONE && reg_ < REG_END)
 			return get_register_name((enum Register)reg_);
 
-		if(reg_ > SYSREG_NONE && reg_ < SYSREG_END)
+		if (reg_ > SYSREG_NONE && reg_ < SYSREG_END)
 			return get_system_register_name((enum SystemReg)reg_);
 
-		if(reg_ == FAKEREG_SYSCALL_INFO)
+		if (reg_ == FAKEREG_SYSREG_UNKNOWN)
+			return "sysreg_unknown";
+
+		if (reg_ == FAKEREG_SYSCALL_INFO)
 			return "syscall_info";
 
 		return "";
@@ -1370,10 +1368,16 @@ public:
 			REG_X8,   REG_X9,  REG_X10, REG_X11,  REG_X12, REG_X13, REG_X14, REG_X15,
 			REG_X16,  REG_X17, REG_X18, REG_X19,  REG_X20, REG_X21, REG_X22, REG_X23,
 			REG_X24,  REG_X25, REG_X26, REG_X27,  REG_X28, REG_X29, REG_X30, REG_SP,  REG_XZR,
+			// Vector
 			REG_Q0,   REG_Q1,  REG_Q2,  REG_Q3,   REG_Q4,  REG_Q5,  REG_Q6,  REG_Q7,
 			REG_Q8,   REG_Q9,  REG_Q10, REG_Q11,  REG_Q12, REG_Q13, REG_Q14, REG_Q15,
 			REG_Q16,  REG_Q17, REG_Q18, REG_Q19,  REG_Q20, REG_Q21, REG_Q22, REG_Q23,
-			REG_Q24,  REG_Q25, REG_Q26, REG_Q27,  REG_Q28, REG_Q29, REG_Q30, REG_Q31
+			REG_Q24,  REG_Q25, REG_Q26, REG_Q27,  REG_Q28, REG_Q29, REG_Q30, REG_Q31,
+			// SVE
+			REG_P0,   REG_P1,  REG_P2,  REG_P3,   REG_P4,  REG_P5,  REG_P6,  REG_P7,
+			REG_P8,   REG_P9,  REG_P10,  REG_P11,   REG_P12,  REG_P13,  REG_P14,  REG_P15,
+			REG_P16,   REG_P17,  REG_P18,  REG_P19,   REG_P20,  REG_P21,  REG_P22,  REG_P23,
+			REG_P24,   REG_P25,  REG_P26,  REG_P27,   REG_P29,  REG_P29,  REG_P30,  REG_P31,
 		};
 	}
 
@@ -1538,6 +1542,15 @@ public:
 			REG_V20_D0, REG_V20_D1, REG_V21_D0, REG_V21_D1, REG_V22_D0, REG_V22_D1, REG_V23_D0, REG_V23_D1,
 			REG_V24_D0, REG_V24_D1, REG_V25_D0, REG_V25_D1, REG_V26_D0, REG_V26_D1, REG_V27_D0, REG_V27_D1,
 			REG_V28_D0, REG_V28_D1, REG_V29_D0, REG_V29_D1, REG_V30_D0, REG_V30_D1, REG_V31_D0, REG_V31_D1,
+			// SVE
+			REG_Z0,  REG_Z1,  REG_Z2,  REG_Z3,  REG_Z4,  REG_Z5,  REG_Z6,  REG_Z7,
+			REG_Z8,  REG_Z9,  REG_Z10, REG_Z11, REG_Z12, REG_Z13, REG_Z14, REG_Z15,
+			REG_Z16, REG_Z17, REG_Z18, REG_Z19, REG_Z20, REG_Z21, REG_Z22, REG_Z23,
+			REG_Z24, REG_Z25, REG_Z26, REG_Z27, REG_Z28, REG_Z29, REG_Z30, REG_Z31,
+			REG_P0,  REG_P1,  REG_P2,  REG_P3,  REG_P4,  REG_P5,  REG_P6,  REG_P7,
+			REG_P8,  REG_P9,  REG_P10, REG_P11, REG_P12, REG_P13, REG_P14, REG_P15,
+			REG_P16, REG_P17, REG_P18, REG_P19, REG_P20, REG_P21, REG_P22, REG_P23,
+			REG_P24, REG_P25, REG_P26, REG_P27, REG_P28, REG_P29, REG_P30, REG_P31,
 			/* system registers */
 			REG_OSDTRRX_EL1, REG_DBGBVR0_EL1, REG_DBGBCR0_EL1, REG_DBGWVR0_EL1,
 			REG_DBGWCR0_EL1, REG_DBGBVR1_EL1, REG_DBGBCR1_EL1, REG_DBGWVR1_EL1,
@@ -1695,8 +1708,10 @@ public:
 			REG_AMAIR_EL3, REG_MPAM3_EL3, REG_VBAR_EL3, REG_RMR_EL3, REG_ICC_CTLR_EL3,
 			REG_ICC_SRE_EL3, REG_ICC_IGRPEN1_EL3, REG_TPIDR_EL3, REG_SCXTNUM_EL3,
 			REG_CNTPS_TVAL_EL1, REG_CNTPS_CTL_EL1, REG_CNTPS_CVAL_EL1, REG_PSTATE_SPSEL,
-			SYSREG_UNKNOWN,
 			/* fake registers */
+			FAKEREG_SYSREG_UNKNOWN, /* acts as an input/output to ARM64_INTRIN_MSR,
+										ARM64_INTRIN_MRS intrinsics when the sysreg
+										has no name (is implementation specific) */
 			FAKEREG_SYSCALL_INFO
 		};
 
@@ -1974,6 +1989,72 @@ public:
 			case REG_Q30:
 			case REG_Q31:
 				return RegisterInfo(REG_V0+(reg-REG_Q0), 0, 16);
+			case REG_Z0:
+			case REG_Z1:
+			case REG_Z2:
+			case REG_Z3:
+			case REG_Z4:
+			case REG_Z5:
+			case REG_Z6:
+			case REG_Z7:
+			case REG_Z8:
+			case REG_Z9:
+			case REG_Z10:
+			case REG_Z11:
+			case REG_Z12:
+			case REG_Z13:
+			case REG_Z14:
+			case REG_Z15:
+			case REG_Z16:
+			case REG_Z17:
+			case REG_Z18:
+			case REG_Z19:
+			case REG_Z20:
+			case REG_Z21:
+			case REG_Z22:
+			case REG_Z23:
+			case REG_Z24:
+			case REG_Z25:
+			case REG_Z26:
+			case REG_Z27:
+			case REG_Z28:
+			case REG_Z29:
+			case REG_Z30:
+			case REG_Z31:
+				return RegisterInfo(REG_V0+(reg-REG_Z0), 0, 16);
+			case REG_P0:
+			case REG_P1:
+			case REG_P2:
+			case REG_P3:
+			case REG_P4:
+			case REG_P5:
+			case REG_P6:
+			case REG_P7:
+			case REG_P8:
+			case REG_P9:
+			case REG_P10:
+			case REG_P11:
+			case REG_P12:
+			case REG_P13:
+			case REG_P14:
+			case REG_P15:
+			case REG_P16:
+			case REG_P17:
+			case REG_P18:
+			case REG_P19:
+			case REG_P20:
+			case REG_P21:
+			case REG_P22:
+			case REG_P23:
+			case REG_P24:
+			case REG_P25:
+			case REG_P26:
+			case REG_P27:
+			case REG_P28:
+			case REG_P29:
+			case REG_P30:
+			case REG_P31:
+				return RegisterInfo(reg, 0, 32);
 		}
 
 		if (reg >= REG_V0_B0 && reg <= REG_V31_B15) {
@@ -1983,29 +2064,35 @@ public:
 			return RegisterInfo(REG_V0 + v, idx, 1);
 		}
 
-		if (reg >= REG_V0_H0 && reg <= REG_V31_H7) {
+		if (reg >= REG_V0_H0 && reg <= REG_V31_H7)
+		{
 			uint32_t r = reg - REG_V0_H0;
 			uint32_t v = r / 8;
 			uint32_t idx = r % 8;
 			return RegisterInfo(REG_V0 + v, idx * 2, 2);
 		}
 
-		if (reg >= REG_V0_S0 && reg <= REG_V31_S3) {
+		if (reg >= REG_V0_S0 && reg <= REG_V31_S3)
+		{
 			uint32_t r = reg - REG_V0_S0;
 			uint32_t v = r / 4;
 			uint32_t idx = r % 4;
 			return RegisterInfo(REG_V0 + v, idx * 4, 4);
 		}
 
-		if (reg >= REG_V0_D0 && reg <= REG_V31_D1) {
+		if (reg >= REG_V0_D0 && reg <= REG_V31_D1)
+		{
 			uint32_t r = reg - REG_V0_D0;
 			uint32_t v = r / 2;
 			uint32_t idx = r % 2;
 			return RegisterInfo(REG_V0 + v, idx * 8, 8);
 		}
 
+		if (reg == FAKEREG_SYSREG_UNKNOWN)
+			return RegisterInfo(reg, 0, 8);
+
 		if (reg == FAKEREG_SYSCALL_INFO)
-				return RegisterInfo(reg, 0, 4);
+			return RegisterInfo(reg, 0, 4);
 
 		if (reg > SYSREG_NONE && reg < SYSREG_END)
 			return RegisterInfo(reg, 0, 8);
@@ -2013,20 +2100,16 @@ public:
 		return RegisterInfo(0, 0, 0);
 	}
 
-	virtual uint32_t GetStackPointerRegister() override
-	{
-		return REG_SP;
-	}
+	virtual uint32_t GetStackPointerRegister() override { return REG_SP; }
 
-	virtual uint32_t GetLinkRegister() override
-	{
-		return REG_X30;
-	}
+	virtual uint32_t GetLinkRegister() override { return REG_X30; }
 
-	virtual vector<uint32_t> GetSystemRegisters() override {
+	virtual vector<uint32_t> GetSystemRegisters() override
+	{
 		vector<uint32_t> system_regs = {};
 
-		for (uint32_t ii = SYSREG_NONE + 1; ii < SYSREG_END; ++ii) {
+		for (uint32_t ii = SYSREG_NONE + 1; ii < SYSREG_END; ++ii)
+		{
 			system_regs.push_back(ii);
 		}
 
@@ -2035,9 +2118,9 @@ public:
 };
 
 
-class Arm64ImportedFunctionRecognizer: public FunctionRecognizer
+class Arm64ImportedFunctionRecognizer : public FunctionRecognizer
 {
-private:
+ private:
 	bool RecognizeELFPLTEntries(BinaryView* data, Function* func, LowLevelILFunction* il)
 	{
 		// Look for the following code pattern:
@@ -2086,7 +2169,7 @@ private:
 			ldAddrRightOperandValue = ldAddrRightOperand.GetConstant();
 			entry = pltPage + ldAddrRightOperandValue;
 		}
-		else if (ldAddrOperand.operation != LLIL_REG) //If theres no constant
+		else if (ldAddrOperand.operation != LLIL_REG)  // If theres no constant
 			return false;
 
 		targetReg = ld.GetDestRegister<LLIL_SET_REG>();
@@ -2116,13 +2199,16 @@ private:
 			if (addRightOperand.GetConstant() != ldAddrRightOperandValue)
 				return false;
 		}
-		else if ((addOperand.operation != LLIL_REG) || (addOperand.GetSourceRegister<LLIL_REG>() != pltReg)) //Simple assignment
+		else if ((addOperand.operation != LLIL_REG) ||
+		         (addOperand.GetSourceRegister<LLIL_REG>() != pltReg))  // Simple assignment
 			return false;
 
 		LowLevelILInstruction jump = il->GetInstruction(3);
 		if ((jump.operation != LLIL_JUMP) && (jump.operation != LLIL_TAILCALL))
 			return false;
-		LowLevelILInstruction jumpOperand = (jump.operation == LLIL_JUMP) ? jump.GetDestExpr<LLIL_JUMP>() : jump.GetDestExpr<LLIL_TAILCALL>();
+		LowLevelILInstruction jumpOperand = (jump.operation == LLIL_JUMP) ?
+                                            jump.GetDestExpr<LLIL_JUMP>() :
+                                            jump.GetDestExpr<LLIL_TAILCALL>();
 		if (jumpOperand.operation != LLIL_REG)
 			return false;
 		if (jumpOperand.GetSourceRegister<LLIL_REG>() != targetReg)
@@ -2139,56 +2225,59 @@ private:
 	{
 		if ((il->GetInstructionCount() == 2) || (il->GetInstructionCount() == 3))
 		{
-			//0: nop OR x16 = symbol@PLT
-			//1: x16 = [symbol@PLT]
-			//2: jump(x16)
+			// 0: nop OR x16 = symbol@PLT
+			// 1: x16 = [symbol@PLT]
+			// 2: jump(x16)
 			size_t instrIndex = 0;
 			if (il->GetInstructionCount() == 3)
 			{
-				//check that the first instruction is a nop
+				// check that the first instruction is a nop
 				LowLevelILInstruction insn = il->GetInstruction(instrIndex++);
 				if ((insn.operation != LLIL_NOP) && (insn.operation != LLIL_SET_REG))
 					return false;
 			}
 
-			//check that the second operation is a set register
+			// check that the second operation is a set register
 			LowLevelILInstruction load = il->GetInstruction(instrIndex++);
 			if (load.operation != LLIL_SET_REG)
 				return false;
 
-			//check that the rhs is a load operand
+			// check that the rhs is a load operand
 			LowLevelILInstruction loadOperand = load.GetSourceExpr<LLIL_SET_REG>();
 			if (loadOperand.operation != LLIL_LOAD)
 				return false;
 
-			//ensure that the operand is the same size as the address
+			// ensure that the operand is the same size as the address
 			if (loadOperand.size != func->GetArchitecture()->GetAddressSize())
 				return false;
 
-			//ensure that what we are loading is a const
+			// ensure that what we are loading is a const
 			RegisterValue loadAddrConstant = loadOperand.GetValue();
 			if (loadAddrConstant.state != ImportedAddressValue)
 				return false;
 
-			//check if the type of symbol is a PLT symbol
+			// check if the type of symbol is a PLT symbol
 			Ref<Symbol> sym = data->GetSymbolByAddress(loadAddrConstant.value);
-			if (!sym || ((sym->GetType() != ImportAddressSymbol) && (sym->GetType() != ImportedDataSymbol)))
+			if (!sym ||
+			    ((sym->GetType() != ImportAddressSymbol) && (sym->GetType() != ImportedDataSymbol)))
 				return false;
 
-			//we have what looks like a PLT entry, record the targetReg
+			// we have what looks like a PLT entry, record the targetReg
 			uint32_t targetReg = load.GetDestRegister<LLIL_SET_REG>();
 
-			//ensure we have a jump instruction
+			// ensure we have a jump instruction
 			LowLevelILInstruction jump = il->GetInstruction(instrIndex++);
 			if ((jump.operation != LLIL_JUMP) && (jump.operation != LLIL_TAILCALL))
 				return false;
 
-			//ensure we are jumping to a register
-			LowLevelILInstruction jumpOperand = (jump.operation == LLIL_JUMP) ? jump.GetDestExpr<LLIL_JUMP>() : jump.GetDestExpr<LLIL_TAILCALL>();
+			// ensure we are jumping to a register
+			LowLevelILInstruction jumpOperand = (jump.operation == LLIL_JUMP) ?
+                                              jump.GetDestExpr<LLIL_JUMP>() :
+                                              jump.GetDestExpr<LLIL_TAILCALL>();
 			if (jumpOperand.operation != LLIL_REG)
 				return false;
 
-			//is the jump target our target register?
+			// is the jump target our target register?
 			if (jumpOperand.GetSourceRegister<LLIL_REG>() != targetReg)
 				return false;
 
@@ -2197,20 +2286,20 @@ private:
 		}
 		else if (il->GetInstructionCount() == 4)
 		{
-			//0: x17 = symbol@PLT (hi)
-			//1: x17 = x17 + symbol@PLT (lo)
-			//2: x16 = [symbol@PLT]
-			//3: tailcall(x16)
+			// 0: x17 = symbol@PLT (hi)
+			// 1: x17 = x17 + symbol@PLT (lo)
+			// 2: x16 = [symbol@PLT]
+			// 3: tailcall(x16)
 			size_t instrIndex = 0;
 
-			//check that the first operation is a set register
+			// check that the first operation is a set register
 			LowLevelILInstruction setTemp = il->GetInstruction(instrIndex++);
 			if (setTemp.operation != LLIL_SET_REG)
 				return false;
 
 			uint32_t tempReg = setTemp.GetDestRegister<LLIL_SET_REG>();
 
-			//check that the rhs is a constant
+			// check that the rhs is a constant
 			LowLevelILInstruction temp = setTemp.GetSourceExpr<LLIL_SET_REG>();
 			if (!LowLevelILFunction::IsConstantType(temp.operation))
 				return false;
@@ -2222,48 +2311,52 @@ private:
 			if (tempReg != finalAddress.GetDestRegister<LLIL_SET_REG>())
 				return false;
 
-			//check that the second operation is a set register
+			// check that the second operation is a set register
 			LowLevelILInstruction load = il->GetInstruction(instrIndex++);
 			if (load.operation != LLIL_SET_REG)
 				return false;
 
-			//check that the rhs is a load operand
+			// check that the rhs is a load operand
 			LowLevelILInstruction loadOperand = load.GetSourceExpr<LLIL_SET_REG>();
 			if (loadOperand.operation != LLIL_LOAD)
 				return false;
 
-			//ensure that the operand is the same size as the address
+			// ensure that the operand is the same size as the address
 			if (loadOperand.size != func->GetArchitecture()->GetAddressSize())
 				return false;
 
-			//ensure that what we are loading is a const
+			// ensure that what we are loading is a const
 			LowLevelILInstruction loadAddrOperand = loadOperand.GetSourceExpr<LLIL_LOAD>();
-			if (loadAddrOperand.operation != LLIL_REG || loadAddrOperand.GetSourceRegister<LLIL_REG>() != tempReg)
+			if (loadAddrOperand.operation != LLIL_REG ||
+			    loadAddrOperand.GetSourceRegister<LLIL_REG>() != tempReg)
 				return false;
 
 			RegisterValue loadAddrConstant = loadOperand.GetValue();
 			if (loadAddrConstant.state != ImportedAddressValue)
 				return false;
 
-			//check if the type of symbol is a PLT/GOT symbol
+			// check if the type of symbol is a PLT/GOT symbol
 			Ref<Symbol> sym = data->GetSymbolByAddress(loadAddrConstant.value);
-			if (!sym || ((sym->GetType() != ImportAddressSymbol) && (sym->GetType() != ImportedDataSymbol)))
+			if (!sym ||
+			    ((sym->GetType() != ImportAddressSymbol) && (sym->GetType() != ImportedDataSymbol)))
 				return false;
 
-			//we have what looks like a PLT entry, record the targetReg
+			// we have what looks like a PLT entry, record the targetReg
 			uint32_t targetReg = load.GetDestRegister<LLIL_SET_REG>();
 
-			//ensure we have a jump instruction
+			// ensure we have a jump instruction
 			LowLevelILInstruction jump = il->GetInstruction(instrIndex++);
 			if ((jump.operation != LLIL_JUMP) && (jump.operation != LLIL_TAILCALL))
 				return false;
 
-			//ensure we are jumping to a register
-			LowLevelILInstruction jumpOperand = (jump.operation == LLIL_JUMP) ? jump.GetDestExpr<LLIL_JUMP>() : jump.GetDestExpr<LLIL_TAILCALL>();
+			// ensure we are jumping to a register
+			LowLevelILInstruction jumpOperand = (jump.operation == LLIL_JUMP) ?
+                                              jump.GetDestExpr<LLIL_JUMP>() :
+                                              jump.GetDestExpr<LLIL_TAILCALL>();
 			if (jumpOperand.operation != LLIL_REG)
 				return false;
 
-			//is the jump target our target register?
+			// is the jump target our target register?
 			if (jumpOperand.GetSourceRegister<LLIL_REG>() != targetReg)
 				return false;
 
@@ -2275,8 +2368,9 @@ private:
 	}
 
 
-public:
-	virtual bool RecognizeLowLevelIL(BinaryView* data, Function* func, LowLevelILFunction* il) override
+ public:
+	virtual bool RecognizeLowLevelIL(
+	    BinaryView* data, Function* func, LowLevelILFunction* il) override
 	{
 		if (RecognizeELFPLTEntries(data, func, il))
 			return true;
@@ -2287,245 +2381,224 @@ public:
 };
 
 
-class Arm64CallingConvention: public CallingConvention
+class Arm64CallingConvention : public CallingConvention
 {
-public:
-	Arm64CallingConvention(Architecture* arch): CallingConvention(arch, "cdecl")
+ public:
+	Arm64CallingConvention(Architecture* arch) : CallingConvention(arch, "cdecl") {}
+
+
+	Arm64CallingConvention(Architecture* arch, const string& name): CallingConvention(arch, name)
 	{
 	}
 
 
 	virtual vector<uint32_t> GetIntegerArgumentRegisters() override
 	{
-		return vector<uint32_t>{ REG_X0, REG_X1, REG_X2, REG_X3, REG_X4, REG_X5, REG_X6, REG_X7 };
+		return vector<uint32_t> {REG_X0, REG_X1, REG_X2, REG_X3, REG_X4, REG_X5, REG_X6, REG_X7};
 	}
 
 
 	virtual vector<uint32_t> GetFloatArgumentRegisters() override
 	{
-		return vector<uint32_t> { REG_Q0, REG_Q1, REG_Q2, REG_Q3, REG_Q4, REG_Q5, REG_Q6, REG_Q7 };
+		return vector<uint32_t> {REG_Q0, REG_Q1, REG_Q2, REG_Q3, REG_Q4, REG_Q5, REG_Q6, REG_Q7};
 	}
 
 
 	virtual vector<uint32_t> GetCallerSavedRegisters() override
 	{
-		return vector<uint32_t>{ REG_X0, REG_X1, REG_X2, REG_X3, REG_X4, REG_X5, REG_X6, REG_X7,
-			REG_X8, REG_X9, REG_X10, REG_X11, REG_X12, REG_X13, REG_X14, REG_X15, REG_X16, REG_X17,
-			REG_X18, REG_X30, REG_Q0, REG_Q1, REG_Q2, REG_Q3, REG_Q4, REG_Q5, REG_Q6, REG_Q7,
-			REG_Q16, REG_Q17, REG_Q18, REG_Q19, REG_Q20, REG_Q21, REG_Q22, REG_Q23, REG_Q24,
-			REG_Q25, REG_Q26, REG_Q27, REG_Q28, REG_Q29, REG_Q30, REG_Q31 };
+		return vector<uint32_t> {REG_X0, REG_X1, REG_X2, REG_X3, REG_X4, REG_X5, REG_X6, REG_X7, REG_X8,
+		    REG_X9, REG_X10, REG_X11, REG_X12, REG_X13, REG_X14, REG_X15, REG_X16, REG_X17, REG_X18,
+		    REG_X30, REG_Q0, REG_Q1, REG_Q2, REG_Q3, REG_Q4, REG_Q5, REG_Q6, REG_Q7, REG_Q16, REG_Q17,
+		    REG_Q18, REG_Q19, REG_Q20, REG_Q21, REG_Q22, REG_Q23, REG_Q24, REG_Q25, REG_Q26, REG_Q27,
+		    REG_Q28, REG_Q29, REG_Q30, REG_Q31};
 	}
 
 
 	virtual vector<uint32_t> GetCalleeSavedRegisters() override
 	{
-		return vector<uint32_t>{ REG_X19, REG_X20, REG_X21, REG_X22, REG_X23, REG_X24, REG_X25,
-			REG_X26, REG_X27, REG_X28, REG_X29 };
+		return vector<uint32_t> {REG_X19, REG_X20, REG_X21, REG_X22, REG_X23, REG_X24, REG_X25, REG_X26,
+		    REG_X27, REG_X28, REG_X29};
 	}
 
 
-	virtual uint32_t GetIntegerReturnValueRegister() override
+	virtual uint32_t GetIntegerReturnValueRegister() override { return REG_X0; }
+
+
+	virtual uint32_t GetFloatReturnValueRegister() override { return REG_Q0; }
+};
+
+
+class AppleArm64CallingConvention: public Arm64CallingConvention
+{
+public:
+	AppleArm64CallingConvention(Architecture* arch): Arm64CallingConvention(arch, "apple-arm64")
 	{
-		return REG_X0;
 	}
 
 
-	virtual uint32_t GetFloatReturnValueRegister() override
+	virtual bool AreArgumentRegistersUsedForVarArgs() override
 	{
-		return REG_Q0;
+		return false;
 	}
 };
 
 
 class LinuxArm64SystemCallConvention: public CallingConvention
 {
-public:
-	LinuxArm64SystemCallConvention(Architecture* arch): CallingConvention(arch, "linux-syscall")
-	{
-	}
+ public:
+	LinuxArm64SystemCallConvention(Architecture* arch) : CallingConvention(arch, "linux-syscall") {}
 
 
 	virtual vector<uint32_t> GetIntegerArgumentRegisters() override
 	{
-		return vector<uint32_t>{ REG_X8, REG_X0, REG_X1, REG_X2, REG_X3, REG_X4, REG_X5 };
+		return vector<uint32_t> {REG_X8, REG_X0, REG_X1, REG_X2, REG_X3, REG_X4, REG_X5};
 	}
 
 
-	virtual vector<uint32_t> GetCallerSavedRegisters() override
-	{
-		return vector<uint32_t>{ REG_X0 };
-	}
+	virtual vector<uint32_t> GetCallerSavedRegisters() override { return vector<uint32_t> {REG_X0}; }
 
 
 	virtual vector<uint32_t> GetCalleeSavedRegisters() override
 	{
-		return vector<uint32_t>{ REG_X19, REG_X20, REG_X21, REG_X22, REG_X23, REG_X24, REG_X25,
-			REG_X26, REG_X27, REG_X28, REG_X29 };
+		return vector<uint32_t> {REG_X19, REG_X20, REG_X21, REG_X22, REG_X23, REG_X24, REG_X25, REG_X26,
+		    REG_X27, REG_X28, REG_X29};
 	}
 
 
-	virtual uint32_t GetIntegerReturnValueRegister() override
-	{
-		return REG_X0;
-	}
+	virtual uint32_t GetIntegerReturnValueRegister() override { return REG_X0; }
 
 
-	virtual bool IsEligibleForHeuristics() override
-	{
-		return false;
-	}
+	virtual bool IsEligibleForHeuristics() override { return false; }
 };
 
-class WindowsArm64SystemCallConvention: public CallingConvention
+class WindowsArm64SystemCallConvention : public CallingConvention
 {
-public:
-	WindowsArm64SystemCallConvention(Architecture* arch): CallingConvention(arch, "windows-syscall")
-	{
-	}
+ public:
+	WindowsArm64SystemCallConvention(Architecture* arch) : CallingConvention(arch, "windows-syscall")
+	{}
+
+
+	virtual vector<uint32_t> GetIntegerArgumentRegisters() override { return {FAKEREG_SYSCALL_INFO}; }
+
+
+	virtual vector<uint32_t> GetCallerSavedRegisters() override { return vector<uint32_t> {REG_X0}; }
+
+
+	virtual vector<uint32_t> GetCalleeSavedRegisters() override { return {}; }
+
+
+	virtual uint32_t GetIntegerReturnValueRegister() override { return REG_X0; }
+
+
+	virtual bool IsEligibleForHeuristics() override { return false; }
+};
+
+class MacosArm64SystemCallConvention : public CallingConvention
+{
+ public:
+	MacosArm64SystemCallConvention(Architecture* arch) : CallingConvention(arch, "macos-syscall") {}
 
 
 	virtual vector<uint32_t> GetIntegerArgumentRegisters() override
 	{
-		return { FAKEREG_SYSCALL_INFO };
+		return vector<uint32_t> {REG_X16, REG_X0, REG_X1, REG_X2, REG_X3, REG_X4, REG_X5};
 	}
 
 
-	virtual vector<uint32_t> GetCallerSavedRegisters() override
-	{
-		return vector<uint32_t>{ REG_X0 };
-	}
+	virtual vector<uint32_t> GetCallerSavedRegisters() override { return vector<uint32_t> {REG_X0}; }
 
 
 	virtual vector<uint32_t> GetCalleeSavedRegisters() override
 	{
-		return {};
+		return vector<uint32_t> {REG_X19, REG_X20, REG_X21, REG_X22, REG_X23, REG_X24, REG_X25, REG_X26,
+		    REG_X27, REG_X28, REG_X29};
 	}
 
 
-	virtual uint32_t GetIntegerReturnValueRegister() override
-	{
-		return REG_X0;
-	}
+	virtual uint32_t GetIntegerReturnValueRegister() override { return REG_X0; }
 
 
-	virtual bool IsEligibleForHeuristics() override
-	{
-		return false;
-	}
+	virtual bool IsEligibleForHeuristics() override { return false; }
 };
 
-class MacosArm64SystemCallConvention: public CallingConvention
+#define PAGE(x)        (uint32_t)((x) >> 12)
+#define PAGE_OFF(x)    (uint32_t)((x)&0xfff)
+#define PAGE_NO_OFF(x) (uint32_t)((x)&0xFFFFF000)
+
+class Arm64MachoRelocationHandler : public RelocationHandler
 {
-public:
-	MacosArm64SystemCallConvention(Architecture* arch): CallingConvention(arch, "macos-syscall")
-	{
-	}
-
-
-	virtual vector<uint32_t> GetIntegerArgumentRegisters() override
-	{
-		return vector<uint32_t>{ REG_X16, REG_X0, REG_X1, REG_X2, REG_X3, REG_X4, REG_X5 };
-	}
-
-
-	virtual vector<uint32_t> GetCallerSavedRegisters() override
-	{
-		return vector<uint32_t>{ REG_X0 };
-	}
-
-
-	virtual vector<uint32_t> GetCalleeSavedRegisters() override
-	{
-		return vector<uint32_t>{ REG_X19, REG_X20, REG_X21, REG_X22, REG_X23, REG_X24, REG_X25,
-			REG_X26, REG_X27, REG_X28, REG_X29 };
-	}
-
-
-	virtual uint32_t GetIntegerReturnValueRegister() override
-	{
-		return REG_X0;
-	}
-
-
-	virtual bool IsEligibleForHeuristics() override
-	{
-		return false;
-	}
-};
-
-#define PAGE(x) (uint32_t)((x) >> 12)
-#define PAGE_OFF(x) (uint32_t)((x) & 0xfff)
-#define PAGE_NO_OFF(x) (uint32_t)((x) & 0xFFFFF000)
-
-class Arm64MachoRelocationHandler: public RelocationHandler
-{
-public:
-	virtual bool ApplyRelocation(Ref<BinaryView> view, Ref<Architecture> arch, Ref<Relocation> reloc, uint8_t* dest,
-		size_t len) override
+ public:
+	virtual bool ApplyRelocation(Ref<BinaryView> view, Ref<Architecture> arch, Ref<Relocation> reloc,
+	    uint8_t* dest, size_t len) override
 	{
 		(void)view;
 		(void)arch;
 		(void)len;
 
-		uint32_t insword = *(uint32_t *)dest;
+		uint32_t insword = *(uint32_t*)dest;
 		auto info = reloc->GetInfo();
 
-		//printf("insword: 0x%X\n", insword);
-		//printf("reloc->GetTarget(): 0x%llX\n", reloc->GetTarget());
-		//printf("reloc->GetAddress(): 0x%llX\n", reloc->GetAddress());
+		// printf("insword: 0x%X\n", insword);
+		// printf("reloc->GetTarget(): 0x%llX\n", reloc->GetTarget());
+		// printf("reloc->GetAddress(): 0x%llX\n", reloc->GetAddress());
 
-		if (info.nativeType == (uint64_t) -2) { // Magic number defined in MachOView.cpp for tagged pointers
-			*(uint64_t *) dest = info.target;
+		if (info.nativeType == (uint64_t)-2)
+		{  // Magic number defined in MachOView.cpp for tagged pointers
+			*(uint64_t*)dest = info.target;
 		}
-		else if(info.nativeType == ARM64_RELOC_PAGE21) {
+		else if (info.nativeType == ARM64_RELOC_PAGE21)
+		{
 			// 21 bits across IMMHI:IMMLO
 			// OP=1|IMMLO=XX|10000|IMMHI=XXXXXXXXXXXXXXXXXXX|RD=XXXXX
 			int64_t page_delta = PAGE(reloc->GetTarget()) - PAGE(reloc->GetAddress());
 			insword = insword & 0b10011111000000000000000000011111;
-			insword = insword | ((page_delta & 3) << 29); // IMMLO
-			insword = insword | ((page_delta >> 2) << 5); // IMMHI
-			*(uint32_t *)dest = insword;
+			insword = insword | ((page_delta & 3) << 29);  // IMMLO
+			insword = insword | ((page_delta >> 2) << 5);  // IMMHI
+			*(uint32_t*)dest = insword;
 		}
-		else if(info.nativeType == ARM64_RELOC_PAGEOFF12) {
+		else if (info.nativeType == ARM64_RELOC_PAGEOFF12)
+		{
 			/* verify relocation point to qualifying instructions */
-			if((insword & 0x3B000000) != 0x39000000 && (insword & 0x11C00000) != 0x11000000)
+			if ((insword & 0x3B000000) != 0x39000000 && (insword & 0x11C00000) != 0x11000000)
 				return false;
 
 			/* verify it's a positive/forward jump (the imm12 is unsigned) */
 			int64_t delta = reloc->GetTarget() - PAGE_NO_OFF(reloc->GetAddress());
-			if(delta < 0)
+			if (delta < 0)
 				return false;
 
 			/* disassemble instruction, is last operand an immediate? is there a shift? */
 			Instruction instr;
-			if(aarch64_decompose(*(uint32_t*)dest, &instr, reloc->GetAddress()) != 0)
+			if (aarch64_decompose(*(uint32_t*)dest, &instr, reloc->GetAddress()) != 0)
 				return false;
 
 			int n_operands = 0;
-			while(instr.operands[n_operands].operandClass != NONE)
+			while (instr.operands[n_operands].operandClass != NONE)
 				n_operands++;
 
-			if(instr.operands[n_operands-1].operandClass != IMM32 &&
-			  instr.operands[n_operands-1].operandClass != IMM64)
+			if (instr.operands[n_operands - 1].operandClass != IMM32 &&
+			    instr.operands[n_operands - 1].operandClass != IMM64)
 				return false;
 
-			int left_shift = (instr.operands[n_operands-1].shiftValueUsed) ?
-			  instr.operands[n_operands-1].shiftValue : 0;
+			int left_shift = (instr.operands[n_operands - 1].shiftValueUsed) ?
+                           instr.operands[n_operands - 1].shiftValue :
+                           0;
 
 			/* re-encode */
 			/* left shift is upon DECODING, we right shift to bias this */
 			delta = delta >> left_shift;
 			// SF=X|OP=0|S=0|100010|SH=X|IMM12=XXXXXXXXXXXX|RN=XXXXX|RD=XXXXX
-			uint16_t imm12 = (insword & 0x3FFC00)>>10;
+			uint16_t imm12 = (insword & 0x3FFC00) >> 10;
 			imm12 = PAGE_OFF(imm12 + delta);
 			insword = (insword & 0xFFC003FF) | (imm12 << 10);
-			*(uint32_t *)dest = insword;
+			*(uint32_t*)dest = insword;
 		}
 
 		return true;
 	}
 
-	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
+	virtual bool GetRelocationInfo(
+	    Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
 	{
 		(void)view;
 		(void)arch;
@@ -2561,11 +2634,12 @@ public:
 				break;
 			case ARM64_RELOC_PAGE21:
 				// eg: the number of pages to get to <addr> in "adrp x1, <addr>"
-				//printf("GetRelocationInfo(): ARM64_RELOC_PAGE21 .address=0x%llX\n", result[i].address);
+				// printf("GetRelocationInfo(): ARM64_RELOC_PAGE21 .address=0x%llX\n", result[i].address);
 				break;
 			case ARM64_RELOC_PAGEOFF12:
 				// eg: the 12-bit <immediate> in "add x8, x8, #<immediate>"
-				//printf("GetRelocationInfo(): ARM64_RELOC_PAGEOFF12 .address=0x%llX\n", result[i].address);
+				// printf("GetRelocationInfo(): ARM64_RELOC_PAGEOFF12 .address=0x%llX\n",
+				// result[i].address);
 				break;
 			case ARM64_RELOC_BRANCH26:
 			case ARM64_RELOC_GOT_LOAD_PAGE21:
@@ -2586,29 +2660,56 @@ public:
 };
 
 /* structs used in relocation handling */
-struct PC_REL_ADDRESSING {
-	uint32_t Rd:5;
-	int32_t immhi:19;
-	uint32_t group1:5;
-	uint32_t immlo:2;
-	uint32_t op:1;
+struct PC_REL_ADDRESSING
+{
+	uint32_t Rd : 5;
+	int32_t immhi : 19;
+	uint32_t group1 : 5;
+	uint32_t immlo : 2;
+	uint32_t op : 1;
 };
 
-struct ADD_SUB_IMM {
-	uint32_t Rd:5;
-	uint32_t Rn:5;
-	uint32_t imm:12;
-	uint32_t shift:2;
-	uint32_t group1:5;
-	uint32_t S:1;
+struct ADD_SUB_IMM
+{
+	uint32_t Rd : 5;
+	uint32_t Rn : 5;
+	uint32_t imm : 12;
+	uint32_t shift : 2;
+	uint32_t group1 : 5;
+	uint32_t S : 1;
+	uint32_t op : 1;
+	uint32_t sf : 1;
+};
+
+struct UNCONDITIONAL_BRANCH
+{
+	int32_t imm : 26;
+	uint32_t opcode : 5;
+	uint32_t op : 1;
+};
+
+struct CONDITIONAL_BRANCH{
+	uint32_t cond:4;
+	uint32_t o0:1;
+	int32_t imm:19;
+	uint32_t o1:1;
+	uint32_t opcode:7;
+};
+struct COMPARE_AND_BRANCH{
+	uint32_t Rt:5;
+	int32_t imm:19;
 	uint32_t op:1;
+	uint32_t opcode:6;
 	uint32_t sf:1;
 };
 
-struct UNCONDITIONAL_BRANCH{
-	int32_t imm:26;
-	uint32_t opcode:5;
+struct TEST_AND_BRANCH{
+	uint32_t Rt:5;
+	int32_t imm:14;
+	uint32_t b40:5;
 	uint32_t op:1;
+	uint32_t opcode:6;
+	uint32_t b5:1;
 };
 
 struct LDST_REG_UNSIGNED_IMM{
@@ -2622,10 +2723,11 @@ struct LDST_REG_UNSIGNED_IMM{
 	uint32_t size:2;
 };
 
-class Arm64ElfRelocationHandler: public RelocationHandler
+class Arm64ElfRelocationHandler : public RelocationHandler
 {
-public:
-	virtual bool ApplyRelocation(Ref<BinaryView> view, Ref<Architecture> arch, Ref<Relocation> reloc, uint8_t* dest, size_t len) override
+ public:
+	virtual bool ApplyRelocation(Ref<BinaryView> view, Ref<Architecture> arch, Ref<Relocation> reloc,
+	    uint8_t* dest, size_t len) override
 	{
 		(void)view;
 		(void)arch;
@@ -2635,7 +2737,8 @@ public:
 		uint64_t* dest64 = (uint64_t*)dest;
 		uint32_t* dest32 = (uint32_t*)dest;
 		uint16_t* dest16 = (uint16_t*)dest;
-		//auto swap = [&arch](uint32_t x) { return (arch->GetEndianness() == LittleEndian)? x : bswap32(x); };
+		// auto swap = [&arch](uint32_t x) { return (arch->GetEndianness() == LittleEndian)? x :
+		// bswap32(x); };
 		uint64_t target = reloc->GetTarget();
 		Instruction inst;
 		switch (info.nativeType)
@@ -2643,6 +2746,11 @@ public:
 		case R_ARM_NONE:
 		case R_AARCH64_NONE:
 			return true;
+		case R_AARCH64_P32_COPY:
+		case R_AARCH64_P32_GLOB_DAT:
+		case R_AARCH64_P32_JUMP_SLOT:
+			dest32[0] = target;
+			break;
 		case R_AARCH64_COPY:
 		case R_AARCH64_GLOB_DAT:
 		case R_AARCH64_JUMP_SLOT:
@@ -2692,6 +2800,9 @@ public:
 			break;
 		case R_AARCH64_PREL64:
 			dest64[0] = info.addend + target - reloc->GetAddress();
+			break;
+		case R_AARCH64_P32_RELATIVE:
+			dest32[0] = target + info.addend;
 			break;
 		case R_AARCH64_RELATIVE:
 			dest64[0] = target + info.addend;
@@ -2768,9 +2879,12 @@ public:
 		return true;
 	}
 
-	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
+	virtual bool GetRelocationInfo(
+	    Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
 	{
-		(void)view; (void)arch; (void)result;
+		(void)view;
+		(void)arch;
+		(void)result;
 		set<uint64_t> relocTypes;
 		for (auto& reloc : result)
 		{
@@ -2778,6 +2892,18 @@ public:
 			reloc.size = 4;
 			switch (reloc.nativeType)
 			{
+			case R_AARCH64_P32_COPY:
+				reloc.type = ELFCopyRelocationType;
+				reloc.size = 4;
+				break;
+			case R_AARCH64_P32_GLOB_DAT:
+				reloc.type = ELFGlobalRelocationType;
+				reloc.size = 4;
+				break;
+			case R_AARCH64_P32_JUMP_SLOT:
+				reloc.type = ELFJumpSlotRelocationType;
+				reloc.size = 4;
+				break;
 			case R_AARCH64_COPY:
 				reloc.type = ELFCopyRelocationType;
 				reloc.size = 8;
@@ -2821,6 +2947,10 @@ public:
 				reloc.pcRelative = false;
 				reloc.size = 8;
 				break;
+			case R_AARCH64_P32_RELATIVE:
+				reloc.pcRelative = true;
+				reloc.size = 4;
+				break;
 			case R_AARCH64_RELATIVE:
 				reloc.pcRelative = true;
 				reloc.size = 8;
@@ -2832,12 +2962,13 @@ public:
 			}
 		}
 		for (auto& reloc : relocTypes)
-			LogWarn("Unsupported ELF relocation type: %s", GetRelocationString((ElfArm64RelocationType)reloc));
+			LogWarn("Unsupported ELF relocation type: %s",
+			    GetRelocationString((ElfArm64RelocationType)reloc));
 		return true;
 	}
 
 	virtual size_t GetOperandForExternalRelocation(const uint8_t* data, uint64_t addr, size_t length,
-		Ref<LowLevelILFunction> il, Ref<Relocation> relocation) override
+	    Ref<LowLevelILFunction> il, Ref<Relocation> relocation) override
 	{
 		(void)data;
 		(void)addr;
@@ -2855,10 +2986,11 @@ public:
 };
 
 
-class Arm64PeRelocationHandler: public RelocationHandler
+class Arm64PeRelocationHandler : public RelocationHandler
 {
-public:
-	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
+ public:
+	virtual bool GetRelocationInfo(
+	    Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
 	{
 		(void)view;
 		(void)arch;
@@ -2867,6 +2999,168 @@ public:
 		{
 			reloc.type = UnhandledRelocation;
 			relocTypes.insert(reloc.nativeType);
+		}
+		for (auto& reloc : relocTypes)
+			LogWarn(
+			    "Unsupported PE relocation type: %s", GetRelocationString((PeArm64RelocationType)reloc));
+		return false;
+	}
+};
+
+
+class Arm64COFFRelocationHandler: public RelocationHandler
+{
+public:
+	virtual bool ApplyRelocation(Ref<BinaryView> view, Ref<Architecture> arch, Ref<Relocation> reloc, uint8_t* dest, size_t len) override
+	{
+		// Note: info.base contains preferred base address and the base where the image is actually loaded
+		(void)view;
+		(void)arch;
+		(void)len;
+		BNRelocationInfo info = reloc->GetInfo();
+		uint64_t target = reloc->GetTarget();
+		uint64_t pc = info.pcRelative ? reloc->GetAddress() : 0;
+		uint64_t base = (info.baseRelative && !target) ? view->GetStart() : 0;
+		uint64_t address = info.address;
+		uint64_t* dest64 = (uint64_t*)dest;
+		uint32_t* dest32 = (uint32_t*)dest;
+		uint16_t* dest16 = (uint16_t*)dest;
+		(void)pc;
+		(void)base;
+		(void)dest16;
+		(void)dest64;
+		Instruction inst;
+
+		Ref<Architecture> associatedArch = arch->GetAssociatedArchitectureByAddress(address);
+
+		if (len < info.size)
+		{
+			return false;
+		}
+
+		switch (info.nativeType)
+		{
+		case PE_IMAGE_REL_ARM64_REL21:
+		{
+			PC_REL_ADDRESSING* decode = (PC_REL_ADDRESSING*)dest;
+			uint32_t imm = info.addend + target - reloc->GetAddress();
+			decode->immhi = imm >> 2;
+			decode->immlo = imm & 3;
+			break;
+		}
+		case PE_IMAGE_REL_ARM64_PAGEBASE_REL21:
+		{
+			PC_REL_ADDRESSING* decode = (PC_REL_ADDRESSING*)dest;
+			uint32_t imm = PAGE(info.addend + target) - PAGE(reloc->GetAddress());
+			decode->immhi = imm >> 2;
+			decode->immlo = imm & 3;
+			break;
+		}
+		case PE_IMAGE_REL_ARM64_PAGEOFFSET_12A:
+		{
+			ADD_SUB_IMM* decode = (ADD_SUB_IMM*)dest;
+			aarch64_decompose(dest32[0], &inst, reloc->GetAddress());
+			decode->imm = inst.operands[2].immediate + target;
+			break;
+		}
+		case PE_IMAGE_REL_ARM64_PAGEOFFSET_12L:
+		{
+			LDST_REG_UNSIGNED_IMM* decode = (LDST_REG_UNSIGNED_IMM*)dest;
+			decode->imm = ((target + info.addend) & (0xfff & ~decode->size)) >> decode->size;
+			break;
+		}
+		case PE_IMAGE_REL_ARM64_BRANCH26:
+		{
+			UNCONDITIONAL_BRANCH* decode = (UNCONDITIONAL_BRANCH*)dest;
+			aarch64_decompose(dest32[0], &inst, 0);
+			decode->imm = (inst.operands[0].immediate + target - reloc->GetAddress()) >> 2;
+			break;
+		}
+		case PE_IMAGE_REL_ARM64_BRANCH19:
+		{
+			// B.cond (CONDITIONAL_BRANCH) & CBZ / CBNZ (COMPARE_AND_BRANCH)
+			CONDITIONAL_BRANCH* decode = (CONDITIONAL_BRANCH*)dest;
+			aarch64_decompose(dest32[0], &inst, 0);
+			decode->imm = (inst.operands[0].immediate + target - reloc->GetAddress()) >> 2;
+			break;
+		}
+		case PE_IMAGE_REL_ARM64_BRANCH14:
+		{
+			// TBZ / TBNZ
+			TEST_AND_BRANCH* decode = (TEST_AND_BRANCH*)dest;
+			aarch64_decompose(dest32[0], &inst, 0);
+			decode->imm = (inst.operands[0].immediate + target - reloc->GetAddress()) >> 2;
+			break;
+		}
+		case PE_IMAGE_REL_ARM64_ADDR32NB:
+		case PE_IMAGE_REL_ARM64_ADDR64:
+		case IMAGE_REL_ARM64_REL32:
+		default:
+			return RelocationHandler::ApplyRelocation(view, arch, reloc, dest, len);
+		}
+		return true;
+	}
+
+	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
+	{
+		(void)view;
+		(void)arch;
+		set<uint64_t> relocTypes;
+		for (auto& reloc : result)
+		{
+			// LogDebug("%s COFF relocation %s at 0x%" PRIx64, __func__, GetRelocationString((PeArm64RelocationType)reloc.nativeType), reloc.address);
+			switch (reloc.nativeType)
+			{
+			case PE_IMAGE_REL_ARM64_ABSOLUTE:
+				reloc.type = IgnoredRelocation;
+				break;
+			case PE_IMAGE_REL_ARM64_ADDR32NB:
+				reloc.pcRelative = false;
+				reloc.baseRelative = false;
+				break;
+			case PE_IMAGE_REL_ARM64_BRANCH26:
+			case PE_IMAGE_REL_ARM64_PAGEBASE_REL21:
+			case PE_IMAGE_REL_ARM64_REL21:
+			case PE_IMAGE_REL_ARM64_PAGEOFFSET_12A:
+			case PE_IMAGE_REL_ARM64_BRANCH19:
+			case PE_IMAGE_REL_ARM64_BRANCH14:
+				reloc.pcRelative = true;
+				reloc.baseRelative = false;
+				reloc.size = 4;
+				break;
+			case PE_IMAGE_REL_ARM64_PAGEOFFSET_12L:
+				if (! reloc.external)
+					reloc.addend = 6;
+				break;
+			case PE_IMAGE_REL_ARM64_ADDR64:
+				reloc.pcRelative = false;
+				reloc.baseRelative = true;
+				reloc.size = 8;
+				break;
+			case PE_IMAGE_REL_ARM64_ADDR32:
+				reloc.pcRelative = false;
+				reloc.baseRelative = true;
+				reloc.size = 4;
+				break;
+			case IMAGE_REL_ARM64_REL32:
+				reloc.pcRelative = true;
+				reloc.baseRelative = false;
+				reloc.size = 4;
+				break;
+			case PE_IMAGE_REL_ARM64_SECREL_LOW12A:
+				// TODO
+			case PE_IMAGE_REL_ARM64_SECREL_HIGH12A:
+				// TODO
+			case PE_IMAGE_REL_ARM64_SECREL_LOW12L:
+				// TODO
+			case PE_IMAGE_REL_ARM64_SECREL:
+			case PE_IMAGE_REL_ARM64_TOKEN:
+			case PE_IMAGE_REL_ARM64_SECTION:
+			default:
+				reloc.type = UnhandledRelocation;
+				relocTypes.insert(reloc.nativeType);
+				break;
+			}
 		}
 		for (auto& reloc : relocTypes)
 			LogWarn("Unsupported PE relocation type: %s", GetRelocationString((PeArm64RelocationType)reloc));
@@ -2904,6 +3198,9 @@ extern "C"
 		conv = new WindowsArm64SystemCallConvention(arm64);
 		arm64->RegisterCallingConvention(conv);
 
+		conv = new AppleArm64CallingConvention(arm64);
+		arm64->RegisterCallingConvention(conv);
+
 		// Register ARM64 specific PLT trampoline recognizer
 		arm64->RegisterFunctionRecognizer(new Arm64ImportedFunctionRecognizer());
 
@@ -2911,12 +3208,14 @@ extern "C"
 		arm64->RegisterRelocationHandler("Mach-O", new Arm64MachoRelocationHandler());
 		arm64->RegisterRelocationHandler("ELF", new Arm64ElfRelocationHandler());
 		arm64->RegisterRelocationHandler("PE", new Arm64PeRelocationHandler());
+		arm64->RegisterRelocationHandler("COFF", new Arm64COFFRelocationHandler());
 
 		// Register the architectures with the binary format parsers so that they know when to use
 		// these architectures for disassembling an executable file
 		BinaryViewType::RegisterArchitecture("Mach-O", 0x0100000c, LittleEndian, arm64);
 		BinaryViewType::RegisterArchitecture("ELF", 0xb7, LittleEndian, arm64);
 		BinaryViewType::RegisterArchitecture("ELF", 0xb7, BigEndian, arm64);
+		BinaryViewType::RegisterArchitecture("COFF", 0xaa64, LittleEndian, arm64);
 		BinaryViewType::RegisterArchitecture("PE", 0xaa64, LittleEndian, arm64);
 		BinaryViewType::RegisterArchitecture("PE", 0xaa64, BigEndian, arm64);
 		arm64->SetBinaryViewTypeConstant("ELF", "R_COPY", 0x400);
