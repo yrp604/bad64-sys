@@ -770,6 +770,8 @@ class Arm64Architecture : public Architecture
 			if (instr.operands[i].operandClass == NONE)
 				return true;
 
+			struct InstructionOperand *operand = &(instr.operands[i]);
+
 			if (i != 0)
 				result.emplace_back(OperandSeparatorToken, ", ");
 
@@ -810,6 +812,57 @@ class Arm64Architecture : public Architecture
 				result.emplace_back(TextToken, " #");
 				snprintf(buf, sizeof(buf), "0x%" PRIx64, instr.operands[i].immediate);
 				result.emplace_back(IntegerToken, buf);
+				tokenizeSuccess = true;
+				break;
+			case ACCUM_ARRAY: /* eg: "za[w12, #0x6]" */
+				result.emplace_back(TextToken, "ZA");
+				result.emplace_back(TextToken, "[");
+				snprintf(buf, sizeof(buf), "%s", get_register_name(operand->reg[0]));
+				result.emplace_back(RegisterToken, buf);
+				result.emplace_back(OperandSeparatorToken, ", ");
+				result.emplace_back(TextToken, " #");
+				snprintf(buf, sizeof(buf), "0x%" PRIx64, operand->immediate);
+				result.emplace_back(IntegerToken, buf);
+				result.emplace_back(TextToken, "]");
+				tokenizeSuccess = true;
+				break;
+			case SME_TILE: /* eg: "z0v.b[w12, #0xb]" */
+				snprintf(buf, sizeof(buf), "Z%d", operand->tile);
+				result.emplace_back(TextToken, buf);
+				if (operand->slice == SLICE_HORIZONTAL)
+					result.emplace_back(TextToken, "h");
+				else if (operand->slice == SLICE_VERTICAL)
+					result.emplace_back(TextToken, "v");
+				result.emplace_back(TextToken, get_arrspec_str_truncated(operand->arrSpec));
+				if (operand->reg[0] != REG_NONE)
+				{
+					result.emplace_back(TextToken, "[");
+					snprintf(buf, sizeof(buf), "%s", get_register_name(operand->reg[0]));
+					result.emplace_back(RegisterToken, buf);
+					if (operand->arrSpec != ARRSPEC_FULL)
+					{
+						result.emplace_back(OperandSeparatorToken, ", ");
+						result.emplace_back(TextToken, " #");
+						snprintf(buf, sizeof(buf), "0x%" PRIx64, instr.operands[i].immediate);
+						result.emplace_back(IntegerToken, buf);
+					}
+					result.emplace_back(TextToken, "]");
+				}
+				tokenizeSuccess = true;
+				break;
+			case INDEXED_ELEMENT: /* eg: "p12.d[w15, #0xf]" */
+				result.emplace_back(RegisterToken, get_register_name(operand->reg[0]));
+				result.emplace_back(TextToken, get_arrspec_str_truncated(operand->arrSpec));
+				result.emplace_back(TextToken, "[");
+				result.emplace_back(RegisterToken, get_register_name(operand->reg[1]));
+				if (operand->immediate)
+				{
+					result.emplace_back(OperandSeparatorToken, ", ");
+					result.emplace_back(TextToken, "#");
+					snprintf(buf, sizeof(buf), "0x%" PRIx64, operand->immediate);
+					result.emplace_back(IntegerToken, buf);
+				}
+				result.emplace_back(TextToken, "]");
 				tokenizeSuccess = true;
 				break;
 			default:
@@ -3094,6 +3147,20 @@ public:
 			decode->imm = (inst.operands[0].immediate + target - reloc->GetAddress()) >> 2;
 			break;
 		}
+		case PE_IMAGE_REL_ARM64_SECTION:
+			// TODO: test this implementation, but for now, just don't warn about it
+			dest16[0] = info.sectionIndex + 1;
+			break;
+		case PE_IMAGE_REL_ARM64_SECREL:
+		{
+			// TODO: test this implementation, but for now, just don't warn about it
+			auto sections = view->GetSectionsAt(info.target);
+			if (sections.size() > 0)
+			{
+				dest32[0] = info.target - sections[0]->GetStart();
+			}
+			break;
+		}
 		case PE_IMAGE_REL_ARM64_ADDR32NB:
 		case PE_IMAGE_REL_ARM64_ADDR64:
 		case IMAGE_REL_ARM64_REL32:
@@ -3149,15 +3216,25 @@ public:
 				reloc.baseRelative = false;
 				reloc.size = 4;
 				break;
+			case PE_IMAGE_REL_ARM64_SECTION:
+				// The 16-bit section index of the section that contains the target. This is used to support debugging information.
+				reloc.baseRelative = false;
+				reloc.size = 2;
+				reloc.addend = 0;
+				break;
+			case PE_IMAGE_REL_ARM64_SECREL:
+				// The 32-bit offset of the target from the beginning of its section. This is used to support debugging information and static thread local storage.				reloc.baseRelative = false;
+				reloc.baseRelative = false;
+				reloc.size = 4;
+				reloc.addend = 0;
+				break;
 			case PE_IMAGE_REL_ARM64_SECREL_LOW12A:
 				// TODO
 			case PE_IMAGE_REL_ARM64_SECREL_HIGH12A:
 				// TODO
 			case PE_IMAGE_REL_ARM64_SECREL_LOW12L:
 				// TODO
-			case PE_IMAGE_REL_ARM64_SECREL:
 			case PE_IMAGE_REL_ARM64_TOKEN:
-			case PE_IMAGE_REL_ARM64_SECTION:
 			default:
 				reloc.type = UnhandledRelocation;
 				relocTypes.insert(reloc.nativeType);
@@ -3215,6 +3292,7 @@ extern "C"
 		// Register the architectures with the binary format parsers so that they know when to use
 		// these architectures for disassembling an executable file
 		BinaryViewType::RegisterArchitecture("Mach-O", 0x0100000c, LittleEndian, arm64);
+		BinaryViewType::RegisterArchitecture("Mach-O", 0x0200000c, LittleEndian, arm64);
 		BinaryViewType::RegisterArchitecture("ELF", 0xb7, LittleEndian, arm64);
 		BinaryViewType::RegisterArchitecture("ELF", 0xb7, BigEndian, arm64);
 		BinaryViewType::RegisterArchitecture("COFF", 0xaa64, LittleEndian, arm64);
