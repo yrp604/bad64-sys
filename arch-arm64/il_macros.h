@@ -16,6 +16,7 @@
 #define IS_V_REG(R)   ((R) >= REG_V0 && (R) <= REG_V31)
 #define IS_Z_REG(R)   ((R) >= REG_Z0 && (R) <= REG_Z31)
 #define IS_P_REG(R)   ((R) >= REG_P0 && (R) <= REG_P15)
+#define IS_ZERO_REG(R) ((R) == REG_XZR || (R) == REG_WZR)
 #define IS_SVE_REG(R) (IS_Z_REG(R) || IS_P_REG(R))
 
 /* access stuff from operands */
@@ -34,7 +35,7 @@
 #define IS_SVE_O(O)   ((O).operandClass == REG && IS_SVE_REG(REG_O(O)))
 
 /* misc */
-#define SETFLAGS (instr.setflags ? IL_FLAGWRITE_ALL : IL_FLAGWRITE_NONE)
+#define SETFLAGS (GetFlagWriteTypeForEffect(instr.setflags))
 #define ONES(N)  (-1ULL >> (64 - (N)))
 #define ABORT_LIFT \
 	{ \

@@ -11,38 +11,51 @@ using namespace BinaryNinja;
 
 #include "il_macros.h"
 
+static uint32_t GetFlagWriteTypeForEffect(FlagEffect e) {
+	switch (e) {
+	case FLAGEFFECT_SETS:
+	case FLAGEFFECT_SETS_NORMAL:
+		return IL_FLAG_WRITE_ALL;
+	case FLAGEFFECT_SETS_FLOAT:
+		return IL_FLAG_WRITE_ALL_FLOAT;
+	case FLAGEFFECT_NONE:
+	default:
+		return 0;
+	}
+}
+
 static ExprId GetCondition(LowLevelILFunction& il, Condition cond)
 {
 	switch (cond)
 	{
 	case COND_EQ:
-		return il.FlagCondition(LLFC_E);
+		return il.FlagGroup(IL_FLAG_GROUP_EQ);
 	case COND_NE:
-		return il.FlagCondition(LLFC_NE);
+		return il.FlagGroup(IL_FLAG_GROUP_NE);
 	case COND_CS:
-		return il.FlagCondition(LLFC_UGE);
+		return il.FlagGroup(IL_FLAG_GROUP_CS);
 	case COND_CC:
-		return il.FlagCondition(LLFC_ULT);
+		return il.FlagGroup(IL_FLAG_GROUP_CC);
 	case COND_MI:
-		return il.FlagCondition(LLFC_NEG);
+		return il.FlagGroup(IL_FLAG_GROUP_MI);
 	case COND_PL:
-		return il.FlagCondition(LLFC_POS);
+		return il.FlagGroup(IL_FLAG_GROUP_PL);
 	case COND_VS:
-		return il.FlagCondition(LLFC_O);
+		return il.FlagGroup(IL_FLAG_GROUP_VS);
 	case COND_VC:
-		return il.FlagCondition(LLFC_NO);
+		return il.FlagGroup(IL_FLAG_GROUP_VC);
 	case COND_HI:
-		return il.FlagCondition(LLFC_UGT);
+		return il.FlagGroup(IL_FLAG_GROUP_HI);
 	case COND_LS:
-		return il.FlagCondition(LLFC_ULE);
+		return il.FlagGroup(IL_FLAG_GROUP_LS);
 	case COND_GE:
-		return il.FlagCondition(LLFC_SGE);
+		return il.FlagGroup(IL_FLAG_GROUP_GE);
 	case COND_LT:
-		return il.FlagCondition(LLFC_SLT);
+		return il.FlagGroup(IL_FLAG_GROUP_LT);
 	case COND_GT:
-		return il.FlagCondition(LLFC_SGT);
+		return il.FlagGroup(IL_FLAG_GROUP_GT);
 	case COND_LE:
-		return il.FlagCondition(LLFC_SLE);
+		return il.FlagGroup(IL_FLAG_GROUP_LE);
 	case COND_AL:
 		return il.Const(0, 1);  // Always branch
 	case COND_NV:
@@ -122,14 +135,8 @@ ExprId ExtractRegister(LowLevelILFunction& il, InstructionOperand& operand, size
 {
 	size_t opsz = get_register_size(operand.reg[regNum]);
 
-	switch (operand.reg[regNum])
-	{
-	case REG_WZR:
-	case REG_XZR:
-		return il.Const(resultSize, 0);
-	default:
-		break;
-	}
+	if (IS_ZERO_REG(operand.reg[regNum]))
+	    return il.Const(resultSize, 0);
 
 	ExprId res = 0;
 
@@ -364,7 +371,7 @@ static size_t ReadILOperand(LowLevelILFunction& il, InstructionOperand& operand,
 	case LABEL:
 		return il.ConstPointer(8, operand.immediate);
 	case REG:
-		if (operand.reg[0] == REG_WZR || operand.reg[0] == REG_XZR)
+		if (IS_ZERO_REG(operand.reg[0]))
 			return il.Const(resultSize, 0);
 		return GetShiftedRegister(il, operand, 0, resultSize);
 	case MEM_REG:
@@ -1176,46 +1183,46 @@ bool GetLowLevelILForInstruction(
 		il.AddInstruction(DirectJump(arch, il, IMM_O(operand1), addrSize));
 		break;
 	case ARM64_B_NE:
-		ConditionalJump(arch, il, il.FlagCondition(LLFC_NE), addrSize, IMM_O(operand1), addr + 4);
+		ConditionalJump(arch, il, il.FlagGroup(IL_FLAG_GROUP_NE), addrSize, IMM_O(operand1), addr + 4);
 		return false;
 	case ARM64_B_EQ:
-		ConditionalJump(arch, il, il.FlagCondition(LLFC_E), addrSize, IMM_O(operand1), addr + 4);
+		ConditionalJump(arch, il, il.FlagGroup(IL_FLAG_GROUP_EQ), addrSize, IMM_O(operand1), addr + 4);
 		return false;
 	case ARM64_B_CS:
-		ConditionalJump(arch, il, il.FlagCondition(LLFC_UGE), addrSize, IMM_O(operand1), addr + 4);
+		ConditionalJump(arch, il, il.FlagGroup(IL_FLAG_GROUP_CS), addrSize, IMM_O(operand1), addr + 4);
 		return false;
 	case ARM64_B_CC:
-		ConditionalJump(arch, il, il.FlagCondition(LLFC_ULT), addrSize, IMM_O(operand1), addr + 4);
+		ConditionalJump(arch, il, il.FlagGroup(IL_FLAG_GROUP_CC), addrSize, IMM_O(operand1), addr + 4);
 		return false;
 	case ARM64_B_MI:
-		ConditionalJump(arch, il, il.FlagCondition(LLFC_NEG), addrSize, IMM_O(operand1), addr + 4);
+		ConditionalJump(arch, il, il.FlagGroup(IL_FLAG_GROUP_MI), addrSize, IMM_O(operand1), addr + 4);
 		return false;
 	case ARM64_B_PL:
-		ConditionalJump(arch, il, il.FlagCondition(LLFC_POS), addrSize, IMM_O(operand1), addr + 4);
+		ConditionalJump(arch, il, il.FlagGroup(IL_FLAG_GROUP_PL), addrSize, IMM_O(operand1), addr + 4);
 		return false;
 	case ARM64_B_VS:
-		ConditionalJump(arch, il, il.FlagCondition(LLFC_O), addrSize, IMM_O(operand1), addr + 4);
+		ConditionalJump(arch, il, il.FlagGroup(IL_FLAG_GROUP_VS), addrSize, IMM_O(operand1), addr + 4);
 		return false;
 	case ARM64_B_VC:
-		ConditionalJump(arch, il, il.FlagCondition(LLFC_NO), addrSize, IMM_O(operand1), addr + 4);
+		ConditionalJump(arch, il, il.FlagGroup(IL_FLAG_GROUP_VC), addrSize, IMM_O(operand1), addr + 4);
 		return false;
 	case ARM64_B_HI:
-		ConditionalJump(arch, il, il.FlagCondition(LLFC_UGT), addrSize, IMM_O(operand1), addr + 4);
+		ConditionalJump(arch, il, il.FlagGroup(IL_FLAG_GROUP_HI), addrSize, IMM_O(operand1), addr + 4);
 		return false;
 	case ARM64_B_LS:
-		ConditionalJump(arch, il, il.FlagCondition(LLFC_ULE), addrSize, IMM_O(operand1), addr + 4);
+		ConditionalJump(arch, il, il.FlagGroup(IL_FLAG_GROUP_LS), addrSize, IMM_O(operand1), addr + 4);
 		return false;
 	case ARM64_B_GE:
-		ConditionalJump(arch, il, il.FlagCondition(LLFC_SGE), addrSize, IMM_O(operand1), addr + 4);
+		ConditionalJump(arch, il, il.FlagGroup(IL_FLAG_GROUP_GE), addrSize, IMM_O(operand1), addr + 4);
 		return false;
 	case ARM64_B_LT:
-		ConditionalJump(arch, il, il.FlagCondition(LLFC_SLT), addrSize, IMM_O(operand1), addr + 4);
+		ConditionalJump(arch, il, il.FlagGroup(IL_FLAG_GROUP_LT), addrSize, IMM_O(operand1), addr + 4);
 		return false;
 	case ARM64_B_GT:
-		ConditionalJump(arch, il, il.FlagCondition(LLFC_SGT), addrSize, IMM_O(operand1), addr + 4);
+		ConditionalJump(arch, il, il.FlagGroup(IL_FLAG_GROUP_GT), addrSize, IMM_O(operand1), addr + 4);
 		return false;
 	case ARM64_B_LE:
-		ConditionalJump(arch, il, il.FlagCondition(LLFC_SLE), addrSize, IMM_O(operand1), addr + 4);
+		ConditionalJump(arch, il, il.FlagGroup(IL_FLAG_GROUP_LE), addrSize, IMM_O(operand1), addr + 4);
 		return false;
 	case ARM64_BL:
 		il.AddInstruction(il.Call(il.ConstPointer(addrSize, IMM_O(operand1))));
@@ -1744,6 +1751,7 @@ bool GetLowLevelILForInstruction(
 		break;
 	}
 	case ARM64_MVN:
+	case ARM64_MVNI:
 		il.AddInstruction(ILSETREG_O(
 		    operand1, il.Not(REGSZ_O(operand1), ReadILOperand(il, operand2, REGSZ_O(operand1)))));
 		break;

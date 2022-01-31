@@ -1263,6 +1263,226 @@ class Arm64Architecture : public Architecture
 		}
 	}
 
+	virtual vector<uint32_t> GetAllSemanticFlagClasses() override
+	{
+		return vector<uint32_t> {IL_FLAG_CLASS_INT, IL_FLAG_CLASS_FLOAT};
+	}
+
+	virtual string GetSemanticFlagClassName(uint32_t semClass) override
+	{
+		switch (semClass) {
+			case IL_FLAG_CLASS_INT:
+				return "int";
+			case IL_FLAG_CLASS_FLOAT:
+				return "float";
+			default:
+				return "";
+		}
+	}
+
+	virtual uint32_t GetSemanticClassForFlagWriteType(uint32_t writeType) override
+	{
+		switch (writeType) {
+		case IL_FLAG_WRITE_ALL_FLOAT:
+			return IL_FLAG_CLASS_FLOAT;
+		case IL_FLAG_WRITE_ALL:
+		default:
+			return IL_FLAG_CLASS_INT;
+		}
+	}
+
+	virtual vector<uint32_t> GetAllSemanticFlagGroups() override
+	{
+
+		return vector<uint32_t> {
+			IL_FLAG_GROUP_EQ, IL_FLAG_GROUP_NE, IL_FLAG_GROUP_CS, IL_FLAG_GROUP_CC,
+			IL_FLAG_GROUP_MI, IL_FLAG_GROUP_PL, IL_FLAG_GROUP_VS, IL_FLAG_GROUP_VC,
+			IL_FLAG_GROUP_HI, IL_FLAG_GROUP_LS, IL_FLAG_GROUP_GE, IL_FLAG_GROUP_LT,
+			IL_FLAG_GROUP_GT, IL_FLAG_GROUP_LE};
+	}
+
+	virtual string GetSemanticFlagGroupName(uint32_t semGroup) override
+	{
+		switch (semGroup)
+		{
+		case IL_FLAG_GROUP_EQ:
+			return "eq";
+		case IL_FLAG_GROUP_NE:
+			return "ne";
+		case IL_FLAG_GROUP_CS:
+			return "cs";
+		case IL_FLAG_GROUP_CC:
+			return "cc";
+		case IL_FLAG_GROUP_MI:
+			return "mi";
+		case IL_FLAG_GROUP_PL:
+			return "pl";
+		case IL_FLAG_GROUP_VS:
+			return "vs";
+		case IL_FLAG_GROUP_VC:
+			return "vc";
+		case IL_FLAG_GROUP_HI:
+			return "hi";
+		case IL_FLAG_GROUP_LS:
+			return "ls";
+		case IL_FLAG_GROUP_GE:
+			return "ge";
+		case IL_FLAG_GROUP_LT:
+			return "lt";
+		case IL_FLAG_GROUP_GT:
+			return "gt";
+		case IL_FLAG_GROUP_LE:
+			return "le";
+		default:
+			return "";
+		}
+	}
+
+	virtual vector<uint32_t> GetFlagsRequiredForSemanticFlagGroup(uint32_t semGroup) override
+	{
+		switch (semGroup)
+		{
+		case IL_FLAG_GROUP_EQ:
+		case IL_FLAG_GROUP_NE:
+			return vector<uint32_t> {IL_FLAG_Z};
+		case IL_FLAG_GROUP_CS:
+		case IL_FLAG_GROUP_CC:
+			return vector<uint32_t> {IL_FLAG_C};
+		case IL_FLAG_GROUP_MI:
+		case IL_FLAG_GROUP_PL:
+			return vector<uint32_t> {IL_FLAG_N};
+		case IL_FLAG_GROUP_VS:
+		case IL_FLAG_GROUP_VC:
+			return vector<uint32_t> {IL_FLAG_V};
+		case IL_FLAG_GROUP_HI:
+		case IL_FLAG_GROUP_LS:
+			return vector<uint32_t> {IL_FLAG_C, IL_FLAG_Z};
+		case IL_FLAG_GROUP_GE:
+		case IL_FLAG_GROUP_LT:
+			return vector<uint32_t> {IL_FLAG_N, IL_FLAG_V};
+		case IL_FLAG_GROUP_GT:
+		case IL_FLAG_GROUP_LE:
+			return vector<uint32_t> {IL_FLAG_Z, IL_FLAG_N, IL_FLAG_V};
+		default:
+			return vector<uint32_t>();
+		}
+	}
+
+	virtual map<uint32_t, BNLowLevelILFlagCondition> GetFlagConditionsForSemanticFlagGroup(uint32_t semGroup) override
+	{
+		switch (semGroup) {
+		case IL_FLAG_GROUP_EQ:
+			return map<uint32_t, BNLowLevelILFlagCondition> {
+				{IL_FLAG_CLASS_INT, LLFC_E},
+				{IL_FLAG_CLASS_FLOAT, LLFC_FE},
+			};
+		case IL_FLAG_GROUP_NE:
+			return map<uint32_t, BNLowLevelILFlagCondition> {
+				{IL_FLAG_CLASS_INT, LLFC_NE},
+				{IL_FLAG_CLASS_FLOAT, LLFC_FNE},
+			};
+		case IL_FLAG_GROUP_CS:
+			return map<uint32_t, BNLowLevelILFlagCondition> {
+				{IL_FLAG_CLASS_INT, LLFC_UGE},
+				{IL_FLAG_CLASS_FLOAT, LLFC_FGE},
+			};
+		case IL_FLAG_GROUP_CC:
+			return map<uint32_t, BNLowLevelILFlagCondition> {
+				{IL_FLAG_CLASS_INT, LLFC_ULT},
+				{IL_FLAG_CLASS_FLOAT, LLFC_FLT},
+			};
+		case IL_FLAG_GROUP_MI:
+			return map<uint32_t, BNLowLevelILFlagCondition> {
+				{IL_FLAG_CLASS_INT, LLFC_NEG},
+				{IL_FLAG_CLASS_FLOAT, LLFC_FLT},
+			};
+		case IL_FLAG_GROUP_PL:
+			return map<uint32_t, BNLowLevelILFlagCondition> {
+				{IL_FLAG_CLASS_INT, LLFC_POS},
+				{IL_FLAG_CLASS_FLOAT, LLFC_FGE},
+			};
+		case IL_FLAG_GROUP_VS:
+			return map<uint32_t, BNLowLevelILFlagCondition> {
+				{IL_FLAG_CLASS_INT, LLFC_O},
+				{IL_FLAG_CLASS_FLOAT, LLFC_FO},
+			};
+		case IL_FLAG_GROUP_VC:
+			return map<uint32_t, BNLowLevelILFlagCondition> {
+				{IL_FLAG_CLASS_INT, LLFC_NO},
+				{IL_FLAG_CLASS_FLOAT, LLFC_FUO},
+			};
+		case IL_FLAG_GROUP_HI:
+			return map<uint32_t, BNLowLevelILFlagCondition> {
+				{IL_FLAG_CLASS_INT, LLFC_UGT},
+				{IL_FLAG_CLASS_FLOAT, LLFC_FGT},
+			};
+		case IL_FLAG_GROUP_LS:
+			return map<uint32_t, BNLowLevelILFlagCondition> {
+				{IL_FLAG_CLASS_INT, LLFC_ULE},
+				{IL_FLAG_CLASS_FLOAT, LLFC_FLE},
+			};
+		case IL_FLAG_GROUP_GE:
+			return map<uint32_t, BNLowLevelILFlagCondition> {
+				{IL_FLAG_CLASS_INT, LLFC_SGE},
+				{IL_FLAG_CLASS_FLOAT, LLFC_FGE},
+			};
+		case IL_FLAG_GROUP_LT:
+			return map<uint32_t, BNLowLevelILFlagCondition> {
+				{IL_FLAG_CLASS_INT, LLFC_SLT},
+				{IL_FLAG_CLASS_FLOAT, LLFC_FLT},
+			};
+		case IL_FLAG_GROUP_GT:
+			return map<uint32_t, BNLowLevelILFlagCondition> {
+				{IL_FLAG_CLASS_INT, LLFC_SGT},
+				{IL_FLAG_CLASS_FLOAT, LLFC_FGT},
+			};
+		case IL_FLAG_GROUP_LE:
+			return map<uint32_t, BNLowLevelILFlagCondition> {
+				{IL_FLAG_CLASS_INT, LLFC_SLE},
+				{IL_FLAG_CLASS_FLOAT, LLFC_FLE},
+			};
+		default:
+			return map<uint32_t, BNLowLevelILFlagCondition>();
+		}
+	}
+
+	virtual size_t GetSemanticFlagGroupLowLevelIL(uint32_t semGroup, LowLevelILFunction& il) override
+	{
+		switch (semGroup)
+		{
+		case IL_FLAG_GROUP_EQ:
+			return GetFlagConditionLowLevelIL(LLFC_E, IL_FLAG_CLASS_INT, il);
+		case IL_FLAG_GROUP_NE:
+			return GetFlagConditionLowLevelIL(LLFC_NE, IL_FLAG_CLASS_INT, il);
+		case IL_FLAG_GROUP_CS:
+			return GetFlagConditionLowLevelIL(LLFC_UGE, IL_FLAG_CLASS_INT, il);
+		case IL_FLAG_GROUP_CC:
+			return GetFlagConditionLowLevelIL(LLFC_ULT, IL_FLAG_CLASS_INT, il);
+		case IL_FLAG_GROUP_MI:
+			return GetFlagConditionLowLevelIL(LLFC_NEG, IL_FLAG_CLASS_INT, il);
+		case IL_FLAG_GROUP_PL:
+			return GetFlagConditionLowLevelIL(LLFC_POS, IL_FLAG_CLASS_INT, il);
+		case IL_FLAG_GROUP_VS:
+			return GetFlagConditionLowLevelIL(LLFC_O, IL_FLAG_CLASS_INT, il);
+		case IL_FLAG_GROUP_VC:
+			return GetFlagConditionLowLevelIL(LLFC_NO, IL_FLAG_CLASS_INT, il);
+		case IL_FLAG_GROUP_HI:
+			return GetFlagConditionLowLevelIL(LLFC_UGT, IL_FLAG_CLASS_INT, il);
+		case IL_FLAG_GROUP_LS:
+			return GetFlagConditionLowLevelIL(LLFC_ULE, IL_FLAG_CLASS_INT, il);
+		case IL_FLAG_GROUP_GE:
+			return GetFlagConditionLowLevelIL(LLFC_SGE, IL_FLAG_CLASS_INT, il);
+		case IL_FLAG_GROUP_LT:
+			return GetFlagConditionLowLevelIL(LLFC_SLT, IL_FLAG_CLASS_INT, il);
+		case IL_FLAG_GROUP_GT:
+			return GetFlagConditionLowLevelIL(LLFC_SGT, IL_FLAG_CLASS_INT, il);
+		case IL_FLAG_GROUP_LE:
+			return GetFlagConditionLowLevelIL(LLFC_SLE, IL_FLAG_CLASS_INT, il);
+		default:
+			return il.Unimplemented();
+		}
+	}
+
 
 	/* flag roles */
 
@@ -1288,7 +1508,7 @@ class Arm64Architecture : public Architecture
 
 	virtual vector<uint32_t> GetAllFlagWriteTypes() override
 	{
-		return vector<uint32_t> {IL_FLAGWRITE_ALL};
+		return vector<uint32_t> {IL_FLAG_WRITE_ALL, IL_FLAG_WRITE_ALL_FLOAT};
 	}
 
 
@@ -1296,8 +1516,10 @@ class Arm64Architecture : public Architecture
 	{
 		switch (flags)
 		{
-		case IL_FLAGWRITE_ALL:
+		case IL_FLAG_WRITE_ALL:
 			return "*";
+		case IL_FLAG_WRITE_ALL_FLOAT:
+			return "f*";
 		default:
 			return "";
 		}
@@ -1308,44 +1530,11 @@ class Arm64Architecture : public Architecture
 	{
 		switch (flags)
 		{
-		case IL_FLAGWRITE_ALL:
+		case IL_FLAG_WRITE_ALL:
+		case IL_FLAG_WRITE_ALL_FLOAT:
 			return vector<uint32_t> {IL_FLAG_N, IL_FLAG_Z, IL_FLAG_C, IL_FLAG_V};
 		default:
 			return vector<uint32_t> {};
-		}
-	}
-
-
-	/* connect flags to conditional statements */
-
-	virtual vector<uint32_t> GetFlagsRequiredForFlagCondition(
-	    BNLowLevelILFlagCondition cond, uint32_t) override
-	{
-		switch (cond)
-		{
-		case LLFC_E:
-		case LLFC_NE:
-			return vector<uint32_t> {IL_FLAG_Z};
-		case LLFC_SLT:
-		case LLFC_SGE:
-			return vector<uint32_t> {IL_FLAG_N, IL_FLAG_V};
-		case LLFC_ULT:
-		case LLFC_UGE:
-			return vector<uint32_t> {IL_FLAG_C};
-		case LLFC_SLE:
-		case LLFC_SGT:
-			return vector<uint32_t> {IL_FLAG_Z, IL_FLAG_N, IL_FLAG_V};
-		case LLFC_ULE:
-		case LLFC_UGT:
-			return vector<uint32_t> {IL_FLAG_C, IL_FLAG_Z};
-		case LLFC_NEG:
-		case LLFC_POS:
-			return vector<uint32_t> {IL_FLAG_N};
-		case LLFC_O:
-		case LLFC_NO:
-			return vector<uint32_t> {IL_FLAG_V};
-		default:
-			return vector<uint32_t>();
 		}
 	}
 
@@ -1358,20 +1547,6 @@ class Arm64Architecture : public Architecture
 	{
 		switch (op)
 		{
-		case LLIL_AND:
-			switch (flag)
-			{
-			case IL_FLAG_V:
-				return il.CompareNotEqual(0,
-				    il.Xor(0,
-				        il.CompareSignedLessThan(size,
-				            il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount),
-				            il.Const(size, 0)),
-				        il.Flag(IL_FLAG_V)),
-				    il.Const(0, 0));
-			case IL_FLAG_C:
-				return il.Const(0, 0);
-			}
 		case LLIL_SBB:
 			switch (flag)
 			{
@@ -1420,12 +1595,12 @@ class Arm64Architecture : public Architecture
 			REG_X0,   REG_X1,  REG_X2,  REG_X3,   REG_X4,  REG_X5,  REG_X6,  REG_X7,
 			REG_X8,   REG_X9,  REG_X10, REG_X11,  REG_X12, REG_X13, REG_X14, REG_X15,
 			REG_X16,  REG_X17, REG_X18, REG_X19,  REG_X20, REG_X21, REG_X22, REG_X23,
-			REG_X24,  REG_X25, REG_X26, REG_X27,  REG_X28, REG_X29, REG_X30, REG_SP,  REG_XZR,
+			REG_X24,  REG_X25, REG_X26, REG_X27,  REG_X28, REG_X29, REG_X30, REG_SP,
 			// Vector
-			REG_Q0,   REG_Q1,  REG_Q2,  REG_Q3,   REG_Q4,  REG_Q5,  REG_Q6,  REG_Q7,
-			REG_Q8,   REG_Q9,  REG_Q10, REG_Q11,  REG_Q12, REG_Q13, REG_Q14, REG_Q15,
-			REG_Q16,  REG_Q17, REG_Q18, REG_Q19,  REG_Q20, REG_Q21, REG_Q22, REG_Q23,
-			REG_Q24,  REG_Q25, REG_Q26, REG_Q27,  REG_Q28, REG_Q29, REG_Q30, REG_Q31,
+			REG_V0,   REG_V1,  REG_V2,  REG_V3,   REG_V4,  REG_V5,  REG_V6,  REG_V7,
+			REG_V8,   REG_V9,  REG_V10, REG_V11,  REG_V12, REG_V13, REG_V14, REG_V15,
+			REG_V16,  REG_V17, REG_V18, REG_V19,  REG_V20, REG_V21, REG_V22, REG_V23,
+			REG_V24,  REG_V25, REG_V26, REG_V27,  REG_V28, REG_V29, REG_V30, REG_V31,
 			// SVE
 			REG_P0,   REG_P1,  REG_P2,  REG_P3,   REG_P4,  REG_P5,  REG_P6,  REG_P7,
 			REG_P8,   REG_P9,  REG_P10,  REG_P11,   REG_P12,  REG_P13,  REG_P14,  REG_P15,
@@ -1442,11 +1617,11 @@ class Arm64Architecture : public Architecture
 			REG_W0,  REG_W1,  REG_W2,  REG_W3,  REG_W4,  REG_W5,  REG_W6,  REG_W7,
 			REG_W8,  REG_W9,  REG_W10, REG_W11, REG_W12, REG_W13, REG_W14, REG_W15,
 			REG_W16, REG_W17, REG_W18, REG_W19, REG_W20, REG_W21, REG_W22, REG_W23,
-			REG_W24, REG_W25, REG_W26, REG_W27, REG_W28, REG_W29, REG_W30, REG_WSP, REG_WZR,
+			REG_W24, REG_W25, REG_W26, REG_W27, REG_W28, REG_W29, REG_W30, REG_WSP,
 			REG_X0,  REG_X1,  REG_X2,  REG_X3,  REG_X4,  REG_X5,  REG_X6,  REG_X7,
 			REG_X8,  REG_X9,  REG_X10, REG_X11, REG_X12, REG_X13, REG_X14, REG_X15,
 			REG_X16, REG_X17, REG_X18, REG_X19, REG_X20, REG_X21, REG_X22, REG_X23,
-			REG_X24, REG_X25, REG_X26, REG_X27, REG_X28, REG_X29, REG_X30, REG_SP,  REG_XZR,
+			REG_X24, REG_X25, REG_X26, REG_X27, REG_X28, REG_X29, REG_X30, REG_SP,
 			REG_V0,  REG_V1,  REG_V2,  REG_V3,  REG_V4,  REG_V5,  REG_V6,  REG_V7,
 			REG_V8,  REG_V9,  REG_V10, REG_V11, REG_V12, REG_V13, REG_V14, REG_V15,
 			REG_V16, REG_V17, REG_V18, REG_V19, REG_V20, REG_V21, REG_V22, REG_V23,
@@ -1808,7 +1983,6 @@ class Arm64Architecture : public Architecture
 			case REG_W29:
 			case REG_W30:
 			case REG_WSP:
-			case REG_WZR:
 					return RegisterInfo(REG_X0 + (reg-REG_W0), 0, 4, true);
 			case REG_X0:
 			case REG_X1:
@@ -1842,7 +2016,6 @@ class Arm64Architecture : public Architecture
 			case REG_X29:
 			case REG_X30:
 			case REG_SP:
-			case REG_XZR:
 				return RegisterInfo(reg, 0, 8);
 			case REG_V0:
 			case REG_V1:
@@ -2455,7 +2628,7 @@ class Arm64CallingConvention : public CallingConvention
 
 	virtual vector<uint32_t> GetFloatArgumentRegisters() override
 	{
-		return vector<uint32_t> {REG_Q0, REG_Q1, REG_Q2, REG_Q3, REG_Q4, REG_Q5, REG_Q6, REG_Q7};
+		return vector<uint32_t> {REG_V0, REG_V1, REG_V2, REG_V3, REG_V4, REG_V5, REG_V6, REG_V7};
 	}
 
 
@@ -2463,9 +2636,9 @@ class Arm64CallingConvention : public CallingConvention
 	{
 		return vector<uint32_t> {REG_X0, REG_X1, REG_X2, REG_X3, REG_X4, REG_X5, REG_X6, REG_X7, REG_X8,
 		    REG_X9, REG_X10, REG_X11, REG_X12, REG_X13, REG_X14, REG_X15, REG_X16, REG_X17, REG_X18,
-		    REG_X30, REG_Q0, REG_Q1, REG_Q2, REG_Q3, REG_Q4, REG_Q5, REG_Q6, REG_Q7, REG_Q16, REG_Q17,
-		    REG_Q18, REG_Q19, REG_Q20, REG_Q21, REG_Q22, REG_Q23, REG_Q24, REG_Q25, REG_Q26, REG_Q27,
-		    REG_Q28, REG_Q29, REG_Q30, REG_Q31};
+		    REG_X30, REG_V0, REG_V1, REG_V2, REG_V3, REG_V4, REG_V5, REG_V6, REG_V7, REG_V16, REG_V17,
+		    REG_V18, REG_V19, REG_V20, REG_V21, REG_V22, REG_V23, REG_V24, REG_V25, REG_V26, REG_V27,
+		    REG_V28, REG_V29, REG_V30, REG_V31};
 	}
 
 
@@ -2479,7 +2652,7 @@ class Arm64CallingConvention : public CallingConvention
 	virtual uint32_t GetIntegerReturnValueRegister() override { return REG_X0; }
 
 
-	virtual uint32_t GetFloatReturnValueRegister() override { return REG_Q0; }
+	virtual uint32_t GetFloatReturnValueRegister() override { return REG_V0; }
 };
 
 
