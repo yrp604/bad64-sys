@@ -1,2 +1,2 @@
-git fetch arch-arm64 staging
-git subtree pull --prefix arch-arm64 arch-arm64 staging --squash
+git fetch arch-arm64 master
+git subtree pull --prefix arch-arm64 arch-arm64 master --squash
