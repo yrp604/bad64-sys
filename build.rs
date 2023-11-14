@@ -35,7 +35,7 @@ fn main() {
         .header("wrapper.h")
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks))
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         // common derives
         .derive_debug(true)
         .derive_eq(true)
@@ -45,6 +45,7 @@ fn main() {
         .rustified_enum("OperandClass")
         .rustified_enum("ShiftType")
         .rustified_enum("ArrangementSpec")
+        .rustified_enum("FlagEffect")
         // Finish the builder and generate the bindings.
         .generate()
         // Unwrap the Result and panic on failure.
