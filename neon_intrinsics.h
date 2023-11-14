@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <array>
 
 // from api
 #include "il.h" /* for ARM64_INTRIN_NORMAL_END, ExtractRegister() */
@@ -1201,9 +1202,21 @@ enum NeonIntrinsic : uint32_t
 	ARM64_INTRIN_VCVT_N_S64_F64,
 	ARM64_INTRIN_VCVTQ_N_S64_F64,
 	ARM64_INTRIN_VCVT_N_U64_F64,
+
+	ARM64_INTRIN_VCVTH_N_F16_U32, // VConVerT to   Half precision, has imm N, to f16 from u32 eg: ucvtf <Hd>, <Wn>, #<fbits>
+	ARM64_INTRIN_VCVTH_N_F16_U64, // VConVerT to   Half precision, has imm N, to f16 from u64 eg: ucvtf <Hd>, <Xn>, #<fbits>
+	ARM64_INTRIN_VCVTS_N_F32_U32, // VConVerT to Single precision, has imm N, to f32 from u32 eg: ucvtf <Sd>, <Wn>, #<fbits>
+	ARM64_INTRIN_VCVTS_N_F32_U64, // VConVerT to Single precision, has imm N, to f32 from u64 eg: ucvtf <Sd>, <Xn>, #<fbits>
+	ARM64_INTRIN_VCVTD_N_F64_U32, // VConVerT to Double precision, has imm N, to f64 from u32 eg: ucvtf <Dd>, <Wn>, #<fbits>
+	ARM64_INTRIN_VCVTD_N_F64_U64, // VConVerT to Double precision, has imm N, to f64 from u64 eg: ucvtf <Dd>, <Xn>, #<fbits>
+
+	ARM64_INTRIN_VCVT_N_F64_U64, // float64x1_t vcvt_n_f64_u64(uint64x1_t a, const int n)
+
+	ARM64_INTRIN_VCVTD_N_F64_F64, //
 	ARM64_INTRIN_VCVTQ_N_U64_F64,
 	ARM64_INTRIN_VCVTD_N_S64_F64,
 	ARM64_INTRIN_VCVTD_N_U64_F64,
+
 	ARM64_INTRIN_VCVT_F32_S32,
 	ARM64_INTRIN_VCVTQ_F32_S32,
 	ARM64_INTRIN_VCVT_F32_U32,
@@ -1223,13 +1236,10 @@ enum NeonIntrinsic : uint32_t
 	ARM64_INTRIN_VCVT_N_F32_U32,
 	ARM64_INTRIN_VCVTQ_N_F32_U32,
 	ARM64_INTRIN_VCVTS_N_F32_S32,
-	ARM64_INTRIN_VCVTS_N_F32_U32,
 	ARM64_INTRIN_VCVT_N_F64_S64,
 	ARM64_INTRIN_VCVTQ_N_F64_S64,
-	ARM64_INTRIN_VCVT_N_F64_U64,
 	ARM64_INTRIN_VCVTQ_N_F64_U64,
 	ARM64_INTRIN_VCVTD_N_F64_S64,
-	ARM64_INTRIN_VCVTD_N_F64_U64,
 	ARM64_INTRIN_VCVT_F16_F32,
 	ARM64_INTRIN_VCVT_HIGH_F16_F32,
 	ARM64_INTRIN_VCVT_F32_F64,
@@ -3451,8 +3461,6 @@ enum NeonIntrinsic : uint32_t
 	ARM64_INTRIN_VCVTH_N_F16_S32,
 	ARM64_INTRIN_VCVTH_N_F16_S64,
 	ARM64_INTRIN_VCVTH_N_F16_U16,
-	ARM64_INTRIN_VCVTH_N_F16_U32,
-	ARM64_INTRIN_VCVTH_N_F16_U64,
 	ARM64_INTRIN_VCVTH_N_S16_F16,
 	ARM64_INTRIN_VCVTH_N_S32_F16,
 	ARM64_INTRIN_VCVTH_N_S64_F16,
@@ -3918,9 +3926,9 @@ enum NeonIntrinsic : uint32_t
 	ARM64_INTRIN_VBFMLALBQ_LANEQ_F32,
 	ARM64_INTRIN_VBFMLALTQ_LANE_F32,
 	ARM64_INTRIN_VBFMLALTQ_LANEQ_F32,
+	ARM64_INTRIN_NEON_END
 };
 
-vector<uint32_t> NeonGetAllIntrinsics();
 string NeonGetIntrinsicName(uint32_t intrinsic);
 vector<NameAndType> NeonGetIntrinsicInputs(uint32_t intrinsic);
 vector<Confidence<Ref<Type>>> NeonGetIntrinsicOutputs(uint32_t intrinsic);

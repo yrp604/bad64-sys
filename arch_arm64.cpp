@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <inttypes.h>
 #include <map>
+#include <array>
 #include <stdio.h>
 #include <string.h>
 
@@ -21,6 +22,8 @@ using namespace std;
 #endif
 
 #define EMPTY(S) (S[0] == '\0')
+
+#define BINARYNINJA_MANUAL_RELOCATION ((uint64_t)-2)
 
 enum MachoArm64RelocationType : uint32_t
 {
@@ -262,12 +265,17 @@ class Arm64Architecture : public Architecture
 {
  protected:
 	size_t m_bits;
+	bool m_onlyDisassembleOnAlignedAddresses;
 
 	virtual bool Disassemble(const uint8_t* data, uint64_t addr, size_t maxLen, Instruction& result)
 	{
 		(void)addr;
 		(void)maxLen;
 		memset(&result, 0, sizeof(result));
+
+		if (m_onlyDisassembleOnAlignedAddresses && (addr % 4 != 0))
+			return false;
+
 		if (aarch64_decompose(*(uint32_t*)data, &result, addr) != 0)
 			return false;
 		return true;
@@ -395,6 +403,9 @@ class Arm64Architecture : public Architecture
 		case ARM64_HVC:
 		case ARM64_SMC:
 			result.AddBranch(SystemCall);
+			break;
+		case ARM64_UDF:
+			result.AddBranch(ExceptionBranch);
 			break;
 
 		default:
@@ -536,7 +547,7 @@ class Arm64Architecture : public Architecture
 		/* only use index if this is isolated REG (not, for example, MULTIREG */
 		if (operand->operandClass == REG && operand->laneUsed)
 		{
-			sprintf(buf, "%u", operand->lane);
+			snprintf(buf, sizeof(buf), "%u", operand->lane);
 			result.emplace_back(TextToken, "[");
 			result.emplace_back(IntegerToken, buf);
 			result.emplace_back(TextToken, "]");
@@ -690,7 +701,11 @@ class Arm64Architecture : public Architecture
 
 
  public:
-	Arm64Architecture() : Architecture("aarch64"), m_bits(64) {}
+	Arm64Architecture() : Architecture("aarch64"), m_bits(64)
+	{
+		Ref<Settings> settings = Settings::Instance();
+		m_onlyDisassembleOnAlignedAddresses = settings->Get<bool>("arch.aarch64.disassembly.alignRequired") ? 1 : 0;
+	}
 
 	bool CanAssemble() override { return true; }
 
@@ -702,11 +717,25 @@ class Arm64Architecture : public Architecture
 		char *instrBytes = NULL, *err = NULL;
 		int instrBytesLen = 0, errLen = 0;
 
+		string prepend = ".arch_extension crc\n" ".arch_extension sm4\n"
+			".arch_extension sha3\n" ".arch_extension sha2\n" ".arch_extension aes\n"
+			".arch_extension crypto\n" ".arch_extension fp\n" ".arch_extension simd\n"
+			".arch_extension ras\n" ".arch_extension lse\n" ".arch_extension predres\n"
+			".arch_extension ccdp\n" ".arch_extension mte\n" ".arch_extension memtag\n"
+			".arch_extension tlb-rmi\n" ".arch_extension pan\n" ".arch_extension pan-rwv\n"
+			".arch_extension ccpp\n" ".arch_extension rcpc\n" ".arch_extension rng\n"
+			".arch_extension sve\n" ".arch_extension sve2\n" ".arch_extension sve2-aes\n"
+			".arch_extension sve2-sm4\n" ".arch_extension sve2-sha3\n" ".arch_extension sve2-bitperm\n"
+			".arch_extension ls64\n" ".arch_extension xs\n" ".arch_extension pauth\n"
+			".arch_extension flagm\n" ".arch_extension rme\n" ".arch_extension sme\n"
+			".arch_extension sme-f64f64\n" ".arch_extension sme-i16i64\n" ".arch_extension hbc\n"
+			".arch_extension mops\n";
+
 		BNLlvmServicesInit();
 
 		errors.clear();
 		assembleResult =
-		    BNLlvmServicesAssemble(code.c_str(), LLVM_SVCS_DIALECT_UNSPEC, "aarch64-none-none",
+		    BNLlvmServicesAssemble((prepend + code).c_str(), LLVM_SVCS_DIALECT_UNSPEC, "aarch64-none-none",
 		        LLVM_SVCS_CM_DEFAULT, LLVM_SVCS_RM_STATIC, &instrBytes, &instrBytesLen, &err, &errLen);
 
 		if (assembleResult || errLen)
@@ -891,20 +920,6 @@ class Arm64Architecture : public Architecture
 			return "__autia";
 		case ARM64_INTRIN_AUTIB:
 			return "__autib";
-		case ARM64_INTRIN_AUTIB1716:
-			return "__autib1716";
-		case ARM64_INTRIN_AUTIBSP:
-			return "__autibsp";
-		case ARM64_INTRIN_AUTIBZ:
-			return "__autibz";
-		case ARM64_INTRIN_AUTDZA:
-			return "__autdza";
-		case ARM64_INTRIN_AUTDZB:
-			return "__autdzb";
-		case ARM64_INTRIN_AUTIZA:
-			return "__autiza";
-		case ARM64_INTRIN_AUTIZB:
-			return "__autizb";
 		case ARM64_INTRIN_ISB:
 			return "__isb";
 		case ARM64_INTRIN_WFE:
@@ -923,32 +938,12 @@ class Arm64Architecture : public Architecture
 			return "__pacda";
 		case ARM64_INTRIN_PACDB:
 			return "__pacdb";
-		case ARM64_INTRIN_PACDZA:
-			return "__pacdza";
-		case ARM64_INTRIN_PACDZB:
-			return "__pacdzb";
 		case ARM64_INTRIN_PACGA:
 			return "__pacga";
 		case ARM64_INTRIN_PACIA:
 			return "__pacia";
-		case ARM64_INTRIN_PACIA1716:
-			return "__pacia1716";
-		case ARM64_INTRIN_PACIASP:
-			return "__paciasp";
-		case ARM64_INTRIN_PACIAZ:
-			return "__paciaz";
-		case ARM64_INTRIN_PACIZA:
-			return "__paciza";
 		case ARM64_INTRIN_PACIB:
 			return "__pacib";
-		case ARM64_INTRIN_PACIB1716:
-			return "__pacib1716";
-		case ARM64_INTRIN_PACIBSP:
-			return "__pacibsp";
-		case ARM64_INTRIN_PACIBZ:
-			return "__pacibz";
-		case ARM64_INTRIN_PACIZB:
-			return "__pacizb";
 		case ARM64_INTRIN_PSBCSYNC:
 			return "SystemHintOp_PSB";
 		case ARM64_INTRIN_HINT_TSB:
@@ -975,8 +970,6 @@ class Arm64Architecture : public Architecture
 			return "__xpacd";
 		case ARM64_INTRIN_XPACI:
 			return "__xpaci";
-		case ARM64_INTRIN_XPACLRI:
-			return "__xpaclri";
 		case ARM64_INTRIN_ERET:
 			return "_eret";
 		case ARM64_INTRIN_CLZ:
@@ -991,6 +984,30 @@ class Arm64Architecture : public Architecture
 			return "__aesd";
 		case ARM64_INTRIN_AESE:
 			return "__aese";
+		case ARM64_INTRIN_LDXR:
+			return "__ldxr";
+		case ARM64_INTRIN_LDXRB:
+			return "__ldxrb";
+		case ARM64_INTRIN_LDXRH:
+			return "__ldxrh";
+		case ARM64_INTRIN_LDAXR:
+			return "__ldaxr";
+		case ARM64_INTRIN_LDAXRB:
+			return "__ldaxrb";
+		case ARM64_INTRIN_LDAXRH:
+			return "__ldaxrh";
+		case ARM64_INTRIN_STXR:
+			return "__stxr";
+		case ARM64_INTRIN_STXRB:
+			return "__stxrb";
+		case ARM64_INTRIN_STXRH:
+			return "__stxrh";
+		case ARM64_INTRIN_STLXR:
+			return "__stlxr";
+		case ARM64_INTRIN_STLXRB:
+			return "__stlxrb";
+		case ARM64_INTRIN_STLXRH:
+			return "__stlxrh";
 		default:
 			break;
 		}
@@ -999,26 +1016,29 @@ class Arm64Architecture : public Architecture
 	}
 
 
-	virtual vector<uint32_t> GetAllIntrinsics() override
+	virtual std::vector<uint32_t> GetAllIntrinsics() override
 	{
-		vector<uint32_t> result = NeonGetAllIntrinsics();
+		// Save ourselve some time on allocations.
+		constexpr size_t intrinsic_number = ARM64_INTRIN_NORMAL_END;
+		// Hihghest intrinsic number currently is ARM64_INTRIN_NEON_END.
+		// If new extensions are added please update this code.
+		std::vector<uint32_t> result{ARM64_INTRIN_NEON_END};
 
-		vector<uint32_t> tmp = {ARM64_INTRIN_AUTDA, ARM64_INTRIN_AUTDB, ARM64_INTRIN_AUTDZA,
-		    ARM64_INTRIN_AUTDZB, ARM64_INTRIN_AUTIA, ARM64_INTRIN_AUTIB, ARM64_INTRIN_AUTIZA,
-		    ARM64_INTRIN_AUTIZB, ARM64_INTRIN_AUTIB1716, ARM64_INTRIN_AUTIBSP, ARM64_INTRIN_AUTIBZ,
-		    ARM64_INTRIN_DC, ARM64_INTRIN_DMB, ARM64_INTRIN_DSB, ARM64_INTRIN_ESB,
-		    ARM64_INTRIN_HINT_BTI, ARM64_INTRIN_HINT_CSDB, ARM64_INTRIN_HINT_DGH, ARM64_INTRIN_HINT_TSB,
-		    ARM64_INTRIN_ISB, ARM64_INTRIN_MRS, ARM64_INTRIN_MSR, ARM64_INTRIN_PACDA,
-		    ARM64_INTRIN_PACDB, ARM64_INTRIN_PACDZA, ARM64_INTRIN_PACDZB, ARM64_INTRIN_PACGA,
-		    ARM64_INTRIN_PACIA, ARM64_INTRIN_PACIA1716, ARM64_INTRIN_PACIASP, ARM64_INTRIN_PACIAZ,
-		    ARM64_INTRIN_PACIZA, ARM64_INTRIN_PACIB, ARM64_INTRIN_PACIB1716, ARM64_INTRIN_PACIBSP,
-		    ARM64_INTRIN_PACIBZ, ARM64_INTRIN_PACIZB, ARM64_INTRIN_PRFM, ARM64_INTRIN_PSBCSYNC,
-		    ARM64_INTRIN_SEV, ARM64_INTRIN_SEVL, ARM64_INTRIN_WFE, ARM64_INTRIN_WFI, ARM64_INTRIN_YIELD,
-		    ARM64_INTRIN_XPACD, ARM64_INTRIN_XPACI, ARM64_INTRIN_XPACLRI, ARM64_INTRIN_ERET,
-		    ARM64_INTRIN_CLZ, ARM64_INTRIN_CLREX, ARM64_INTRIN_REV, ARM64_INTRIN_RBIT,
-		    ARM64_INTRIN_AESD, ARM64_INTRIN_AESE};
+		// Double check someone didn't insert a new intrinsic at the beginning of our enum since we rely
+		// on it to fill the next array.
+		static_assert(Arm64Intrinsic::ARM64_INTRIN_AUTDA == 0,
+			"Invalid first Arm64Intrinsic value. Please add your intrinsic further in the enum.");
+		
+		// Normal intrinsics.
+		for (uint32_t id = Arm64Intrinsic::ARM64_INTRIN_AUTDA; id < Arm64Intrinsic::ARM64_INTRIN_NORMAL_END; id++) {
+			result.push_back(id);
+		}
 
-		result.insert(result.end(), tmp.begin(), tmp.end());
+		// Finish populating our container with neon specific intrinsic IDs
+		for (uint32_t id = NeonIntrinsic::ARM64_INTRIN_VADD_S8; id < NeonIntrinsic::ARM64_INTRIN_NEON_END; id++) {
+			result.push_back(id);
+		}
+
 		return result;
 	}
 
@@ -1027,29 +1047,23 @@ class Arm64Architecture : public Architecture
 	{
 		switch (intrinsic)
 		{
-		case ARM64_INTRIN_AUTDA:      // reads <Xn|SP>
-		case ARM64_INTRIN_AUTDB:      // reads <Xn|SP>
-		case ARM64_INTRIN_AUTIA:      // reads <Xn|SP>
-		case ARM64_INTRIN_AUTIB:      // reads <Xn|SP>
-		case ARM64_INTRIN_AUTIB1716:  // reads x16
 		case ARM64_INTRIN_CLZ:        // reads <Xn>
 		case ARM64_INTRIN_DC:         // reads <Xt>
 		case ARM64_INTRIN_MSR:
 		case ARM64_INTRIN_MRS:
-		case ARM64_INTRIN_PACDA:      // reads <Xn>
-		case ARM64_INTRIN_PACDB:      // reads <Xn>
-		case ARM64_INTRIN_PACIA:      // reads <Xn>
-		case ARM64_INTRIN_PACIA1716:  // reads x16
-		case ARM64_INTRIN_PACIB:      // reads <Xn>
-		case ARM64_INTRIN_PACIB1716:  // reads x16
 		case ARM64_INTRIN_PRFM:
 		case ARM64_INTRIN_REV:   // reads <Xn>
 		case ARM64_INTRIN_RBIT:  // reads <Xn>
 			return {NameAndType(Type::IntegerType(8, false))};
-		case ARM64_INTRIN_AUTIBSP:  // reads x30, sp
-		case ARM64_INTRIN_PACGA:    // reads <Xn>, <Xm|SP>
-		case ARM64_INTRIN_PACIASP:  // reads x30, sp
-		case ARM64_INTRIN_PACIBSP:  // reads x30, sp
+		case ARM64_INTRIN_AUTDA:      // reads <Xd>, <Xn|SP>
+		case ARM64_INTRIN_AUTDB:      // reads <Xd>, <Xn|SP>
+		case ARM64_INTRIN_AUTIA:      // reads <Xd>, <Xn|SP>
+		case ARM64_INTRIN_AUTIB:      // reads <Xd>, <Xn|SP>
+		case ARM64_INTRIN_PACGA:      // reads <Xn>, <Xm|SP>
+		case ARM64_INTRIN_PACDA:      // reads <Xd>, <Xn>
+		case ARM64_INTRIN_PACDB:      // reads <Xd>, <Xn>
+		case ARM64_INTRIN_PACIA:      // reads <Xd>, <Xn>
+		case ARM64_INTRIN_PACIB:      // reads <Xd>, <Xn>
 			return {NameAndType(Type::IntegerType(8, false)), NameAndType(Type::IntegerType(8, false))};
 		case ARM64_INTRIN_AESD:
 		case ARM64_INTRIN_AESE:
@@ -1071,32 +1085,14 @@ class Arm64Architecture : public Architecture
 		case ARM64_INTRIN_AUTDB:      // writes <Xd>
 		case ARM64_INTRIN_AUTIA:      // writes <Xd>
 		case ARM64_INTRIN_AUTIB:      // writes <Xd>
-		case ARM64_INTRIN_AUTIB1716:  // writes x17
-		case ARM64_INTRIN_AUTIBSP:    // writes x30
-		case ARM64_INTRIN_AUTIBZ:     // writes x30
-		case ARM64_INTRIN_AUTDZA:     // writes <Xd>
-		case ARM64_INTRIN_AUTDZB:     // writes <Xd>
-		case ARM64_INTRIN_AUTIZA:     // writes <Xd>
-		case ARM64_INTRIN_AUTIZB:     // writes <Xd>
 		case ARM64_INTRIN_MRS:
 		case ARM64_INTRIN_PACDA:      // writes <Xd>
 		case ARM64_INTRIN_PACDB:      // writes <Xd>
-		case ARM64_INTRIN_PACDZA:     // writes <Xd>
-		case ARM64_INTRIN_PACDZB:     // writes <Xd>
 		case ARM64_INTRIN_PACIA:      // writes <Xd>
 		case ARM64_INTRIN_PACGA:      // writes <Xd>
-		case ARM64_INTRIN_PACIA1716:  // writes x17
-		case ARM64_INTRIN_PACIASP:    // writes x30
-		case ARM64_INTRIN_PACIAZ:     // writes x30
-		case ARM64_INTRIN_PACIB1716:  // writes x17
 		case ARM64_INTRIN_PACIB:      // writes <Xd>
-		case ARM64_INTRIN_PACIBSP:    // writes x30
-		case ARM64_INTRIN_PACIBZ:     // writes x30
-		case ARM64_INTRIN_PACIZA:     // writes <Xd>
-		case ARM64_INTRIN_PACIZB:     // writes <Xd>
 		case ARM64_INTRIN_XPACD:      // writes <Xd>
 		case ARM64_INTRIN_XPACI:      // writes <Xd>
-		case ARM64_INTRIN_XPACLRI:    // writes x30
 		case ARM64_INTRIN_CLZ:        // writes <Xd>
 		case ARM64_INTRIN_REV:        // writes <Xd>
 		case ARM64_INTRIN_RBIT:       // writes <Xd>
@@ -1232,7 +1228,7 @@ class Arm64Architecture : public Architecture
 		}
 
 		len = 4;
-		return GetLowLevelILForInstruction(this, addr, il, instr, GetAddressSize());
+		return GetLowLevelILForInstruction(this, addr, il, instr, GetAddressSize(), m_onlyDisassembleOnAlignedAddresses);
 	}
 
 
@@ -1258,7 +1254,7 @@ class Arm64Architecture : public Architecture
 		case IL_FLAG_V:
 			return "v";
 		default:
-			sprintf(result, "flag%" PRIu32, flag);
+			snprintf(result, sizeof(result), "flag%" PRIu32, flag);
 			return result;
 		}
 	}
@@ -2451,6 +2447,8 @@ class Arm64ImportedFunctionRecognizer : public FunctionRecognizer
 
 	bool RecognizeMachoPLTEntries(BinaryView* data, Function* func, LowLevelILFunction* il)
 	{
+		DataVariable target;
+
 		if ((il->GetInstructionCount() == 2) || (il->GetInstructionCount() == 3))
 		{
 			// 0: nop OR x16 = symbol@PLT
@@ -2509,7 +2507,19 @@ class Arm64ImportedFunctionRecognizer : public FunctionRecognizer
 			if (jumpOperand.GetSourceRegister<LLIL_REG>() != targetReg)
 				return false;
 
-			data->DefineImportedFunction(sym, func);
+			data->GetDataVariableAtAddress(loadAddrConstant.value, target);
+
+			Ref<Type> funcType = nullptr;
+			if (target.type && target.type->GetClass() == PointerTypeClass &&
+					target.type.GetConfidence() >= BN_MINIMUM_CONFIDENCE)
+			{
+				target.type = target.type->GetChildType();
+				if (target.type && target.type->GetClass() == FunctionTypeClass &&
+						target.type.GetConfidence() >= BN_MINIMUM_CONFIDENCE)
+					funcType = target.type.GetValue();
+			}
+
+			data->DefineImportedFunction(sym, func, funcType);
 			return true;
 		}
 		else if (il->GetInstructionCount() == 4)
@@ -2588,7 +2598,19 @@ class Arm64ImportedFunctionRecognizer : public FunctionRecognizer
 			if (jumpOperand.GetSourceRegister<LLIL_REG>() != targetReg)
 				return false;
 
-			data->DefineImportedFunction(sym, func);
+			data->GetDataVariableAtAddress(loadAddrConstant.value, target);
+
+			Ref<Type> funcType = nullptr;
+			if (target.type && target.type->GetClass() == PointerTypeClass &&
+					target.type.GetConfidence() >= BN_MINIMUM_CONFIDENCE)
+			{
+				target.type = target.type->GetChildType();
+				if (target.type && target.type->GetClass() == FunctionTypeClass &&
+						target.type.GetConfidence() >= BN_MINIMUM_CONFIDENCE)
+					funcType = target.type.GetValue();
+			}
+
+			data->DefineImportedFunction(sym, func, funcType);
 			return true;
 		}
 
@@ -2770,7 +2792,7 @@ class Arm64MachoRelocationHandler : public RelocationHandler
 		// printf("reloc->GetTarget(): 0x%llX\n", reloc->GetTarget());
 		// printf("reloc->GetAddress(): 0x%llX\n", reloc->GetAddress());
 
-		if (info.nativeType == (uint64_t)-2)
+		if (info.nativeType == BINARYNINJA_MANUAL_RELOCATION)
 		{  // Magic number defined in MachOView.cpp for tagged pointers
 			*(uint64_t*)dest = info.target;
 		}
@@ -2951,6 +2973,14 @@ struct LDST_REG_UNSIGNED_IMM{
 	uint32_t size:2;
 };
 
+struct MOV_WIDE_IMM{
+    uint32_t Rd:5;
+    uint32_t imm:16;
+    uint32_t shift:2;
+    uint32_t opcode:6;
+    uint32_t variant:3;
+};
+
 class Arm64ElfRelocationHandler : public RelocationHandler
 {
  public:
@@ -3000,7 +3030,7 @@ class Arm64ElfRelocationHandler : public RelocationHandler
 		{
 			ADD_SUB_IMM* decode = (ADD_SUB_IMM*)dest;
 			aarch64_decompose(dest32[0], &inst, reloc->GetAddress());
-			decode->imm = inst.operands[2].immediate + target;
+			decode->imm = target + info.addend;
 			break;
 		}
 		case R_AARCH64_CALL26:
@@ -3008,7 +3038,7 @@ class Arm64ElfRelocationHandler : public RelocationHandler
 		{
 			UNCONDITIONAL_BRANCH* decode = (UNCONDITIONAL_BRANCH*)dest;
 			aarch64_decompose(dest32[0], &inst, 0);
-			decode->imm = (inst.operands[0].immediate + target - reloc->GetAddress()) >> 2;
+			decode->imm = (target + info.addend - reloc->GetAddress()) >> 2;
 			break;
 		}
 		case R_AARCH64_ABS16:
@@ -3081,11 +3111,31 @@ class Arm64ElfRelocationHandler : public RelocationHandler
 		}
 		case R_AARCH64_MOVW_UABS_G0:
 		case R_AARCH64_MOVW_UABS_G0_NC:
+		{
+			MOV_WIDE_IMM* decode = (MOV_WIDE_IMM*)dest;
+			decode->imm = (target + info.addend);
+			break;
+		}
 		case R_AARCH64_MOVW_UABS_G1:
 		case R_AARCH64_MOVW_UABS_G1_NC:
+		{
+			MOV_WIDE_IMM* decode = (MOV_WIDE_IMM*)dest;
+			decode->imm = (target + info.addend)>>16;
+			break;
+		}
 		case R_AARCH64_MOVW_UABS_G2:
 		case R_AARCH64_MOVW_UABS_G2_NC:
+		{
+			MOV_WIDE_IMM* decode = (MOV_WIDE_IMM*)dest;
+			decode->imm = (target + info.addend)>>32;
+			break;
+		}
 		case R_AARCH64_MOVW_UABS_G3:
+		{
+			MOV_WIDE_IMM* decode = (MOV_WIDE_IMM*)dest;
+			decode->imm = (target + info.addend)>>48;
+			break;
+		}
 		case R_AARCH64_MOVW_SABS_G0:
 		case R_AARCH64_MOVW_SABS_G1:
 		case R_AARCH64_MOVW_SABS_G2:
@@ -3107,8 +3157,7 @@ class Arm64ElfRelocationHandler : public RelocationHandler
 		return true;
 	}
 
-	virtual bool GetRelocationInfo(
-	    Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
+	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
 	{
 		(void)view;
 		(void)arch;
@@ -3159,6 +3208,19 @@ class Arm64ElfRelocationHandler : public RelocationHandler
 				reloc.pcRelative = true;
 				reloc.size = 4;
 				break;
+			case R_AARCH64_PREL64:
+				reloc.pcRelative = true;
+				reloc.size = 8;
+				break;
+			case R_AARCH64_MOVW_UABS_G0:
+			case R_AARCH64_MOVW_UABS_G0_NC:
+			case R_AARCH64_MOVW_UABS_G1:
+			case R_AARCH64_MOVW_UABS_G1_NC:
+			case R_AARCH64_MOVW_UABS_G2:
+			case R_AARCH64_MOVW_UABS_G2_NC:
+			case R_AARCH64_MOVW_UABS_G3:
+				reloc.size = 4;
+				break;
 			case R_AARCH64_ABS32:
 			case R_AARCH64_ADD_ABS_LO12_NC:
 			case R_AARCH64_LDST8_ABS_LO12_NC:
@@ -3180,7 +3242,8 @@ class Arm64ElfRelocationHandler : public RelocationHandler
 				reloc.size = 4;
 				break;
 			case R_AARCH64_RELATIVE:
-				reloc.pcRelative = true;
+				reloc.pcRelative = false;
+				reloc.baseRelative = true;
 				reloc.size = 8;
 				break;
 			default:
@@ -3190,8 +3253,7 @@ class Arm64ElfRelocationHandler : public RelocationHandler
 			}
 		}
 		for (auto& reloc : relocTypes)
-			LogWarn("Unsupported ELF relocation type: %s",
-			    GetRelocationString((ElfArm64RelocationType)reloc));
+			LogWarn("Unsupported ELF relocation type: %s", GetRelocationString((ElfArm64RelocationType)reloc));
 		return true;
 	}
 
@@ -3421,9 +3483,32 @@ public:
 };
 
 
+static void InitAarch64Settings()
+{
+	Ref<Settings> settings = Settings::Instance();
+
+	settings->RegisterSetting("arch.aarch64.disassembly.alignRequired",
+			R"({
+			"title" : "AARCH64 Alignment Requirement",
+			"type" : "boolean",
+			"default" : true,
+			"description" : "Require instructions be on 4-byte aligned addresses to be disassembled."
+			})");
+}
+
+
 extern "C"
 {
 	BN_DECLARE_CORE_ABI_VERSION
+
+#ifndef DEMO_VERSION
+	BINARYNINJAPLUGIN void CorePluginDependencies()
+	{
+		AddOptionalPluginDependency("view_elf");
+		AddOptionalPluginDependency("view_macho");
+		AddOptionalPluginDependency("view_pe");
+	}
+#endif
 
 #ifdef DEMO_VERSION
 	bool Arm64PluginInit()
@@ -3431,6 +3516,8 @@ extern "C"
 	BINARYNINJAPLUGIN bool CorePluginInit()
 #endif
 	{
+		InitAarch64Settings();
+
 		Architecture* arm64 = new Arm64Architecture();
 
 		Architecture::Register(arm64);
@@ -3471,8 +3558,6 @@ extern "C"
 		BinaryViewType::RegisterArchitecture("COFF", 0xaa64, LittleEndian, arm64);
 		BinaryViewType::RegisterArchitecture("PE", 0xaa64, LittleEndian, arm64);
 		BinaryViewType::RegisterArchitecture("PE", 0xaa64, BigEndian, arm64);
-		arm64->SetBinaryViewTypeConstant("ELF", "R_COPY", 0x400);
-		arm64->SetBinaryViewTypeConstant("ELF", "R_JUMP_SLOT", 0x402);
 
 		return true;
 	}
