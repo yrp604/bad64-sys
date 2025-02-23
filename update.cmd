@@ -1,2 +1,1 @@
-git fetch arch-arm64 master
-git subtree pull --prefix arch-arm64 arch-arm64 master --squash
+git subtree pull --prefix=binaryninja-api https://github.com/Vector35/binaryninja-api.git dev --squash
