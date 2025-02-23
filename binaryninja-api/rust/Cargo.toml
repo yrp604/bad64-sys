@@ -1,0 +1,25 @@
+[package]
+name = "binaryninja"
+version = "0.1.0"
+authors = ["Ryan Snyder <ryan@vector35.com>", "Kyle Martin <kyle@vector35.com>"]
+edition = "2021"
+rust-version = "1.83.0"
+license = "Apache-2.0"
+
+[features]
+# This is used when statically linking to prevent exporting CorePluginABIVersion and UiPluginABIVersion.
+no_exports = []
+# Add this if you want to support the demo version of the product.
+# This will disable certain functions that do not exist in the demo build.
+demo = ["no_exports"]
+
+[dependencies]
+log = { version = "0.4", features = ["std"] }
+rayon = { version = "1.10", optional = true }
+binaryninjacore-sys = { path = "binaryninjacore-sys" }
+thiserror = "2.0"
+
+[dev-dependencies]
+rstest = "0.24"
+tempfile = "3.15"
+serial_test = "3.2"
