@@ -7,7 +7,7 @@ fn main() {
         "test.c", "gofer.c", "format.c", "encodings_fmt.c",
     ].iter().map(OsStr::new).collect();
 
-    let dotc_files = glob::glob("arch-arm64/disassembler/*.c")
+    let dotc_files = glob::glob("binaryninja-api/arch/arm64/disassembler/*.c")
         .expect("Failed to read glob pattern")
         .map(|x| x.unwrap())
         .filter(|x| !ignorelist.as_slice().contains(&x.file_name().unwrap()));
@@ -15,7 +15,7 @@ fn main() {
     // Compile the library
     cc::Build::new()
         .files(dotc_files)
-        .include("arch-arm64/disassembler")
+        .include("binaryninja-api/arch/arm64/disassembler")
         .compile("arm64decode");
 
     // Generate the bindings

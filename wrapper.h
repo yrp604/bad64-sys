@@ -1,1 +1,1 @@
-#include "arch-arm64/disassembler/decode.h"
+#include "binaryninja-api/arch/arm64/disassembler/decode.h"
