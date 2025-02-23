@@ -3,9 +3,10 @@ use std::ffi::OsStr;
 use std::path::PathBuf;
 
 fn main() {
-    let ignorelist: Vec<&OsStr> = [
-        "test.c", "gofer.c", "format.c", "encodings_fmt.c",
-    ].iter().map(OsStr::new).collect();
+    let ignorelist: Vec<&OsStr> = ["test.c", "gofer.c", "format.c", "encodings_fmt.c"]
+        .iter()
+        .map(OsStr::new)
+        .collect();
 
     let dotc_files = glob::glob("binaryninja-api/arch/arm64/disassembler/*.c")
         .expect("Failed to read glob pattern")
