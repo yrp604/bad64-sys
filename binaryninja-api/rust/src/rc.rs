@@ -1,4 +1,4 @@
-// Copyright 2021-2024 Vector 35 Inc.
+// Copyright 2021-2025 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -55,7 +55,7 @@ impl<T: RefCountable> Ref<T> {
         Self { contents }
     }
 
-    pub(crate) unsafe fn into_raw(obj: Self) -> T {
+    pub unsafe fn into_raw(obj: Self) -> T {
         let res = ptr::read(&obj.contents);
         mem::forget(obj);
         res
@@ -258,7 +258,7 @@ impl<P: CoreArrayProviderInner> Array<P> {
         }
     }
 
-    pub fn iter(&self) -> ArrayIter<P> {
+    pub fn iter(&self) -> ArrayIter<'_, P> {
         ArrayIter {
             it: unsafe { slice::from_raw_parts(self.contents, self.count).iter() },
             context: &self.context,
@@ -347,7 +347,7 @@ impl<P: CoreArrayProviderInner> ArrayGuard<P> {
         }
     }
 
-    pub fn iter(&self) -> ArrayIter<P> {
+    pub fn iter(&self) -> ArrayIter<'_, P> {
         ArrayIter {
             it: unsafe { slice::from_raw_parts(self.contents, self.count).iter() },
             context: &self.context,

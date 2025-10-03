@@ -2,7 +2,6 @@
 # Once done this will define
 #  BinaryNinjaCore_FOUND - If Binary Ninja Core is found
 #  BinaryNinjaCore_ROOT_DIR - The installation path of Binary Ninja
-#  BinaryNinjaCore_USER_PLUGINS_DIR - The path for user plugins
 #  BinaryNinjaCore_INCLUDE_DIRS - The directories to include for compiling core plugins
 #  BinaryNinjaCore_LIBRARIES - The libraries for linking core plugins
 #  BinaryNinjaCore_LIBRARY_DIRS - The link paths required for core plugins
@@ -11,7 +10,7 @@
 # According to Good CMake Hygiene, we should use BinaryNinjaCore_<VAR> named variables.
 # Existing plugins likely use BN_<VAR> names already, so both are provided.
 
-cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 
 if(NOT BN_INTERNAL_BUILD)
     set(PATH_HINTS "$ENV{BN_INSTALL_DIR}" "${BN_INSTALL_DIR}")
@@ -20,7 +19,9 @@ if(NOT BN_INTERNAL_BUILD)
         list(APPEND PATH_HINTS "C:\\Program Files\\Vector35\\BinaryNinja")
         # User install
         list(APPEND PATH_HINTS "$ENV{LocalAppData}\\Vector35\\BinaryNinja")
+        list(APPEND PATH_HINTS "$ENV{LocalAppData}\\Programs\\Vector35\\BinaryNinja")
     elseif(APPLE)
+        list(APPEND PATH_HINTS "${BN_INSTALL_DIR}/Contents/MacOS")
         list(APPEND PATH_HINTS "$ENV{BN_INSTALL_DIR}/Contents/MacOS")
         list(APPEND PATH_HINTS "/Applications/Binary Ninja.app/Contents/MacOS")
         list(APPEND PATH_HINTS "$ENV{HOME}/Applications/Binary Ninja.app/Contents/MacOS")
@@ -31,6 +32,12 @@ if(NOT BN_INTERNAL_BUILD)
     find_library(CORE_LIBRARY
         NAMES binaryninjacore libbinaryninjacore.so.1
         HINTS ${PATH_HINTS})
+
+    if(NOT CORE_LIBRARY)
+        set(BN_FOUND 0)
+        set(BinaryNinjaCore_FOUND 0)
+        return()
+    endif()
 
     include(FindPackageHandleStandardArgs)
     find_package_handle_standard_args(BinaryNinjaCore
@@ -50,27 +57,22 @@ if(NOT BN_INTERNAL_BUILD)
     if(WIN32)
         set(BinaryNinjaCore_LIBRARY_DIRS "${INSTALL_BIN_DIR}")
         set(BinaryNinjaCore_ROOT_DIR "${INSTALL_BIN_DIR}")
-        set(BinaryNinjaCore_USER_PLUGINS_DIR "$ENV{APPDATA}\\Binary Ninja\\plugins")
     elseif(APPLE)
         set(BinaryNinjaCore_LIBRARY_DIRS "${INSTALL_BIN_DIR}")
         # Binary Ninja.app/Contents/MacOS/binaryninja -> Binary Ninja.app/
         get_filename_component(BinaryNinjaCore_ROOT_DIR "${INSTALL_BIN_DIR}" DIRECTORY)
         get_filename_component(BinaryNinjaCore_ROOT_DIR "${BinaryNinjaCore_ROOT_DIR}" DIRECTORY)
-        set(BinaryNinjaCore_USER_PLUGINS_DIR "$ENV{HOME}/Library/Application Support/Binary Ninja/plugins")
     else()
         set(BinaryNinjaCore_LIBRARY_DIRS "${INSTALL_BIN_DIR}")
         set(BinaryNinjaCore_ROOT_DIR "${INSTALL_BIN_DIR}")
-        set(BinaryNinjaCore_USER_PLUGINS_DIR "$ENV{HOME}/.binaryninja/plugins")
     endif()
 
     message(STATUS "Binary Ninja Install Dir: ${BinaryNinjaCore_ROOT_DIR}")
-    message(STATUS "Binary Ninja User Plugins Dir: ${BinaryNinjaCore_USER_PLUGINS_DIR}")
 
     # Compatibility
     set(BN_FOUND "${BinaryNinjaCore_FOUND}")
     set(BN_INSTALL_DIR "${BinaryNinjaCore_ROOT_DIR}")
     set(BN_INSTALL_BIN_DIR "${INSTALL_BIN_DIR}")
-    set(BN_USER_PLUGINS_DIR "${BinaryNinjaCore_USER_PLUGINS_DIR}")
     set(BN_CORE_LIBRARY "${CORE_LIBRARY}")
     set(BN_CORE_DEFINITIONS "${BinaryNinjaCore_DEFINITIONS}")
 else()
@@ -79,15 +81,12 @@ else()
 
     if(WIN32)
         set(BinaryNinjaCore_ROOT_DIR "${INSTALL_BIN_DIR}")
-        set(BinaryNinjaCore_USER_PLUGINS_DIR "$ENV{APPDATA}\\Binary Ninja\\plugins")
     elseif(APPLE)
         # Binary Ninja.app/Contents/MacOS/binaryninja -> Binary Ninja.app/
         get_filename_component(BinaryNinjaCore_ROOT_DIR "${INSTALL_BIN_DIR}" DIRECTORY)
         get_filename_component(BinaryNinjaCore_ROOT_DIR "${BinaryNinjaCore_ROOT_DIR}" DIRECTORY)
-        set(BinaryNinjaCore_USER_PLUGINS_DIR "$ENV{HOME}/Library/Application Support/Binary Ninja/plugins")
     else()
         set(BinaryNinjaCore_ROOT_DIR "${INSTALL_BIN_DIR}")
-        set(BinaryNinjaCore_USER_PLUGINS_DIR "$ENV{HOME}/.binaryninja/plugins")
     endif()
 
     set(BinaryNinjaCore_FOUND 1)
@@ -96,16 +95,14 @@ else()
     set(BinaryNinjaCore_LIBRARIES binaryninjacore)
     set(BinaryNinjaCore_LIBRARY_DIRS "${INSTALL_BIN_DIR}")
     set(BinaryNinjaCore_DEFINITIONS "")
-    
+
     message(STATUS "Found Binary Ninja Core: binaryninjacore")
     message(STATUS "Binary Ninja Link Dirs: ${INSTALL_BIN_DIR}")
     message(STATUS "Binary Ninja Install Dir: ${BinaryNinjaCore_ROOT_DIR}")
-    message(STATUS "Binary Ninja User Plugins Dir: ${BinaryNinjaCore_USER_PLUGINS_DIR}")
 
     set(BN_FOUND "${BinaryNinjaCore_FOUND}")
     set(BN_INSTALL_DIR "${BinaryNinjaCore_ROOT_DIR}")
     set(BN_INSTALL_BIN_DIR "${INSTALL_BIN_DIR}")
-    set(BN_USER_PLUGINS_DIR "${BinaryNinjaCore_USER_PLUGINS_DIR}")
     set(BN_CORE_LIBRARY binaryninjacore)
     set(BN_CORE_DEFINITIONS "${BinaryNinjaCore_DEFINITIONS}")
 endif()

@@ -12,7 +12,7 @@ EntropyThread::EntropyThread(BinaryViewRef data, size_t blockSize, QImage* image
 	m_blockSize = blockSize;
 	m_updated = false;
 	m_running = true;
-	m_thread = std::thread([=]() { Run(); });
+	m_thread = std::thread([=, this]() { Run(); });
 }
 
 

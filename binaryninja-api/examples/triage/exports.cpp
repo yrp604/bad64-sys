@@ -25,13 +25,10 @@ GenericExportsModel::GenericExportsModel(QWidget* parent, BinaryViewRef data): Q
 	}
 
 	m_updateTimer = new QTimer(this);
-	m_updateTimer->setSingleShot(true);
 	m_updateTimer->setInterval(500);
 	connect(m_updateTimer, &QTimer::timeout, this, &GenericExportsModel::updateModel);
-	connect(this, &GenericExportsModel::modelUpdate, this, [=]() {
-		if (m_updateTimer->isActive())
-			return;
-		m_updateTimer->start();
+	connect(this, &GenericExportsModel::updateTimerOnUIThread, this, [=, this]() {
+		updateTimer(m_needsUpdate);
 	});
 
 	m_data->RegisterNotification(this);
@@ -49,6 +46,10 @@ GenericExportsModel::~GenericExportsModel()
 
 void GenericExportsModel::updateModel()
 {
+	if (!m_needsUpdate)
+		return;
+
+	setNeedsUpdate(false);
 	beginResetModel();
 	m_allEntries.clear();
 	for (auto& sym : m_data->GetSymbolsOfType(FunctionSymbol))
@@ -237,40 +238,64 @@ void GenericExportsModel::setFilter(const std::string& filterText)
 	endResetModel();
 }
 
-
-void GenericExportsModel::OnAnalysisFunctionAdded(BinaryNinja::BinaryView* view, BinaryNinja::Function* func)
+void GenericExportsModel::setNeedsUpdate(bool needed)
 {
-	emit modelUpdate();
+	if (m_needsUpdate.exchange(needed) == needed)
+		return;
+
+	updateTimer(needed);
 }
 
-
-void GenericExportsModel::OnAnalysisFunctionRemoved(BinaryNinja::BinaryView* view, BinaryNinja::Function* func)
+void GenericExportsModel::updateTimer(bool needsUpdate)
 {
-	emit modelUpdate();
+	if (needsUpdate && !m_updateTimer->isActive())
+		m_updateTimer->start();
+	if (!needsUpdate && m_updateTimer->isActive())
+		m_updateTimer->stop();
 }
 
-
-void GenericExportsModel::OnAnalysisFunctionUpdated(BinaryNinja::BinaryView* view, BinaryNinja::Function* func)
+void GenericExportsModel::pauseUpdates()
 {
-	emit modelUpdate();
+	m_updatesPaused = true;
+	setNeedsUpdate(false);
+}
+
+void GenericExportsModel::resumeUpdates()
+{
+	m_updatesPaused = false;
+	setNeedsUpdate(true);
+}
+
+void GenericExportsModel::onBinaryViewNotification()
+{
+	if (m_updatesPaused)
+		return;
+
+	// This can be called from any thread so we cannot directly
+	// update the timer. Emitting a signal is relatively expensive
+	// given how frequently we receive notifications, so we only
+	// emit a signal if we didn't already need an update.
+	if (!m_needsUpdate.exchange(true))
+		emit updateTimerOnUIThread();
 }
 
 
 void GenericExportsModel::OnSymbolAdded(BinaryNinja::BinaryView* view, BinaryNinja::Symbol* sym)
 {
-	emit modelUpdate();
+	if ((sym->GetBinding() == GlobalBinding) || (sym->GetBinding() == WeakBinding))
+		onBinaryViewNotification();
 }
 
 
 void GenericExportsModel::OnSymbolUpdated(BinaryNinja::BinaryView* view, BinaryNinja::Symbol* sym)
 {
-	emit modelUpdate();
+	onBinaryViewNotification();
 }
 
 
 void GenericExportsModel::OnSymbolRemoved(BinaryNinja::BinaryView* view, BinaryNinja::Symbol* sym)
 {
-	emit modelUpdate();
+	onBinaryViewNotification();
 }
 
 
@@ -285,7 +310,7 @@ ExportsTreeView::ExportsTreeView(ExportsWidget* parent, TriageView* view, Binary
 
 	// Allow view-specific shortcuts when imports are focused
 	m_actionHandler.setupActionHandler(this);
-	m_actionHandler.setActionContext([=]() { return m_view->actionContext(); });
+	m_actionHandler.setActionContext([=, this]() { return m_view->actionContext(); });
 
 	setFont(getMonospaceFont(this));
 
@@ -306,11 +331,11 @@ ExportsTreeView::ExportsTreeView(ExportsWidget* parent, TriageView* view, Binary
 	connect(selectionModel(), &QItemSelectionModel::currentChanged, this, &ExportsTreeView::exportSelected);
 	connect(this, &QTreeView::doubleClicked, this, &ExportsTreeView::exportDoubleClicked);
 
-	connect(m_model, &QAbstractItemModel::modelAboutToBeReset, this, [=]() {
+	connect(m_model, &QAbstractItemModel::modelAboutToBeReset, this, [=, this]() {
 		m_selection = selectionModel()->selectedIndexes();
 		m_scroll = verticalScrollBar()->value();
 	});
-	connect(m_model, &QAbstractItemModel::modelReset, this, [=]() {
+	connect(m_model, &QAbstractItemModel::modelReset, this, [=, this]() {
 		for (auto& idx : m_selection)
 		{
 			setCurrentIndex(idx);
@@ -401,6 +426,19 @@ void ExportsTreeView::keyPressEvent(QKeyEvent* event)
 			exportDoubleClicked(sel[0]);
 	}
 	QTreeView::keyPressEvent(event);
+}
+
+void ExportsTreeView::showEvent(QShowEvent* event)
+{
+	QTreeView::showEvent(event);
+	m_model->resumeUpdates();
+}
+
+
+void ExportsTreeView::hideEvent(QHideEvent* event)
+{
+	QTreeView::hideEvent(event);
+	m_model->pauseUpdates();
 }
 
 

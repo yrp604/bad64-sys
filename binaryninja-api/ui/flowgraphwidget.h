@@ -8,6 +8,7 @@
 #include "menus.h"
 #include "uicontext.h"
 #include "commentdialog.h"
+#include "commands.h"
 #include "instructionedit.h"
 
 /*!
@@ -104,6 +105,7 @@ class BINARYNINJAUIAPI FlowGraphWidget :
 	QTimer* m_loadingTimer;
 	QTimer* m_zoomTimer;
 	QTimer* m_zoomPauseTimer;
+	bool m_initialSizeToFit = false;
 
 	std::mutex m_updateMutex;
 	bool m_updated;
@@ -147,6 +149,8 @@ class BINARYNINJAUIAPI FlowGraphWidget :
 	FlowGraphRef m_recenterWithGraph;
 	int m_recenterXofs, m_recenterYofs;
 
+	FieldResolutionState m_fieldResolution;
+
 	static int m_layoutCompleteEventType;
 	static int m_updateCompleteEventType;
 
@@ -162,6 +166,14 @@ class BINARYNINJAUIAPI FlowGraphWidget :
 	void recenterUpdatedGraph(FlowGraphRef oldGraph, int oldXOfs, int oldYOfs);
 
 	BNDeadStoreElimination getCurrentVariableDeadStoreElimination();
+	std::optional<uint64_t> getCurrentFoldableExprAddress();
+	BNExprFolding getCurrentExprFolding();
+	std::optional<uint64_t> getCurrentInvertableConditionAddress();
+	bool getCurrentConditionInverted();
+	std::optional<uint64_t> getCurrentEarlyReturnAddress();
+	BNEarlyReturn getCurrentEarlyReturn();
+	std::optional<uint64_t> getCurrentSwitchRecoveryAddress();
+	BNSwitchRecovery getCurrentSwitchRecovery();
 	std::optional<std::pair<BinaryNinja::Variable, BinaryNinja::Variable>> getMergeVariablesAtCurrentLocation();
 
   protected:
@@ -212,6 +224,7 @@ class BINARYNINJAUIAPI FlowGraphWidget :
 	bool isFunctionHeader();
 
 	bool m_enableBlockIndicators = false;
+	float m_blockIndicatorStrokeWidth = 1.0f;
 
   public:
 	FlowGraphWidget(QWidget* parent, BinaryViewRef view, FlowGraphRef graph = FlowGraphRef());
@@ -222,6 +235,7 @@ class BINARYNINJAUIAPI FlowGraphWidget :
 	virtual void OnAnalysisFunctionUpdated(BinaryNinja::BinaryView* data, BinaryNinja::Function* func) override;
 	virtual void OnAnalysisFunctionUpdateRequested(BinaryNinja::BinaryView* data, BinaryNinja::Function* func) override;
 	virtual void OnDataMetadataUpdated(BinaryNinja::BinaryView* data, uint64_t offset) override;
+	virtual void OnTagAdded(BinaryNinja::BinaryView* data, const BinaryNinja::TagReference& tagRef) override;
 	virtual void OnTagUpdated(BinaryNinja::BinaryView* data, const BinaryNinja::TagReference& tagRef) override;
 
 	void setInitialGraph(FlowGraphRef graph);
@@ -252,6 +266,7 @@ class BINARYNINJAUIAPI FlowGraphWidget :
 	virtual void setRelatedIndexHighlights(FunctionRef func, const std::set<size_t>& related) override;
 	virtual void setRelatedInstructionHighlights(FunctionRef func, const std::set<uint64_t>& related) override;
 
+	void enableInitialSizeToFit() { m_initialSizeToFit = true; }
 	float getScale() const { return m_scale; }
 	float maxScale() const;
 	virtual void zoom(bool direction);
@@ -388,6 +403,10 @@ class BINARYNINJAUIAPI FlowGraphWidget :
 	void instrEditDoneEvent();
 
 	void setCurrentVariableDeadStoreElimination(BNDeadStoreElimination elimination);
+	void setCurrentExprFolding(BNExprFolding folding);
+	void toggleConditionInverted();
+	void setCurrentEarlyReturn(BNEarlyReturn earlyReturn);
+	void setCurrentSwitchRecovery(BNSwitchRecovery recovery);
 	void splitToNewTabAndNavigateFromCursorPosition();
 	void splitToNewWindowAndNavigateFromCursorPosition();
 	void splitToNewPaneAndNavigateFromCursorPosition();

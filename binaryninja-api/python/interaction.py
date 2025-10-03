@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -27,7 +27,7 @@ from typing import Optional, Callable, List
 from . import _binaryninjacore as core
 from .enums import FormInputFieldType, MessageBoxIcon, MessageBoxButtonSet, MessageBoxButtonResult, ReportType
 from . import binaryview
-from .log import log_error
+from .log import log_error_for_exception
 from . import flowgraph
 from . import mainthread
 
@@ -267,10 +267,11 @@ class ChoiceField:
 	``ChoiceField`` prompts the user to choose from the list of strings provided in ``choices``. Result is stored \
 	in self.result as an index in to the choices array.
 
-	:attr str prompt: prompt to be presented to the user
-	:attr list(str) choices: list of choices to choose from
+	:param str prompt: Prompt to be presented to the user
+	:param list(str) choices: List of choices to choose from
+	:param Optional[int] default: Optional index into choices that will be selected by default
 	"""
-	def __init__(self, prompt: str, choices: List[str], default: Optional[str] = None):
+	def __init__(self, prompt: str, choices: List[str], default: Optional[int] = None):
 		self._prompt = prompt
 		self._choices = choices
 		self._default = default
@@ -295,27 +296,35 @@ class ChoiceField:
 		self._result = value.indexResult
 
 	@property
-	def prompt(self):
+	def prompt(self) -> str:
 		return self._prompt
 
 	@prompt.setter
-	def prompt(self, value):
+	def prompt(self, value: str):
 		self._prompt = value
 
 	@property
-	def choices(self):
+	def choices(self) -> List[str]:
 		return self._choices
 
 	@choices.setter
-	def choices(self, value):
+	def choices(self, value: List[str]):
 		self._choices = value
 
 	@property
-	def result(self):
+	def default(self) -> Optional[int]:
+		return self._default
+
+	@default.setter
+	def default(self, value: Optional[int]):
+		self._default = value
+
+	@property
+	def result(self) -> Optional[int]:
 		return self._result
 
 	@result.setter
-	def result(self, value):
+	def result(self, value: int):
 		self._result = value
 
 
@@ -477,6 +486,56 @@ class DirectoryNameField:
 		self._result = value
 
 
+class CheckboxField:
+	"""
+	``CheckboxField`` prompts the user to choose a yes/no option in a checkbox.
+	Result is stored in self.result as a boolean value.
+
+	:param str prompt: Prompt to be presented to the user
+	:param bool default: Default state of the checkbox (False == unchecked, True == checked)
+	"""
+	def __init__(self, prompt, default):
+		self._prompt = prompt
+		self._result = None
+		self._default = default
+
+	def _fill_core_struct(self, value):
+		value.type = FormInputFieldType.CheckboxFormField
+		value.prompt = self._prompt
+		value.hasDefault = True
+		value.intDefault = 1 if self._default else 0
+
+	def _fill_core_result(self, value):
+		value.intResult = 1 if self.result else 0
+
+	def _get_result(self, value):
+		self._result = value.intResult != 0
+
+	@property
+	def prompt(self):
+		return self._prompt
+
+	@prompt.setter
+	def prompt(self, value):
+		self._prompt = value
+
+	@property
+	def result(self):
+		return self._result
+
+	@result.setter
+	def result(self, value):
+		self._result = value
+
+	@property
+	def default(self):
+		return self._default
+
+	@default.setter
+	def default(self, value):
+		self._default = value
+
+
 class InteractionHandler:
 	_interaction_handler = None
 
@@ -496,6 +555,7 @@ class InteractionHandler:
 		self._cb.getOpenFileNameInput = self._cb.getOpenFileNameInput.__class__(self._get_open_filename_input)
 		self._cb.getSaveFileNameInput = self._cb.getSaveFileNameInput.__class__(self._get_save_filename_input)
 		self._cb.getDirectoryNameInput = self._cb.getDirectoryNameInput.__class__(self._get_directory_name_input)
+		self._cb.getCheckboxInput = self._cb.getCheckboxInput.__class__(self._get_checkbox_input)
 		self._cb.getFormInput = self._cb.getFormInput.__class__(self._get_form_input)
 		self._cb.showMessageBox = self._cb.showMessageBox.__class__(self._show_message_box)
 		self._cb.openUrl = self._cb.openUrl.__class__(self._open_url)
@@ -513,7 +573,7 @@ class InteractionHandler:
 				view = None
 			self.show_plain_text_report(view, title, contents)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in InteractionHandler._show_plain_text_report")
 
 	def _show_markdown_report(self, ctxt, view, title, contents, plaintext):
 		try:
@@ -523,7 +583,7 @@ class InteractionHandler:
 				view = None
 			self.show_markdown_report(view, title, contents, plaintext)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in InteractionHandler._show_markdown_report")
 
 	def _show_html_report(self, ctxt, view, title, contents, plaintext):
 		try:
@@ -533,7 +593,7 @@ class InteractionHandler:
 				view = None
 			self.show_html_report(view, title, contents, plaintext)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in InteractionHandler._show_html_report")
 
 	def _show_graph_report(self, ctxt, view, title, graph):
 		try:
@@ -543,13 +603,13 @@ class InteractionHandler:
 				view = None
 			self.show_graph_report(view, title, flowgraph.CoreFlowGraph(core.BNNewFlowGraphReference(graph)))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in InteractionHandler._show_graph_report")
 
 	def _show_report_collection(self, ctxt, title, reports):
 		try:
 			self.show_report_collection(title, ReportCollection(core.BNNewReportCollectionReference(reports)))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in InteractionHandler._show_report_collection")
 
 	def _get_text_line_input(self, ctxt, result, prompt, title):
 		try:
@@ -559,7 +619,7 @@ class InteractionHandler:
 			result[0] = core.BNAllocString(str(value))
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_text_line_input")
 
 	def _get_int_input(self, ctxt, result, prompt, title):
 		try:
@@ -569,7 +629,7 @@ class InteractionHandler:
 			result[0] = value
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_int_input")
 
 	def _get_address_input(self, ctxt, result, prompt, title, view, current_address):
 		try:
@@ -583,7 +643,7 @@ class InteractionHandler:
 			result[0] = value
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_address_input")
 
 	def _get_choice_input(self, ctxt, result, prompt, title, choice_buf, count):
 		try:
@@ -596,7 +656,7 @@ class InteractionHandler:
 			result[0] = value
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_choice_input")
 
 	def _get_large_choice_input(self, ctxt, result, prompt, title, choice_buf, count):
 		try:
@@ -609,7 +669,7 @@ class InteractionHandler:
 			result[0] = value
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_large_choice_input")
 
 	def _get_open_filename_input(self, ctxt, result, prompt, ext):
 		try:
@@ -619,7 +679,7 @@ class InteractionHandler:
 			result[0] = core.BNAllocString(str(value))
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_open_filename_input")
 
 	def _get_save_filename_input(self, ctxt, result, prompt, ext, default_name):
 		try:
@@ -629,7 +689,7 @@ class InteractionHandler:
 			result[0] = core.BNAllocString(str(value))
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_save_filename_input")
 
 	def _get_directory_name_input(self, ctxt, result, prompt, default_name):
 		try:
@@ -639,7 +699,17 @@ class InteractionHandler:
 			result[0] = core.BNAllocString(str(value))
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_directory_name_input")
+
+	def _get_checkbox_input(self, ctxt, result, prompt, default_choice):
+		try:
+			value = self.get_checkbox_input(prompt, default_choice)
+			if value is None:
+				return False
+			result[0] = value
+			return True
+		except:
+			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_checkbox_input")
 
 	def _get_form_input(self, ctxt, fields, count, title):
 		try:
@@ -705,6 +775,13 @@ class InteractionHandler:
 					        default=fields[i].stringDefault if fields[i].hasDefault else None
 					    )
 					)
+				elif fields[i].type == FormInputFieldType.CheckboxFormField:
+					field_objs.append(
+					    CheckboxField(
+					        fields[i].prompt,
+							default=fields[i].intDefault != 0 if fields[i].hasDefault else None
+					    )
+					)
 				else:
 					field_objs.append(LabelField(fields[i].prompt))
 			if not self.get_form_input(field_objs, title):
@@ -713,19 +790,19 @@ class InteractionHandler:
 				field_objs[i]._fill_core_result(fields[i])
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_form_input")
 
 	def _show_message_box(self, ctxt, title, text, buttons, icon):
 		try:
 			return self.show_message_box(title, text, buttons, icon)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in InteractionHandler._show_message_box")
 
 	def _open_url(self, ctxt, url):
 		try:
 			return self.open_url(url)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in InteractionHandler._open_url")
 			return False
 
 	def _run_progress_dialog(self, title, can_cancel, task, task_ctxt):
@@ -736,7 +813,7 @@ class InteractionHandler:
 
 			return self.run_progress_dialog(title, can_cancel, py_task)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in InteractionHandler._run_progress_dialog")
 			return False
 
 	def show_plain_text_report(self, view, title, contents):
@@ -785,6 +862,9 @@ class InteractionHandler:
 
 	def get_directory_name_input(self, prompt, default_name):
 		return get_text_line_input(prompt, "Select Directory")
+
+	def get_checkbox_input(self, prompt, default_choice):
+		return get_checkbox_input(prompt, "Choose Option(s)", default_choice)
 
 	def get_form_input(self, fields, title):
 		return False
@@ -1352,6 +1432,22 @@ def get_directory_name_input(prompt: str, default_name: str = ""):
 	core.free_string(value)
 	return result.decode("utf-8")
 
+def get_checkbox_input(prompt: str, title: str, default: bool = False):
+	"""
+	``get_checkbox_input`` prompts the user for a checkbox input
+	:param prompt: String to prompt with
+	:param title: Title of the window when executed in the UI
+	:param default: Optional default state for the checkbox (false == unchecked, true == checked), False if not set.
+	:rtype: bool indicating the state of the checkbox
+	"""
+	default_state = ctypes.c_int64()
+	default_state.value = 1 if default else 0
+	value = ctypes.c_int64()
+	if not core.BNGetCheckboxInput(value, prompt, title, default_state):
+		return None
+	result = value.value
+	assert result is not None
+	return result != 0
 
 def get_form_input(fields, title):
 	"""
@@ -1373,6 +1469,7 @@ def get_form_input(fields, title):
 	OpenFileNameField     Prompt for file to open
 	SaveFileNameField     Prompt for file to save to
 	DirectoryNameField    Prompt for directory name
+	CheckboxFormField     Prompt for a checkbox
 	===================== ===================================================
 
 	This API is flexible and works both in the UI via a pop-up dialog and on the command-line.
@@ -1422,6 +1519,8 @@ def get_form_input(fields, title):
 def show_message_box(title, text, buttons=MessageBoxButtonSet.OKButtonSet, icon=MessageBoxIcon.InformationIcon):
 	"""
 	``show_message_box`` Displays a configurable message box in the UI, or prompts on the console as appropriate
+
+	:note: This uses a standard QDialog which means simple HTML will render as HTML, but links are not clickable and special characters need to be escaped.
 
 	:param str title: Text title for the message box.
 	:param str text: Text for the main body of the message box.

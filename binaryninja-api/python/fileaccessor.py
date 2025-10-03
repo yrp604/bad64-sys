@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -23,7 +23,7 @@ import ctypes
 
 # Binary Ninja components
 from . import _binaryninjacore as core
-from .log import log_error
+from .log import log_error_for_exception
 
 
 class FileAccessor:
@@ -50,7 +50,7 @@ class FileAccessor:
 		try:
 			return self.get_length()
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in FileAccessor._get_length")
 			return 0
 
 	def _read(self, ctxt, dest, offset, length):
@@ -63,7 +63,7 @@ class FileAccessor:
 			ctypes.memmove(dest, data, len(data))
 			return len(data)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in FileAccessor._read")
 			return 0
 
 	def _write(self, ctxt, offset, src, length):
@@ -72,7 +72,7 @@ class FileAccessor:
 			ctypes.memmove(data, src, length)
 			return self.write(offset, data.raw)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in FileAccessor._write")
 			return 0
 
 

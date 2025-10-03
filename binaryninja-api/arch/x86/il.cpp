@@ -3552,10 +3552,18 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 
 	case XED_ICLASS_SYSEXIT:
-	case XED_ICLASS_SYSRET:
 	case XED_ICLASS_HLT:
 		il.AddInstruction(il.Trap(TRAP_GPF));
 		return false;
+
+	case XED_ICLASS_SYSRET:
+		il.AddInstruction(il.Return(il.Register(addrSize, XED_REG_ECX)));
+		break;
+
+	case XED_ICLASS_SYSRET64:
+	case XED_ICLASS_SYSRET_AMD:
+		il.AddInstruction(il.Return(il.Register(addrSize, XED_REG_RCX)));
+		break;
 
 	case XED_ICLASS_FLD:
 		il.AddInstruction(

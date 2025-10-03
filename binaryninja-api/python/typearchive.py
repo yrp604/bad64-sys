@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -771,25 +771,25 @@ class TypeArchiveNotificationCallbacks:
 		try:
 			self._notify.type_added(self._archive, core.pyNativeStr(id), _types.Type.create(handle=core.BNNewTypeReference(definition)))
 		except:
-			log.log_error(traceback.format_exc())
+			log.log_error_for_exception("Unhandled Python exception in TypeArchiveNotificationCallbacks._type_added")
 
 	def _type_updated(self, ctxt, archive: ctypes.POINTER(core.BNTypeArchive), id: ctypes.c_char_p, old_definition: ctypes.POINTER(core.BNType), new_definition: ctypes.POINTER(core.BNType)) -> None:
 		try:
 			self._notify.type_updated(self._archive, core.pyNativeStr(id), _types.Type.create(handle=core.BNNewTypeReference(old_definition)), _types.Type.create(handle=core.BNNewTypeReference(new_definition)))
 		except:
-			log.log_error(traceback.format_exc())
+			log.log_error_for_exception("Unhandled Python exception in TypeArchiveNotificationCallbacks._type_updated")
 
 	def _type_renamed(self, ctxt, archive: ctypes.POINTER(core.BNTypeArchive), id: ctypes.c_char_p, old_name: ctypes.POINTER(core.BNQualifiedName), new_name: ctypes.POINTER(core.BNQualifiedName)) -> None:
 		try:
 			self._notify.type_renamed(self._archive, core.pyNativeStr(id), _types.QualifiedName._from_core_struct(old_name.contents), _types.QualifiedName._from_core_struct(new_name.contents))
 		except:
-			log.log_error(traceback.format_exc())
+			log.log_error_for_exception("Unhandled Python exception in TypeArchiveNotificationCallbacks._type_renamed")
 
 	def _type_deleted(self, ctxt, archive: ctypes.POINTER(core.BNTypeArchive), id: ctypes.c_char_p, definition: ctypes.POINTER(core.BNType)) -> None:
 		try:
 			self._notify.type_deleted(self._archive, core.pyNativeStr(id), _types.Type.create(handle=core.BNNewTypeReference(definition)))
 		except:
-			log.log_error(traceback.format_exc())
+			log.log_error_for_exception("Unhandled Python exception in TypeArchiveNotificationCallbacks._type_deleted")
 
 	@property
 	def archive(self) -> 'TypeArchive':

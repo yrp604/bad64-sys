@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2024 Vector 35 Inc
+// Copyright (c) 2015-2025 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -102,7 +102,7 @@ bool RelocationHandler::ApplyRelocation(
     Ref<BinaryView> view, Ref<Architecture> arch, Ref<Relocation> reloc, uint8_t* dest, size_t len)
 {
 	return BNRelocationHandlerDefaultApplyRelocation(
-	    m_object, view->GetObject(), arch->GetObject(), BNNewRelocationReference(reloc->GetObject()), dest, len);
+	    m_object, view->GetObject(), arch->GetObject(), reloc->GetObject(), dest, len);
 }
 
 
@@ -125,7 +125,7 @@ bool CoreRelocationHandler::ApplyRelocation(
     Ref<BinaryView> view, Ref<Architecture> arch, Ref<Relocation> reloc, uint8_t* dest, size_t len)
 {
 	return BNRelocationHandlerApplyRelocation(
-	    m_object, view->GetObject(), arch->GetObject(), BNNewRelocationReference(reloc->GetObject()), dest, len);
+	    m_object, view->GetObject(), arch->GetObject(), reloc->GetObject(), dest, len);
 }
 
 
@@ -148,5 +148,5 @@ size_t CoreRelocationHandler::GetOperandForExternalRelocation(
     const uint8_t* data, uint64_t addr, size_t length, Ref<LowLevelILFunction> il, Ref<Relocation> relocation)
 {
 	return BNRelocationHandlerGetOperandForExternalRelocation(
-	    m_object, data, addr, length, il->GetObject(), BNNewRelocationReference(relocation->GetObject()));
+	    m_object, data, addr, length, il->GetObject(), relocation->GetObject());
 }

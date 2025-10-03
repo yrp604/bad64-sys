@@ -1,4 +1,4 @@
-// Copyright (c) 2019 Vector 35 Inc
+// Copyright (c) 2019-2025 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -321,6 +321,7 @@ uint64_t HighLevelILIntegerList::operator[](size_t i) const
 HighLevelILIntegerList::operator vector<uint64_t>() const
 {
 	vector<uint64_t> result;
+	result.reserve(size());
 	for (auto i : *this)
 		result.push_back(i);
 	return result;
@@ -375,6 +376,7 @@ size_t HighLevelILIndexList::operator[](size_t i) const
 HighLevelILIndexList::operator vector<size_t>() const
 {
 	vector<size_t> result;
+	result.reserve(size());
 	for (auto i : *this)
 		result.push_back(i);
 	return result;
@@ -440,6 +442,7 @@ const HighLevelILInstruction HighLevelILInstructionList::operator[](size_t i) co
 HighLevelILInstructionList::operator vector<HighLevelILInstruction>() const
 {
 	vector<HighLevelILInstruction> result;
+	result.reserve(size());
 	for (auto i : *this)
 		result.push_back(i);
 	return result;
@@ -498,6 +501,7 @@ const SSAVariable HighLevelILSSAVariableList::operator[](size_t i) const
 HighLevelILSSAVariableList::operator vector<SSAVariable>() const
 {
 	vector<SSAVariable> result;
+	result.reserve(size());
 	for (auto i : *this)
 		result.push_back(i);
 	return result;
@@ -651,6 +655,7 @@ const HighLevelILOperand HighLevelILOperandList::operator[](size_t i) const
 HighLevelILOperandList::operator vector<HighLevelILOperand>() const
 {
 	vector<HighLevelILOperand> result;
+	result.reserve(size());
 	for (auto i : *this)
 		result.push_back(i);
 	return result;
@@ -940,7 +945,7 @@ char* HighLevelILInstructionBase::Dump() const
 		{
 			text += "[instr " + to_string(instructionIndex) + "] ";
 		}
-		Ref<Type> type = GetType();
+		Ref<Type> type = GetType().GetValue();
 		if (type)
 		{
 			text += "[type: " + type->GetString() + "] ";
@@ -3344,7 +3349,7 @@ fmt::format_context::iterator fmt::formatter<HighLevelILInstruction>::format(con
 			{
 				fmt::format_to(ctx.out(), "[instr {}] ", obj.instructionIndex);
 			}
-			Ref<Type> type = obj.GetType();
+			Ref<Type> type = obj.GetType().GetValue();
 			if (type)
 			{
 				fmt::format_to(ctx.out(), "[type: {}] ", type->GetString());

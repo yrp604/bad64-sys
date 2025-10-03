@@ -38,7 +38,7 @@ Therefore, without any alternative names, `libc.so.bntl` will not be loaded by B
 
 We recommend and use the following convention:
 
-Type libraries should be named for the filename from which they were generated with the phrase ".bntl" added. When the source library contains additional minor and release number, like `libfoo.so.1.2.3` Binary Ninja would not load the resulting type library `libfoo.so.1.2.3.bntl` for an ELF requesting soname `libfoo.so.1`. Therefore the alternative names list should include the most specific version numbers, incrementally stripped down to the soname, and finally a linkname for good measure.
+Type libraries should be named for the filename from which they were generated with the phrase ".bntl" added. When the source library contains additional minor and release number, like `libfoo.so.1.2.3` Binary Ninja would not load the resulting type library `libfoo.so.1.2.3.bntl` for an ELF requesting soname `libfoo.so.1`. Therefore, the alternative names list should include the most specific version numbers, incrementally stripped down to the soname, and finally a linkname for good measure.
 
 Example:
 
@@ -123,7 +123,7 @@ typelib.write_to_file('test.so.1.bntl')
 
 ## Other Type Library Questions
 
-_What's a named type vs. just a type?_
+### What's a named type vs. just a type?
 
 Some variable definitions have type information, but don't produce a type name useful for future definitions, examples:
 
@@ -158,17 +158,17 @@ typedef int (MyFunc)(int ac, char **av); // type int ()(int, char **), name:MyFu
 
 ```
 
-_How does Binary Ninja decide when to use a typelibrary (.bntl) file?_
+### How does Binary Ninja decide when to use a typelibrary (.bntl) file?
 
 Type Libraries are loaded when the corresponding library is imported by a BinaryView. (i.e. if an exe imports `ntdll.dll`, binja will look in the bv's platform for type libraries named ntdll.bntl and load the first one it finds)
 
-_What's the difference between a named type and a named object?_
+### What's the difference between a named type and a named object?
 
 A named type is a type with a name that can identify it. For example, `color` is the name of type `enum {RED=0, ORANGE=1, YELLOW=2, ...}`.
 
 A named object is the name of an external/imported symbol for which the type library has type information. For example, `MessageBoxA` is the name of a function whose type is `int ()(HWND, LPCSTR, LPCSTR, UINT)`.
 
-_How do I find what type of type a type object is? How many are there?_
+### How do I find what type of type a type object is? How many are there?
 
 I've seen "types of types", "sorts of types", "kinds of types", "classes of types" used to differentiate the varieties of possible types, and there are probably more. Binary Ninja uses "class", example:
 
@@ -183,26 +183,26 @@ Compare this to LLDB, which also uses the term "class", and currently has 19 of 
 
 Compare this to GDB, which uses the term "type code" and has 25 of them.
 
-_Where are function parameter names stored?_
+### Where are function parameter names stored?
 
 While technically not part of the type, having names of function parameters is very useful and can thus be optionally stored in a type.
 
 Function types (types with `.type_class == FunctionTypeClass`) have a `.parameters` attribute, a list of [`FunctionParameter`](https://api.binary.ninja/binaryninja.types-module.html#binaryninja.types.FunctionParameter) objects. When those objects have `.name==''` you get the bare bones function types like `int ()(int, char **)`. When those objects have their `.name` populated you get the more meaningful `int ()(int argc, char **argv)`.
 
-_How do I manually load a type library?_
+### How do I manually load a type library?
 
 ```
 >>> bv.add_type_library(TypeLibrary.load_from_file('test.bntl'))
 ```
 
-_How can I manually load a type object?_
+### How can I manually load a type object?
 
 ```
 >>> bv.import_library_object('_MySuperComputation')
 <type: int32_t (int32_t, int32_t, char*)>
 ```
 
-_Why doesn't the types view show the types imported from type libraries?_
+### Why doesn't the types view show the types imported from type libraries?
 
 Because the type libraries added to a binary view only makes their type information _available_ for use. The types view will show a type from a type library only after it is used (on demand).
 
@@ -215,7 +215,7 @@ Try this experiment:
 - set the type of some data to `struct Rectangle` (using `y` in linear view or via any other method described above)
 - `bv.types` is extended, and the types view shows `struct Rectangle` in the auto types
 
-_What's a named type reference?_
+### What's a named type reference?
 
 Named Type References are a way to refer to a type by name without having its declaration immediately available.
 
@@ -254,7 +254,7 @@ This makes sense! Now go to types view and `define struct Point { int x; int y; 
 
 You should repeat the experiment using `struct Rectangle` and see that you're allowed to create variables with type containing _pointers_ to unresolved type references.
 
-_How are types represented?_
+### How are types represented?
 
 By a hierarchy of objects from [api/python/types.py](https://github.com/Vector35/binaryninja-api/blob/dev/python/types.py) referencing one another. The "glue" object is [`binaryninja.types.Type`](https://api.binary.ninja/binaryninja.types-module.html#binaryninja.types.Type) and depending on the complexity of the type it represents (stored in its `.type_class` attribute), it could have an attribute with more information. For instance, if the `binaryninja.types.Type` has `.type_class == FunctionTypeClass` then its `.parameters` attribute is a list of [`binaryninja.types.FunctionParameter`](https://api.binary.ninja/binaryninja.types-module.html#binaryninja.types.FunctionParameter). See  [typelib_dump.py](https://github.com/Vector35/binaryninja-api/blob/dev/python/examples/typelib_dump.py) for how this can work.
 
@@ -277,7 +277,7 @@ Type class=Structure
 
 Here is the representation of `type int ()(int, int)` named `MyFunctionType` from [typelib_create.py](https://github.com/Vector35/binaryninja-api/blob/dev/python/examples/typelib_create.py):
 
-_When do named objects get used?_
+### When do named objects get used?
 
 When a binary is loaded and its external symbols is processed, the symbol names are searched against the named objects from type libraries. If there is a match, it obeys the type from the type library. Upon success, you'll see a message like:
 
@@ -285,4 +285,4 @@ When a binary is loaded and its external symbols is processed, the symbol names 
 type library test.bntl found hit for _DoSuperComputation
 ```
 
-At this moment, there is no built in functionality to apply named objects to an existing Binary Ninja database.
+At this moment, there is no built-in functionality to apply named objects to an existing Binary Ninja database.

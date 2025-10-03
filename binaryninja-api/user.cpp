@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2024 Vector 35 Inc
+// Copyright (c) 2015-2025 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -33,17 +33,26 @@ User::User(BNUser* user)
 
 string User::GetName()
 {
-	return BNGetUserName(m_object);
+	char* str = BNGetUserName(m_object);
+	string result = str;
+	BNFreeString(str);
+	return result;
 }
 
 
 string User::GetEmail()
 {
-	return BNGetUserEmail(m_object);
+	char* str = BNGetUserEmail(m_object);
+	string result = str;
+	BNFreeString(str);
+	return result;
 }
 
 
 string User::GetId()
 {
-	return BNGetUserId(m_object);
+	char* str = BNGetUserId(m_object);
+	string result = str;
+	BNFreeString(str);
+	return result;
 }

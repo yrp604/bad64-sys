@@ -35,10 +35,10 @@ static uint32_t RegisterSizeFromPrefix(const char* prefix = "")
 	return 4;
 }
 
-static ExprId ReadRegister(LowLevelILFunction& il, decomp_result* instr, uint32_t reg, size_t size = 4, const char* prefix = "")
+static ExprId ReadRegister(LowLevelILFunction& il, decomp_result* instr, uint32_t reg, size_t size = 4, const char* prefix = "", uint32_t align=0)
 {
 	if (reg == armv7::REG_PC && strcmp(prefix, "") == 0)
-		return il.ConstPointer(size, instr->pc);
+		return il.ConstPointer(size, instr->pc & (align ? ~(align - 1) : ~0));
 	return il.Register(RegisterSizeFromPrefix(prefix), GetRegisterByIndex(reg, prefix));
 }
 
@@ -59,11 +59,56 @@ static int GetSpecialRegister(LowLevelILFunction& il, decomp_result* instr, size
 	switch (sysm >> 3)
 	{
 		case 0:
-			switch(tmp)
+			switch (sysm & 7)
 			{
-				case 1: return REGS_APSR_G;
-				case 2:	return REGS_APSR_NZCVQ;
-				case 3: return REGS_APSR_NZCVQG;
+			case 0:
+				switch(tmp)
+				{
+					case 1: return REGS_APSR_G;
+					case 2:	return REGS_APSR_NZCVQ;
+					case 3: return REGS_APSR_NZCVQG;
+					case 0:
+					default:
+						return REGS_APSR;
+				}
+			case 1:
+				switch(tmp)
+				{
+					case 1: return REGS_IAPSR_G;
+					case 2:	return REGS_IAPSR_NZCVQ;
+					case 3: return REGS_IAPSR_NZCVQG;
+					case 0:
+					default:
+						return REGS_IAPSR;
+				}
+			case 2:
+				switch(tmp)
+				{
+					case 1: return REGS_EAPSR_G;
+					case 2:	return REGS_EAPSR_NZCVQ;
+					case 3: return REGS_EAPSR_NZCVQG;
+					case 0:
+					default:
+						return REGS_EAPSR;
+				}
+			case 3:
+				switch(tmp)
+				{
+					case 1: return REGS_XPSR_G;
+					case 2:	return REGS_XPSR_NZCVQ;
+					case 3: return REGS_XPSR_NZCVQG;
+					case 0:
+					default:
+						return REGS_XPSR;
+				}
+			case 5:
+				return REGS_IPSR;
+			case 6:
+				return REGS_EPSR;
+			case 7:
+				return REGS_IEPSR;
+			default:
+				return REG_INVALID;
 			}
 			break;
 		case 1:
@@ -77,8 +122,8 @@ static int GetSpecialRegister(LowLevelILFunction& il, decomp_result* instr, size
 			switch (sysm & 7)
 			{
 				case 0: return REGS_PRIMASK;
-				case 1:
-				case 2: return REGS_BASEPRI;
+				case 1: return REGS_BASEPRI;
+				case 2: return REGS_BASEPRI_MAX;
 				case 3: return REGS_FAULTMASK;
 				case 4: return REGS_CONTROL;
 			}
@@ -205,6 +250,27 @@ static ExprId ReadArithOperand(LowLevelILFunction& il, decomp_result* instr, siz
 	return ReadShiftedOperand(il, instr, 2, size);
 }
 
+static uint32_t GetRegisterOperand(decomp_result* instr, size_t operand)
+{
+	uint32_t reg;
+	switch (instr->format->operands[operand].type)
+	{
+		case OPERAND_FORMAT_REG:
+			reg = instr->fields[instr->format->operands[operand].field0];
+			return GetRegisterByIndex(reg);
+		case OPERAND_FORMAT_REG_FP:
+			reg = instr->fields[instr->format->operands[operand].field0];
+			return GetRegisterByIndex(reg, instr->format->operands[operand].prefix);
+		case OPERAND_FORMAT_SP:
+			return armv7::REG_SP;
+		case OPERAND_FORMAT_LR:
+			return armv7::REG_LR;
+		case OPERAND_FORMAT_PC:
+			return armv7::REG_PC;
+		default:
+			return armv7::REG_INVALID;
+	}
+}
 
 static ExprId WriteILOperand(LowLevelILFunction& il, decomp_result* instr, size_t operand, ExprId value,
 	size_t size = 4, uint32_t flags = 0)
@@ -285,9 +351,9 @@ static ExprId ShiftedRegister(LowLevelILFunction& il, decomp_result* instr, uint
 	}
 }
 
-
+#define ReadRegisterA(il, instr, reg, align) ReadRegister(il, instr, reg, 4, "", align)
 static ExprId GetMemoryAddress(LowLevelILFunction& il, decomp_result* instr, size_t operand, uint32_t size,
-	bool canWriteback = true)
+	bool canWriteback = true, uint32_t align=0)
 {
 	uint32_t reg, second, t, n;
 	switch (instr->format->operands[operand].type)
@@ -301,19 +367,19 @@ static ExprId GetMemoryAddress(LowLevelILFunction& il, decomp_result* instr, siz
 		second = instr->fields[instr->format->operands[operand].field1];
 		if (canWriteback && HasWriteback(instr, operand))
 		{
-			il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegister(il, instr, reg), il.Const(4, second))));
+			il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegisterA(il, instr, reg, align), il.Const(4, second))));
 			return il.Register(4, reg);
 		}
-		return il.Add(4, ReadRegister(il, instr, reg), il.Const(4, second));
+		return il.Add(4, ReadRegisterA(il, instr, reg, align), il.Const(4, second));
 	case OPERAND_FORMAT_MEMORY_ONE_REG_NEG_IMM:
 		reg = GetRegisterByIndex(instr->fields[instr->format->operands[operand].field0]);
 		second = instr->fields[instr->format->operands[operand].field1];
 		if (canWriteback && HasWriteback(instr, operand))
 		{
-			il.AddInstruction(il.SetRegister(4, reg, il.Sub(4, ReadRegister(il, instr, reg), il.Const(4, second))));
+			il.AddInstruction(il.SetRegister(4, reg, il.Sub(4, ReadRegisterA(il, instr, reg, align), il.Const(4, second))));
 			return il.Register(4, reg);
 		}
-		return il.Sub(4, ReadRegister(il, instr, reg), il.Const(4, second));
+		return il.Sub(4, ReadRegisterA(il, instr, reg, align), il.Const(4, second));
 	case OPERAND_FORMAT_MEMORY_ONE_REG_ADD_IMM:
 	case OPERAND_FORMAT_MEMORY_ONE_REG_OPTIONAL_ADD_IMM:
 		reg = GetRegisterByIndex(instr->fields[instr->format->operands[operand].field0]);
@@ -321,23 +387,23 @@ static ExprId GetMemoryAddress(LowLevelILFunction& il, decomp_result* instr, siz
 		if (canWriteback && HasWriteback(instr, operand))
 		{
 			if (instr->fields[FIELD_add])
-				il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegister(il, instr, reg), il.Const(4, second))));
+				il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegisterA(il, instr, reg, align), il.Const(4, second))));
 			else
-				il.AddInstruction(il.SetRegister(4, reg, il.Sub(4, ReadRegister(il, instr, reg), il.Const(4, second))));
+				il.AddInstruction(il.SetRegister(4, reg, il.Sub(4, ReadRegisterA(il, instr, reg, align), il.Const(4, second))));
 			return il.Register(4, reg);
 		}
 		if (instr->fields[FIELD_add])
-			return il.Add(4, ReadRegister(il, instr, reg), il.Const(4, second));
-		return il.Sub(4, ReadRegister(il, instr, reg), il.Const(4, second));
+			return il.Add(4, ReadRegisterA(il, instr, reg, align), il.Const(4, second));
+		return il.Sub(4, ReadRegisterA(il, instr, reg, align), il.Const(4, second));
 	case OPERAND_FORMAT_MEMORY_TWO_REG:
 		reg = GetRegisterByIndex(instr->fields[instr->format->operands[operand].field0]);
 		second = GetRegisterByIndex(instr->fields[instr->format->operands[operand].field1]);
 		if (canWriteback && HasWriteback(instr, operand))
 		{
-			il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegister(il, instr, reg), il.Register(4, second))));
+			il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegisterA(il, instr, reg, align), il.Register(4, second))));
 			return il.Register(4, reg);
 		}
-		return il.Add(4, ReadRegister(il, instr, reg), il.Register(4, second));
+		return il.Add(4, ReadRegisterA(il, instr, reg, align), il.Register(4, second));
 	case OPERAND_FORMAT_MEMORY_TWO_REG_SHIFT:
 		reg = GetRegisterByIndex(instr->fields[instr->format->operands[operand].field0]);
 		second = GetRegisterByIndex(instr->fields[instr->format->operands[operand].field1]);
@@ -345,21 +411,21 @@ static ExprId GetMemoryAddress(LowLevelILFunction& il, decomp_result* instr, siz
 		n = instr->fields[FIELD_shift_n];
 		if (canWriteback && HasWriteback(instr, operand))
 		{
-			il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegister(il, instr, reg),
+			il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegisterA(il, instr, reg, align),
 				ShiftedRegister(il, instr, second, t, n))));
 			return il.Register(4, reg);
 		}
-		return il.Add(4, ReadRegister(il, instr, reg), ShiftedRegister(il, instr, second, t, n));
+		return il.Add(4, ReadRegisterA(il, instr, reg, align), ShiftedRegister(il, instr, second, t, n));
 	case OPERAND_FORMAT_MEMORY_TWO_REG_LSL_ONE:
 		reg = GetRegisterByIndex(instr->fields[instr->format->operands[operand].field0]);
 		second = GetRegisterByIndex(instr->fields[instr->format->operands[operand].field1]);
 		if (canWriteback && HasWriteback(instr, operand))
 		{
-			il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegister(il, instr, reg),
+			il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegisterA(il, instr, reg, align),
 				il.ShiftLeft(4, ReadRegister(il, instr, second), il.Const(4, 1)))));
 			return il.Register(4, reg);
 		}
-		return il.Add(4, ReadRegister(il, instr, reg), il.ShiftLeft(4, ReadRegister(il, instr, second), il.Const(4, 1)));
+		return il.Add(4, ReadRegisterA(il, instr, reg, align), il.ShiftLeft(4, ReadRegister(il, instr, second), il.Const(4, 1)));
 	case OPERAND_FORMAT_MEMORY_SP_IMM:
 	case OPERAND_FORMAT_MEMORY_SP_OPTIONAL_IMM:
 		second = instr->fields[instr->format->operands[operand].field0];
@@ -370,7 +436,7 @@ static ExprId GetMemoryAddress(LowLevelILFunction& il, decomp_result* instr, siz
 		}
 		return il.Add(4, il.Register(4, armv7::REG_SP), il.Const(4, second));
 	case OPERAND_FORMAT_MEMORY_PC:
-		return il.ConstPointer(4, instr->pc);
+		return il.ConstPointer(4, instr->pc & (align ? ~(align - 1) : ~0));
 	case OPERAND_FORMAT_LABEL:
 		if (instr->fields[FIELD_add])
 			return il.ConstPointer(4, ALIGN4(instr->pc) + instr->fields[FIELD_imm32]);
@@ -675,32 +741,41 @@ bool GetLowLevelILForThumbInstruction(Architecture* arch, LowLevelILFunction& il
 			(instr->pc - 4) + instr->fields[instr->format->operands[1].field0], (instr->pc - 4) + (instr->instrSize / 8));
 		break;
 	case armv7::ARMV7_CLZ:
-	{
-		LowLevelILLabel loopStart,
-				loopBody,
-				loopExit;
-		//Count leading zeros
-		//Based on the non-thumb CLZ lifter
-		//
-		// TEMP0 = 0
-		// TEMP1 = op2.reg
-		// while (TEMP1 != 0)
-		// 		TEMP1 = TEMP1 >> 1
-		// 		TEMP0 = TEMP0 + 1
-		// op1.reg = 32 - TEMP0
-		il.AddInstruction(il.SetRegister(4, LLIL_TEMP(0), il.Const(4, 0)));
-		il.AddInstruction(il.SetRegister(4, LLIL_TEMP(1), ReadILOperand(il, instr, 1)));
-		il.AddInstruction(il.Goto(loopStart));
-		il.MarkLabel(loopStart);
-		il.AddInstruction(il.If(il.CompareNotEqual(4, il.Register(4, LLIL_TEMP(1)), il.Const(4, 0)), loopBody, loopExit));
-		il.MarkLabel(loopBody);
-		il.AddInstruction(il.SetRegister(4, LLIL_TEMP(1), il.LogicalShiftRight(4, il.Register(4, LLIL_TEMP(1)), il.Const(4, 1))));
-		il.AddInstruction(il.SetRegister(4, LLIL_TEMP(0), il.Add(4, il.Register(4, LLIL_TEMP(0)), il.Const(4, 1))));
-		il.AddInstruction(il.Goto(loopStart));
-		il.MarkLabel(loopExit);
-		il.AddInstruction(WriteILOperand(il, instr, 0, il.Sub(4, il.Const(4, 32), il.Register(4, LLIL_TEMP(0)))));
-		break;
-	}
+		if (true) {
+			il.AddInstruction(
+				il.Intrinsic(
+					{RegisterOrFlag::Register(GetRegisterOperand(instr, 0))},
+					ARMV7_INTRIN_CLZ,
+					{ReadILOperand(il, instr, 1)}));
+			break;
+		}
+		else
+		{
+			LowLevelILLabel loopStart,
+					loopBody,
+					loopExit;
+			//Count leading zeros
+			//Based on the non-thumb CLZ lifter
+			//
+			// TEMP0 = 0
+			// TEMP1 = op2.reg
+			// while (TEMP1 != 0)
+			// 		TEMP1 = TEMP1 >> 1
+			// 		TEMP0 = TEMP0 + 1
+			// op1.reg = 32 - TEMP0
+			il.AddInstruction(il.SetRegister(4, LLIL_TEMP(0), il.Const(4, 0)));
+			il.AddInstruction(il.SetRegister(4, LLIL_TEMP(1), ReadILOperand(il, instr, 1)));
+			il.AddInstruction(il.Goto(loopStart));
+			il.MarkLabel(loopStart);
+			il.AddInstruction(il.If(il.CompareNotEqual(4, il.Register(4, LLIL_TEMP(1)), il.Const(4, 0)), loopBody, loopExit));
+			il.MarkLabel(loopBody);
+			il.AddInstruction(il.SetRegister(4, LLIL_TEMP(1), il.LogicalShiftRight(4, il.Register(4, LLIL_TEMP(1)), il.Const(4, 1))));
+			il.AddInstruction(il.SetRegister(4, LLIL_TEMP(0), il.Add(4, il.Register(4, LLIL_TEMP(0)), il.Const(4, 1))));
+			il.AddInstruction(il.Goto(loopStart));
+			il.MarkLabel(loopExit);
+			il.AddInstruction(WriteILOperand(il, instr, 0, il.Sub(4, il.Const(4, 32), il.Register(4, LLIL_TEMP(0)))));
+			break;
+		}
 	case armv7::ARMV7_CMP:
 		il.AddInstruction(il.Sub(4, ReadILOperand(il, instr, 0), ReadArithOperand(il, instr, 1), IL_FLAGWRITE_ALL));
 		break;
@@ -973,6 +1048,44 @@ bool GetLowLevelILForThumbInstruction(Architecture* arch, LowLevelILFunction& il
 		il.AddInstruction(WriteArithOperand(il, instr, il.LogicalShiftRight(4, ReadArithOperand(il, instr, 0),
 			ReadArithOperand(il, instr, 1), ifThenBlock ? 0 : IL_FLAGWRITE_CNZ)));
 		break;
+	case armv7::ARMV7_MCR:
+	case armv7::ARMV7_MCR2:
+	{
+		int dest_reg_field = instr->fields[instr->format->operands[2].field0];
+		int dest_reg = GetRegisterByIndex(dest_reg_field, instr->format->operands[2].prefix);
+
+		il.AddInstruction(
+			il.Intrinsic({ }, ARMV7_INTRIN_COPROC_SENDONEWORD,
+				{
+					il.Register(4, dest_reg),
+					il.Const(1, instr->fields[instr->format->operands[0].field0]),
+					il.Const(1, instr->fields[instr->format->operands[1].field0]),
+					il.Const(1, instr->fields[instr->format->operands[3].field0]),
+					il.Const(1, instr->fields[instr->format->operands[4].field0]),
+					il.Const(1, instr->fields[instr->format->operands[5].field0]),
+				}
+			)
+		);
+		break;
+	}
+	case ARMV7_MCRR:
+	case ARMV7_MCRR2:
+	{
+		int rt = instr->fields[instr->format->operands[2].field0];
+		int rt2 = instr->fields[instr->format->operands[3].field0];
+		il.AddInstruction(
+			il.Intrinsic({ }, ARMV7_INTRIN_COPROC_SENDTWOWORDS,
+				{
+					il.Register(4, rt2),
+					il.Register(4, rt),
+					il.Const(1, instr->fields[instr->format->operands[0].field0]),
+					il.Const(1, instr->fields[instr->format->operands[1].field0]),
+					il.Const(1, instr->fields[instr->format->operands[4].field0]),
+				}
+			)
+		);
+		break;
+	}
 	case armv7::ARMV7_MLA:
 		il.AddInstruction(WriteILOperand(il, instr, 0, il.Add(4, ReadILOperand(il, instr, 3), il.Mult(4, ReadILOperand(il, instr, 1), ReadILOperand(il, instr, 2)))));
 		break;
@@ -981,7 +1094,8 @@ bool GetLowLevelILForThumbInstruction(Architecture* arch, LowLevelILFunction& il
 		break;
 	case armv7::ARMV7_MOV:
 	case armv7::ARMV7_MOVW:
-		il.AddInstruction(WriteILOperand(il, instr, 0, ReadILOperand(il, instr, 1)));
+		il.AddInstruction(WriteILOperand(il, instr, 0, ReadILOperand(il, instr, 1), 4,
+			WritesToStatus(instr, ifThenBlock) ? IL_FLAGWRITE_NZ : 0));
 		break;
 	case armv7::ARMV7_MOVS:
 		il.AddInstruction(WriteILOperand(il, instr, 0, ReadILOperand(il, instr, 1), 4,
@@ -992,6 +1106,66 @@ bool GetLowLevelILForThumbInstruction(Architecture* arch, LowLevelILFunction& il
 			il.ShiftLeft(4, il.Const(2, instr->fields[instr->format->operands[1].field0]), il.Const(1, 16)),
 			il.And(4, il.Const(4, 0x0000ffff), ReadILOperand(il, instr, 0)))));
 		break;
+	case armv7::ARMV7_MRC:
+	case armv7::ARMV7_MRC2:
+	{
+		auto params = {
+			il.Const(1, instr->fields[instr->format->operands[0].field0]), /* cp */
+			il.Const(1, instr->fields[instr->format->operands[1].field0]), /* opc1 */
+			il.Const(1, instr->fields[instr->format->operands[3].field0]), /* crn */
+			il.Const(1, instr->fields[instr->format->operands[4].field0]), /* crm */
+			il.Const(1, instr->fields[instr->format->operands[5].field0]), /* opc2 */
+		};
+
+		int dest_reg_field = instr->fields[instr->format->operands[2].field0];
+		if (dest_reg_field == 15)
+		{
+			il.AddInstruction(
+				il.Intrinsic(
+					{ RegisterOrFlag::Register(LLIL_TEMP(0)) },
+					ARMV7_INTRIN_COPROC_GETONEWORD,
+					params
+				)
+			);
+			il.AddInstruction(il.SetFlag(IL_FLAG_N, il.TestBit(4, il.Register(4, LLIL_TEMP(0)), il.Const(1, 31))));
+			il.AddInstruction(il.SetFlag(IL_FLAG_Z, il.TestBit(4, il.Register(4, LLIL_TEMP(0)), il.Const(1, 30))));
+			il.AddInstruction(il.SetFlag(IL_FLAG_C, il.TestBit(4, il.Register(4, LLIL_TEMP(0)), il.Const(1, 29))));
+			il.AddInstruction(il.SetFlag(IL_FLAG_V, il.TestBit(4, il.Register(4, LLIL_TEMP(0)), il.Const(1, 28))));
+			break;
+		}
+
+		int dest_reg = GetRegisterByIndex(dest_reg_field, instr->format->operands[2].prefix);
+
+		il.AddInstruction(
+			il.Intrinsic(
+				{RegisterOrFlag::Register(dest_reg)}, /* outputs */
+				ARMV7_INTRIN_COPROC_GETONEWORD,
+				params /* inputs */
+			)
+		);
+		break;
+	}
+
+	case ARMV7_MRRC:
+	case ARMV7_MRRC2:
+	{
+		int rt = instr->fields[instr->format->operands[2].field0];
+		int rt2 = instr->fields[instr->format->operands[3].field0];
+
+		il.AddInstruction(
+			il.Intrinsic(
+				{ RegisterOrFlag::Register(rt2), RegisterOrFlag::Register(rt) },
+				ARMV7_INTRIN_COPROC_GETTWOWORDS,
+				{
+					il.Const(1, instr->fields[instr->format->operands[0].field0]),
+					il.Const(1, instr->fields[instr->format->operands[1].field0]),
+					il.Const(1, instr->fields[instr->format->operands[4].field0]),
+				}
+			)
+		);
+		break;
+	}
+
 	case armv7::ARMV7_MRS:
 	{
 		int dest_reg = GetRegisterByIndex(instr->fields[instr->format->operands[0].field0], instr->format->operands[0].prefix);
@@ -1002,7 +1176,8 @@ bool GetLowLevelILForThumbInstruction(Architecture* arch, LowLevelILFunction& il
 			il.Intrinsic(
 				{RegisterOrFlag::Register(dest_reg)}, /* outputs */
 				intrinsic_id,
-				{il.Register(4, GetSpecialRegister(il, instr, 1))} /* inputs */
+				// {il.Register(4, GetSpecialRegister(il, instr, 1))} /* inputs */
+				{il.Const(4, GetSpecialRegister(il, instr, 1))} /* inputs */
 			)
 		);
 		break;
@@ -1012,17 +1187,55 @@ bool GetLowLevelILForThumbInstruction(Architecture* arch, LowLevelILFunction& il
 		int dest_reg = GetSpecialRegister(il, instr, 0);
 		int intrinsic_id = ARMV7_INTRIN_MSR;
 
-		/* certain MSR scenarios earn a specialized intrinsic */
-		if (dest_reg == REGS_BASEPRI)
-			intrinsic_id = ARM_M_INTRIN_SET_BASEPRI;
-
 		il.AddInstruction(
 			il.Intrinsic(
-				{RegisterOrFlag::Register(dest_reg)}, /* outputs */
+				{}, /* outputs */
 				intrinsic_id,
-				{ReadILOperand(il, instr, 1)} /* inputs */
+				{
+					// il.Register(4, dest_reg),
+					il.Const(4, dest_reg),
+					ReadILOperand(il, instr, 1)
+				} /* inputs */
 			)
 		);
+
+
+		/* certain MSR scenarios earn a specialized intrinsic */
+		// if (dest_reg == REGS_BASEPRI)
+		// 	intrinsic_id = ARM_M_INTRIN_SET_BASEPRI;
+		// switch (dest_reg) {
+		// 	case REGS_MSP:
+		// 	case REGS_PSP:
+		// 	case REGS_BASEPRI:
+		// 	case REGS_BASEPRI_MAX:
+		// 	case REGS_PRIMASK:
+		// 	case REGS_FAULTMASK:
+		// 	case REGS_CONTROL:
+		// 	case REGS_IPSR:
+		// 	case REGS_EPSR:
+		// 	case REGS_IEPSR:
+		// 		il.AddInstruction(
+		// 			il.Intrinsic(
+		// 				{}, /* outputs */
+		// 				intrinsic_id,
+		// 				{
+		// 					// il.Register(4, dest_reg),
+		// 					il.Const(4, dest_reg),
+		// 					ReadILOperand(il, instr, 1)
+		// 				} /* inputs */
+		// 			)
+		// 		);
+		// 		break;
+		// 	default:
+		// 		il.AddInstruction(
+		// 			il.Intrinsic(
+		// 				{RegisterOrFlag::Register(dest_reg)}, /* outputs */
+		// 				intrinsic_id,
+		// 				{ReadILOperand(il, instr, 1)} /* inputs */
+		// 			)
+		// 		);
+		// }
+
 		break;
 	}
 	case armv7::ARMV7_MUL:
@@ -1034,7 +1247,8 @@ bool GetLowLevelILForThumbInstruction(Architecture* arch, LowLevelILFunction& il
 			ReadArithOperand(il, instr, 1), ifThenBlock ? 0 : IL_FLAGWRITE_NZ)));
 		break;
 	case armv7::ARMV7_MVN:
-		il.AddInstruction(WriteILOperand(il, instr, 0, il.Not(4, ReadArithOperand(il, instr, 1))));
+		il.AddInstruction(WriteILOperand(il, instr, 0, il.Not(4, ReadArithOperand(il, instr, 1),
+			WritesToStatus(instr, ifThenBlock) ? IL_FLAGWRITE_ALL : 0)));
 		break;
 	case armv7::ARMV7_MVNS:
 		il.AddInstruction(WriteILOperand(il, instr, 0, il.Not(4, ReadArithOperand(il, instr, 1), ifThenBlock ? 0 : IL_FLAGWRITE_ALL)));
@@ -1059,6 +1273,13 @@ bool GetLowLevelILForThumbInstruction(Architecture* arch, LowLevelILFunction& il
 		break;
 	case armv7::ARMV7_PUSH:
 		Push(il, instr->fields[FIELD_registers]);
+		break;
+	case armv7::ARMV7_RBIT:
+		il.AddInstruction(
+			il.Intrinsic(
+				{RegisterOrFlag::Register(GetRegisterOperand(instr, 0))},
+				ARMV7_INTRIN_RBIT,
+				{ReadILOperand(il, instr, 1)}));
 		break;
 	case armv7::ARMV7_REV:
 		il.AddInstruction(WriteILOperand(il, instr, 0,
@@ -1253,12 +1474,13 @@ bool GetLowLevelILForThumbInstruction(Architecture* arch, LowLevelILFunction& il
 		else
 			il.AddInstruction(il.SetRegister(4, LLIL_TEMP(0), il.Register(4, baseReg)));
 
+		uint32_t targetReg = decBeforeMode ? LLIL_TEMP(0) : baseReg;
 		for (int32_t i = 0, slot = 0; i <= regLimit; i++)
 		{
 			if ((regs >> i) & 1)
 			{
 				il.AddInstruction(il.Store(4,
-					il.Add(4, il.Register(4, LLIL_TEMP(0)), il.Const(4, 4 * slot++)),
+					il.Add(4, il.Register(4, targetReg), il.Const(4, 4 * slot++)),
 						il.Register(4, GetRegisterByIndex(i))));
 			}
 		}
@@ -1414,10 +1636,10 @@ bool GetLowLevelILForThumbInstruction(Architecture* arch, LowLevelILFunction& il
 		break;
 	}
 	case armv7::ARMV7_UMULL:
-		il.AddInstruction(WriteSplitOperands(il, instr, 1, 0, il.MultDoublePrecUnsigned(8, ReadILOperand(il, instr, 2), ReadILOperand(il, instr, 3))));
+		il.AddInstruction(WriteSplitOperands(il, instr, 1, 0, il.MultDoublePrecUnsigned(4, ReadILOperand(il, instr, 2), ReadILOperand(il, instr, 3))));
 		break;
 	case armv7::ARMV7_SMULL:
-		il.AddInstruction(WriteSplitOperands(il, instr, 1, 0, il.MultDoublePrecSigned(8, ReadILOperand(il, instr, 2), ReadILOperand(il, instr, 3))));
+		il.AddInstruction(WriteSplitOperands(il, instr, 1, 0, il.MultDoublePrecSigned(4, ReadILOperand(il, instr, 2), ReadILOperand(il, instr, 3))));
 		break;
 	case armv7::ARMV7_SMULBB:
 		il.AddInstruction(WriteArithOperand(il, instr, il.Mult(4, il.LowPart(2, ReadILOperand(il, instr, 1)),
@@ -1599,47 +1821,130 @@ bool GetLowLevelILForNEONInstruction(Architecture* arch, LowLevelILFunction& il,
 		il.AddInstruction(WriteILOperand(il, instr, 0, ReadILOperand(il, instr, 1), GetRegisterSize(instr, 1)));
 		break;
 	case armv7::ARMV7_VCVT:
-		if (instr->format->operandCount == 3)
+		if (IS_FIELD_PRESENT(instr, FIELD_to_fixed))
 		{
-			// TODO: Fixed point unsupported.
+			if (IS_FIELD_PRESENT(instr, FIELD_imm))
+			{
+				// VCVT (between floating-point and fixed-point, Floating-point)
+				/* VCVT<c>.F32.<dt> <Sd>,<Sd>,#<imm> */
+				/* VCVT<c>.F64.<dt> <Dd>,<Dd>,#<imm> */
+				/* VCVT<c>.<dt> <Sd>,<Sd>,#<imm> */
+				/* VCVT<c>.<dt> <Dd>,<Dd>,#<imm> */
+				// TODO: fixed-point unsupported.
+				il.AddInstruction(il.Unimplemented());
+			}
+			else if (IS_FIELD_PRESENT(instr, FIELD_fbits))
+			{
+				// VCVT (between floating-point and fixed-point, Advanced SIMD)
+				/* VCVT<c>.<dt> <Dd>,<Dm>,#<fbits> */
+				/* VCVT<c>.<dt> <Qd>,<Qm>,#<fbits> */
+				// TODO: vector and fixed-point unsupported.
+			}
+		}
+		else if (IS_FIELD_PRESENT(instr, FIELD_half_to_single))
+		{
+			// VCVT (between half-precision and single-precision, Advanced SIMD)
+			/* VCVT<c>.F16.F32 <Dd>,<Qm> */
+			/* VCVT<c>.F32.F16 <Qd>,<Dm> */
+			// TODO: vector and half-precision unsupported.
 			il.AddInstruction(il.Unimplemented());
 		}
-		else if (instr->format->operationFlags & (INSTR_FORMAT_FLAG_F32 | INSTR_FORMAT_FLAG_F64))
+		else if (IS_FIELD_PRESENT(instr, FIELD_double_to_single))
 		{
-			il.AddInstruction(
-				WriteILOperand(il, instr, 0, il.FloatConvert(GetRegisterSize(instr, 1), ReadILOperand(il, instr, 1))));
+			// VCVT (between double-precision and single-precision)
+			/* VCVT<c>.F64.F32 <Dd>,<Sm> */
+			/* VCVT<c>.F32.F64 <Sd>,<Dm> */
+			il.AddInstruction(WriteILOperand(
+				il, instr, 0, il.FloatConvert(GetRegisterSize(instr, 1), ReadILOperand(il, instr, 1))));
+			break;
 		}
-		else if (IS_FIELD_PRESENT(instr, FIELD_td))
+		else if (IS_FIELD_PRESENT(instr, FIELD_to_integer))
 		{
-			switch (instr->fields[FIELD_dt])
+			if (IS_FIELD_PRESENT(instr, FIELD_td))
 			{
-			case VFP_DATA_SIZE_S32F32:
-			case VFP_DATA_SIZE_U32F32:
-				il.AddInstruction(WriteILOperand(
-					il, instr, 0, il.IntToFloat(GetRegisterSize(instr, 1), ReadILOperand(il, instr, 1))));
-				break;
-			case VFP_DATA_SIZE_F32S32:
-			case VFP_DATA_SIZE_F32U32:
-				il.AddInstruction(WriteILOperand(
-					il, instr, 0, il.FloatToInt(GetRegisterSize(instr, 1), ReadILOperand(il, instr, 1))));
-				break;
-			default:
-				il.AddInstruction(il.Unimplemented());
+				// VCVT (between floating-point and integer, Advanced SIMD)
+				/* VCVT<c>.<dt> <Dd>,<Dm> */  // instr->fields[FIELD_regs] = 1
+				/* VCVT<c>.<dt> <Qd>,<Qm> */  // instr->fields[FIELD_regs] = 2
+				switch (instr->fields[FIELD_dt])
+				{
+				case VFP_DATA_SIZE_S32F32:
+				case VFP_DATA_SIZE_U32F32:
+					// TODO: iterate over vector components
+					// break;
+				case VFP_DATA_SIZE_F32S32:
+				case VFP_DATA_SIZE_F32U32:
+					// TODO: iterate over vector components
+					// break;
+				default:
+					// Invalid
+					il.AddInstruction(il.Unimplemented());
+				}
+			}
+			else if (instr->fields[FIELD_to_integer])
+			{
+				// VCVT, VCVTR (between floating-point and integer, Floating-point)
+				// TODO: handle distinction of VCVTR:
+				// If R is specified, the operation uses the rounding mode specified by the FPSCR.
+				// If R is omitted. the operation uses the Round towards Zero rounding mode.
+				// (Note: Binary Ninja does not currently support specifying any particular rounding mode, so it doesn't matter.)
+				switch (instr->fields[FIELD_dt])
+				{
+				case VFP_DATA_SIZE_S32F32:
+				case VFP_DATA_SIZE_S32F64:
+					/* VCVT<c>.S32.F32 <Sd>,<Sm> */
+					/* VCVT<c>.S32.F64 <Sd>,<Dm> */
+					/* VCVTR<c>.S32.F32 <Sd>,<Sm> */
+					/* VCVTR<c>.S32.F64 <Sd>,<Dm> */
+					il.AddInstruction(WriteILOperand(
+						il, instr, 0, il.SignExtend(GetRegisterSize(instr, 0),
+							il.FloatToInt(GetRegisterSize(instr, 0),
+								il.RoundToInt(GetRegisterSize(instr, 0),
+									ReadILOperand(il, instr, 1))))));
+					break;
+				case VFP_DATA_SIZE_U32F32:
+				case VFP_DATA_SIZE_U32F64:
+					/* VCVT<c>.U32.F32 <Sd>,<Sm> */
+					/* VCVT<c>.U32.F64 <Sd>,<Dm> */
+					/* VCVTR<c>.U32.F32 <Sd>,<Sm> */
+					/* VCVTR<c>.U32.F64 <Sd>,<Dm> */
+					il.AddInstruction(WriteILOperand(
+						il, instr, 0, il.ZeroExtend(GetRegisterSize(instr, 0),
+							il.FloatToInt(GetRegisterSize(instr, 0),
+								il.RoundToInt(GetRegisterSize(instr, 0),
+									ReadILOperand(il, instr, 1))))));
+					break;
+				default:
+					// Invalid
+					il.AddInstruction(il.Unimplemented());
+				}
+			}
+			else
+			{
+				// VCVT, VCVTR (between floating-point and integer, Floating-point)
+				switch (instr->fields[FIELD_dt])
+				{
+				case VFP_DATA_SIZE_S32:
+					/* VCVT<c>.F32.<dt> <Sd>,<Sm> */
+					il.AddInstruction(WriteILOperand(
+						il, instr, 0, il.IntToFloat(GetRegisterSize(instr, 0),
+							il.SignExtend(GetRegisterSize(instr, 0),
+								ReadILOperand(il, instr, 1)))));
+					break;
+				case VFP_DATA_SIZE_U32:
+					/* VCVT<c>.F64.<dt> <Dd>,<Sm> */
+					il.AddInstruction(WriteILOperand(
+						il, instr, 0, il.IntToFloat(GetRegisterSize(instr, 0),
+							il.ZeroExtend(GetRegisterSize(instr, 0),
+								ReadILOperand(il, instr, 1)))));
+					break;
+				default:
+					// Invalid
+					il.AddInstruction(il.Unimplemented());
+				}
 			}
 		}
 		else
-		{
-			switch (instr->fields[FIELD_dt])
-			{
-			case VFP_DATA_SIZE_F32:
-			case VFP_DATA_SIZE_S32:
-				il.AddInstruction(WriteILOperand(
-					il, instr, 0, il.FloatConvert(GetRegisterSize(instr, 1), ReadILOperand(il, instr, 1))));
-				break;
-			default:
-				il.AddInstruction(il.Unimplemented());
-			}
-		}
+			il.AddInstruction(il.Unimplemented());
 		break;
 	case armv7::ARMV7_VMOV:
 		if (instr->format->operandCount == 4)
@@ -1831,7 +2136,9 @@ bool GetLowLevelILForNEONInstruction(Architecture* arch, LowLevelILFunction& il,
 		}
 		else
 		{
-			il.AddInstruction(WriteILOperand(il, instr, 0, il.Load(regSize, GetMemoryAddress(il, instr, 1, 4))));
+			il.AddInstruction(WriteILOperand(il, instr, 0,
+				il.Load(regSize,
+					GetMemoryAddress(il, instr, 1, 4, true, 4))));
 		}
 		break;
 	}

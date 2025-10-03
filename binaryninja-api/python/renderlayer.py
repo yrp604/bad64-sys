@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -27,7 +27,7 @@ from . import _binaryninjacore as core, LinearDisassemblyLine
 from .enums import LinearDisassemblyLineType, RenderLayerDefaultEnableState
 from . import binaryview
 from . import types
-from .log import log_error
+from .log import log_error_for_exception
 from typing import Iterable, List, Optional, Union, Tuple
 
 
@@ -117,7 +117,7 @@ class RenderLayer(metaclass=_RenderLayerMetaclass):
 		try:
 			self.apply_to_flow_graph(binaryninja.FlowGraph(handle=core.BNNewFlowGraphReference(graph)))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in RenderLayer._apply_to_flow_graph")
 
 	def _apply_to_linear_view_object(self, ctxt, obj, prev, next, in_lines, in_line_count, out_lines, out_line_count):
 		try:
@@ -139,7 +139,7 @@ class RenderLayer(metaclass=_RenderLayerMetaclass):
 			out_lines[0] = out_lines_buf
 			self._pending_lines[out_lines_ptr.value] = (out_lines_ptr.value, out_lines_buf)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in RenderLayer._apply_to_linear_view_object")
 			out_lines[0] = None
 			out_line_count[0] = 0
 
@@ -151,7 +151,7 @@ class RenderLayer(metaclass=_RenderLayerMetaclass):
 					raise ValueError("freeing lines list that wasn't allocated")
 				del self._pending_lines[buf.value]
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in RenderLayer._free_lines")
 
 	def apply_to_disassembly_block(
 			self,

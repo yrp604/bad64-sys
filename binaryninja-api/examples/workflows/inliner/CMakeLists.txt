@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.9 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 
 project(workflow_inliner)
 
-file(GLOB SOURCES
+file(GLOB SOURCES CONFIGURE_DEPENDS
 	*.cpp
 	*.c
 	*.h)
@@ -23,7 +23,7 @@ endif()
 target_link_libraries(workflow_inliner binaryninjaapi)
 
 set_target_properties(workflow_inliner PROPERTIES
-	CXX_STANDARD 17
+	CXX_STANDARD 20
 	CXX_VISIBILITY_PRESET hidden
 	CXX_STANDARD_REQUIRED ON
 	C_STANDARD 99

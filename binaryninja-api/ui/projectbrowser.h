@@ -56,6 +56,8 @@ class BINARYNINJAUIAPI ProjectItemModel: public QStandardItemModel, public Binar
 
 	std::unordered_map<std::string, QStandardItem*> m_itemsById;
 
+	bool m_globalShowFullFileSize;
+
 	QHash<QString, QString> m_pathMimeTypeCache;
 	QHash<QString, size_t> m_pathSizeCache;
 	QHash<QString, QIcon> m_pathIconCache;
@@ -87,7 +89,7 @@ public:
 
 	QStandardItem* ItemForId(const std::string& id);
 
-	void reloadData(const std::function<bool(size_t, size_t)>& progress = [](size_t, size_t){ return true; });
+	void reloadData(const BinaryNinja::ProgressFunction& progress = [](size_t, size_t){ return true; });
 
 	virtual QMimeData* mimeData(const QModelIndexList& indexes) const override;
 	virtual bool dropMimeData(const QMimeData* data, Qt::DropAction action, int row, int column, const QModelIndex& parent) override;
@@ -95,6 +97,9 @@ public:
 
 	QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
 	virtual bool setData(const QModelIndex& index, const QVariant& value, int role = Qt::EditRole) override;
+
+	virtual void toggleGlobalShowFileSize();
+	virtual bool isGlobalShowFileSize();
 
 	enum {
 		TypeRole = Qt::UserRole,
@@ -318,6 +323,7 @@ class BINARYNINJAUIAPI ProjectBrowser: public QWidget, public UIContextNotificat
 	void restoreTreeState();
 
 	void initActions();
+	UIActionContext actionContext();
 
 	std::vector<ProjectFileRef> GetSelectedFilesRecursive();
 

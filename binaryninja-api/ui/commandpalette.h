@@ -158,7 +158,7 @@ class BINARYNINJAUIAPI CommandPalette : public QFrame
 	//! Activate the focused item, or topmost item if there is no selection.
 	void activateFocusedItem();
 	void selectFirstItem();
-	void close();
+	void close(bool restoreFocus = true);
 
   private Q_SLOTS:
 	void itemClicked(const QModelIndex& idx);

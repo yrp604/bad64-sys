@@ -11,9 +11,9 @@ Official Rust bindings for [Binary Ninja].
 
 These bindings are still actively under development. Compatibility _will_ break and conventions _will_ change!
 It is encouraged that you reference a specific commit to avoid having your plugin/application break when the API changes.
-To specify a specific commit see the cargo documentation [here](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#choice-of-commit).
+To specify a specific commit, see the cargo documentation [here](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#choice-of-commit).
 
-If you are worried about breaking changes avoid modules with warnings about instability!
+If you are worried about breaking changes, avoid modules with warnings about instability!
 
 **MSRV**: The Rust version specified in the `Cargo.toml`.
 
@@ -53,7 +53,7 @@ More examples can be found in [here](https://github.com/Vector35/binaryninja-api
 ### Link to Binary Ninja
 
 Writing a standalone executable _or_ a plugin requires that you link to `binaryninjacore` directly. The process of locating that however
-is done for you within the `binaryninjacore-sys` crate. Because linker arguments are _not_ transitive for executables you
+is done for you within the `binaryninjacore-sys` crate. Because linker arguments are _not_ transitive for executables, you
 must specify them within your `build.rs`.
 
 `Cargo.toml`:
@@ -73,12 +73,19 @@ fn main() {
     println!("cargo::rustc-link-lib=dylib=binaryninjacore");
     println!("cargo::rustc-link-search={}", link_path.to_str().unwrap());
     
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
     {
         println!(
             "cargo::rustc-link-arg=-Wl,-rpath,{0},-L{0}",
             link_path.to_string_lossy()
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let crate_name = std::env::var("CARGO_PKG_NAME").expect("CARGO_PKG_NAME not set");
+        let lib_name = crate_name.replace('-', "_");
+        println!("cargo::rustc-link-arg=-Wl,-install_name,@rpath/lib{}.dylib", lib_name);
     }
 }
 ```
@@ -109,7 +116,7 @@ Examples for writing a plugin can be found [here](https://github.com/Vector35/bi
 
 ### Write a Standalone Executable
 
-If you have a headless supporting license you are able to use Binary Ninja as a regular dynamically loaded library.
+If you have a headless supporting license, you are able to use Binary Ninja as a regular dynamically loaded library.
 
 Standalone executables must initialize the core themselves. `binaryninja::headless::init()` to initialize the core, and
 `binaryninja::headless::shutdown()` to shutdown the core. Prefer using `binaryninja::headless::Session` as it will 
@@ -140,14 +147,14 @@ If you're thinking of contributing to the Rust API, we encourage you to join the
 
 ### Testing
 
-When contributing new APIs or refactoring existing APIs it is vital that you test your code! If you do not have a 
-headless supported license you should still be able to write them and open your PR. Once open a 
+When contributing new APIs or refactoring existing APIs, it is vital that you test your code! If you do not have a 
+headless supported license, you should still be able to write them and open your PR. Once open, a 
 maintainer will approve tests to run and from there you can refine the test so that it passes in CI.
 
 ### Documentation
 
-When refactoring or making new changes make sure that the documentation for the respective APIs is up-to-date and not missing.
-Much of the APIs documentation exists only in the python bindings, so use that as a guide. If there is an API that confuses you
+When refactoring or making new changes, make sure that the documentation for the respective APIs is up to date and not missing.
+Much of the APIs documentation exists only in the python bindings, so use that as a guide. If there is an API that confuses you,
 it will likely confuse someone else, and you should make an issue or ask for guidance in the Slack channel above.
 
 ---
@@ -158,6 +165,7 @@ This project makes use of:
   - [log] ([log license] - MIT)
   - [rayon] ([rayon license] - MIT)
   - [thiserror] ([thiserror license] - MIT)
+  - [serde_json] ([serde_json license] - MIT)
 
 [log]: https://github.com/rust-lang/log
 [log license]: https://github.com/rust-lang/log/blob/master/LICENSE-MIT
@@ -165,4 +173,6 @@ This project makes use of:
 [rayon license]: https://github.com/rayon-rs/rayon/blob/master/LICENSE-MIT
 [thiserror]: https://github.com/dtolnay/thiserror
 [thiserror license]: https://github.com/dtolnay/thiserror/blob/master/LICENSE-MIT
+[serde_json]: https://github.com/serde-rs/json
+[serde_json license]: https://github.com/serde-rs/json/blob/master/LICENSE-MIT
 [Binary Ninja]: https://binary.ninja

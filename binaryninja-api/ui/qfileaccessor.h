@@ -1,8 +1,7 @@
 #pragma once
 
 #include <QtCore/QFile>
-#include "binaryninjaapi.h"
-#include "action.h"
+#include "uitypes.h"
 
 /*!
 
@@ -15,7 +14,7 @@
 */
 class BINARYNINJAUIAPI QFileAccessor : public BinaryNinja::FileAccessor
 {
-	QFile* m_file;
+	std::optional<QFile> m_file;
 	QString m_error;
 
   public:

@@ -30,6 +30,12 @@
 
 #define ADDRNEG1(addressSize) (addressSize == 4) ? ((uint32_t)-1) : ((uint64_t)-1)
 
+inline uint16_t bswap16(uint16_t x)
+{
+	return ((x&0xFF)<<8) |
+		((x&0xFF00)>>8);
+}
+
 inline uint32_t bswap32(uint32_t x)
 {
 	return ((x&0xFF)<<24) |
@@ -38,6 +44,4 @@ inline uint32_t bswap32(uint32_t x)
 		((x&0xFF000000)>>24);
 }
 
-void printOperandVerbose(decomp_result *res, cs_ppc_op *opers);
-void printInstructionVerbose(decomp_result *res);
 uint64_t sign_extend(size_t addressSize_local, uint64_t target, int signBit);

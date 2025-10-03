@@ -186,7 +186,7 @@ StringsTreeView::StringsTreeView(StringsWidget* parent, TriageView* view, Binary
 
 	// Allow view-specific shortcuts when strings are focused
 	m_actionHandler.setupActionHandler(this);
-	m_actionHandler.setActionContext([=]() { return m_view->actionContext(); });
+	m_actionHandler.setActionContext([=, this]() { return m_view->actionContext(); });
 
 	m_model = new GenericStringsModel(this, m_data);
 	setModel(m_model);

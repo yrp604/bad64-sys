@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 fn main() {
-    let link_path =
-        std::env::var_os("DEP_BINARYNINJACORE_PATH").expect("DEP_BINARYNINJACORE_PATH specified");
+    let link_path = std::env::var_os("DEP_BINARYNINJACORE_PATH")
+        .expect("DEP_BINARYNINJACORE_PATH not specified");
 
     println!("cargo::rustc-link-lib=dylib=binaryninjacore");
     println!("cargo::rustc-link-search={}", link_path.to_str().unwrap());
@@ -15,7 +15,7 @@ fn main() {
         );
     }
 
-    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR specified");
+    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not specified");
     let out_dir_path = PathBuf::from(out_dir);
 
     // Copy all binaries to OUT_DIR for unit tests.

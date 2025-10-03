@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2024 Vector 35 Inc
+// Copyright (c) 2017-2025 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -25,15 +25,165 @@ using namespace BinaryNinja;
 using namespace std;
 
 
+ILSourceLocation::ILSourceLocation(const struct MediumLevelILInstruction& instr):
+	address(instr.address), sourceOperand(instr.sourceOperand), valid(true),
+	ilBased(true), ilDirect(true), ilExprIndex(instr.exprIndex)
+{}
+
+
 MediumLevelILLabel::MediumLevelILLabel()
 {
 	BNMediumLevelILInitLabel(this);
 }
 
 
-MediumLevelILFunction::MediumLevelILFunction(Architecture* arch, Function* func)
+void MediumLevelILFunction::RecordMLILToMLILExprMap(size_t newExprIndex, const ILSourceLocation& location)
 {
-	m_object = BNCreateMediumLevelILFunction(arch->GetObject(), func ? func->GetObject() : nullptr);
+	if (m_translationData && m_translationData->copyingFunction && location.valid && location.ilBased)
+	{
+		size_t oldExprIndex = location.ilExprIndex;
+		if (m_translationData->mlilToMlilExprMap.find(oldExprIndex) == m_translationData->mlilToMlilExprMap.end())
+		{
+			m_translationData->mlilToMlilExprMap.insert({oldExprIndex, {}});
+		}
+		m_translationData->mlilToMlilExprMap[oldExprIndex].push_back({ newExprIndex, location.ilDirect });
+	}
+}
+
+
+void MediumLevelILFunction::RecordMLILToMLILInstrMap(size_t newInstrIndex, const ILSourceLocation& location)
+{
+	if (m_translationData && m_translationData->copyingFunction && location.valid && location.ilBased)
+	{
+		size_t oldExprIndex = location.ilExprIndex;
+		size_t oldInstrIndex = m_translationData->copyingFunction->GetInstructionForExpr(oldExprIndex);
+		if (m_translationData->mlilToMlilInstrMap.find(oldInstrIndex) == m_translationData->mlilToMlilInstrMap.end())
+		{
+			m_translationData->mlilToMlilInstrMap.insert({oldInstrIndex, {}});
+		}
+		m_translationData->mlilToMlilInstrMap[oldInstrIndex].push_back({ newInstrIndex, location.ilDirect });
+	}
+}
+
+
+std::unordered_map<size_t /* llil ssa */, size_t /* mlil */> MediumLevelILFunction::GetLLILSSAToMLILInstrMap(bool fromTranslation)
+{
+	std::unordered_map<size_t /* llil ssa */, size_t /* mlil */> result;
+	if (fromTranslation)
+	{
+		// TODO: Handle LLIL SSA -> MLIL mappings in case someone is brave enough to try
+		// lifting LLILSSA->MLIL themselves instead of an MLIL->MLIL translation
+		// (which is the only one I've seen people do so far)
+
+		if (m_translationData && m_translationData->copyingFunction)
+		{
+			for (auto& [oldInstrIndex, newInstrIndices]: m_translationData->mlilToMlilInstrMap)
+			{
+				// Look up the LLIL SSA instruction for the old instr in its function
+				// and then store that mapping for the new function
+
+				for (auto& [newInstrIndex, newDirect]: newInstrIndices)
+				{
+					// Instructions are always mapped 1 to 1. If the map is marked indirect
+					// then just ignore it.
+					if (newDirect)
+					{
+						size_t oldLLILSSAIndex = m_translationData->copyingFunction->GetLowLevelILInstructionIndex(oldInstrIndex);
+						if (oldLLILSSAIndex != BN_INVALID_EXPR)
+						{
+							result[oldLLILSSAIndex] = newInstrIndex;
+						}
+					}
+				}
+			}
+		}
+	}
+	else
+	{
+		for (auto& block: GetBasicBlocks())
+		{
+			for (size_t instrIndex = block->GetStart(); instrIndex < block->GetEnd(); instrIndex++)
+			{
+				size_t llilSSAIndex = GetLowLevelILInstructionIndex(instrIndex);
+				result[llilSSAIndex] = instrIndex;
+			}
+		}
+	}
+
+	return result;
+}
+
+
+std::vector<BNExprMapInfo> MediumLevelILFunction::GetLLILSSAToMLILExprMap(bool fromTranslation)
+{
+	std::vector<BNExprMapInfo> result;
+	if (fromTranslation)
+	{
+		// TODO: Handle LLIL SSA -> MLIL mappings in case someone is brave enough to try
+		// lifting LLILSSA->MLIL themselves instead of an MLIL->MLIL translation
+		// (which is the only one I've seen people do so far)
+
+		for (auto& [oldExprIndex, newExprIndices]: m_translationData->mlilToMlilExprMap)
+		{
+			// Look up the LLIL SSA expression for the old expr in its function
+			// And then store that mapping for the new function
+
+			size_t oldLLILSSADirect = m_translationData->copyingFunction->GetLowLevelILExprIndex(oldExprIndex);
+			auto oldLLILSSAIndices = m_translationData->copyingFunction->GetLowLevelILExprIndexes(oldExprIndex);
+			for (auto& oldLLILSSAIndex: oldLLILSSAIndices)
+			{
+				size_t oldReverseDirect = m_translationData->copyingFunction->GetLowLevelIL()->GetSSAForm()->GetMediumLevelILExprIndex(oldLLILSSAIndex);
+				auto oldReverseAll = m_translationData->copyingFunction->GetLowLevelIL()->GetSSAForm()->GetMediumLevelILExprIndexes(oldLLILSSAIndex);
+				for (auto& [newExprIndex, newDirect]: newExprIndices)
+				{
+					BNExprMapInfo info;
+					info.lowerIndex = oldLLILSSAIndex;
+					info.higherIndex = newExprIndex;
+					info.lowerToHigherDirect = newDirect && oldReverseDirect == oldExprIndex;
+					info.higherToLowerDirect = newDirect && oldExprIndex == oldLLILSSADirect;
+					info.mapLowerToHigher = oldReverseAll.contains(oldExprIndex);
+					info.mapHigherToLower = true;
+					result.push_back(info);
+				}
+			}
+		}
+	}
+	else
+	{
+		for (auto& block: GetBasicBlocks())
+		{
+			for (size_t instrIndex = block->GetStart(); instrIndex < block->GetEnd(); instrIndex++)
+			{
+				GetInstruction(instrIndex).VisitExprs([&](const MediumLevelILInstruction& expr)
+				{
+					size_t llilSSADirect = GetLowLevelILExprIndex(expr.exprIndex);
+					auto llilSSAIndices = GetLowLevelILExprIndexes(expr.exprIndex);
+					for (auto& llilSSAIndex: llilSSAIndices)
+					{
+						size_t reverseDirect = GetLowLevelIL()->GetSSAForm()->GetMediumLevelILExprIndex(llilSSAIndex);
+						auto reverseAll = GetLowLevelIL()->GetSSAForm()->GetMediumLevelILExprIndexes(llilSSAIndex);
+
+						BNExprMapInfo info;
+						info.lowerIndex = llilSSAIndex;
+						info.higherIndex = expr.exprIndex;
+						info.lowerToHigherDirect = reverseDirect == expr.exprIndex;
+						info.higherToLowerDirect = llilSSAIndex == llilSSADirect;
+						info.mapLowerToHigher = reverseAll.contains(expr.exprIndex);
+						info.mapHigherToLower = true;
+						result.push_back(info);
+					}
+					return true;
+				});
+			}
+		}
+	}
+	return result;
+}
+
+
+MediumLevelILFunction::MediumLevelILFunction(Architecture* arch, Function* func, LowLevelILFunction* lowLevelIL)
+{
+	m_object = BNCreateMediumLevelILFunction(arch->GetObject(), func ? func->GetObject() : nullptr, lowLevelIL ? lowLevelIL->GetObject() : nullptr);
 }
 
 
@@ -81,6 +231,11 @@ size_t MediumLevelILFunction::GetInstructionStart(Architecture* arch, uint64_t a
 
 void MediumLevelILFunction::PrepareToCopyFunction(MediumLevelILFunction* func)
 {
+	if (!m_translationData)
+	{
+		m_translationData = std::make_unique<MediumLevelILFunction::TranslationData>();
+	}
+	m_translationData->copyingFunction = func;
 	BNPrepareToCopyMediumLevelILFunction(m_object, func->GetObject());
 }
 
@@ -128,35 +283,59 @@ ExprId MediumLevelILFunction::AddExprWithLocation(BNMediumLevelILOperation opera
 ExprId MediumLevelILFunction::AddExprWithLocation(BNMediumLevelILOperation operation, const ILSourceLocation& loc,
     size_t size, ExprId a, ExprId b, ExprId c, ExprId d, ExprId e)
 {
+	ExprId index;
 	if (loc.valid)
 	{
-		return BNMediumLevelILAddExprWithLocation(
+		index = BNMediumLevelILAddExprWithLocation(
 		    m_object, operation, loc.address, loc.sourceOperand, size, a, b, c, d, e);
 	}
-	return BNMediumLevelILAddExpr(m_object, operation, size, a, b, c, d, e);
+	else
+	{
+		index = BNMediumLevelILAddExpr(m_object, operation, size, a, b, c, d, e);
+	}
+	RecordMLILToMLILExprMap(index, loc);
+	return index;
 }
 
 
-ExprId MediumLevelILFunction::AddInstruction(size_t expr)
+ExprId MediumLevelILFunction::AddInstruction(size_t expr, const ILSourceLocation& loc)
 {
-	return BNMediumLevelILAddInstruction(m_object, expr);
+	ExprId index = BNMediumLevelILAddInstruction(m_object, expr);
+	RecordMLILToMLILInstrMap(index, loc);
+	return index;
 }
 
 
 ExprId MediumLevelILFunction::Goto(BNMediumLevelILLabel& label, const ILSourceLocation& loc)
 {
+	size_t index;
 	if (loc.valid)
-		return BNMediumLevelILGotoWithLocation(m_object, &label, loc.address, loc.sourceOperand);
-	return BNMediumLevelILGoto(m_object, &label);
+	{
+		index = BNMediumLevelILGotoWithLocation(m_object, &label, loc.address, loc.sourceOperand);
+	}
+	else
+	{
+		index = BNMediumLevelILGoto(m_object, &label);
+	}
+	RecordMLILToMLILExprMap(index, loc);
+	return index;
 }
 
 
 ExprId MediumLevelILFunction::If(
     ExprId operand, BNMediumLevelILLabel& t, BNMediumLevelILLabel& f, const ILSourceLocation& loc)
 {
+	size_t index;
 	if (loc.valid)
-		return BNMediumLevelILIfWithLocation(m_object, operand, &t, &f, loc.address, loc.sourceOperand);
-	return BNMediumLevelILIf(m_object, operand, &t, &f);
+	{
+		index = BNMediumLevelILIfWithLocation(m_object, operand, &t, &f, loc.address, loc.sourceOperand);
+	}
+	else
+	{
+		index = BNMediumLevelILIf(m_object, operand, &t, &f);
+	}
+	RecordMLILToMLILExprMap(index, loc);
+	return index;
 }
 
 
@@ -937,6 +1116,13 @@ void MediumLevelILFunction::SetExprType(const BinaryNinja::MediumLevelILInstruct
 Ref<FlowGraph> MediumLevelILFunction::CreateFunctionGraph(DisassemblySettings* settings)
 {
 	BNFlowGraph* graph = BNCreateMediumLevelILFunctionGraph(m_object, settings ? settings->GetObject() : nullptr);
+	return new CoreFlowGraph(graph);
+}
+
+
+Ref<FlowGraph> MediumLevelILFunction::CreateFunctionGraphImmediate(DisassemblySettings* settings)
+{
+	BNFlowGraph* graph = BNCreateMediumLevelILImmediateFunctionGraph(m_object, settings ? settings->GetObject() : nullptr);
 	return new CoreFlowGraph(graph);
 }
 

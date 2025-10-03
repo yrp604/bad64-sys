@@ -1,4 +1,4 @@
-// Copyright 2021-2024 Vector 35 Inc.
+// Copyright 2021-2025 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use crate::{
+    functions::FrameBase,
     helpers::{get_uid, resolve_specification, DieReference},
     ReaderType,
 };
@@ -41,7 +42,6 @@ pub(crate) type TypeUID = usize;
 /////////////////////////
 // FunctionInfoBuilder
 
-// TODO : Function local variables
 #[derive(PartialEq, Eq, Hash)]
 pub(crate) struct FunctionInfoBuilder {
     pub(crate) full_name: Option<String>,
@@ -52,7 +52,7 @@ pub(crate) struct FunctionInfoBuilder {
     pub(crate) platform: Option<Ref<Platform>>,
     pub(crate) variable_arguments: bool,
     pub(crate) stack_variables: Vec<NamedVariableWithType>,
-    pub(crate) use_cfa: bool, //TODO actually store more info about the frame base
+    pub(crate) frame_base: Option<FrameBase>,
 }
 
 impl FunctionInfoBuilder {
@@ -63,6 +63,7 @@ impl FunctionInfoBuilder {
         return_type: Option<TypeUID>,
         address: Option<u64>,
         parameters: &Vec<Option<(String, TypeUID)>>,
+        frame_base: Option<FrameBase>,
     ) {
         if full_name.is_some() {
             self.full_name = full_name;
@@ -90,6 +91,10 @@ impl FunctionInfoBuilder {
                 // Some(Some((_, uid))) if *uid == 0 => self.parameters[i] = new_parameter, // TODO : This is a placebo....void types aren't actually UID 0
                 _ => self.parameters.push(new_parameter.clone()),
             }
+        }
+
+        if frame_base.is_some() {
+            self.frame_base = frame_base;
         }
     }
 }
@@ -229,7 +234,7 @@ impl DebugInfoBuilder {
         address: Option<u64>,
         parameters: &Vec<Option<(String, TypeUID)>>,
         variable_arguments: bool,
-        use_cfa: bool,
+        frame_base: Option<FrameBase>,
     ) -> Option<usize> {
         // Returns the index of the function
         // Raw names should be the primary key, but if they don't exist, use the full name
@@ -254,7 +259,14 @@ impl DebugInfoBuilder {
                         .remove(function.full_name.as_ref().unwrap());
                 }
 
-                function.update(full_name, raw_name, return_type, address, parameters);
+                function.update(
+                    full_name,
+                    raw_name,
+                    return_type,
+                    address,
+                    parameters,
+                    frame_base,
+                );
 
                 if function.full_name.is_some() {
                     self.full_function_name_indices
@@ -276,7 +288,14 @@ impl DebugInfoBuilder {
                         .remove(function.raw_name.as_ref().unwrap());
                 }
 
-                function.update(full_name, raw_name, return_type, address, parameters);
+                function.update(
+                    full_name,
+                    raw_name,
+                    return_type,
+                    address,
+                    parameters,
+                    frame_base,
+                );
 
                 if function.raw_name.is_some() {
                     self.raw_function_name_indices
@@ -299,7 +318,7 @@ impl DebugInfoBuilder {
             platform: None,
             variable_arguments,
             stack_variables: vec![],
-            use_cfa,
+            frame_base,
         };
 
         if let Some(n) = &function.full_name {
@@ -367,7 +386,7 @@ impl DebugInfoBuilder {
         offset: i64,
         name: Option<String>,
         type_uid: Option<TypeUID>,
-        lexical_block: Option<&iset::IntervalSet<u64>>,
+        _lexical_block: Option<&iset::IntervalSet<u64>>,
     ) {
         let name = match name {
             Some(x) => {
@@ -407,43 +426,56 @@ impl DebugInfoBuilder {
             return;
         };
 
-        let Some(adjustment_at_variable_lifetime_start) = lexical_block
-            .and_then(|block_ranges| {
-                block_ranges
-                    .unsorted_iter()
-                    .find_map(|x| self.range_data_offsets.values_overlap(x.start).next())
-            })
-            .or_else(|| {
-                // Try using the offset at the adjustment 4 bytes after the function start, in case the function starts with a stack adjustment
-                // TODO: This is a decent heuristic but not perfect, since further adjustments could still be made
-                self.range_data_offsets.values_overlap(func_addr + 4).next()
-            })
-            .or_else(|| {
-                // If all else fails, use the function start address
-                self.range_data_offsets.values_overlap(func_addr).next()
-            })
-        else {
-            // Unknown why, but this is happening with MachO + external dSYM
-            debug!("Refusing to add a local variable ({}@{}) to function at {} without a known CIE offset.", name, offset, func_addr);
+        let Some(frame_base) = &function.frame_base else {
+            error!("Trying to add a local variable ({}) to a function ({:#x}) without a frame base. Please report this issue.", name, func_addr);
             return;
         };
 
-        // TODO: handle non-sp frame bases
-        // TODO: if not in a lexical block these can be wrong, see https://github.com/Vector35/binaryninja-api/issues/5882#issuecomment-2406065057
-        let adjusted_offset = if function.use_cfa {
-            // Apply CFA offset to variable storage offset if DW_AT_frame_base is frame base is CFA
-            offset + adjustment_at_variable_lifetime_start
-        } else {
-            // If it's using SP, we know the SP offset is <SP offset> + (<entry SP CFA offset> - <SP CFA offset>)
-            let Some(adjustment_at_entry) =
-                self.range_data_offsets.values_overlap(func_addr).next()
-            else {
-                // Unknown why, but this is happening with MachO + external dSYM
-                debug!("Refusing to add a local variable ({}@{}) to function at {} without a known CIE offset for function start.", name, offset, func_addr);
-                return;
-            };
+        // TODO: use lexical block information when we support stack variable lifetimes
+        /*
+        let lexical_block_adjustment = lexical_block.and_then(|block_ranges| {
+            block_ranges.unsorted_iter().find_map(|x| {
+                self.range_data_offsets
+                    .values_overlap(x.start)
+                    .next()
+                    .cloned()
+            })
+        });
+        */
 
-            offset + (adjustment_at_entry - adjustment_at_variable_lifetime_start)
+        let Some(entry_cfa_offset) = self
+            .range_data_offsets
+            .values_overlap(func_addr)
+            .next()
+            .cloned()
+        else {
+            // Unknown why, but this is happening with MachO + external dSYM
+            debug!("Refusing to add a local variable ({}@{}) to function at {} without a known CFA adjustment.", name, offset, func_addr);
+            return;
+        };
+
+        // TODO: handle non-sp-based locations
+        let adjusted_offset = match frame_base {
+            // Apply CFA offset to variable storage offset if DW_AT_frame_base is DW_OP_call_frame_cfa
+            FrameBase::CFA => offset + entry_cfa_offset,
+            FrameBase::Register(_reg) => {
+                // TODO: if not using SP, do not add var
+                // TODO: if not in a lexical block this can be wrong, see https://github.com/Vector35/binaryninja-api/issues/5882#issuecomment-2406065057
+                // If it's using SP, we know the SP offset is <SP offset> + (<entry SP CFA offset> - <SP CFA offset>)
+
+                // Try using the offset at the adjustment 5 bytes after the function start, in case the function starts with a stack adjustment
+                // Calculate final offset as (offset after initial stack adjustment) - (entry offset)
+                // TODO: This is a decent heuristic but not perfect, since further adjustments could still be made
+                let guessed_sp_adjustment = self
+                    .range_data_offsets
+                    .values_overlap(func_addr + 5)
+                    .next()
+                    .and_then(|cfa_offset_after_stack_adjust| {
+                        Some(entry_cfa_offset - cfa_offset_after_stack_adjust)
+                    });
+
+                offset + guessed_sp_adjustment.unwrap_or(0)
+            }
         };
 
         if adjusted_offset > 0 {
@@ -546,7 +578,7 @@ impl DebugInfoBuilder {
             assert!(debug_info.add_data_variable(
                 address,
                 &self.get_type(*type_uid).unwrap().ty,
-                name.clone(),
+                name.as_deref(),
                 &[] // TODO : Components
             ));
         }
@@ -581,7 +613,7 @@ impl DebugInfoBuilder {
         for function in self.functions() {
             // let calling_convention: Option<Ref<CallingConvention<CoreArchitecture>>> = None;
 
-            debug_info.add_function(DebugFunctionInfo::new(
+            debug_info.add_function(&DebugFunctionInfo::new(
                 function.full_name.clone(),
                 function.full_name.clone(), // TODO : This should eventually be changed, but the "full_name" should probably be the unsimplified version, and the "short_name" should be the simplified version...currently the symbols view shows the full version, so changing it here too makes it look bad in the UI
                 function.raw_name.clone(),
@@ -608,7 +640,7 @@ impl DebugInfoBuilder {
                     if func.address.is_none() && func.raw_name.is_some() {
                         // DWARF doesn't contain GOT info, so remove any entries there...they will be wrong (relying on Binja's mechanisms for the GOT is good )
                         if symbol.sym_type() != SymbolType::ImportAddress {
-                            func.address = Some(symbol.address());
+                            func.address = Some(symbol.address() - bv.start());
                         }
                     }
 
@@ -622,7 +654,7 @@ impl DebugInfoBuilder {
                                 .items
                                 .len()
                         {
-                            func.full_name = Some(symbol_full_name.to_string());
+                            func.full_name = Some(symbol_full_name.to_string_lossy().to_string());
                         }
                     }
                 }

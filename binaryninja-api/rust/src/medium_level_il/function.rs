@@ -1,9 +1,11 @@
 use binaryninjacore_sys::*;
-use std::ffi::c_char;
 use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 
-use super::{MediumLevelILBlock, MediumLevelILInstruction, MediumLevelInstructionIndex};
+use super::{
+    MediumLevelExpressionIndex, MediumLevelILBlock, MediumLevelILInstruction,
+    MediumLevelInstructionIndex,
+};
 use crate::architecture::CoreArchitecture;
 use crate::basic_block::BasicBlock;
 use crate::confidence::Conf;
@@ -11,7 +13,6 @@ use crate::disassembly::DisassemblySettings;
 use crate::flowgraph::FlowGraph;
 use crate::function::{Function, Location};
 use crate::rc::{Array, CoreArrayProvider, CoreArrayProviderInner, Ref, RefCountable};
-use crate::string::BnStrCompatible;
 use crate::types::Type;
 use crate::variable::{PossibleValueSet, RegisterValue, SSAVariable, UserVariableValue, Variable};
 
@@ -34,7 +35,7 @@ impl MediumLevelILFunction {
     }
 
     pub fn instruction_at<L: Into<Location>>(&self, loc: L) -> Option<MediumLevelILInstruction> {
-        Some(MediumLevelILInstruction::new(
+        Some(MediumLevelILInstruction::from_instr_index(
             self.to_owned(),
             self.instruction_index_at(loc)?,
         ))
@@ -45,11 +46,10 @@ impl MediumLevelILFunction {
         loc: L,
     ) -> Option<MediumLevelInstructionIndex> {
         let loc: Location = loc.into();
-        let arch = loc
-            .arch
-            .map(|a| a.handle)
-            .unwrap_or_else(std::ptr::null_mut);
-        let instr_idx = unsafe { BNMediumLevelILGetInstructionStart(self.handle, arch, loc.addr) };
+        // If the location does not specify an architecture, use the function's architecture.
+        let arch = loc.arch.unwrap_or_else(|| self.function().arch());
+        let instr_idx =
+            unsafe { BNMediumLevelILGetInstructionStart(self.handle, arch.handle, loc.addr) };
         // `instr_idx` will equal self.instruction_count() if the instruction is not valid.
         if instr_idx >= self.instruction_count() {
             None
@@ -65,18 +65,21 @@ impl MediumLevelILFunction {
         if index.0 >= self.instruction_count() {
             None
         } else {
-            Some(MediumLevelILInstruction::new(self.to_owned(), index))
+            Some(MediumLevelILInstruction::from_instr_index(
+                self.to_owned(),
+                index,
+            ))
         }
     }
 
     pub fn instruction_from_expr_index(
         &self,
-        expr_index: MediumLevelInstructionIndex,
+        expr_index: MediumLevelExpressionIndex,
     ) -> Option<MediumLevelILInstruction> {
         if expr_index.0 >= self.expression_count() {
             None
         } else {
-            Some(MediumLevelILInstruction::new_expr(
+            Some(MediumLevelILInstruction::from_expr_index(
                 self.to_owned(),
                 expr_index,
             ))
@@ -91,10 +94,10 @@ impl MediumLevelILFunction {
         unsafe { BNGetMediumLevelILExprCount(self.handle) }
     }
 
-    pub fn ssa_form(&self) -> MediumLevelILFunction {
+    pub fn ssa_form(&self) -> Ref<MediumLevelILFunction> {
         let ssa = unsafe { BNGetMediumLevelILSSAForm(self.handle) };
         assert!(!ssa.is_null());
-        MediumLevelILFunction { handle: ssa }
+        unsafe { MediumLevelILFunction::ref_from_raw(ssa) }
     }
 
     pub fn function(&self) -> Ref<Function> {
@@ -113,72 +116,48 @@ impl MediumLevelILFunction {
         unsafe { Array::new(blocks, count, context) }
     }
 
-    pub fn var_definitions(&self, var: &Variable) -> Array<MediumLevelILInstruction> {
-        let mut count = 0;
-        let raw_var = BNVariable::from(var);
-        let raw_instr_idxs =
-            unsafe { BNGetMediumLevelILVariableDefinitions(self.handle, &raw_var, &mut count) };
-        assert!(!raw_instr_idxs.is_null());
-        unsafe { Array::new(raw_instr_idxs, count, self.to_owned()) }
-    }
-
-    pub fn create_user_stack_var<'a, S: BnStrCompatible, C: Into<Conf<&'a Type>>>(
-        self,
+    #[deprecated = "Use `Function::create_user_stack_var` instead"]
+    pub fn create_user_stack_var<'a, C: Into<Conf<&'a Type>>>(
+        &self,
         offset: i64,
         var_type: C,
-        name: S,
+        name: &str,
     ) {
-        let mut owned_raw_var_ty = Conf::<&Type>::into_raw(var_type.into());
-        let name = name.into_bytes_with_nul();
-        unsafe {
-            BNCreateUserStackVariable(
-                self.function().handle,
-                offset,
-                &mut owned_raw_var_ty,
-                name.as_ref().as_ptr() as *const c_char,
-            )
-        }
+        self.function()
+            .create_user_stack_var(offset, var_type, name)
     }
 
-    pub fn delete_user_stack_var(self, offset: i64) {
-        unsafe { BNDeleteUserStackVariable(self.function().handle, offset) }
+    #[deprecated = "Use `Function::delete_user_stack_var` instead"]
+    pub fn delete_user_stack_var(&self, offset: i64) {
+        self.function().delete_user_stack_var(offset)
     }
 
-    pub fn create_user_var<'a, S: BnStrCompatible, C: Into<Conf<&'a Type>>>(
+    #[deprecated = "Use `Function::create_user_var` instead"]
+    pub fn create_user_var<'a, C: Into<Conf<&'a Type>>>(
         &self,
         var: &Variable,
         var_type: C,
-        name: S,
+        name: &str,
         ignore_disjoint_uses: bool,
     ) {
-        let raw_var = BNVariable::from(var);
-        let mut owned_raw_var_ty = Conf::<&Type>::into_raw(var_type.into());
-        let name = name.into_bytes_with_nul();
-        unsafe {
-            BNCreateUserVariable(
-                self.function().handle,
-                &raw_var,
-                &mut owned_raw_var_ty,
-                name.as_ref().as_ptr() as *const _,
-                ignore_disjoint_uses,
-            )
-        }
+        self.function()
+            .create_user_var(var, var_type, name, ignore_disjoint_uses)
     }
 
+    #[deprecated = "Use `Function::delete_user_var` instead"]
     pub fn delete_user_var(&self, var: &Variable) {
-        let raw_var = BNVariable::from(var);
-        unsafe { BNDeleteUserVariable(self.function().handle, &raw_var) }
+        self.function().delete_user_var(var)
     }
 
+    #[deprecated = "Use `Function::is_var_user_defined` instead"]
     pub fn is_var_user_defined(&self, var: &Variable) -> bool {
-        let raw_var = BNVariable::from(var);
-        unsafe { BNIsVariableUserDefined(self.function().handle, &raw_var) }
+        self.function().is_var_user_defined(var)
     }
 
     /// Allows the user to specify a PossibleValueSet value for an MLIL
     /// variable at its definition site.
     ///
-    /// .. warning:: Setting the variable value, triggers a reanalysis of the
+    /// WARNING: Setting the variable value, triggers a reanalysis of the
     /// function and allows the dataflow to compute and propagate values which
     /// depend on the current variable. This implies that branch conditions
     /// whose values can be determined statically will be computed, leading to
@@ -197,7 +176,7 @@ impl MediumLevelILFunction {
     /// let def_address = user_var_val.def_site.addr;
     /// let var_value = PossibleValueSet::ConstantValue { value: 5 };
     /// mlil_fun
-    ///     .set_user_var_value(&user_var_val.variable, def_address, var_value)
+    ///     .set_user_var_value(&user_var_val.variable, def_address, var_value, false)
     ///     .unwrap();
     /// ```
     pub fn set_user_var_value(
@@ -207,23 +186,15 @@ impl MediumLevelILFunction {
         value: PossibleValueSet,
         after: bool,
     ) -> Result<(), ()> {
-        let Some(_def_site) = self
-            .var_definitions(var)
-            .iter()
-            .find(|def| def.address == addr)
-        else {
-            // Error "No definition for Variable found at given address"
-            return Err(());
-        };
         let function = self.function();
         let def_site = BNArchitectureAndAddress {
             arch: function.arch().handle,
             address: addr,
         };
         let raw_var = BNVariable::from(var);
-        let raw_value = PossibleValueSet::into_raw(value);
+        let raw_value = PossibleValueSet::into_rust_raw(value);
         unsafe { BNSetUserVariableValue(function.handle, &raw_var, &def_site, after, &raw_value) }
-        PossibleValueSet::free_owned_raw(raw_value);
+        PossibleValueSet::free_rust_raw(raw_value);
         Ok(())
     }
 
@@ -233,7 +204,7 @@ impl MediumLevelILFunction {
     /// * `def_addr` - Address of the definition site of the variable
     pub fn clear_user_var_value(&self, var: &Variable, addr: u64, after: bool) -> Result<(), ()> {
         let Some(_var_def) = self
-            .var_definitions(var)
+            .variable_definitions(var)
             .iter()
             .find(|site| site.address == addr)
         else {
@@ -274,49 +245,32 @@ impl MediumLevelILFunction {
         Ok(())
     }
 
-    pub fn create_auto_stack_var<'a, T: Into<Conf<&'a Type>>, S: BnStrCompatible>(
+    #[deprecated = "Use `Function::create_auto_stack_var` instead"]
+    pub fn create_auto_stack_var<'a, T: Into<Conf<&'a Type>>>(
         &self,
         offset: i64,
         var_type: T,
-        name: S,
+        name: &str,
     ) {
-        let mut owned_raw_var_ty = Conf::<&Type>::into_raw(var_type.into());
-        let name = name.into_bytes_with_nul();
-        let name_c_str = name.as_ref();
-        unsafe {
-            BNCreateAutoStackVariable(
-                self.function().handle,
-                offset,
-                &mut owned_raw_var_ty,
-                name_c_str.as_ptr() as *const c_char,
-            )
-        }
+        self.function()
+            .create_auto_stack_var(offset, var_type, name)
     }
 
+    #[deprecated = "Use `Function::delete_auto_stack_var` instead"]
     pub fn delete_auto_stack_var(&self, offset: i64) {
-        unsafe { BNDeleteAutoStackVariable(self.function().handle, offset) }
+        self.function().delete_auto_stack_var(offset)
     }
 
-    pub fn create_auto_var<'a, S: BnStrCompatible, C: Into<Conf<&'a Type>>>(
+    #[deprecated = "Use `Function::create_auto_var` instead"]
+    pub fn create_auto_var<'a, C: Into<Conf<&'a Type>>>(
         &self,
         var: &Variable,
         var_type: C,
-        name: S,
+        name: &str,
         ignore_disjoint_uses: bool,
     ) {
-        let raw_var = BNVariable::from(var);
-        let mut owned_raw_var_ty = Conf::<&Type>::into_raw(var_type.into());
-        let name = name.into_bytes_with_nul();
-        let name_c_str = name.as_ref();
-        unsafe {
-            BNCreateAutoVariable(
-                self.function().handle,
-                &raw_var,
-                &mut owned_raw_var_ty,
-                name_c_str.as_ptr() as *const c_char,
-                ignore_disjoint_uses,
-            )
-        }
+        self.function()
+            .create_auto_var(var, var_type, name, ignore_disjoint_uses)
     }
 
     /// Returns a list of ILReferenceSource objects (IL xrefs or cross-references)
@@ -405,7 +359,7 @@ impl MediumLevelILFunction {
         unsafe { BNMediumLevelILSetCurrentAddress(self.handle, arch, location.addr) }
     }
 
-    /// Returns the [`BasicBlock`] at the given instruction `index`.
+    /// Returns the [`BasicBlock`] at the given instruction `index`. Function must be finalized.
     ///
     /// You can also retrieve this using [`MediumLevelILInstruction::basic_block`].
     pub fn basic_block_containing_index(
@@ -513,6 +467,7 @@ impl MediumLevelILFunction {
         let raw_var = BNVariable::from(variable);
         let defs =
             unsafe { BNGetMediumLevelILVariableDefinitions(self.handle, &raw_var, &mut count) };
+        assert!(!defs.is_null());
         unsafe { Array::new(defs, count, self.to_owned()) }
     }
 
@@ -533,7 +488,7 @@ impl MediumLevelILFunction {
     pub fn live_instruction_for_variable(
         &self,
         variable: &Variable,
-        include_last_user: bool,
+        include_last_use: bool,
     ) -> Array<MediumLevelILInstruction> {
         let mut count = 0;
         let raw_var = BNVariable::from(variable);
@@ -541,7 +496,7 @@ impl MediumLevelILFunction {
             BNGetMediumLevelILLiveInstructionsForVariable(
                 self.handle,
                 &raw_var,
-                include_last_user,
+                include_last_use,
                 &mut count,
             )
         };

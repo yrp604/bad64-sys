@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Vector 35 Inc
+// Copyright (c) 2024-2025 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -53,6 +53,8 @@ LineFormatterSettings LineFormatterSettings::FromAPIObject(const BNLineFormatter
 	result.desiredLineLength = settings->desiredLineLength;
 	result.minimumContentLength = settings->minimumContentLength;
 	result.tabWidth = settings->tabWidth;
+	result.maximumAnnotationLength = settings->maximumAnnotationLength;
+	result.stringWrappingWidth = settings->stringWrappingWidth;
 	result.languageName = settings->languageName;
 	result.commentStartString = settings->commentStartString;
 	result.commentEndString = settings->commentEndString;
@@ -69,6 +71,8 @@ BNLineFormatterSettings LineFormatterSettings::ToAPIObject() const
 	result.desiredLineLength = desiredLineLength;
 	result.minimumContentLength = minimumContentLength;
 	result.tabWidth = tabWidth;
+	result.maximumAnnotationLength = maximumAnnotationLength;
+	result.stringWrappingWidth = stringWrappingWidth;
 	result.languageName = (char*)languageName.c_str();
 	result.commentStartString = (char*)commentStartString.c_str();
 	result.commentEndString = (char*)commentEndString.c_str();

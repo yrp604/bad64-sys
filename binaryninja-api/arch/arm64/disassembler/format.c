@@ -100,7 +100,7 @@ const char *get_operation(const Instruction *inst)
 	return operation_to_str(inst->operation);
 }
 
-static const char *ConditionString[] = {
+static const char *const ConditionString[] = {
 	"eq", "ne", "cs", "cc",
 	"mi", "pl", "vs", "vc",
 	"hi", "ls", "ge", "lt",
@@ -115,7 +115,7 @@ const char *get_condition(Condition cond)
 	return ConditionString[cond];
 }
 
-static const char *ShiftString[] = {
+static const char *const ShiftString[] = {
 	"NONE", "lsl", "lsr", "asr",
 	"ror",  "uxtw", "sxtw", "sxtx",
 	"uxtx", "sxtb", "sxth", "uxth",

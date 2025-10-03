@@ -1,4 +1,4 @@
-// Copyright 2021-2024 Vector 35 Inc.
+// Copyright 2021-2025 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::{collections::HashMap, ops::Deref, str::FromStr, sync::mpsc};
+use std::{ops::Deref, str::FromStr, sync::mpsc};
 
 use crate::{DebugInfoBuilderContext, ReaderType};
 use binaryninja::binary_view::BinaryViewBase;
@@ -221,21 +221,31 @@ pub(crate) fn get_raw_name<R: ReaderType>(
     dwarf: &Dwarf<R>,
     unit: &Unit<R>,
     entry: &DebuggingInformationEntry<R>,
+    debug_info_builder_context: &DebugInfoBuilderContext<R>,
 ) -> Option<String> {
-    if let Ok(Some(attr_val)) = entry.attr_value(constants::DW_AT_linkage_name) {
-        if let Ok(attr_string) = dwarf.attr_string(unit, attr_val.clone()) {
-            if let Ok(attr_string) = attr_string.to_string() {
-                return Some(attr_string.to_string());
-            }
-        } else if let Some(dwarf) = dwarf.sup() {
-            if let Ok(attr_string) = dwarf.attr_string(unit, attr_val) {
-                if let Ok(attr_string) = attr_string.to_string() {
-                    return Some(attr_string.to_string());
+    match resolve_specification(dwarf, unit, entry, debug_info_builder_context) {
+        DieReference::UnitAndOffset((dwarf, entry_unit, entry_offset)) => {
+            if let Ok(Some(attr_val)) = entry_unit
+                .entry(entry_offset)
+                .unwrap()
+                .attr_value(constants::DW_AT_linkage_name)
+            {
+                if let Ok(attr_string) = dwarf.attr_string(entry_unit, attr_val.clone()) {
+                    if let Ok(attr_string) = attr_string.to_string() {
+                        return Some(attr_string.to_string());
+                    }
+                } else if let Some(dwarf) = &dwarf.sup {
+                    if let Ok(attr_string) = dwarf.attr_string(entry_unit, attr_val) {
+                        if let Ok(attr_string) = attr_string.to_string() {
+                            return Some(attr_string.to_string());
+                        }
+                    }
                 }
             }
+            None
         }
+        DieReference::Err => None,
     }
-    None
 }
 
 // Get the size of an object as a usize
@@ -440,9 +450,9 @@ pub(crate) fn download_debug_info(
         let result = inst
             .perform_custom_request(
                 "GET",
-                artifact_url,
-                HashMap::<String, String>::new(),
-                DownloadInstanceInputOutputCallbacks {
+                &artifact_url,
+                vec![],
+                &DownloadInstanceInputOutputCallbacks {
                     read: None,
                     write: Some(Box::new(write)),
                     progress: None,
@@ -567,10 +577,35 @@ pub(crate) fn find_sibling_debug_file(view: &BinaryView) -> Option<String> {
 
     let debug_file = PathBuf::from(format!("{}.debug", full_file_path));
     let dsym_folder = PathBuf::from(format!("{}.dSYM", full_file_path));
+
+    // Find sibling debug file
     if debug_file.exists() && debug_file.is_file() {
         return Some(debug_file.to_string_lossy().to_string());
     }
 
+    // Find sibling debug file in project
+    if let Some(debug_file_name) = debug_file.file_name() {
+        if let Some(project_file) = view.file().project_file() {
+            let project_file_folder_id = project_file.folder().map(|x| x.id());
+            for file in project_file.project().files().iter() {
+                if !file.exists_on_disk() {
+                    // If the file doesn't exist, don't consider it
+                    // TODO: if we're connected to a remote project, offer to download the file
+                    continue;
+                }
+
+                let file_folder_id = file.folder().map(|x| x.id());
+                if *file.name() == *debug_file_name && file_folder_id == project_file_folder_id {
+                    if let Some(path_on_disk) = file.path_on_disk() {
+                        return path_on_disk.to_str().map(|x| x.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // Look for dSYM
+    // TODO: look for dSYM in project
     if dsym_folder.exists() && dsym_folder.is_dir() {
         let filename = Path::new(&full_file_path)
             .file_name()

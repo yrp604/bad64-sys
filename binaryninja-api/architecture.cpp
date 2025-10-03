@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2024 Vector 35 Inc
+// Copyright (c) 2015-2025 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -24,6 +24,7 @@
 #include <inttypes.h>
 #include <vector>
 #include "binaryninjaapi.h"
+#include "lowlevelilinstruction.h"
 #include "ffi.h"
 
 using namespace BinaryNinja;
@@ -119,6 +120,26 @@ InstructionTextToken InstructionTextToken::WithConfidence(uint8_t conf)
 }
 
 
+BNInstructionTextToken InstructionTextToken::GetAPIObject() const
+{
+	BNInstructionTextToken result;
+	ConvertInstructionTextToken(*this, &result);
+	return result;
+}
+
+
+InstructionTextToken InstructionTextToken::FromAPIObject(const BNInstructionTextToken* token)
+{
+	return InstructionTextToken(*token);
+}
+
+
+void InstructionTextToken::FreeAPIObject(BNInstructionTextToken* token)
+{
+	FreeInstructionTextToken(token);
+}
+
+
 void InstructionTextToken::ConvertInstructionTextToken(const InstructionTextToken& token, BNInstructionTextToken* result)
 {
 	result->type = token.type;
@@ -181,6 +202,267 @@ vector<InstructionTextToken> InstructionTextToken::ConvertInstructionTextTokenLi
 	for (size_t i = 0; i < count; i++)
 		result.emplace_back(tokens[i]);
 	return result;
+}
+
+BasicBlockAnalysisContext::BasicBlockAnalysisContext(BNBasicBlockAnalysisContext* context)
+{
+	m_context = context;
+}
+
+const std::map<ArchAndAddr, std::set<ArchAndAddr>> BasicBlockAnalysisContext::GetIndirectBranches()
+{
+	if (!m_indirectBranches)
+	{
+		auto& indirectBranches = m_indirectBranches.emplace();
+
+		for (size_t i = 0; i < m_context->indirectBranchesCount; i++)
+		{
+			ArchAndAddr src(new CoreArchitecture(m_context->indirectBranches[i].sourceArch), m_context->indirectBranches[i].sourceAddr);
+			ArchAndAddr dst(new CoreArchitecture(m_context->indirectBranches[i].destArch), m_context->indirectBranches[i].destAddr);
+
+			indirectBranches[src].insert(dst);
+		}
+	}
+
+	return *m_indirectBranches;
+}
+
+
+const std::set<ArchAndAddr>& BasicBlockAnalysisContext::GetIndirectNoReturnCalls()
+{
+	if (!m_indirectNoReturnCalls)
+	{
+		auto& indirectNoReturnCalls = m_indirectNoReturnCalls.emplace();
+
+		for (size_t i = 0; i < m_context->indirectNoReturnCallsCount; i++)
+		{
+			ArchAndAddr addr(new CoreArchitecture(m_context->indirectNoReturnCalls[i].arch), m_context->indirectNoReturnCalls[i].address);
+			indirectNoReturnCalls.insert(addr);
+		}
+	}
+
+	return *m_indirectNoReturnCalls;
+}
+
+
+std::map<ArchAndAddr, bool>& BasicBlockAnalysisContext::GetContextualReturns()
+{
+	if (!m_contextualReturns)
+	{
+		auto& contextualReturns = m_contextualReturns.emplace();
+
+		for (size_t i = 0; i < m_context->contextualFunctionReturnCount; i++)
+		{
+			ArchAndAddr addr(new CoreArchitecture(m_context->contextualFunctionReturnLocations[i].arch), m_context->contextualFunctionReturnLocations[i].address);
+			contextualReturns[addr] = m_context->contextualFunctionReturnValues[i];
+		}
+	}
+
+	return *m_contextualReturns;
+}
+
+
+std::map<uint64_t, std::set<ArchAndAddr>>& BasicBlockAnalysisContext::GetDirectCodeReferences()
+{
+	if (!m_directCodeReferences)
+	{
+		auto& directCodeReferences = m_directCodeReferences.emplace();
+
+		for (size_t i = 0; i < m_context->directRefCount; i++)
+		{
+			ArchAndAddr src(new CoreArchitecture(m_context->directRefSources[i].arch), m_context->directRefSources[i].address);
+
+			directCodeReferences[m_context->directRefTargets[i]].insert(src);
+		}
+	}
+
+	return *m_directCodeReferences;
+}
+
+
+std::set<ArchAndAddr>& BasicBlockAnalysisContext::GetDirectNoReturnCalls()
+{
+	if (!m_directNoReturnCalls)
+		m_directNoReturnCalls.emplace();
+
+	return *m_directNoReturnCalls;
+}
+
+
+std::set<ArchAndAddr>& BasicBlockAnalysisContext::GetHaltedDisassemblyAddresses()
+{
+	if (!m_haltedDisassemblyAddresses)
+		m_haltedDisassemblyAddresses.emplace();
+
+	return *m_haltedDisassemblyAddresses;
+}
+
+
+std::map<ArchAndAddr, ArchAndAddr>& BasicBlockAnalysisContext::GetInlinedUnresolvedIndirectBranches()
+{
+	if (!m_inlinedUnresolvedIndirectBranches)
+		m_inlinedUnresolvedIndirectBranches.emplace();
+
+	return *m_inlinedUnresolvedIndirectBranches;
+}
+
+
+void BasicBlockAnalysisContext::AddTempOutgoingReference(Function* targetFunc)
+{
+	BNAnalyzeBasicBlocksContextAddTempReference(m_context, targetFunc->m_object);
+}
+
+
+Ref<BasicBlock> BasicBlockAnalysisContext::CreateBasicBlock(Architecture* arch, uint64_t start)
+{
+	BNBasicBlock* block = BNAnalyzeBasicBlocksContextCreateBasicBlock(m_context, arch->GetObject(), start);
+	if (!block)
+		return nullptr;
+	return new BasicBlock(block);
+}
+
+
+void BasicBlockAnalysisContext::AddFunctionBasicBlock(BasicBlock* block)
+{
+	BNAnalyzeBasicBlocksContextAddBasicBlockToFunction(m_context, block->GetObject());
+}
+
+
+void BasicBlockAnalysisContext::Finalize()
+{
+	if (m_directCodeReferences)
+	{
+		auto& directRefs = *m_directCodeReferences;
+
+		size_t total = 0;
+		for (auto& pair : directRefs)
+			total += pair.second.size();
+
+		BNArchitectureAndAddress* sources = new BNArchitectureAndAddress[total];
+		uint64_t* targets = new uint64_t[total];
+
+		size_t i = 0;
+		for (auto& pair : directRefs)
+		{
+			for (auto& src : pair.second)
+			{
+				sources[i].arch = src.arch->GetObject();
+				sources[i].address = src.address;
+				targets[i] = pair.first;
+				i++;
+			}
+		}
+
+		BNAnalyzeBasicBlocksContextSetDirectCodeReferences(m_context, sources, targets, total);
+
+		delete[] sources;
+		delete[] targets;
+	}
+
+	if (m_directNoReturnCalls)
+	{
+		auto& directNoReturnCalls = *m_directNoReturnCalls;
+
+		BNArchitectureAndAddress* noRets = new BNArchitectureAndAddress[directNoReturnCalls.size()];
+
+		size_t i = 0;
+		for (auto& addr : directNoReturnCalls)
+		{
+			noRets[i].arch = addr.arch->GetObject();
+			noRets[i].address = addr.address;
+			i++;
+		}
+
+		BNAnalyzeBasicBlocksContextSetDirectNoReturnCalls(m_context, noRets, directNoReturnCalls.size());
+		delete[] noRets;
+	}
+
+	if (m_haltedDisassemblyAddresses)
+	{
+		auto& haltedDisassemblyAddresses = *m_haltedDisassemblyAddresses;
+
+		BNArchitectureAndAddress* haltedAddresses = new BNArchitectureAndAddress[haltedDisassemblyAddresses.size()];
+
+		size_t i = 0;
+		for (auto& addr : haltedDisassemblyAddresses)
+		{
+			haltedAddresses[i].arch = addr.arch->GetObject();
+			haltedAddresses[i].address = addr.address;
+			i++;
+		}
+
+		BNAnalyzeBasicBlocksContextSetHaltedDisassemblyAddresses(m_context, haltedAddresses, haltedDisassemblyAddresses.size());
+		delete[] haltedAddresses;
+	}
+
+	if (m_inlinedUnresolvedIndirectBranches)
+	{
+		auto& inlinedUnresolvedIndirectBranches = *m_inlinedUnresolvedIndirectBranches;
+
+		BNArchitectureAndAddress* locations = new BNArchitectureAndAddress[inlinedUnresolvedIndirectBranches.size() * 2];
+
+		size_t i = 0;
+		for (auto& pair : inlinedUnresolvedIndirectBranches)
+		{
+			locations[i].arch = pair.first.arch->GetObject();
+			locations[i].address = pair.first.address;
+
+			locations[i + 1].arch = pair.second.arch->GetObject();
+			locations[i + 1].address = pair.second.address;
+
+			i += 2;
+		}
+
+		BNAnalyzeBasicBlocksContextSetInlinedUnresolvedIndirectBranches(m_context, locations, inlinedUnresolvedIndirectBranches.size() * 2);
+
+		delete[] locations;
+	}
+
+	if (m_contextualReturns)
+	{
+		auto& contextualReturns = *m_contextualReturns;
+
+		bool dirty = contextualReturns.size() != m_context->contextualFunctionReturnCount;
+
+		if (!dirty)
+		{
+			size_t i = 0;
+			for (auto& pair : contextualReturns)
+			{
+				if (pair.first.arch->GetObject() != m_context->contextualFunctionReturnLocations[i].arch
+				 || pair.first.address != m_context->contextualFunctionReturnLocations[i].address
+				 || pair.second != m_context->contextualFunctionReturnValues[i])
+				{
+					dirty = true;
+					break;
+				}
+
+				i++;
+			}
+		}
+
+		if (dirty)
+		{
+			BNArchitectureAndAddress* returns = new BNArchitectureAndAddress[contextualReturns.size()];
+			bool* values = new bool[contextualReturns.size()];
+
+			size_t i = 0;
+			for (auto& pair : contextualReturns)
+			{
+				returns[i].arch = pair.first.arch->GetObject();
+				returns[i].address = pair.first.address;
+				values[i] = pair.second;
+				i++;
+			}
+
+			BNAnalyzeBasicBlocksContextSetContextualFunctionReturns(m_context, returns, values, contextualReturns.size());
+
+			delete[] returns;
+			delete[] values;
+		}
+	}
+
+	BNAnalyzeBasicBlocksContextFinalize(m_context);
 }
 
 
@@ -304,6 +586,17 @@ bool Architecture::GetInstructionLowLevelILCallback(
 	CallbackRef<Architecture> arch(ctxt);
 	Ref<LowLevelILFunction> func(new LowLevelILFunction(BNNewLowLevelILFunctionReference(il)));
 	return arch->GetInstructionLowLevelIL(data, addr, *len, *func);
+}
+
+
+void Architecture::AnalyzeBasicBlocksCallback(void *ctxt, BNFunction* function,
+	BNBasicBlockAnalysisContext* context)
+{
+	CallbackRef<Architecture> arch(ctxt);
+	BasicBlockAnalysisContext abbc(context);
+	Ref<Function> func(new Function(BNNewFunctionReference(function)));
+
+	arch->AnalyzeBasicBlocks(func, abbc);
 }
 
 
@@ -797,6 +1090,7 @@ void Architecture::Register(Architecture* arch)
 	callbacks.getInstructionText = GetInstructionTextCallback;
 	callbacks.freeInstructionText = FreeInstructionTextCallback;
 	callbacks.getInstructionLowLevelIL = GetInstructionLowLevelILCallback;
+	callbacks.analyzeBasicBlocks = AnalyzeBasicBlocksCallback;
 	callbacks.getRegisterName = GetRegisterNameCallback;
 	callbacks.getFlagName = GetFlagNameCallback;
 	callbacks.getFlagWriteTypeName = GetFlagWriteTypeNameCallback;
@@ -922,6 +1216,12 @@ bool Architecture::GetInstructionLowLevelIL(const uint8_t*, uint64_t, size_t&, L
 {
 	il.AddInstruction(il.Undefined());
 	return false;
+}
+
+
+void Architecture::AnalyzeBasicBlocks(Function* function, BasicBlockAnalysisContext& context)
+{
+	DefaultAnalyzeBasicBlocks(function, context);
 }
 
 
@@ -1482,6 +1782,12 @@ bool CoreArchitecture::GetInstructionText(
 bool CoreArchitecture::GetInstructionLowLevelIL(const uint8_t* data, uint64_t addr, size_t& len, LowLevelILFunction& il)
 {
 	return BNGetInstructionLowLevelIL(m_object, data, addr, &len, il.GetObject());
+}
+
+
+void CoreArchitecture::AnalyzeBasicBlocks(Function* function, BasicBlockAnalysisContext& context)
+{
+	BNArchitectureAnalyzeBasicBlocks(m_object, function->GetObject(), context.m_context);
 }
 
 

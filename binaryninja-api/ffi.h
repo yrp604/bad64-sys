@@ -149,7 +149,7 @@ namespace BinaryNinja
 	//region Try/Catch Helpers
 
 	// Forward declare this, so we don't have to depend on binaryninjaapi.h
-	void LogError(const char*, ...);
+	void LogErrorForException(const std::exception& e, const char*, ...);
 
 	/*!
 		Wrap a throwable block in a try/catch, passing through the return value on success, and
@@ -200,7 +200,7 @@ namespace BinaryNinja
 		{
 			// TODO: How to handle this?
 			// g_lastExceptionMessage = e.what();
-			LogError("%s", e.what());
+			LogErrorForException(e, "%s", e.what());
 			return nullptr;
 		}
 		catch (...)
@@ -237,7 +237,7 @@ namespace BinaryNinja
 		{
 			// TODO: How to handle this?
 			// g_lastExceptionMessage = e.what();
-			LogError("%s", e.what());
+			LogErrorForException(e, "%s", e.what());
 			return false;
 		}
 		catch (...)

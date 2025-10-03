@@ -15,6 +15,7 @@
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QFrame>
 #include <QtWidgets/QGridLayout>
+#include <QtWidgets/QDialog>
 
 #include <vector>
 #include <deque>
@@ -25,6 +26,7 @@
 #include "viewframe.h"
 #include "fontsettings.h"
 #include "expandablegroup.h"
+#include "tabwidget.h"
 
 class XrefHeader;
 
@@ -76,6 +78,8 @@ class XrefItem
 	XrefQueryKind m_queryKind;
 	XrefDirection m_direction;
 	mutable std::vector<BinaryNinja::InstructionTextToken> m_cachedTokens;
+	mutable uint64_t m_cachedTokenVersion = 0;
+	mutable std::optional<BinaryNinja::AdvancedFunctionAnalysisDataRequestor> m_advancedAnalysisRequest;
 	mutable XrefHeader* m_parentItem;
 	mutable int m_size;
 
@@ -107,9 +111,13 @@ class XrefItem
 	int size() const { return m_size; }
 	void setSize(int size) const { m_size = size; }
 	void setParent(XrefHeader* parent) const;
-	void setCachedTokens(const std::vector<BinaryNinja::InstructionTextToken>& cachedTokens) const { m_cachedTokens = cachedTokens; }
+	void setCachedTokens(const std::vector<BinaryNinja::InstructionTextToken>& cachedTokens, uint64_t version) const;
 	std::vector<BinaryNinja::InstructionTextToken> cachedTokens() const { return m_cachedTokens; }
+	uint64_t cachedTokenVersion() const { return m_cachedTokenVersion; }
 	bool hasCachedTokens() const { return m_cachedTokens.size() > 0; }
+	bool cachedTokensValidForVersion(uint64_t version) const { return m_cachedTokenVersion == version; }
+	void requestAdvancedAnalysis() const;
+	void clearAdvancedAnalysisRequest() const { m_advancedAnalysisRequest.reset(); }
 	virtual XrefItem* parent() const { return (XrefItem*)m_parentItem; }
 	virtual XrefItem* child(int) const { return nullptr; }
 	virtual int childCount() const { return 0; }
@@ -117,17 +125,25 @@ class XrefItem
 	int row() const;
 	bool operator==(const XrefItem& other) const;
 	bool operator!=(const XrefItem& other) const;
-	size_t operator()(const XrefItem& item) const
+};
+
+namespace std
+{
+	template<> struct hash<XrefItem>
 	{
-		size_t hash = std::hash<uint64_t>()(item.addr());
-		hash ^= std::hash<int>()(item.type()) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
-		hash ^= std::hash<int>()(item.direction()) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
-		hash ^= std::hash<int>()(item.kind()) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
-		hash ^= std::hash<size_t>()(item.instrId()) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
-		hash ^= std::hash<uint64_t>()(item.func() ? item.func()->GetStart() : 0) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
-		hash ^= std::hash<int>()(item.ilType()) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
-		return hash;
-	}
+		typedef XrefItem argument_type;
+		size_t operator()(argument_type const& item) const
+		{
+			size_t hash = std::hash<uint64_t>()(item.addr());
+			hash ^= std::hash<int>()(item.type()) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+			hash ^= std::hash<int>()(item.direction()) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+			hash ^= std::hash<int>()(item.kind()) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+			hash ^= std::hash<size_t>()(item.instrId()) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+			hash ^= std::hash<uint64_t>()(item.func() ? item.func()->GetStart() : 0) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+			hash ^= std::hash<int>()(item.ilType()) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+			return hash;
+		}
+	};
 };
 
 /*!
@@ -303,7 +319,24 @@ class XrefRoot : public XrefHeader
 
 /*!
 
-	\ingroup xreflist
+    \ingroup xreflist
+*/
+struct CrossReferenceFunctionList
+{
+	std::unordered_map<uint64_t, uint64_t> functionVersions;
+	uint64_t nextVersion = 1;
+	bool hasUpdates = true;
+
+	void updateForRefs(const std::vector<XrefItem>& refs);
+	void updateFunction(BinaryNinja::Function* func);
+	std::optional<uint64_t> getFunctionVersion(BinaryNinja::Function* func) const;
+	bool checkForUpdates();
+	void invalidateCache();
+};
+
+/*!
+
+    \ingroup xreflist
 */
 class BINARYNINJAUIAPI CrossReferenceTreeModel : public QAbstractItemModel
 {
@@ -314,12 +347,12 @@ class BINARYNINJAUIAPI CrossReferenceTreeModel : public QAbstractItemModel
 	BinaryViewRef m_data;
 	ViewFrame* m_view;
 	std::vector<XrefItem> m_refs;
+	CrossReferenceFunctionList m_funcs;
 	size_t m_maxUIItems;
 	std::optional<BinaryNinja::FunctionViewType> m_graphType;
 	SelectionInfoForXref m_curRef;
-	QTimer* m_updateTimer;
 
-  public:
+public:
 	CrossReferenceTreeModel(QWidget* parent, BinaryViewRef data, ViewFrame* view);
 	virtual ~CrossReferenceTreeModel();
 
@@ -340,9 +373,10 @@ class BINARYNINJAUIAPI CrossReferenceTreeModel : public QAbstractItemModel
 	virtual void updateMaxUIItems(size_t value) { m_maxUIItems = value; }
 	size_t getMaxUIItems() const { return m_maxUIItems; }
 	void setGraphType(const BinaryNinja::FunctionViewType& type);
-	void requestAdvancedAnalysis();
+	void notifyRefresh();
+	void invalidateCache();
 
- Q_SIGNALS:
+Q_SIGNALS:
 	void needRepaint();
 
  public Q_SLOTS:
@@ -362,10 +396,10 @@ class BINARYNINJAUIAPI CrossReferenceTableModel : public QAbstractTableModel
 	BinaryViewRef m_data;
 	ViewFrame* m_view;
 	std::vector<XrefItem> m_refs;
+	CrossReferenceFunctionList m_funcs;
 	size_t m_maxUIItems;
 	std::optional<BinaryNinja::FunctionViewType> m_graphType;
 	SelectionInfoForXref m_curRef;
-	QTimer* m_updateTimer;
 
   public:
 	enum ColumnHeaders
@@ -405,8 +439,10 @@ class BINARYNINJAUIAPI CrossReferenceTableModel : public QAbstractTableModel
 	virtual void updateMaxUIItems(size_t value) { m_maxUIItems = value; }
 	size_t getMaxUIItems() const { return m_maxUIItems; }
 	void setGraphType(const BinaryNinja::FunctionViewType& type);
-	void requestAdvancedAnalysis();
- Q_SIGNALS:
+	void notifyRefresh();
+	void invalidateCache();
+
+Q_SIGNALS:
 	void needRepaint();
 
  public Q_SLOTS:
@@ -426,8 +462,9 @@ class BINARYNINJAUIAPI CrossReferenceItemDelegate : public QStyledItemDelegate
 	QImage m_xrefTo, m_xrefFrom;
 	bool m_table;
 	size_t m_maxUIItems;
+	bool m_dependentRefsExceeded = false;
 
-  public:
+public:
 	CrossReferenceItemDelegate(QWidget* parent, bool table);
 
 	void updateFonts();
@@ -438,6 +475,7 @@ class BINARYNINJAUIAPI CrossReferenceItemDelegate : public QStyledItemDelegate
 	virtual QImage DrawArrow(bool direction) const;
 	void updateMaxUIItems(size_t count);
 	size_t getMaxUIItems() const { return m_maxUIItems; }
+	void setDependentRefsExceeded(bool value) { m_dependentRefsExceeded = value; }
 };
 
 /*!
@@ -497,8 +535,10 @@ class BINARYNINJAUIAPI CrossReferenceContainer
 	virtual QModelIndex nextIndex() = 0;
 	virtual QModelIndex prevIndex() = 0;
 	virtual QModelIndexList selectedRows() const = 0;
+	virtual void setSavedSelection(std::optional<int> idx) = 0;
 	virtual bool hasSelection() const = 0;
-	virtual void setNewSelection(std::vector<XrefItem>& refs, bool newRefTarget, const SelectionInfoForXref& ref) = 0;
+	virtual void setNewSelection(std::vector<XrefItem>& refs, bool newRefTarget, const SelectionInfoForXref& ref,
+		bool dependentRefsExceeded) = 0;
 	virtual void updateFonts() = 0;
 	virtual int leafCount() const = 0;
 	virtual int filteredCount() const = 0;
@@ -526,7 +566,8 @@ public:
 	CrossReferenceTree(CrossReferenceWidget* parent, ViewFrame* view, BinaryViewRef data);
 	virtual ~CrossReferenceTree();
 
-	void setNewSelection(std::vector<XrefItem>& refs, bool newRefTarget, const SelectionInfoForXref& ref) override;
+	void setNewSelection(std::vector<XrefItem>& refs, bool newRefTarget, const SelectionInfoForXref& ref,
+		bool dependentRefsExceeded) override;
 	virtual QModelIndex nextIndex() override;
 	virtual QModelIndex prevIndex() override;
 	virtual bool hasSelection() const override { return selectionModel()->selectedRows().size() != 0; }
@@ -535,6 +576,7 @@ public:
 	virtual void keyPressEvent(QKeyEvent* e) override;
 	virtual bool event(QEvent* event) override;
 	virtual QModelIndexList selectedRows() const override { return selectionModel()->selectedRows(); }
+	virtual void setSavedSelection(std::optional<int> idx) override;
 	virtual QModelIndex translateIndex(const QModelIndex& idx) const override { return m_model->mapToSource(idx); }
 	virtual void updateFonts() override;
 	virtual int leafCount() const override;
@@ -543,8 +585,10 @@ public:
 	virtual void updateMaxUIItems(size_t count) override;
 	void setGraphType(const BinaryNinja::FunctionViewType& type) { m_tree->setGraphType(type); }
 	virtual void OnAnalysisFunctionUpdated(BinaryNinja::BinaryView* view, BinaryNinja::Function* func) override;
+	void notifyRefresh();
+	void invalidateCache();
 
-  Q_SIGNALS:
+Q_SIGNALS:
 	void newSelection();
 	void modelUpdated();
 	void functionUpdated(FunctionRef func);
@@ -570,11 +614,13 @@ class BINARYNINJAUIAPI CrossReferenceTable : public QTableView, public CrossRefe
 	virtual ~CrossReferenceTable();
 
 	void updateFontAndHeaderSize();
-	void setNewSelection(std::vector<XrefItem>& refs, bool newRefTarget, const SelectionInfoForXref& ref) override;
+	void setNewSelection(std::vector<XrefItem>& refs, bool newRefTarget, const SelectionInfoForXref& ref,
+		bool dependentRefsExceeded) override;
 	virtual QModelIndex nextIndex() override;
 	virtual QModelIndex prevIndex() override;
 	virtual bool hasSelection() const override { return selectionModel()->selectedRows().size() != 0; }
 	virtual QModelIndexList selectedRows() const override { return selectionModel()->selectedRows(); }
+	virtual void setSavedSelection(std::optional<int> idx) override;
 	virtual bool getReference(const QModelIndex& idx, XrefItem** refPtr) const override;
 	virtual void mouseMoveEvent(QMouseEvent* e) override;
 	virtual void mousePressEvent(QMouseEvent* e) override;
@@ -587,8 +633,10 @@ class BINARYNINJAUIAPI CrossReferenceTable : public QTableView, public CrossRefe
 	virtual void updateMaxUIItems(size_t count) override;
 	void setGraphType(const BinaryNinja::FunctionViewType& type) { m_table->setGraphType(type); }
 	virtual void OnAnalysisFunctionUpdated(BinaryNinja::BinaryView* view, BinaryNinja::Function* func) override;
+	void notifyRefresh();
+	void invalidateCache();
 
-  public Q_SLOTS:
+public Q_SLOTS:
 	void doRepaint();
 	void updateTextFilter(const QString& filterText);
 
@@ -632,12 +680,15 @@ class BINARYNINJAUIAPI CrossReferenceWidget : public SidebarWidget, public UICon
 	bool m_curRefTargetValid = false;
 	SelectionInfoForXref m_curRef;
 	SelectionInfoForXref m_newRef;
-	bool m_navigating = false;
+	std::optional<SelectionInfoForXref> m_pendingSelection;
 	bool m_navToNextOrPrevStarted = false;
 	bool m_pinned;
 	bool m_uiMaxItemsExceeded = false;
+	bool m_hasInitialSelection = false;
 
 	QWidget* m_header = nullptr;
+
+	QTimer* m_updateTimer = nullptr;
 
 	virtual void contextMenuEvent(QContextMenuEvent* event) override;
 	virtual void wheelEvent(QWheelEvent* e) override;
@@ -657,6 +708,8 @@ class BINARYNINJAUIAPI CrossReferenceWidget : public SidebarWidget, public UICon
 	virtual bool selectFirstRow();
 	virtual bool hasSelection() const;
 	virtual void goToReference(const QModelIndex& idx);
+	QModelIndexList selectedRows() const;
+	void setSavedSelection(std::optional<int> idx);
 
 	virtual void restartHoverTimer(QMouseEvent* e);
 	virtual void startHoverTimer(QMouseEvent* e);
@@ -673,20 +726,30 @@ class BINARYNINJAUIAPI CrossReferenceWidget : public SidebarWidget, public UICon
 
 	virtual void OnNewSelectionForXref(
 	    UIContext* context, ViewFrame* frame, View* view, const SelectionInfoForXref& selection) override;
+	void OnILViewTypeChange(
+		UIContext* context, ViewFrame* frame, View* view, const BinaryNinja::FunctionViewType& viewType) override;
 
 	virtual QWidget* headerWidget() override { return m_header; }
 	virtual void setPrimaryOrientation(Qt::Orientation orientation) override;
 
+	void notifyRefresh() override;
+	void notifyQuiesce(bool quiesce) override;
+
+	const SelectionInfoForXref& getCurrentSelection() const { return m_curRef; }
+
 private Q_SLOTS:
 	void hoverTimerEvent();
-	void newPinnedPane();
+	void newPinnedTab();
 
-  public Q_SLOTS:
+public Q_SLOTS:
 	void referenceActivated(const QModelIndex& idx);
 	void pinnedStateChanged(bool state);
 	void selectionChanged();
 	void typeChanged(int index, bool checked);
 	void directionChanged(int change, bool checked);
+
+Q_SIGNALS:
+	void navigatedToCrossReference();
 };
 
 /*!
@@ -699,6 +762,38 @@ class BINARYNINJAUIAPI CrossReferenceSidebarWidgetType : public SidebarWidgetTyp
 	CrossReferenceSidebarWidgetType();
 	virtual bool isInReferenceArea() const override { return true; }
 	virtual SidebarWidget* createWidget(ViewFrame* frame, BinaryViewRef data) override;
+};
+
+/*!
+    \ingroup xreflist
+*/
+class BINARYNINJAUIAPI PinnedCrossReferenceSidebarWidgetType : public SidebarWidgetType
+{
+public:
+	PinnedCrossReferenceSidebarWidgetType();
+	SidebarWidgetLocation defaultLocation() const override { return SidebarWidgetLocation::RightBottom; }
+	SidebarContextSensitivity contextSensitivity() const override { return PerViewTypeSidebarContext; }
+	bool alwaysShowTabs() const override { return true; }
+	QString noWidgetMessage() const override { return "No pinned cross references"; }
+	DockableTabStyle* tabStyle() const override { return new DefaultDockableTabStyle(); }
+	bool deactivateOnLastTabClose() const override { return true; }
+};
+
+
+class BINARYNINJAUIAPI CrossReferenceDialog : public QDialog
+{
+	Q_OBJECT
+
+	CrossReferenceWidget* m_widget;
+
+	static constexpr int MINIMUM_WIDTH = 720;
+	static constexpr int MINIMUM_HEIGHT = 480;
+
+public:
+	CrossReferenceDialog(UIContext* context, View* view, BinaryViewRef data, const SelectionInfoForXref& selection);
+
+	void setSavedSelection(std::optional<int> idx);
+	std::optional<int> selection() const;
 };
 
 

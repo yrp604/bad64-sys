@@ -7,7 +7,7 @@ This guide is broken up into three sections.
 - Part 3 covers advanced topics like custom roles
 
 
-## Binja Architecture Flags Part 1: The Basics
+## Binary Ninja Architecture Flags Part 1: The Basics
 
 Think of flags as global boolean variables, set and cleared by observers who monitor the result of instructions from a distance:
 
@@ -28,11 +28,11 @@ flag_v = ...
 
 Now the problem is that tons of instructions affect tons of flags, so a lot of noise is generated.
 
-Binja tries to reduce the noise by displaying only the flags between producer and consumer that are relevant. For example, ADD affects many flags, but if none are read until ADC (add with carry) then only the carry flag is shown.
+Binary Ninja tries to reduce the noise by displaying only the flags between producer and consumer that are relevant. For example, ADD affects many flags, but if none are read until ADC (add with carry) then only the carry flag is shown.
 
-Writing effective flag code in architectures requires this understanding, and there's a bit of an art in "helping" Binja connect flag producers and consumers.
+Writing effective flag code in architectures requires this understanding, and there's a bit of an art in "helping" Binary Ninja connect flag producers and consumers.
 
-But this is about basics! So what are the basic ways in which an architecture author informs Binja of flags? The following is python architecture code for Z80.
+But this is about basics! So what are the basic ways in which an architecture author informs Binary Ninja of flags? The following is python architecture code for Z80.
 
 ### 1) declare the flags
 
@@ -53,7 +53,7 @@ That's simple, it's just a list of strings.
         'c': FlagRole.CarryFlagRole
     }
 
-Map each flag to a role from [api/python/enum.py](https://api.binary.ninja/_modules/binaryninja/enums.html) if possible. This informs Binja to generate IL for the basic, textbook behavior of a flag. For example, the `ZeroFlagRole` will generate IL that sets the flag when an arithmetic result is zero.
+Map each flag to a role from [api/python/enum.py](https://api.binary.ninja/_modules/binaryninja/enums.html) if possible. This informs Binary Ninja to generate IL for the basic, textbook behavior of a flag. For example, the `ZeroFlagRole` will generate IL that sets the flag when an arithmetic result is zero.
 
 If a flag's behavior does not fit the textbook behavior, use `SpecialFlagRole` and in a future article we'll implement a callback for its custom IL. For example, `PV` here in Z80 acts as both a parity flag and an overflow flag. It's meaning at any given time depends on the last instruction that set it.
 
@@ -77,13 +77,13 @@ Think of `flag_write_types` as custom named groups for your convenience. When yo
 
 In fact, the `flag` keyword parameter for the IL constructing functions does not accept individual flag names, it accepts only these group names!
 
-## Binja Architecture Flags Part 2: Flag Producer/Consumer
+## Binary Ninja Architecture Flags Part 2: Flag Producer/Consumer
 
-In the last installment, we informed Binja of our architecture's flags by defining a list of flag names, a mapping from flag names to `flag roles`, and groups of flags commonly set together called `flag write types`.
+In the last installment, we informed Binary Ninja of our architecture's flags by defining a list of flag names, a mapping from flag names to `flag roles`, and groups of flags commonly set together called `flag write types`.
 
-Let's remind ourselves briefly that these are terms within an imagined protocol between architecture author and Binja. The protocol's purpose is to communicate to Binja what flags are present and how they behave. As we accumulate architectures that stretch the protocol's limits (eg: PowerPC with its flag banks), it's possible the protocol gets adjusted to more generally accommodate architectures.
+Let's remind ourselves briefly that these are terms within an imagined protocol between architecture author and Binary Ninja. The protocol's purpose is to communicate to Binary Ninja what flags are present and how they behave. As we accumulate architectures that stretch the protocol's limits (eg: PowerPC with its flag banks), it's possible the protocol gets adjusted to more generally accommodate architectures.
 
-In Part 1, we said Binja tries to reduce the noise in displayed IL by showing only the flags between producer and consumer that are relevant. Consider this simplified flags definition for Z80:
+In Part 1, we said Binary Ninja tries to reduce the noise in displayed IL by showing only the flags between producer and consumer that are relevant. Consider this simplified flags definition for Z80:
 
 ```python
 flags = ['c']
@@ -92,7 +92,7 @@ flag_write_types = ['none', 'only_carry']
 flags_written_by_flag_write_type = { 'none': [], 'only_carry': ['c'], }
 ```
 
-We have one flag named 'c', we tell Binja that it's the textbook carry flag, and we define a flag group called "only_carry" which sets just this flag.
+We have one flag named 'c', we tell Binary Ninja that it's the textbook carry flag, and we define a flag group called "only_carry" which sets just this flag.
 
 At lifting time, we mark certain IL instructions as a **producer** using the `flags` keyword. Remember to pass the _group_ or _flag write type_ that contains `c`, **not** `c` itself:
 
@@ -121,7 +121,7 @@ unsigned char add(unsigned char a, unsigned char b)
 
 Recap: the C function is named `add()` which will produce a Z80 instruction `ADD` (among others) which we lift to LLIL `ADD` that is a **producer** of the `c` flag.
 
-Binja gives this LLIL, after compilation with [SDCC](http://sdcc.sourceforge.net):
+Binary Ninja gives this LLIL, after compilation with [SDCC](http://sdcc.sourceforge.net):
 
 ```
 _add:
@@ -137,7 +137,7 @@ _add:
 
 WHERE'S THE CARRY!?
 
-This is the lesson that was non-intuitive to me. Binja knows from the architecture-supplied _lifted IL_ that `ADD` sets `c`, but it doesn't produce any `c` setting _low level_ IL because it failed to detect anyone using `c`.
+This is the lesson that was non-intuitive to me. Binary Ninja knows from the architecture-supplied _lifted IL_ that `ADD` sets `c`, but it doesn't produce any `c` setting _low level_ IL because it failed to detect anyone using `c`.
 
 #### Example B
 
@@ -173,7 +173,7 @@ _add:
   16 @ 00000225  <return> jump(pop)
 ```
 
-With `ADC` present, Binja detects the relationship, and produces the IL `flag:c = temp0.b + temp1.b u< temp0.b`.
+With `ADC` present, Binary Ninja detects the relationship, and produces the IL `flag:c = temp0.b + temp1.b u< temp0.b`.
 
 This also means that you can mark instructions as producers of a group of many flags, and LLIL will contain the flag calculating code for those flags consumed further along.
 
@@ -181,18 +181,18 @@ This also means that you can mark instructions as producers of a group of many f
 
 You, the architecture author:
 
-* inform Binja of your architecture's flags by defining:
+* inform Binary Ninja of your architecture's flags by defining:
     * flag names
     * flag "roles" which are just their textbook behavior, if they qualify
     * flag "write types" which groups of flags often set together
 * assign instructions as flag **producers** by passing `flag=` keyword parameter during lifting
 * assign instructions as flag **consumers** by passing IL flag expressions as operands during lifting
 
-With the defined variables and lifted IL, Binja decides when to generate flag-affecting low level IL.
+With the defined variables and lifted IL, Binary Ninja decides when to generate flag-affecting low level IL.
 
-## Binja Architecture Flags Part 3: Flag Roles
+## Binary Ninja Architecture Flags Part 3: Flag Roles
 
-The previous sections said that flag roles were the textbook behavior of flags. If you can assign a flag to a role, there's a chance Binja will have that default behavior and you won't have to implement it yourself. For example, the carry flag is so common among architectures and its behavior is (to my knowledge) non-varying during addition, that we have it hardcoded into Binja:
+The previous sections said that flag roles were the textbook behavior of flags. If you can assign a flag to a role, there's a chance Binary Ninja will have that default behavior and you won't have to implement it yourself. For example, the carry flag is so common among architectures and its behavior is (to my knowledge) non-varying during addition, that we have it hard-coded into Binary Ninja:
 
 ```
    5 @ 0000021b  temp0.b = A
@@ -201,9 +201,9 @@ The previous sections said that flag roles were the textbook behavior of flags. 
    8 @ 0000021b  flag:c = temp0.b + temp1.b u< temp0.b   <-- HERE
 ```
 
-The `c` flag was declared to have CarryFlagRole so the `flag:c = ...` was produced by Binja and the architecture author is not responsible.
+The `c` flag was declared to have CarryFlagRole so the `flag:c = ...` was produced by Binary Ninja and the architecture author is not responsible.
 
-The hardcoded flag code is in the `get_flag_write_low_level_il()` method of the Architecture class and (at the time of this writing) supports:
+The hard-coded flag code is in the `get_flag_write_low_level_il()` method of the Architecture class and (at the time of this writing) supports:
 
 |                      | ADD  | ADC  | SUB  | NEG  | FSUB | OTHERS |
 | -------------------- | ---- | ---- | ---- | ---- | ---- | ------ |
@@ -215,9 +215,9 @@ The hardcoded flag code is in the `get_flag_write_low_level_il()` method of the 
 | UnorderedFlagRole    |      |      |      |      | yes  |        |
 | ZeroFlagRole         | yes  | yes  | yes  | yes  | yes  | yes    |
 
-If a cell has "yes" it means that for the instruction at the column header, there's an built-in **attempt** at producing the flag in the row. It is not a guarantee that the flag semantics match your architecture's.
+If a cell has "yes" it means that for the instruction at the column header, there's a built-in **attempt** at producing the flag in the row. It is not a guarantee that the flag semantics match your architecture's.
 
-So for any instructions that are not ADD, ADC, SUB, NEG, or FSUB, you can try and see if Binja's built-in for calculating negative, positive, or zero flags are accurate for your architecture. If you want carry, ordered, overflow, or unordered, you will need to implement it yourself.
+So for any instructions that are not ADD, ADC, SUB, NEG, or FSUB, you can try and see if Binary Ninja's built-in for calculating negative, positive, or zero flags are accurate for your architecture. If you want carry, ordered, overflow, or unordered, you will need to implement it yourself.
 
 What happens when you mark an instruction the producer of a certain flag, but no implementation exists?
 
@@ -229,9 +229,9 @@ What happens when you mark an instruction the producer of a certain flag, but no
 
 Here, `sbb` is an `s` producer and a `pv` producer.
 
-Flag `s` is mapped to FlagRole.NegativeSignRole which is "yes" in the table, so Binja emits the default LLIL to set it.
+Flag `s` is mapped to FlagRole.NegativeSignRole which is "yes" in the table, so Binary Ninja emits the default LLIL to set it.
 
-Flag `pv` is mapped to FlagRole.OverflowFlagRole which is not "yes", so Binja doesn't have an implementation and emits LLIL_UNIMPLEMENTED.
+Flag `pv` is mapped to FlagRole.OverflowFlagRole which is not "yes", so Binary Ninja doesn't have an implementation and emits LLIL_UNIMPLEMENTED.
 
 If you need to define your own flag setting code, set the flag role to SpecialFlagRole and override `get_flag_write_low_level_il()`. There are two contraints you must work around:
 
@@ -260,7 +260,7 @@ def get_flag_write_low_level_il(self, op, size, write_type, flag, operands, il):
 			return il.not_expr(0, self.get_default_flag_write_low_level_il(op, size, FlagRole.CarryFlagRole, operands, il))
 			# Other operations use a normal carry flag
 			return self.get_default_flag_write_low_level_il(op, size, FlagRole.CarryFlagRole, operands, il)
-	...			
+	...
 ```
 
 This is nice and convenient: the normal behavior is simply wrapped in a `not`. See [the source](https://github.com/Vector35/binaryninja-api/blob/dev/python/examples/nes.py) for the full code.

@@ -6,7 +6,7 @@
 #  BinaryNinjaUI_LIBRARY_DIRS - The link paths required for ui plugins
 #  BinaryNinjaUI_DEFINITIONS - Compiler switches required for UI plugins
 
-cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 
 find_package(BinaryNinjaCore REQUIRED)
 

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.9 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 
 project(arch_armv7)
 
@@ -6,7 +6,7 @@ if(NOT BN_INTERNAL_BUILD)
 	add_subdirectory(${PROJECT_SOURCE_DIR}/../.. ${PROJECT_BINARY_DIR}/api)
 endif()
 
-file(GLOB SOURCES
+file(GLOB SOURCES CONFIGURE_DEPENDS
 	*.cpp
 	*.h
 	armv7_disasm/*.c
@@ -28,7 +28,7 @@ target_include_directories(arch_armv7
 target_link_libraries(arch_armv7 binaryninjaapi)
 
 set_target_properties(arch_armv7 PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 20
 	CXX_VISIBILITY_PRESET hidden
 	CXX_STANDARD_REQUIRED ON
 	C_STANDARD 99

@@ -78,11 +78,14 @@ class BINARYNINJAUIAPI DisassemblyView : public FlowGraphWidget
 	void toggleOption(BNDisassemblyOption option);
 	void setAddressMode(std::optional<BNDisassemblyAddressMode> mode, std::optional<bool> hex, std::optional<bool> withName);
 	void setCallParamHints(BNDisassemblyCallParameterHints hints);
+	void setBlockLabels(BNDisassemblyBlockLabels labels);
 	void setDisplayedFileName();
 	void setAddressBaseOffset(bool toHere);
 
 	void toggleRenderLayer(const std::string& layer);
 	FlowGraphRef applyRenderLayers(FlowGraphRef graph);
+
+	virtual void refreshContents() override;
 
 	virtual DisassemblySettingsRef getDisassemblySettings() override;
 	virtual void setDisassemblySettings(DisassemblySettingsRef settings) override;
@@ -137,9 +140,11 @@ class BINARYNINJAUIAPI DisassemblyView : public FlowGraphWidget
 	static void addOptionsMenuActions(Menu& menu);
 
 	BinaryNinja::FunctionViewType m_ilViewType;
+	BinaryNinja::FunctionViewType m_prevILViewType;
 	std::set<BNDisassemblyOption> m_options;
 	BNDisassemblyAddressMode m_addressMode;
 	BNDisassemblyCallParameterHints m_callParamHints;
+	BNDisassemblyBlockLabels m_blockLabels;
 	DisassemblyContainer* m_container;
 	SettingsRef m_settings;
 	std::set<std::string> m_layers;

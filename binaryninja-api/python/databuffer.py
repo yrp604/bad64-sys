@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -128,7 +128,10 @@ class DataBuffer:
 		data = core.BNGetDataBufferContents(self.handle)
 		assert data is not None, "core.BNGetDataBufferContents returned None"
 		ctypes.memmove(buf, data, len(self))
-		return buf.raw.decode('utf8')
+		try:
+			return buf.raw.decode('utf8')
+		except UnicodeDecodeError:
+			return buf.raw.decode('charmap')
 
 	def __bytes__(self):
 		buf = ctypes.create_string_buffer(len(self))

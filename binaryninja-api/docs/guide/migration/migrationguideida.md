@@ -6,9 +6,9 @@ Binary Ninja starts with the [New Tab Page](../index.md#new-tab) open. From here
 
 ## Decompiler Settings
 
-Binary Ninja likes to stay out of your way as much as possible, but sometimes you need to dig into the settings and change how a file is analyzed. If you have a file that can be opened with default settings, you won't get prompted for any additional input. Binary Ninja will automatically analyze the entire file — including running [linear sweep](https://binary.ninja/2017/11/06/architecture-agnostic-function-detection-in-binaries.html) — and provide you with linear decompilation for the whole file (like IDA's linear disassembly, but as decomp by default).
+Binary Ninja likes to stay out of your way as much as possible, but sometimes you need to dig into the settings and change how a file is analyzed. If you have a file that can be opened with default settings, you won't get prompted for any additional input. Binary Ninja will automatically analyze the entire file — including running [linear sweep](https://binary.ninja/2017/11/06/architecture-agnostic-function-detection-in-binaries.html) — and provide you with linear decompilation for the whole file (like IDA's linear disassembly, but as decompilation by default).
 
-If you're opening a [Universal Mach-O](https://en.wikipedia.org/wiki/Universal_binary), the Open with Options dialogue will appear so that you can choose which architecture to open (in the top right). If you have a default architecture you want to open whenever you open a universal binary, you can set your preference in a setting called [Universal Mach-O Architecture Preference](../settings.md#all-settings). You'll also see the Open with Options dialogue when Binary Ninja is unable to recognize the file type or otherwise needs user input to analyze the file (can't find the entry point, needs you to provide some memory mappings, etc).
+If you're opening a [Universal Mach-O](https://en.wikipedia.org/wiki/Universal_binary), the Open with Options dialogue will appear so that you can choose which architecture to open (in the top right). If you have a default architecture you want to open whenever you open a universal binary, you can set your preference in a setting called [Universal Mach-O Architecture Preference](../settings.md#settings-reference). You'll also see the Open with Options dialogue when Binary Ninja is unable to recognize the file type or otherwise needs user input to analyze the file (can't find the entry point, needs you to provide some memory mappings, etc.).
 
 It's worth digging into Binary Ninja's [settings](../settings.md) and seeing what's available to tune, but if you ever want to change a setting for a single binary, you can Open (it) with Options. Go to File -> Open with Options, and any settings you change will apply to only that file.
 
@@ -21,7 +21,7 @@ Importing IDA IDB (`.idb`) and TIL (`.til`) files into Binary Ninja allows you t
 
 There are two ways through the UI to import IDB and TIL files:
 
-1. Prior to opening the binary, selecting _Open with Options_, allows you to set the IDB file you want to import with the  _External Debug Info File_ setting (`analysis.debugInfo.external`).
+1. Prior to opening the binary, selecting _Open with Options_, allows you to set the IDB file you want to import with the _External Debug Info File_ setting (`analysis.debugInfo.external`).
 2. After opening a binary, selecting _Import Debug Info from External File_ (`Analysis\\Import Debug Info from External File...`) allows you to apply IDB/TIL files after analysis has already started.
 
 The following data will be imported:
@@ -31,7 +31,7 @@ The following data will be imported:
 
 ## Keybindings
 
-Most of the keybindings you're used to are the same. Any "actions" (renaming, setting types, opening cross-references, etc) you might want to perform can be found in the [command palette](../index.md#command-palette), which will save you from digging through unfamiliar right-click menus and help you learn any new keybindings. You can even [add your own actions](https://binary.ninja/2024/02/15/command-palette.html#how-do-i-register-actions-with-the-command-palette-myself) with ease. All actions can have their keybinding set, changed, or removed in the [keybindings menu](../index.md#default-hotkeys).
+Most of the keybindings you're used to are the same. Any "actions" (renaming, setting types, opening cross-references, etc.) you might want to perform can be found in the [command palette](../index.md#command-palette), which will save you from digging through unfamiliar right-click menus and help you learn any new keybindings. You can even [add your own actions](https://binary.ninja/2024/02/15/command-palette.html#how-do-i-register-actions-with-the-command-palette-myself) with ease. All actions can have their keybinding set, changed, or removed in the [keybindings menu](../index.md#default-hotkeys).
 
 Some major exceptions are:
 

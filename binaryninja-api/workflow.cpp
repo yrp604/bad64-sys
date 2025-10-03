@@ -1,5 +1,4 @@
 #include "binaryninjaapi.h"
-#include "json/json.h"
 #include "rapidjsonwrapper.h"
 #include <string>
 #include <variant>
@@ -8,12 +7,10 @@ using namespace BinaryNinja;
 using namespace std;
 
 
-AnalysisContext::AnalysisContext(BNAnalysisContext* analysisContext) :
-    m_reader(Json::CharReaderBuilder().newCharReader())
+AnalysisContext::AnalysisContext(BNAnalysisContext* analysisContext)
 {
 	// LogError("API-Side AnalysisContext Constructed!");
 	m_object = analysisContext;
-	m_builder["indentation"] = "";
 }
 
 
@@ -38,6 +35,15 @@ Ref<Function> AnalysisContext::GetFunction()
 	if (!func)
 		return nullptr;
 	return new Function(func);
+}
+
+
+Ref<LowLevelILFunction> AnalysisContext::GetLiftedILFunction()
+{
+	BNLowLevelILFunction* func = BNAnalysisContextGetLiftedILFunction(m_object);
+	if (!func)
+		return nullptr;
+	return new LowLevelILFunction(func);
 }
 
 
@@ -92,9 +98,39 @@ void AnalysisContext::SetLowLevelILFunction(Ref<LowLevelILFunction> lowLevelIL)
 }
 
 
-void AnalysisContext::SetMediumLevelILFunction(Ref<MediumLevelILFunction> mediumLevelIL)
+void AnalysisContext::SetMediumLevelILFunction(
+	Ref<MediumLevelILFunction> mediumLevelIL,
+	std::unordered_map<size_t /* llil ssa */, size_t /* mlil */> llilSsaToMlilInstrMap,
+	std::vector<BNExprMapInfo> llilSsaToMlilExprMap
+)
 {
-	BNSetMediumLevelILFunction(m_object, mediumLevelIL->m_object);
+	if (llilSsaToMlilExprMap.empty() || llilSsaToMlilInstrMap.empty())
+	{
+		// Build up maps from existing data in the function
+		llilSsaToMlilExprMap = mediumLevelIL->GetLLILSSAToMLILExprMap(true);
+		llilSsaToMlilInstrMap = mediumLevelIL->GetLLILSSAToMLILInstrMap(true);
+	}
+
+	std::vector<size_t> instrMapVec;
+	// Technically imprecise but doesn't matter this is just reserving
+	instrMapVec.reserve(llilSsaToMlilInstrMap.size());
+	for (auto& [llilSSAIndex, mlilIndex]: llilSsaToMlilInstrMap)
+	{
+		if (instrMapVec.size() <= llilSSAIndex)
+		{
+			instrMapVec.resize(llilSSAIndex + 1, BN_INVALID_EXPR);
+		}
+		instrMapVec[llilSSAIndex] = mlilIndex;
+	}
+
+	BNSetMediumLevelILFunction(
+		m_object,
+		mediumLevelIL->m_object,
+		instrMapVec.data(),
+		instrMapVec.size(),
+		llilSsaToMlilExprMap.data(),
+		llilSsaToMlilExprMap.size()
+	);
 }
 
 
@@ -104,9 +140,40 @@ void AnalysisContext::SetHighLevelILFunction(Ref<HighLevelILFunction> highLevelI
 }
 
 
+bool AnalysisContext::Inform(const char* request)
+{
+	return BNAnalysisContextInform(m_object, request);
+}
+
+
 bool AnalysisContext::Inform(const string& request)
 {
 	return BNAnalysisContextInform(m_object, request.c_str());
+}
+
+
+bool WorkflowMachine::PostRequest(const std::string& command)
+{
+	rapidjson::Document request(rapidjson::kObjectType);
+	rapidjson::Document::AllocatorType& allocator = request.GetAllocator();
+	rapidjson::Value commandValue(command.c_str(), command.size(), allocator);
+	request.AddMember("command", commandValue, allocator);
+	rapidjson::StringBuffer buffer;
+	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+	request.Accept(writer);
+
+	string jsonResult;
+	if (m_function)
+		jsonResult = BNPostWorkflowRequestForFunction(m_function->GetObject(), buffer.GetString());
+	else
+		jsonResult = BNPostWorkflowRequestForBinaryView(m_view->GetObject(), buffer.GetString());
+
+	rapidjson::Document response(rapidjson::kObjectType);
+	response.Parse(jsonResult.c_str());
+	if (response.HasMember("commandStatus") && response["commandStatus"].HasMember("accepted"))
+		return response["commandStatus"]["accepted"].GetBool();
+
+	return false;
 }
 
 
@@ -122,13 +189,158 @@ WorkflowMachine::WorkflowMachine(Ref<Function> function): m_function(function)
 }
 
 
+bool WorkflowMachine::PostJsonRequest(const std::string& request)
+{
+	string jsonResult;
+	if (m_function)
+		jsonResult = BNPostWorkflowRequestForFunction(m_function->GetObject(), request.c_str());
+	else
+		jsonResult = BNPostWorkflowRequestForBinaryView(m_view->GetObject(), request.c_str());
+
+	rapidjson::Document response(rapidjson::kObjectType);
+	response.Parse(jsonResult.c_str());
+	if (response.HasMember("commandStatus") && response["commandStatus"].HasMember("accepted"))
+		return response["commandStatus"]["accepted"].GetBool();
+
+	return false;
+}
+
+
+Ref<FlowGraph> WorkflowMachine::GetGraph(const std::string& activity, bool sequential)
+{
+	BNFlowGraph* graph;
+	if (m_function)
+		graph = BNGetWorkflowGraphForFunction(m_function->GetObject(), activity.c_str(), sequential);
+	else
+		graph = BNGetWorkflowGraphForBinaryView(m_view->GetObject(), activity.c_str(), sequential);
+
+	return new CoreFlowGraph(graph);
+}
+
+
+void WorkflowMachine::ShowTopology()
+{
+	if (m_function)
+		BNShowWorkflowReportForFunction(m_function->GetObject(), "topology");
+	else
+		BNShowWorkflowReportForBinaryView(m_view->GetObject(), "topology");
+}
+
+
+WorkflowMachine::Status WorkflowMachine::GetStatus()
+{
+	WorkflowMachine::Status status;
+	rapidjson::Document request(rapidjson::kObjectType);
+	rapidjson::Document::AllocatorType& allocator = request.GetAllocator();
+	request.AddMember("command", "status", allocator);
+	rapidjson::StringBuffer buffer;
+	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+	request.Accept(writer);
+
+	string jsonResult;
+	if (m_function)
+		jsonResult = BNPostWorkflowRequestForFunction(m_function->GetObject(), buffer.GetString());
+	else
+		jsonResult = BNPostWorkflowRequestForBinaryView(m_view->GetObject(), buffer.GetString());
+
+	rapidjson::Document response(rapidjson::kObjectType);
+	response.Parse(jsonResult.c_str());
+	if (response.HasMember("machineState") && response["machineState"].HasMember("state") && response["machineState"].HasMember("activity"))
+	{
+		status.state = response["machineState"]["state"].GetString();
+		status.activity = response["machineState"]["activity"].GetString();
+	}
+	if (response.HasMember("logStatus") && response["logStatus"].HasMember("local") && response["logStatus"].HasMember("global"))
+	{
+		status.localLogEnabled = response["logStatus"]["local"].GetBool();
+		status.globalLogEnabled = response["logStatus"]["global"].GetBool();
+	}
+
+	return status;
+}
+
+
+bool WorkflowMachine::Resume()
+{
+	return PostRequest("resume");
+}
+
+
+bool WorkflowMachine::Run()
+{
+	return PostRequest("run");
+}
+
+
+bool WorkflowMachine::Configure()
+{
+	return PostRequest("configure");
+}
+
+
+bool WorkflowMachine::Halt()
+{
+	return PostRequest("halt");
+}
+
+
+bool WorkflowMachine::Reset()
+{
+	return PostRequest("reset");
+}
+
+
+bool WorkflowMachine::Enable()
+{
+	return PostRequest("enable");
+}
+
+
+bool WorkflowMachine::Disable()
+{
+	return PostRequest("disable");
+}
+
+
+bool WorkflowMachine::Step()
+{
+	return PostRequest("step");
+}
+
+
+bool WorkflowMachine::SetLogEnabled(bool enable, bool global)
+{
+	rapidjson::Document request(rapidjson::kObjectType);
+	rapidjson::Document::AllocatorType& allocator = request.GetAllocator();
+	request.AddMember("command", "log", allocator);
+	request.AddMember("enable", enable, allocator);
+	request.AddMember("global", global, allocator);
+	rapidjson::StringBuffer buffer;
+	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+	request.Accept(writer);
+
+	string jsonResult;
+	if (m_function)
+		jsonResult = BNPostWorkflowRequestForFunction(m_function->GetObject(), buffer.GetString());
+	else
+		jsonResult = BNPostWorkflowRequestForBinaryView(m_view->GetObject(), buffer.GetString());
+
+	rapidjson::Document response(rapidjson::kObjectType);
+	response.Parse(jsonResult.c_str());
+	if (response.HasMember("commandStatus") && response["commandStatus"].HasMember("accepted"))
+		return response["commandStatus"]["accepted"].GetBool();
+
+	return false;
+}
+
+
 std::optional<bool> WorkflowMachine::QueryOverride(const string& activity)
 {
 	rapidjson::Document request(rapidjson::kObjectType);
 	rapidjson::Document::AllocatorType& allocator = request.GetAllocator();
 	request.AddMember("command", "override", allocator);
 	request.AddMember("action", "query", allocator);
-	request.AddMember("activity", rapidjson::Value(activity.c_str(), allocator), allocator);
+	request.AddMember("activity", activity, allocator);
 	rapidjson::StringBuffer buffer;
 	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
 	request.Accept(writer);
@@ -154,7 +366,7 @@ bool WorkflowMachine::SetOverride(const string& activity, bool enable)
 	rapidjson::Document::AllocatorType& allocator = request.GetAllocator();
 	request.AddMember("command", "override", allocator);
 	request.AddMember("action", "set", allocator);
-	request.AddMember("activity", rapidjson::Value(activity.c_str(), allocator), allocator);
+	request.AddMember("activity", activity, allocator);
 	request.AddMember("enable", enable, allocator);
 	rapidjson::StringBuffer buffer;
 	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
@@ -181,7 +393,7 @@ bool WorkflowMachine::ClearOverride(const string& activity)
 	rapidjson::Document::AllocatorType& allocator = request.GetAllocator();
 	request.AddMember("command", "override", allocator);
 	request.AddMember("action", "clear", allocator);
-	request.AddMember("activity", rapidjson::Value(activity.c_str(), allocator), allocator);
+	request.AddMember("activity", activity, allocator);
 	rapidjson::StringBuffer buffer;
 	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
 	request.Accept(writer);
@@ -209,20 +421,20 @@ Workflow::Workflow(const string& name)
 
 Workflow::Workflow(BNWorkflow* workflow)
 {
-	m_object = BNNewWorkflowReference(workflow);
+	m_object = workflow;
 }
 
 
 Workflow::Workflow(BNWorkflow* workflow, Ref<BinaryView> view)
 {
-	m_object = BNNewWorkflowReference(workflow);
+	m_object = workflow;
 	m_machine = make_unique<WorkflowMachine>(view);
 }
 
 
 Workflow::Workflow(BNWorkflow* workflow, Ref<Function> function)
 {
-	m_object = BNNewWorkflowReference(workflow);
+	m_object = workflow;
 	m_machine = make_unique<WorkflowMachine>(function);
 }
 
@@ -242,9 +454,19 @@ vector<Ref<Workflow>> Workflow::GetList()
 }
 
 
-Ref<Workflow> Workflow::Instance(const string& name)
+Ref<Workflow> Workflow::Get(const string& name)
 {
-	return new Workflow(BNWorkflowInstance(name.c_str()));
+	auto result = BNWorkflowGet(name.c_str());
+	if (!result)
+		return nullptr;
+
+	return new Workflow(result);
+}
+
+
+Ref<Workflow> Workflow::GetOrCreate(const string& name)
+{
+	return new Workflow(BNWorkflowGetOrCreate(name.c_str()));
 }
 
 
@@ -407,6 +629,35 @@ bool Workflow::Insert(const string& activity, const vector<string>& activities)
 		buffer[i] = BNAllocString(activities[i].c_str());
 
 	bool result = BNWorkflowInsert(m_object, activity.c_str(), (const char**)buffer, activities.size());
+
+	for (size_t i = 0; i < activities.size(); i++)
+		BNFreeString(buffer[i]);
+	delete[] buffer;
+	return result;
+}
+
+
+bool Workflow::InsertAfter(const string& activity, const string& newActivity)
+{
+	char* buffer[1];
+	buffer[0] = BNAllocString(newActivity.c_str());
+
+	bool result = BNWorkflowInsertAfter(m_object, activity.c_str(), (const char**)buffer, 1);
+	BNFreeString(buffer[0]);
+	return result;
+}
+
+
+bool Workflow::InsertAfter(const string& activity, const vector<string>& activities)
+{
+	char** buffer = new char*[activities.size()];
+	if (!buffer)
+		return false;
+
+	for (size_t i = 0; i < activities.size(); i++)
+		buffer[i] = BNAllocString(activities[i].c_str());
+
+	bool result = BNWorkflowInsertAfter(m_object, activity.c_str(), (const char**)buffer, activities.size());
 
 	for (size_t i = 0; i < activities.size(); i++)
 		BNFreeString(buffer[i]);

@@ -705,7 +705,10 @@ protected:
 			if (UNCONDITIONAL(instr.cond))
 			{
 				if (instr.operands[0].cls == REG && instr.operands[0].reg == REG_LR)
+				{
 					result.AddBranch(FunctionReturn);
+					result.archTransitionByTargetAddr = true;
+				}
 				else
 				{
 					result.AddBranch(UnresolvedBranch);
@@ -1386,9 +1389,9 @@ public:
 			}
 		}
 		}
-		catch (exception&)
+		catch (exception& e)
 		{
-			LogWarn("Failed to disassemble instruction with encoding: %" PRIx32 "\n", *(uint32_t*)data);
+			LogWarnForException(e, "Failed to disassemble instruction with encoding: %" PRIx32 "\n", *(uint32_t*)data);
 		}
 		return true;
 	}
@@ -1895,19 +1898,21 @@ vector<uint32_t> ArmCommonArchitecture::GetAllRegisters()
 		REG_Q8,   REG_Q9,   REG_Q10,  REG_Q11,  REG_Q12,  REG_Q13,  REG_Q14,  REG_Q15,
 
 		/* special registers */
-		REGS_APSR, REGS_APSR_G, REGS_APSR_NZCVQ, REGS_APSR_NZCVQG,
-		REGS_CPSR, REGS_CPSR_C, REGS_CPSR_X, REGS_CPSR_XC,
-		REGS_CPSR_S, REGS_CPSR_SC, REGS_CPSR_SX, REGS_CPSR_SXC,
-		REGS_CPSR_F, REGS_CPSR_FC, REGS_CPSR_FX, REGS_CPSR_FXC,
-		REGS_CPSR_FS, REGS_CPSR_FSC, REGS_CPSR_FSX, REGS_CPSR_FSXC,
-		REGS_SPSR, REGS_SPSR_C, REGS_SPSR_X, REGS_SPSR_XC,
-		REGS_SPSR_S, REGS_SPSR_SC, REGS_SPSR_SX, REGS_SPSR_SXC,
-		REGS_SPSR_F, REGS_SPSR_FC, REGS_SPSR_FX, REGS_SPSR_FXC,
-		REGS_SPSR_FS, REGS_SPSR_FSC, REGS_SPSR_FSX, REGS_SPSR_FSXC,
-		REGS_APSR_NZCV, REGS_FPSID, REGS_FPSCR, REGS_MVFR2,
+		// REGS_APSR, REGS_APSR_G, REGS_APSR_NZCVQ, REGS_APSR_NZCVQG,
+		// REGS_CPSR, REGS_CPSR_C, REGS_CPSR_X, REGS_CPSR_XC,
+		// REGS_CPSR_S, REGS_CPSR_SC, REGS_CPSR_SX, REGS_CPSR_SXC,
+		// REGS_CPSR_F, REGS_CPSR_FC, REGS_CPSR_FX, REGS_CPSR_FXC,
+		// REGS_CPSR_FS, REGS_CPSR_FSC, REGS_CPSR_FSX, REGS_CPSR_FSXC,
+		// REGS_SPSR, REGS_SPSR_C, REGS_SPSR_X, REGS_SPSR_XC,
+		// REGS_SPSR_S, REGS_SPSR_SC, REGS_SPSR_SX, REGS_SPSR_SXC,
+		// REGS_SPSR_F, REGS_SPSR_FC, REGS_SPSR_FX, REGS_SPSR_FXC,
+		// REGS_SPSR_FS, REGS_SPSR_FSC, REGS_SPSR_FSX, REGS_SPSR_FSXC,
+		// REGS_APSR_NZCV,
+		REGS_FPSID, REGS_FPSCR, REGS_MVFR2,
 		REGS_MVFR1, REGS_MVFR0, REGS_FPEXC, REGS_FPINST,
-		REGS_FPINST2, REGS_MSP, REGS_PSP, REGS_PRIMASK,
-		REGS_BASEPRI, REGS_FAULTMASK, REGS_CONTROL,
+		REGS_FPINST2,
+		// REGS_MSP, REGS_PSP, REGS_PRIMASK,
+		// REGS_BASEPRI, REGS_FAULTMASK, REGS_CONTROL,
 
 		/* fake registers */
 		FAKEREG_SYSCALL_INFO
@@ -2229,7 +2234,7 @@ public:
 							return false;
 
 						Confidence<Ref<Type>> type = entryFunc->GetType();
-						data->DefineImportedFunction(sym, func, type);
+						data->DefineImportedFunction(sym, func, type.GetValue());
 						return true;
 					}
 				}
@@ -2357,6 +2362,7 @@ public:
 				dest32[0] = (info.implicitAddend ? dest32[0] : (uint32_t)info.addend) + (target & ~1) - (uint32_t)reloc->GetAddress();
 				break;
 			}
+			case R_ARM_PC24:
 			case R_ARM_JUMP24:
 			{
 				if (target & 1)
@@ -2548,8 +2554,14 @@ public:
 				break;
 			case R_ARM_TLS_DTPOFF32:
 				break;
-			case R_ARM_SBREL31:
 			case R_ARM_PC24:
+				reloc.pcRelative = true;
+				reloc.baseRelative = false;
+				reloc.hasSign = false;
+				reloc.size = 3;
+				reloc.truncateSize = 3;
+				break;
+			case R_ARM_SBREL31:
 			case R_ARM_LDR_PC_G0:
 			case R_ARM_ABS16:
 			case R_ARM_ABS12:

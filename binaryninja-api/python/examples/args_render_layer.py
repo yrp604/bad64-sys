@@ -45,7 +45,7 @@ def get_param_sites(mlil: MediumLevelILFunction) -> Mapping[LowLevelILInstructio
     :param mlil: MLIL function to search
     :return: Map of param sites as described above
     """
-    call_sites = {}
+    call_sites: dict[MediumLevelILInstruction, List[Tuple[int, LowLevelILInstruction]]] = {}
     mlil = mlil.ssa_form
 
     # As a function to handle call and tailcall identically
@@ -54,7 +54,7 @@ def get_param_sites(mlil: MediumLevelILFunction) -> Mapping[LowLevelILInstructio
         for i, param in enumerate(params):
             llil = param.llil
             if llil is not None:
-                def_sites.append((param, llil))
+                def_sites.append((i, llil))
                 continue
 
             match param:
@@ -73,10 +73,11 @@ def get_param_sites(mlil: MediumLevelILFunction) -> Mapping[LowLevelILInstructio
                 case MediumLevelILConstBase():
                     # This is wrong, but it works (sometimes)
                     # Oh god, have I just quoted php.net
-                    def_site_idx = mlil.llil.get_instruction_start(param.address)
-                    if def_site_idx is not None:
-                        def_sites.append((i, mlil.llil[def_site_idx].ssa_form))
-                        continue
+                    if mlil.llil is not None:
+                        def_site_idx = mlil.llil.get_instruction_start(param.address)
+                        if def_site_idx is not None:
+                            def_sites.append((i, mlil.llil[def_site_idx].ssa_form))
+                            continue
 
             if len(def_sites) == 0:
                 log_debug(f"Could not find def site for param {i} in call at {call_site.address:#x}")
@@ -97,7 +98,8 @@ def get_param_sites(mlil: MediumLevelILFunction) -> Mapping[LowLevelILInstructio
             if llil not in all_def_sites:
                 all_def_sites[llil] = []
             else:
-                print(f"got two at {llil.instr_index} @ {llil.address:#x} -> {call_site.address:#x}")
+                # print(f"got two at {llil.instr_index} @ {llil.address:#x} -> {call_site.address:#x}")
+                pass
             all_def_sites[llil].append((call_site, param_idx))
 
     return all_def_sites
@@ -196,6 +198,8 @@ class ArgumentsRenderLayer(RenderLayer):
             block: BasicBlock,
             lines: List['DisassemblyTextLine']
     ):
+        if block.function.mlil_if_available is None:
+            return lines
         # Break this out into a helper so we don't have to write it twice
         renderer = DisassemblyTextRenderer(block.function)
         return apply_to_lines(lines, lambda line: block.function.get_llil_at(line.address), renderer)
@@ -205,6 +209,8 @@ class ArgumentsRenderLayer(RenderLayer):
             block: BasicBlock,
             lines: List['DisassemblyTextLine']
     ):
+        if block.function.mlil_if_available is None:
+            return lines
         # Break this out into a helper so we don't have to write it twice
         renderer = DisassemblyTextRenderer(block.function)
         return apply_to_lines(lines, lambda line: line.il_instruction, renderer)

@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -18,23 +18,24 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import traceback
 import ctypes
 import threading
-
+import traceback
 from typing import Optional, Callable
 
 # Binary Ninja components
 import binaryninja
+
 from . import _binaryninjacore as core
-from .enums import PluginCommandType
-from . import filemetadata
 from . import binaryview
+from . import filemetadata
 from . import function
-from .log import log_error
+from . import highlevelil
 from . import lowlevelil
 from . import mediumlevelil
-from . import highlevelil
+from .project import Project
+from .enums import PluginCommandType
+from .log import log_error_for_exception
 
 
 class PluginCommandContext:
@@ -55,6 +56,7 @@ class PluginCommandContext:
 		self._length = 0
 		self._function = None
 		self._instruction = None
+		self._project = view.project
 
 	def __len__(self):
 		return self._length
@@ -99,6 +101,14 @@ class PluginCommandContext:
 	def instruction(self, value):
 		self._instruction = value
 
+	@property
+	def project(self):
+		return self._project
+
+	@function.setter
+	def project(self, value):
+		self._project = value
+
 
 class _PluginCommandMetaClass(type):
 	def __iter__(self):
@@ -137,7 +147,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			view_obj = binaryview.BinaryView(file_metadata=file_metadata, handle=core.BNNewViewReference(view))
 			action(view_obj)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._default_action")
 
 	@staticmethod
 	def _address_action(view, addr, action):
@@ -146,7 +156,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			view_obj = binaryview.BinaryView(file_metadata=file_metadata, handle=core.BNNewViewReference(view))
 			action(view_obj, addr)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._address_action")
 
 	@staticmethod
 	def _range_action(view, addr, length, action):
@@ -155,7 +165,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			view_obj = binaryview.BinaryView(file_metadata=file_metadata, handle=core.BNNewViewReference(view))
 			action(view_obj, addr, length)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._range_action")
 
 	@staticmethod
 	def _function_action(view, func, action):
@@ -165,7 +175,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			func_obj = function.Function(view_obj, core.BNNewFunctionReference(func))
 			action(view_obj, func_obj)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._function_action")
 
 	@staticmethod
 	def _low_level_il_function_action(view, func, action):
@@ -176,7 +186,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			func_obj = lowlevelil.LowLevelILFunction(owner.arch, core.BNNewLowLevelILFunctionReference(func), owner)
 			action(view_obj, func_obj)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._low_level_il_function_action")
 
 	@staticmethod
 	def _low_level_il_instruction_action(view, func, instr, action):
@@ -187,7 +197,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			func_obj = lowlevelil.LowLevelILFunction(owner.arch, core.BNNewLowLevelILFunctionReference(func), owner)
 			action(view_obj, func_obj[instr])
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._low_level_il_instruction_action")
 
 	@staticmethod
 	def _medium_level_il_function_action(view, func, action):
@@ -200,7 +210,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			)
 			action(view_obj, func_obj)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._medium_level_il_function_action")
 
 	@staticmethod
 	def _medium_level_il_instruction_action(view, func, instr, action):
@@ -213,7 +223,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			)
 			action(view_obj, func_obj[instr])
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._medium_level_il_instruction_action")
 
 	@staticmethod
 	def _high_level_il_function_action(view, func, action):
@@ -224,7 +234,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			func_obj = highlevelil.HighLevelILFunction(owner.arch, core.BNNewHighLevelILFunctionReference(func), owner)
 			action(view_obj, func_obj)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._high_level_il_function_action")
 
 	@staticmethod
 	def _high_level_il_instruction_action(view, func, instr, action):
@@ -235,7 +245,15 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			func_obj = highlevelil.HighLevelILFunction(owner.arch, core.BNNewHighLevelILFunctionReference(func), owner)
 			action(view_obj, func_obj[instr])
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._high_level_il_instruction_action")
+
+	@staticmethod
+	def _project_action(project, action):
+		try:
+			project_obj = Project(handle=core.BNNewProjectReference(project))
+			action(project_obj)
+		except:
+			log_error_for_exception("Unhandled Python exception in PluginCommand._project_action")
 
 	@staticmethod
 	def _default_is_valid(view, is_valid):
@@ -246,7 +264,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			view_obj = binaryview.BinaryView(file_metadata=file_metadata, handle=core.BNNewViewReference(view))
 			return is_valid(view_obj)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._default_is_valid")
 			return False
 
 	@staticmethod
@@ -258,7 +276,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			view_obj = binaryview.BinaryView(file_metadata=file_metadata, handle=core.BNNewViewReference(view))
 			return is_valid(view_obj, addr)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._address_is_valid")
 			return False
 
 	@staticmethod
@@ -270,7 +288,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			view_obj = binaryview.BinaryView(file_metadata=file_metadata, handle=core.BNNewViewReference(view))
 			return is_valid(view_obj, addr, length)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._range_is_valid")
 			return False
 
 	@staticmethod
@@ -283,7 +301,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			func_obj = function.Function(view_obj, core.BNNewFunctionReference(func))
 			return is_valid(view_obj, func_obj)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._function_is_valid")
 			return False
 
 	@staticmethod
@@ -297,7 +315,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			func_obj = lowlevelil.LowLevelILFunction(owner.arch, core.BNNewLowLevelILFunctionReference(func), owner)
 			return is_valid(view_obj, func_obj)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._low_level_il_function_is_valid")
 			return False
 
 	@staticmethod
@@ -313,7 +331,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			func_obj = lowlevelil.LowLevelILFunction(owner.arch, core.BNNewLowLevelILFunctionReference(func), owner)
 			return is_valid(view_obj, func_obj[instr])
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._low_level_il_instruction_is_valid")
 			return False
 
 	@staticmethod
@@ -329,7 +347,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			)
 			return is_valid(view_obj, func_obj)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._medium_level_il_function_is_valid")
 			return False
 
 	@staticmethod
@@ -347,7 +365,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			)
 			return is_valid(view_obj, func_obj[instr])
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._medium_level_il_instruction_is_valid")
 			return False
 
 	@staticmethod
@@ -361,7 +379,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			func_obj = highlevelil.HighLevelILFunction(owner.arch, core.BNNewHighLevelILFunctionReference(func), owner)
 			return is_valid(view_obj, func_obj)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._high_level_il_function_is_valid")
 			return False
 
 	@staticmethod
@@ -377,7 +395,18 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			func_obj = highlevelil.HighLevelILFunction(owner.arch, core.BNNewHighLevelILFunctionReference(func), owner)
 			return is_valid(view_obj, func_obj[instr])
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in PluginCommand._high_level_il_instruction_is_valid")
+			return False
+
+	@staticmethod
+	def _project_is_valid(project, is_valid):
+		try:
+			if is_valid is None:
+				return True
+			project_obj = Project(handle=core.BNNewProjectReference(project))
+			return is_valid(project_obj)
+		except:
+			log_error_for_exception("Unhandled Python exception in PluginCommand._project_is_valid")
 			return False
 
 	@classmethod
@@ -756,7 +785,44 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 		core.BNRegisterPluginCommandForHighLevelILInstruction(name, description, action_obj, is_valid_obj, None)
 
 	@classmethod
-	def get_valid_list(cls, context):
+	def register_for_project(
+			cls, name: str, description: str, action: Callable[['Project'], None],
+			is_valid: Optional[Callable[['Project'], bool]] = None
+	):
+		r"""
+		``register_for_project`` Register a plugin to be called with a project argument
+
+		:param str name: name of the plugin (use 'Folder\\Name' to have the menu item nested in a folder)
+		:param str description: description of the plugin
+		:param callback action: function to call with the :class:`~Project` as an argument
+		:param callback is_valid: optional argument of a function passed a :class:`~Project` to determine whether the plugin should be enabled for that project
+		:rtype: None
+		:Example:
+
+			>>> def my_plugin(project: Project):
+			>>> 	log_info(f"My plugin was called on project: `{project}`")
+			>>> PluginCommand.register_for_project("My Plugin", "My plugin description (not used)", my_plugin)
+			True
+			>>> def is_valid(project: Project) -> bool:
+			>>> 	return False
+			>>> PluginCommand.register_for_project("My Plugin (With Valid Function)", "My plugin description (not used)", my_plugin, is_valid)
+			True
+
+		.. warning:: Calling ``register_for_project`` with the same function name will replace the existing function but will leak the memory of the original plugin.
+		"""
+		binaryninja._init_plugins()
+		action_obj = ctypes.CFUNCTYPE(None, ctypes.c_void_p,
+									  ctypes.POINTER(core.BNProject
+													 ))(lambda ctxt, project: cls._project_action(project, action))
+		is_valid_obj = ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_void_p,
+										ctypes.POINTER(core.BNProject
+													   ))(
+			lambda ctxt, project: cls._project_is_valid(project, is_valid))
+		cls._registered_commands.append((action_obj, is_valid_obj))
+		core.BNRegisterPluginCommandForProject(name, description, action_obj, is_valid_obj, None)
+
+	@classmethod
+	def get_valid_list(cls, context: PluginCommandContext):
 		"""Dict of registered plugins"""
 		commands = list(cls)
 		result = {}
@@ -765,7 +831,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 				result[cmd.name] = cmd
 		return result
 
-	def is_valid(self, context):
+	def is_valid(self, context: PluginCommandContext):
 		if context.view is None:
 			return False
 		if self._command.type == PluginCommandType.DefaultPluginCommand:
@@ -847,9 +913,15 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			    self._command.context, context.view.handle, context.instruction.function.handle,
 			    context.instruction.instr_index
 			)
+		elif self._command.type == PluginCommandType.ProjectPluginCommand:
+			if context.project is None:
+				return False
+			if not self._command.projectIsValid:
+				return True
+			return self._command.projectIsValid(self._command.context, context.project.handle)
 		return False
 
-	def execute(self, context):
+	def execute(self, context: PluginCommandContext):
 		r"""
 		``execute`` Execute a plugin. See the example in :class:`~PluginCommandContext`
 
@@ -895,6 +967,8 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			    self._command.context, context.view.handle, context.instruction.function.handle,
 			    context.instruction.instr_index
 			)
+		elif self._command.type == PluginCommandType.ProjectPluginCommand:
+			self._command.projectCommand(self._command.context, context.project.handle)
 
 	def __repr__(self):
 		return "<PluginCommand: %s>" % self._name
@@ -967,7 +1041,7 @@ class MainThreadActionHandler:
 		try:
 			self.add_action(MainThreadAction(action))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in MainThreadActionHandler._add_action")
 
 	def add_action(self, action):
 		pass

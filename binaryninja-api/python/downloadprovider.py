@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -29,7 +29,7 @@ from urllib.parse import urlencode
 import binaryninja
 import binaryninja._binaryninjacore as core
 from . import settings
-from .log import log_error
+from .log import log_error_for_exception, log_error
 
 
 def to_bytes(field):
@@ -75,13 +75,13 @@ class DownloadInstance(object):
 				self.__class__._registered_instances.remove(self)
 			self.perform_destroy_instance()
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in DownloadInstance._destroy_instance")
 
 	def _perform_request(self, ctxt, url):
 		try:
 			return self.perform_request(url)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in DownloadInstance._perform_request")
 			return -1
 
 	def _perform_custom_request(self, ctxt, method, url, header_count, header_keys, header_values, response):
@@ -117,7 +117,7 @@ class DownloadInstance(object):
 			except Exception as e:
 				out_response[0] = None
 				core.BNSetErrorForDownloadInstance(self.handle, e.__class__.__name__)
-				log_error(traceback.format_exc())
+				log_error_for_exception("Unhandled Python exception in DownloadInstance._perform_custom_request")
 				return -1
 
 			if py_response is not None:
@@ -137,7 +137,7 @@ class DownloadInstance(object):
 			return 0 if py_response is not None else -1
 		except:
 			out_response[0] = None
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in DownloadInstance._perform_custom_request")
 			return -1
 
 	def _free_response(self, ctxt, response):
@@ -168,7 +168,7 @@ class DownloadInstance(object):
 
 			return bytes_len
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in DownloadInstance._read_callback")
 			return 0
 
 	def _write_callback(self, data, len, ctxt):
@@ -177,7 +177,7 @@ class DownloadInstance(object):
 			self._response = self._response + str_bytes
 			return len
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in DownloadInstance._write_callback")
 			return 0
 
 	def get_response(self, url):
@@ -297,7 +297,7 @@ class DownloadProvider(metaclass=_DownloadProviderMetaclass):
 			assert download_instance is not None, "core.BNNewDownloadInstanceReference returned None"
 			return ctypes.cast(download_instance, ctypes.c_void_p).value
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in DownloadProvider._create_instance")
 			return None
 
 	def create_instance(self):
@@ -387,7 +387,7 @@ try:
 				return -1
 			except:
 				core.BNSetErrorForDownloadInstance(self.handle, "Unknown Exception!")
-				log_error(traceback.format_exc())
+				log_error_for_exception("Unhandled Python exception in PythonDownloadInstance.perform_request")
 				return -1
 
 			return 0
@@ -486,11 +486,11 @@ if not _loaded and (sys.platform != "win32"):
 
 				except URLError as e:
 					core.BNSetErrorForDownloadInstance(self.handle, e.__class__.__name__)
-					log_error(str(e))
+					log_error_for_exception(str(e))
 					return -1
 				except:
 					core.BNSetErrorForDownloadInstance(self.handle, "Unknown Exception!")
-					log_error(traceback.format_exc())
+					log_error_for_exception("Unhandled Python exception in PythonDownloadInstance.perform_request")
 					return -1
 
 				return 0

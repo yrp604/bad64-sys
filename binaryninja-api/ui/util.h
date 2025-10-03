@@ -31,7 +31,7 @@ std::optional<BinaryNinja::PossibleValueSet> BINARYNINJAUIAPI getPossibleValueSe
 std::optional<uint64_t> BINARYNINJAUIAPI getAddressOfILTokenExpr(View* view, HighlightTokenState token);
 
 template <typename T>
-std::optional<T> visitILInstructionForToken(View* view, HighlightTokenState token,
+std::optional<T> visitILInstructionForToken(View* view, const HighlightTokenState& token,
 		const std::function<std::optional<T>(BinaryNinja::LowLevelILInstruction&)>& llil,
 		const std::function<std::optional<T>(BinaryNinja::MediumLevelILInstruction&)>& mlil,
 		const std::function<std::optional<T>(BinaryNinja::HighLevelILInstruction&)>& hlil)
@@ -56,42 +56,101 @@ std::optional<T> visitILInstructionForToken(View* view, HighlightTokenState toke
 	case LowLevelILSSAFormFunctionGraph:
 	{
 		LowLevelILFunctionRef llilFunc = view->getCurrentLowLevelILFunction();
+
 		if (llilFunc && type == LowLevelILSSAFormFunctionGraph)
 			llilFunc = llilFunc->GetSSAForm();
-		if (llilFunc)
+
+		if (!llilFunc)
+			break;
+
+		if (token.token.exprIndex >= llilFunc->GetExprCount())
 		{
-			BinaryNinja::LowLevelILInstruction instr = llilFunc->GetExpr(token.token.exprIndex);
-			return llil(instr);
+			FunctionRef func = llilFunc->GetFunction();
+			uint64_t start = func ? func->GetStart() : 0;
+
+			BinaryNinja::LogErrorF("Invalid LowLevelIL token exprIndex {} in {} of {:x}", token.token.exprIndex, type, start);
+			break;
 		}
 
-		break;
+		BinaryNinja::LowLevelILInstruction instr = llilFunc->GetExpr(token.token.exprIndex);
+
+		if (instr.instructionIndex >= llilFunc->GetInstructionCount())
+		{
+			FunctionRef func = llilFunc->GetFunction();
+			uint64_t start = func ? func->GetStart() : 0;
+
+			BinaryNinja::LogErrorF("Invalid LowLevelIL token exprIndex {} in {} of {:x} (reported instrIndex {})", token.token.exprIndex, type, start, instr.instructionIndex);
+			break;
+		}
+
+		return llil(instr);
 	}
 	case MediumLevelILFunctionGraph:
 	case MediumLevelILSSAFormFunctionGraph:
 	{
 		MediumLevelILFunctionRef mlilFunc = view->getCurrentMediumLevelILFunction();
+
 		if (mlilFunc && type == MediumLevelILSSAFormFunctionGraph)
 			mlilFunc = mlilFunc->GetSSAForm();
-		if (mlilFunc)
+
+		if (!mlilFunc)
+			break;
+
+		if (token.token.exprIndex >= mlilFunc->GetExprCount())
 		{
-			BinaryNinja::MediumLevelILInstruction instr = mlilFunc->GetExpr(token.token.exprIndex);
-			return mlil(instr);
+			FunctionRef func = mlilFunc->GetFunction();
+			uint64_t start = func ? func->GetStart() : 0;
+
+			BinaryNinja::LogErrorF("Invalid MediumLevelIL token exprIndex {} in {} of {:x}", token.token.exprIndex, type, start);
+			break;
 		}
-		break;
+
+		BinaryNinja::MediumLevelILInstruction instr = mlilFunc->GetExpr(token.token.exprIndex);
+
+		if (instr.instructionIndex >= mlilFunc->GetInstructionCount())
+		{
+			FunctionRef func = mlilFunc->GetFunction();
+			uint64_t start = func ? func->GetStart() : 0;
+
+			BinaryNinja::LogErrorF("Invalid MediumLevelIL token exprIndex {} in {} of {:x} (reported instrIndex {})", token.token.exprIndex, type, start, instr.instructionIndex);
+			break;
+		}
+
+		return mlil(instr);
 	}
 	case HighLevelILFunctionGraph:
 	case HighLevelILSSAFormFunctionGraph:
 	case HighLevelLanguageRepresentationFunctionGraph:
 	{
 		HighLevelILFunctionRef hlilFunc = view->getCurrentHighLevelILFunction();
+
 		if (hlilFunc && type == HighLevelILSSAFormFunctionGraph)
 			hlilFunc = hlilFunc->GetSSAForm();
-		if (hlilFunc)
+
+		if (!hlilFunc)
+			break;
+
+		if (token.token.exprIndex >= hlilFunc->GetExprCount())
 		{
-			BinaryNinja::HighLevelILInstruction instr = hlilFunc->GetExpr(token.token.exprIndex);
-			return hlil(instr);
+			FunctionRef func = hlilFunc->GetFunction();
+			uint64_t start = func ? func->GetStart() : 0;
+
+			BinaryNinja::LogErrorF("Invalid HighLevelIL token exprIndex {} in {} of {:x}", token.token.exprIndex, type, start);
+			break;
 		}
-		break;
+
+		BinaryNinja::HighLevelILInstruction instr = hlilFunc->GetExpr(token.token.exprIndex);
+
+		if (instr.instructionIndex >= hlilFunc->GetInstructionCount())
+		{
+			FunctionRef func = hlilFunc->GetFunction();
+			uint64_t start = func ? func->GetStart() : 0;
+
+			BinaryNinja::LogErrorF("Invalid HighLevelIL token exprIndex {} in {} of {:x} (reported instrIndex {})", token.token.exprIndex, type, start, instr.instructionIndex);
+			break;
+		}
+
+		return hlil(instr);
 	}
 	default:
 		break;
@@ -118,7 +177,7 @@ namespace fmt
 	template<typename... T>
 	QString qformat(format_string<T...> fmt, T&&... args)
 	{
-		return QString::fromStdString(vformat(fmt, make_format_args(args...)));
+		return QString::fromStdString(vformat(fmt, fmt::make_format_args(args...)));
 	}
 }
 

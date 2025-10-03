@@ -49,6 +49,7 @@ struct BINARYNINJAUIAPI LogListItem
 	size_t sessionId;
 	BNLogLevel level;
 	QString text;
+	QString stackTrace;
 	LogTokenList tokens;
 	bool selected;
 	QString logger;
@@ -122,6 +123,7 @@ class BINARYNINJAUIAPI LogListModel : public QAbstractItemModel, BinaryNinja::Lo
 		static constexpr int Session = Qt::UserRole + 5;
 		static constexpr int FormattedMessage = Qt::UserRole + 6;
 		static constexpr int Tokens = Qt::UserRole + 7;
+		static constexpr int StackTrace = Qt::UserRole + 8;
 
 		LogListModel(QWidget* parent);
 		~LogListModel();
@@ -130,6 +132,8 @@ class BINARYNINJAUIAPI LogListModel : public QAbstractItemModel, BinaryNinja::Lo
 		void clear();
 
 		virtual void LogMessage(size_t sessionId, BNLogLevel level, const std::string& msg, const std::string& loggerName = "", size_t tid = 0) override;
+		virtual void LogMessageWithStackTrace(size_t sessionId, BNLogLevel level, const std::string& stackTrace,
+			const std::string& msg, const std::string& loggerName = "", size_t tid = 0) override;
 		virtual BNLogLevel GetLogLevel() override;
 
 		QString getFormattedMessage(const LogListItem& item) const;
@@ -170,8 +174,6 @@ class BINARYNINJAUIAPI LogItemDelegate : public QStyledItemDelegate, public Bina
 	Q_OBJECT
 
 	QWidget* m_owner;
-	ViewFrame* m_viewFrame = nullptr;
-	View* m_view = nullptr;
 	BinaryViewRef m_data;
 	std::vector<BNAddressRange> m_mappedRanges;
 	QFont m_font;

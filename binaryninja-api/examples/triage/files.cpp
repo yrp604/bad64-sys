@@ -46,7 +46,7 @@ TriageFilePicker::TriageFilePicker(UIContext* context)
 	}
 
 	m_actionHandler.bindAction(
-	    "Open Selected Files", UIAction([=]() { openSelectedFiles(); }, [=]() { return areFilesSelected(); }));
+	    "Open Selected Files", UIAction([=, this]() { openSelectedFiles(); }, [=, this]() { return areFilesSelected(); }));
 	m_contextMenu.addAction("Open Selected Files", "Open");
 }
 

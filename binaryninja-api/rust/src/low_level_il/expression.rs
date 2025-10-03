@@ -1,4 +1,4 @@
-// Copyright 2021-2024 Vector 35 Inc.
+// Copyright 2021-2025 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,16 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use binaryninjacore_sys::BNGetLowLevelILByIndex;
 use binaryninjacore_sys::BNLowLevelILInstruction;
+use binaryninjacore_sys::{
+    BNGetLowLevelILByIndex, BNGetLowLevelILExprValue, BNGetLowLevelILPossibleExprValues,
+};
 
 use super::operation;
 use super::operation::Operation;
 use super::VisitorAction;
 use super::*;
-use crate::architecture::Architecture;
+use crate::architecture::CoreFlagWrite;
+use crate::variable::{PossibleValueSet, RegisterValue};
+use crate::DataFlowQueryOption;
 use std::fmt;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::marker::PhantomData;
 
 /// Used as a marker for an [`LowLevelILExpression`] that **can** produce a value.
@@ -32,7 +36,7 @@ pub struct ValueExpr;
 #[derive(Copy, Clone, Debug)]
 pub struct VoidExpr;
 
-pub trait ExpressionResultType: 'static {}
+pub trait ExpressionResultType: 'static + Debug {}
 impl ExpressionResultType for ValueExpr {}
 impl ExpressionResultType for VoidExpr {}
 
@@ -47,44 +51,54 @@ impl Display for LowLevelExpressionIndex {
 }
 
 // TODO: Probably want to rename this with a LowLevelIL prefix to avoid collisions when we add handlers for other ILs
-pub trait ExpressionHandler<'func, A, M, F>
+pub trait ExpressionHandler<'func, M, F>
 where
-    A: Architecture,
     M: FunctionMutability,
     F: FunctionForm,
 {
-    fn kind(&self) -> LowLevelILExpressionKind<'func, A, M, F>;
+    fn kind(&self) -> LowLevelILExpressionKind<'func, M, F>;
 
     fn visit_tree<T>(&self, f: &mut T) -> VisitorAction
     where
-        T: FnMut(&LowLevelILExpression<'func, A, M, F, ValueExpr>) -> VisitorAction;
+        T: FnMut(&LowLevelILExpression<'func, M, F, ValueExpr>) -> VisitorAction;
 }
 
-pub struct LowLevelILExpression<'func, A, M, F, R>
+#[derive(Copy)]
+pub struct LowLevelILExpression<'func, M, F, R>
 where
-    A: 'func + Architecture,
     M: FunctionMutability,
     F: FunctionForm,
     R: ExpressionResultType,
 {
-    pub(crate) function: &'func LowLevelILFunction<A, M, F>,
+    pub(crate) function: &'func LowLevelILFunction<M, F>,
     pub index: LowLevelExpressionIndex,
 
     // tag the 'return' type of this expression
     pub(crate) _ty: PhantomData<R>,
 }
 
-impl<'func, A, M, F, R> LowLevelILExpression<'func, A, M, F, R>
+impl<M, F, R> Clone for LowLevelILExpression<'_, M, F, R>
 where
-    A: 'func + Architecture,
     M: FunctionMutability,
     F: FunctionForm,
     R: ExpressionResultType,
 {
-    pub(crate) fn new(
-        function: &'func LowLevelILFunction<A, M, F>,
-        index: LowLevelExpressionIndex,
-    ) -> Self {
+    fn clone(&self) -> Self {
+        Self {
+            function: self.function,
+            index: self.index,
+            _ty: PhantomData,
+        }
+    }
+}
+
+impl<'func, M, F, R> LowLevelILExpression<'func, M, F, R>
+where
+    M: FunctionMutability,
+    F: FunctionForm,
+    R: ExpressionResultType,
+{
+    pub fn new(function: &'func LowLevelILFunction<M, F>, index: LowLevelExpressionIndex) -> Self {
         // TODO: Validate expression here?
         Self {
             function,
@@ -94,27 +108,54 @@ where
     }
 }
 
-impl<'func, A, M, F, R> fmt::Debug for LowLevelILExpression<'func, A, M, F, R>
+impl<M, F, R> Debug for LowLevelILExpression<'_, M, F, R>
 where
-    A: 'func + Architecture,
     M: FunctionMutability,
     F: FunctionForm,
     R: ExpressionResultType,
 {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.debug_struct("Expression")
-            .field("index", &self.index)
-            .finish()
+        let op = unsafe { BNGetLowLevelILByIndex(self.function.handle, self.index.0) };
+        let kind = LowLevelILExpressionKind::from_raw(self.function, op, self.index);
+        kind.fmt(f)
     }
 }
 
-impl<'func, A, M> ExpressionHandler<'func, A, M, SSA>
-    for LowLevelILExpression<'func, A, M, SSA, ValueExpr>
+impl<M, R> LowLevelILExpression<'_, M, SSA, R>
 where
-    A: 'func + Architecture,
+    M: FunctionMutability,
+    R: ExpressionResultType,
+{
+    pub fn non_ssa_form<'func>(
+        &self,
+        non_ssa: &'func LowLevelILFunction<M, NonSSA>,
+    ) -> LowLevelILExpression<'func, M, NonSSA, R> {
+        use binaryninjacore_sys::BNGetLowLevelILNonSSAExprIndex;
+        let idx = unsafe { BNGetLowLevelILNonSSAExprIndex(self.function.handle, self.index.0) };
+        LowLevelILExpression::new(non_ssa, LowLevelExpressionIndex(idx))
+    }
+}
+
+impl<M, R> LowLevelILExpression<'_, M, NonSSA, R>
+where
+    M: FunctionMutability,
+    R: ExpressionResultType,
+{
+    pub fn ssa_form<'func>(
+        &self,
+        ssa: &'func LowLevelILFunction<M, SSA>,
+    ) -> LowLevelILExpression<'func, M, SSA, R> {
+        use binaryninjacore_sys::BNGetLowLevelILSSAExprIndex;
+        let idx = unsafe { BNGetLowLevelILSSAExprIndex(self.function.handle, self.index.0) };
+        LowLevelILExpression::new(ssa, LowLevelExpressionIndex(idx))
+    }
+}
+
+impl<'func, M> ExpressionHandler<'func, M, SSA> for LowLevelILExpression<'func, M, SSA, ValueExpr>
+where
     M: FunctionMutability,
 {
-    fn kind(&self) -> LowLevelILExpressionKind<'func, A, M, SSA> {
+    fn kind(&self) -> LowLevelILExpressionKind<'func, M, SSA> {
         #[allow(unused_imports)]
         use binaryninjacore_sys::BNLowLevelILOperation::*;
         let op = unsafe { BNGetLowLevelILByIndex(self.function.handle, self.index.0) };
@@ -122,13 +163,13 @@ where
         match op.operation {
             // Any invalid ops for SSA will be checked here.
             // SAFETY: We have checked for illegal operations.
-            _ => unsafe { LowLevelILExpressionKind::from_raw(self.function, op) },
+            _ => LowLevelILExpressionKind::from_raw(self.function, op, self.index),
         }
     }
 
     fn visit_tree<T>(&self, f: &mut T) -> VisitorAction
     where
-        T: FnMut(&LowLevelILExpression<'func, A, M, SSA, ValueExpr>) -> VisitorAction,
+        T: FnMut(&LowLevelILExpression<'func, M, SSA, ValueExpr>) -> VisitorAction,
     {
         // Visit the current expression.
         match f(self) {
@@ -141,13 +182,12 @@ where
     }
 }
 
-impl<'func, A, M> ExpressionHandler<'func, A, M, NonSSA<LiftedNonSSA>>
-    for LowLevelILExpression<'func, A, M, NonSSA<LiftedNonSSA>, ValueExpr>
+impl<'func, M> ExpressionHandler<'func, M, NonSSA>
+    for LowLevelILExpression<'func, M, NonSSA, ValueExpr>
 where
-    A: 'func + Architecture,
     M: FunctionMutability,
 {
-    fn kind(&self) -> LowLevelILExpressionKind<'func, A, M, NonSSA<LiftedNonSSA>> {
+    fn kind(&self) -> LowLevelILExpressionKind<'func, M, NonSSA> {
         #[allow(unused_imports)]
         use binaryninjacore_sys::BNLowLevelILOperation::*;
         let op = unsafe { BNGetLowLevelILByIndex(self.function.handle, self.index.0) };
@@ -155,15 +195,13 @@ where
         match op.operation {
             // Any invalid ops for Lifted IL will be checked here.
             // SAFETY: We have checked for illegal operations.
-            _ => unsafe { LowLevelILExpressionKind::from_raw(self.function, op) },
+            _ => LowLevelILExpressionKind::from_raw(self.function, op, self.index),
         }
     }
 
     fn visit_tree<T>(&self, f: &mut T) -> VisitorAction
     where
-        T: FnMut(
-            &LowLevelILExpression<'func, A, M, NonSSA<LiftedNonSSA>, ValueExpr>,
-        ) -> VisitorAction,
+        T: FnMut(&LowLevelILExpression<'func, M, NonSSA, ValueExpr>) -> VisitorAction,
     {
         // Visit the current expression.
         match f(self) {
@@ -176,282 +214,336 @@ where
     }
 }
 
-impl<'func, A, M> ExpressionHandler<'func, A, M, NonSSA<RegularNonSSA>>
-    for LowLevelILExpression<'func, A, M, NonSSA<RegularNonSSA>, ValueExpr>
+impl<M, F> LowLevelILExpression<'_, M, F, ValueExpr>
 where
-    A: 'func + Architecture,
     M: FunctionMutability,
-{
-    fn kind(&self) -> LowLevelILExpressionKind<'func, A, M, NonSSA<RegularNonSSA>> {
-        use binaryninjacore_sys::BNLowLevelILOperation::*;
-        let op = unsafe { BNGetLowLevelILByIndex(self.function.handle, self.index.0) };
-        match op.operation {
-            // Any invalid ops for Non-Lifted IL will be checked here.
-            LLIL_FLAG_COND => unreachable!("LLIL_FLAG_COND is only valid in Lifted IL"),
-            LLIL_FLAG_GROUP => unreachable!("LLIL_FLAG_GROUP is only valid in Lifted IL"),
-            // SAFETY: We have checked for illegal operations.
-            _ => unsafe { LowLevelILExpressionKind::from_raw(self.function, op) },
-        }
-    }
-
-    fn visit_tree<T>(&self, f: &mut T) -> VisitorAction
-    where
-        T: FnMut(
-            &LowLevelILExpression<'func, A, M, NonSSA<RegularNonSSA>, ValueExpr>,
-        ) -> VisitorAction,
-    {
-        // Visit the current expression.
-        match f(self) {
-            VisitorAction::Descend => {
-                // Recursively visit sub expressions.
-                self.kind().visit_sub_expressions(|e| e.visit_tree(f))
-            }
-            action => action,
-        }
-    }
-}
-
-impl<'func, A, F> LowLevelILExpression<'func, A, Finalized, F, ValueExpr>
-where
-    A: 'func + Architecture,
     F: FunctionForm,
 {
-    // TODO possible values
+    /// Value of expression if constant or a known value.
+    ///
+    /// NOTE: If a value is expressed but not concrete, use [`LowLevelILExpression::possible_values`].
+    pub fn value(&self) -> RegisterValue {
+        let value = unsafe { BNGetLowLevelILExprValue(self.function.handle, self.index.0) };
+        RegisterValue::from(value)
+    }
+
+    /// Possible values of expression using path-sensitive static data flow analysis
+    pub fn possible_values(&self) -> PossibleValueSet {
+        self.possible_values_with_opts(&[])
+    }
+
+    /// Possible values of expression using path-sensitive static data flow analysis
+    pub fn possible_values_with_opts(&self, options: &[DataFlowQueryOption]) -> PossibleValueSet {
+        let value = unsafe {
+            BNGetLowLevelILPossibleExprValues(
+                self.function.handle,
+                self.index.0,
+                options.as_ptr() as *mut _,
+                options.len(),
+            )
+        };
+        PossibleValueSet::from_owned_core_raw(value)
+    }
+
+    // TODO: Possible register, stack and flag values.
 }
 
 #[derive(Debug)]
-pub enum LowLevelILExpressionKind<'func, A, M, F>
+pub enum LowLevelILExpressionKind<'func, M, F>
 where
-    A: 'func + Architecture,
     M: FunctionMutability,
     F: FunctionForm,
 {
-    Load(Operation<'func, A, M, F, operation::Load>),
-    Pop(Operation<'func, A, M, F, operation::Pop>),
-    Reg(Operation<'func, A, M, F, operation::Reg>),
-    RegSplit(Operation<'func, A, M, F, operation::RegSplit>),
-    Const(Operation<'func, A, M, F, operation::Const>),
-    ConstPtr(Operation<'func, A, M, F, operation::Const>),
-    Flag(Operation<'func, A, M, F, operation::Flag>),
-    FlagBit(Operation<'func, A, M, F, operation::FlagBit>),
-    ExternPtr(Operation<'func, A, M, F, operation::Extern>),
+    Load(Operation<'func, M, F, operation::Load>),
+    LoadSsa(Operation<'func, M, F, operation::LoadSsa>),
+    Pop(Operation<'func, M, F, operation::Pop>),
+    Reg(Operation<'func, M, F, operation::Reg>),
+    RegSsa(Operation<'func, M, F, operation::RegSsa>),
+    RegPartialSsa(Operation<'func, M, F, operation::RegPartialSsa>),
+    RegSplit(Operation<'func, M, F, operation::RegSplit>),
+    RegSplitSsa(Operation<'func, M, F, operation::RegSplitSsa>),
+    Const(Operation<'func, M, F, operation::Const>),
+    ConstPtr(Operation<'func, M, F, operation::Const>),
+    Flag(Operation<'func, M, F, operation::Flag>),
+    FlagBit(Operation<'func, M, F, operation::FlagBit>),
+    ExternPtr(Operation<'func, M, F, operation::Extern>),
 
-    RegStackPop(Operation<'func, A, M, F, operation::RegStackPop>),
+    RegStackPop(Operation<'func, M, F, operation::RegStackPop>),
+    RegStackFreeReg(Operation<'func, M, F, operation::RegStackPop>),
 
-    Add(Operation<'func, A, M, F, operation::BinaryOp>),
-    Adc(Operation<'func, A, M, F, operation::BinaryOpCarry>),
-    Sub(Operation<'func, A, M, F, operation::BinaryOp>),
-    Sbb(Operation<'func, A, M, F, operation::BinaryOpCarry>),
-    And(Operation<'func, A, M, F, operation::BinaryOp>),
-    Or(Operation<'func, A, M, F, operation::BinaryOp>),
-    Xor(Operation<'func, A, M, F, operation::BinaryOp>),
-    Lsl(Operation<'func, A, M, F, operation::BinaryOp>),
-    Lsr(Operation<'func, A, M, F, operation::BinaryOp>),
-    Asr(Operation<'func, A, M, F, operation::BinaryOp>),
-    Rol(Operation<'func, A, M, F, operation::BinaryOp>),
-    Rlc(Operation<'func, A, M, F, operation::BinaryOpCarry>),
-    Ror(Operation<'func, A, M, F, operation::BinaryOp>),
-    Rrc(Operation<'func, A, M, F, operation::BinaryOpCarry>),
-    Mul(Operation<'func, A, M, F, operation::BinaryOp>),
+    CallOutputSsa(Operation<'func, M, F, operation::CallOutputSsa>),
+    CallParamSsa(Operation<'func, M, F, operation::CallParamSsa>),
+    CallStackSsa(Operation<'func, M, F, operation::CallStackSsa>),
 
-    MulsDp(Operation<'func, A, M, F, operation::BinaryOp>),
-    MuluDp(Operation<'func, A, M, F, operation::BinaryOp>),
+    Add(Operation<'func, M, F, operation::BinaryOp>),
+    AddOverflow(Operation<'func, M, F, operation::BinaryOp>),
+    Adc(Operation<'func, M, F, operation::BinaryOpCarry>),
+    Sub(Operation<'func, M, F, operation::BinaryOp>),
+    Sbb(Operation<'func, M, F, operation::BinaryOpCarry>),
+    And(Operation<'func, M, F, operation::BinaryOp>),
+    Or(Operation<'func, M, F, operation::BinaryOp>),
+    Xor(Operation<'func, M, F, operation::BinaryOp>),
+    Lsl(Operation<'func, M, F, operation::BinaryOp>),
+    Lsr(Operation<'func, M, F, operation::BinaryOp>),
+    Asr(Operation<'func, M, F, operation::BinaryOp>),
+    Rol(Operation<'func, M, F, operation::BinaryOp>),
+    Rlc(Operation<'func, M, F, operation::BinaryOpCarry>),
+    Ror(Operation<'func, M, F, operation::BinaryOp>),
+    Rrc(Operation<'func, M, F, operation::BinaryOpCarry>),
+    Mul(Operation<'func, M, F, operation::BinaryOp>),
 
-    Divu(Operation<'func, A, M, F, operation::BinaryOp>),
-    Divs(Operation<'func, A, M, F, operation::BinaryOp>),
+    MulsDp(Operation<'func, M, F, operation::BinaryOp>),
+    MuluDp(Operation<'func, M, F, operation::BinaryOp>),
 
-    DivuDp(Operation<'func, A, M, F, operation::DoublePrecDivOp>),
-    DivsDp(Operation<'func, A, M, F, operation::DoublePrecDivOp>),
+    Divu(Operation<'func, M, F, operation::BinaryOp>),
+    Divs(Operation<'func, M, F, operation::BinaryOp>),
 
-    Modu(Operation<'func, A, M, F, operation::BinaryOp>),
-    Mods(Operation<'func, A, M, F, operation::BinaryOp>),
+    DivuDp(Operation<'func, M, F, operation::BinaryOp>),
+    DivsDp(Operation<'func, M, F, operation::BinaryOp>),
 
-    ModuDp(Operation<'func, A, M, F, operation::DoublePrecDivOp>),
-    ModsDp(Operation<'func, A, M, F, operation::DoublePrecDivOp>),
+    Modu(Operation<'func, M, F, operation::BinaryOp>),
+    Mods(Operation<'func, M, F, operation::BinaryOp>),
 
-    Neg(Operation<'func, A, M, F, operation::UnaryOp>),
-    Not(Operation<'func, A, M, F, operation::UnaryOp>),
-    Sx(Operation<'func, A, M, F, operation::UnaryOp>),
-    Zx(Operation<'func, A, M, F, operation::UnaryOp>),
-    LowPart(Operation<'func, A, M, F, operation::UnaryOp>),
+    ModuDp(Operation<'func, M, F, operation::BinaryOp>),
+    ModsDp(Operation<'func, M, F, operation::BinaryOp>),
+
+    Neg(Operation<'func, M, F, operation::UnaryOp>),
+    Not(Operation<'func, M, F, operation::UnaryOp>),
+    Sx(Operation<'func, M, F, operation::UnaryOp>),
+    Zx(Operation<'func, M, F, operation::UnaryOp>),
+    LowPart(Operation<'func, M, F, operation::UnaryOp>),
 
     // Valid only in Lifted IL
-    FlagCond(Operation<'func, A, M, NonSSA<LiftedNonSSA>, operation::FlagCond>),
+    FlagCond(Operation<'func, M, F, operation::FlagCond>),
     // Valid only in Lifted IL
-    FlagGroup(Operation<'func, A, M, NonSSA<LiftedNonSSA>, operation::FlagGroup>),
+    FlagGroup(Operation<'func, M, F, operation::FlagGroup>),
 
-    CmpE(Operation<'func, A, M, F, operation::Condition>),
-    CmpNe(Operation<'func, A, M, F, operation::Condition>),
-    CmpSlt(Operation<'func, A, M, F, operation::Condition>),
-    CmpUlt(Operation<'func, A, M, F, operation::Condition>),
-    CmpSle(Operation<'func, A, M, F, operation::Condition>),
-    CmpUle(Operation<'func, A, M, F, operation::Condition>),
-    CmpSge(Operation<'func, A, M, F, operation::Condition>),
-    CmpUge(Operation<'func, A, M, F, operation::Condition>),
-    CmpSgt(Operation<'func, A, M, F, operation::Condition>),
-    CmpUgt(Operation<'func, A, M, F, operation::Condition>),
+    CmpE(Operation<'func, M, F, operation::Condition>),
+    CmpNe(Operation<'func, M, F, operation::Condition>),
+    CmpSlt(Operation<'func, M, F, operation::Condition>),
+    CmpUlt(Operation<'func, M, F, operation::Condition>),
+    CmpSle(Operation<'func, M, F, operation::Condition>),
+    CmpUle(Operation<'func, M, F, operation::Condition>),
+    CmpSge(Operation<'func, M, F, operation::Condition>),
+    CmpUge(Operation<'func, M, F, operation::Condition>),
+    CmpSgt(Operation<'func, M, F, operation::Condition>),
+    CmpUgt(Operation<'func, M, F, operation::Condition>),
 
-    //TestBit(Operation<'func, A, M, F, operation::TestBit>), // TODO
-    BoolToInt(Operation<'func, A, M, F, operation::UnaryOp>),
+    TestBit(Operation<'func, M, F, operation::BinaryOp>),
+    BoolToInt(Operation<'func, M, F, operation::UnaryOp>),
 
-    Fadd(Operation<'func, A, M, F, operation::BinaryOp>),
-    Fsub(Operation<'func, A, M, F, operation::BinaryOp>),
-    Fmul(Operation<'func, A, M, F, operation::BinaryOp>),
-    Fdiv(Operation<'func, A, M, F, operation::BinaryOp>),
-    Fsqrt(Operation<'func, A, M, F, operation::UnaryOp>),
-    Fneg(Operation<'func, A, M, F, operation::UnaryOp>),
-    Fabs(Operation<'func, A, M, F, operation::UnaryOp>),
-    FloatToInt(Operation<'func, A, M, F, operation::UnaryOp>),
-    IntToFloat(Operation<'func, A, M, F, operation::UnaryOp>),
-    FloatConv(Operation<'func, A, M, F, operation::UnaryOp>),
-    RoundToInt(Operation<'func, A, M, F, operation::UnaryOp>),
-    Floor(Operation<'func, A, M, F, operation::UnaryOp>),
-    Ceil(Operation<'func, A, M, F, operation::UnaryOp>),
-    Ftrunc(Operation<'func, A, M, F, operation::UnaryOp>),
+    Fadd(Operation<'func, M, F, operation::BinaryOp>),
+    Fsub(Operation<'func, M, F, operation::BinaryOp>),
+    Fmul(Operation<'func, M, F, operation::BinaryOp>),
+    Fdiv(Operation<'func, M, F, operation::BinaryOp>),
+    Fsqrt(Operation<'func, M, F, operation::UnaryOp>),
+    Fneg(Operation<'func, M, F, operation::UnaryOp>),
+    Fabs(Operation<'func, M, F, operation::UnaryOp>),
+    FloatToInt(Operation<'func, M, F, operation::UnaryOp>),
+    IntToFloat(Operation<'func, M, F, operation::UnaryOp>),
+    FloatConv(Operation<'func, M, F, operation::UnaryOp>),
+    RoundToInt(Operation<'func, M, F, operation::UnaryOp>),
+    Floor(Operation<'func, M, F, operation::UnaryOp>),
+    Ceil(Operation<'func, M, F, operation::UnaryOp>),
+    Ftrunc(Operation<'func, M, F, operation::UnaryOp>),
 
-    FcmpE(Operation<'func, A, M, F, operation::Condition>),
-    FcmpNE(Operation<'func, A, M, F, operation::Condition>),
-    FcmpLT(Operation<'func, A, M, F, operation::Condition>),
-    FcmpLE(Operation<'func, A, M, F, operation::Condition>),
-    FcmpGE(Operation<'func, A, M, F, operation::Condition>),
-    FcmpGT(Operation<'func, A, M, F, operation::Condition>),
-    FcmpO(Operation<'func, A, M, F, operation::Condition>),
-    FcmpUO(Operation<'func, A, M, F, operation::Condition>),
+    FloatConst(Operation<'func, M, F, operation::FloatConst>),
 
-    // TODO ADD_OVERFLOW
-    Unimpl(Operation<'func, A, M, F, operation::NoArgs>),
-    UnimplMem(Operation<'func, A, M, F, operation::UnimplMem>),
+    FcmpE(Operation<'func, M, F, operation::Condition>),
+    FcmpNE(Operation<'func, M, F, operation::Condition>),
+    FcmpLT(Operation<'func, M, F, operation::Condition>),
+    FcmpLE(Operation<'func, M, F, operation::Condition>),
+    FcmpGE(Operation<'func, M, F, operation::Condition>),
+    FcmpGT(Operation<'func, M, F, operation::Condition>),
+    FcmpO(Operation<'func, M, F, operation::Condition>),
+    FcmpUO(Operation<'func, M, F, operation::Condition>),
 
-    Undef(Operation<'func, A, M, F, operation::NoArgs>),
+    SeparateParamListSsa(Operation<'func, M, F, operation::SeparateParamListSsa>),
+
+    Unimpl(Operation<'func, M, F, operation::NoArgs>),
+    UnimplMem(Operation<'func, M, F, operation::UnimplMem>),
+
+    Undef(Operation<'func, M, F, operation::NoArgs>),
 }
 
-impl<'func, A, M, F> LowLevelILExpressionKind<'func, A, M, F>
+impl<'func, M, F> LowLevelILExpressionKind<'func, M, F>
 where
-    A: 'func + Architecture,
     M: FunctionMutability,
     F: FunctionForm,
 {
-    // TODO: Document what "unchecked" means and how to consume this safely.
-    pub(crate) unsafe fn from_raw(
-        function: &'func LowLevelILFunction<A, M, F>,
+    pub(crate) fn from_raw(
+        function: &'func LowLevelILFunction<M, F>,
         op: BNLowLevelILInstruction,
+        index: LowLevelExpressionIndex,
     ) -> Self {
         use binaryninjacore_sys::BNLowLevelILOperation::*;
 
         match op.operation {
-            LLIL_LOAD | LLIL_LOAD_SSA => {
-                LowLevelILExpressionKind::Load(Operation::new(function, op))
+            LLIL_LOAD => LowLevelILExpressionKind::Load(Operation::new(function, op, index)),
+            LLIL_LOAD_SSA => LowLevelILExpressionKind::LoadSsa(Operation::new(function, op, index)),
+            LLIL_POP => LowLevelILExpressionKind::Pop(Operation::new(function, op, index)),
+            LLIL_REG => LowLevelILExpressionKind::Reg(Operation::new(function, op, index)),
+            LLIL_REG_SSA => LowLevelILExpressionKind::RegSsa(Operation::new(function, op, index)),
+            LLIL_REG_SSA_PARTIAL => {
+                LowLevelILExpressionKind::RegPartialSsa(Operation::new(function, op, index))
             }
-            LLIL_POP => LowLevelILExpressionKind::Pop(Operation::new(function, op)),
-            LLIL_REG | LLIL_REG_SSA | LLIL_REG_SSA_PARTIAL => {
-                LowLevelILExpressionKind::Reg(Operation::new(function, op))
+            LLIL_REG_SPLIT => {
+                LowLevelILExpressionKind::RegSplit(Operation::new(function, op, index))
             }
-            LLIL_REG_SPLIT | LLIL_REG_SPLIT_SSA => {
-                LowLevelILExpressionKind::RegSplit(Operation::new(function, op))
+            LLIL_REG_SPLIT_SSA => {
+                LowLevelILExpressionKind::RegSplitSsa(Operation::new(function, op, index))
             }
-            LLIL_CONST => LowLevelILExpressionKind::Const(Operation::new(function, op)),
-            LLIL_CONST_PTR => LowLevelILExpressionKind::ConstPtr(Operation::new(function, op)),
+            LLIL_CONST => LowLevelILExpressionKind::Const(Operation::new(function, op, index)),
+            LLIL_CONST_PTR => {
+                LowLevelILExpressionKind::ConstPtr(Operation::new(function, op, index))
+            }
             LLIL_FLAG | LLIL_FLAG_SSA => {
-                LowLevelILExpressionKind::Flag(Operation::new(function, op))
+                LowLevelILExpressionKind::Flag(Operation::new(function, op, index))
+            }
+            LLIL_FLAG_GROUP => {
+                LowLevelILExpressionKind::FlagGroup(Operation::new(function, op, index))
+            }
+            LLIL_FLAG_COND => {
+                LowLevelILExpressionKind::FlagCond(Operation::new(function, op, index))
             }
             LLIL_FLAG_BIT | LLIL_FLAG_BIT_SSA => {
-                LowLevelILExpressionKind::FlagBit(Operation::new(function, op))
+                LowLevelILExpressionKind::FlagBit(Operation::new(function, op, index))
             }
-            LLIL_EXTERN_PTR => LowLevelILExpressionKind::ExternPtr(Operation::new(function, op)),
+            LLIL_EXTERN_PTR => {
+                LowLevelILExpressionKind::ExternPtr(Operation::new(function, op, index))
+            }
 
             LLIL_REG_STACK_POP => {
-                LowLevelILExpressionKind::RegStackPop(Operation::new(function, op))
+                LowLevelILExpressionKind::RegStackPop(Operation::new(function, op, index))
+            }
+            LLIL_REG_STACK_FREE_REG => {
+                LowLevelILExpressionKind::RegStackFreeReg(Operation::new(function, op, index))
             }
 
-            LLIL_ADD => LowLevelILExpressionKind::Add(Operation::new(function, op)),
-            LLIL_ADC => LowLevelILExpressionKind::Adc(Operation::new(function, op)),
-            LLIL_SUB => LowLevelILExpressionKind::Sub(Operation::new(function, op)),
-            LLIL_SBB => LowLevelILExpressionKind::Sbb(Operation::new(function, op)),
-            LLIL_AND => LowLevelILExpressionKind::And(Operation::new(function, op)),
-            LLIL_OR => LowLevelILExpressionKind::Or(Operation::new(function, op)),
-            LLIL_XOR => LowLevelILExpressionKind::Xor(Operation::new(function, op)),
-            LLIL_LSL => LowLevelILExpressionKind::Lsl(Operation::new(function, op)),
-            LLIL_LSR => LowLevelILExpressionKind::Lsr(Operation::new(function, op)),
-            LLIL_ASR => LowLevelILExpressionKind::Asr(Operation::new(function, op)),
-            LLIL_ROL => LowLevelILExpressionKind::Rol(Operation::new(function, op)),
-            LLIL_RLC => LowLevelILExpressionKind::Rlc(Operation::new(function, op)),
-            LLIL_ROR => LowLevelILExpressionKind::Ror(Operation::new(function, op)),
-            LLIL_RRC => LowLevelILExpressionKind::Rrc(Operation::new(function, op)),
-            LLIL_MUL => LowLevelILExpressionKind::Mul(Operation::new(function, op)),
+            LLIL_CALL_OUTPUT_SSA => {
+                LowLevelILExpressionKind::CallOutputSsa(Operation::new(function, op, index))
+            }
+            LLIL_CALL_PARAM => {
+                LowLevelILExpressionKind::CallParamSsa(Operation::new(function, op, index))
+            }
+            LLIL_CALL_STACK_SSA => {
+                LowLevelILExpressionKind::CallStackSsa(Operation::new(function, op, index))
+            }
 
-            LLIL_MULU_DP => LowLevelILExpressionKind::MuluDp(Operation::new(function, op)),
-            LLIL_MULS_DP => LowLevelILExpressionKind::MulsDp(Operation::new(function, op)),
+            LLIL_ADD => LowLevelILExpressionKind::Add(Operation::new(function, op, index)),
+            LLIL_ADD_OVERFLOW => {
+                LowLevelILExpressionKind::AddOverflow(Operation::new(function, op, index))
+            }
+            LLIL_ADC => LowLevelILExpressionKind::Adc(Operation::new(function, op, index)),
+            LLIL_SUB => LowLevelILExpressionKind::Sub(Operation::new(function, op, index)),
+            LLIL_SBB => LowLevelILExpressionKind::Sbb(Operation::new(function, op, index)),
+            LLIL_AND => LowLevelILExpressionKind::And(Operation::new(function, op, index)),
+            LLIL_OR => LowLevelILExpressionKind::Or(Operation::new(function, op, index)),
+            LLIL_XOR => LowLevelILExpressionKind::Xor(Operation::new(function, op, index)),
+            LLIL_LSL => LowLevelILExpressionKind::Lsl(Operation::new(function, op, index)),
+            LLIL_LSR => LowLevelILExpressionKind::Lsr(Operation::new(function, op, index)),
+            LLIL_ASR => LowLevelILExpressionKind::Asr(Operation::new(function, op, index)),
+            LLIL_ROL => LowLevelILExpressionKind::Rol(Operation::new(function, op, index)),
+            LLIL_RLC => LowLevelILExpressionKind::Rlc(Operation::new(function, op, index)),
+            LLIL_ROR => LowLevelILExpressionKind::Ror(Operation::new(function, op, index)),
+            LLIL_RRC => LowLevelILExpressionKind::Rrc(Operation::new(function, op, index)),
+            LLIL_MUL => LowLevelILExpressionKind::Mul(Operation::new(function, op, index)),
 
-            LLIL_DIVU => LowLevelILExpressionKind::Divu(Operation::new(function, op)),
-            LLIL_DIVS => LowLevelILExpressionKind::Divs(Operation::new(function, op)),
+            LLIL_MULU_DP => LowLevelILExpressionKind::MuluDp(Operation::new(function, op, index)),
+            LLIL_MULS_DP => LowLevelILExpressionKind::MulsDp(Operation::new(function, op, index)),
 
-            LLIL_DIVU_DP => LowLevelILExpressionKind::DivuDp(Operation::new(function, op)),
-            LLIL_DIVS_DP => LowLevelILExpressionKind::DivsDp(Operation::new(function, op)),
+            LLIL_DIVU => LowLevelILExpressionKind::Divu(Operation::new(function, op, index)),
+            LLIL_DIVS => LowLevelILExpressionKind::Divs(Operation::new(function, op, index)),
 
-            LLIL_MODU => LowLevelILExpressionKind::Modu(Operation::new(function, op)),
-            LLIL_MODS => LowLevelILExpressionKind::Mods(Operation::new(function, op)),
+            LLIL_DIVU_DP => LowLevelILExpressionKind::DivuDp(Operation::new(function, op, index)),
+            LLIL_DIVS_DP => LowLevelILExpressionKind::DivsDp(Operation::new(function, op, index)),
 
-            LLIL_MODU_DP => LowLevelILExpressionKind::ModuDp(Operation::new(function, op)),
-            LLIL_MODS_DP => LowLevelILExpressionKind::ModsDp(Operation::new(function, op)),
+            LLIL_MODU => LowLevelILExpressionKind::Modu(Operation::new(function, op, index)),
+            LLIL_MODS => LowLevelILExpressionKind::Mods(Operation::new(function, op, index)),
 
-            LLIL_NEG => LowLevelILExpressionKind::Neg(Operation::new(function, op)),
-            LLIL_NOT => LowLevelILExpressionKind::Not(Operation::new(function, op)),
+            LLIL_MODU_DP => LowLevelILExpressionKind::ModuDp(Operation::new(function, op, index)),
+            LLIL_MODS_DP => LowLevelILExpressionKind::ModsDp(Operation::new(function, op, index)),
 
-            LLIL_SX => LowLevelILExpressionKind::Sx(Operation::new(function, op)),
-            LLIL_ZX => LowLevelILExpressionKind::Zx(Operation::new(function, op)),
-            LLIL_LOW_PART => LowLevelILExpressionKind::LowPart(Operation::new(function, op)),
+            LLIL_NEG => LowLevelILExpressionKind::Neg(Operation::new(function, op, index)),
+            LLIL_NOT => LowLevelILExpressionKind::Not(Operation::new(function, op, index)),
 
-            LLIL_CMP_E => LowLevelILExpressionKind::CmpE(Operation::new(function, op)),
-            LLIL_CMP_NE => LowLevelILExpressionKind::CmpNe(Operation::new(function, op)),
-            LLIL_CMP_SLT => LowLevelILExpressionKind::CmpSlt(Operation::new(function, op)),
-            LLIL_CMP_ULT => LowLevelILExpressionKind::CmpUlt(Operation::new(function, op)),
-            LLIL_CMP_SLE => LowLevelILExpressionKind::CmpSle(Operation::new(function, op)),
-            LLIL_CMP_ULE => LowLevelILExpressionKind::CmpUle(Operation::new(function, op)),
-            LLIL_CMP_SGE => LowLevelILExpressionKind::CmpSge(Operation::new(function, op)),
-            LLIL_CMP_UGE => LowLevelILExpressionKind::CmpUge(Operation::new(function, op)),
-            LLIL_CMP_SGT => LowLevelILExpressionKind::CmpSgt(Operation::new(function, op)),
-            LLIL_CMP_UGT => LowLevelILExpressionKind::CmpUgt(Operation::new(function, op)),
+            LLIL_SX => LowLevelILExpressionKind::Sx(Operation::new(function, op, index)),
+            LLIL_ZX => LowLevelILExpressionKind::Zx(Operation::new(function, op, index)),
+            LLIL_LOW_PART => LowLevelILExpressionKind::LowPart(Operation::new(function, op, index)),
 
-            LLIL_BOOL_TO_INT => LowLevelILExpressionKind::BoolToInt(Operation::new(function, op)),
+            LLIL_CMP_E => LowLevelILExpressionKind::CmpE(Operation::new(function, op, index)),
+            LLIL_CMP_NE => LowLevelILExpressionKind::CmpNe(Operation::new(function, op, index)),
+            LLIL_CMP_SLT => LowLevelILExpressionKind::CmpSlt(Operation::new(function, op, index)),
+            LLIL_CMP_ULT => LowLevelILExpressionKind::CmpUlt(Operation::new(function, op, index)),
+            LLIL_CMP_SLE => LowLevelILExpressionKind::CmpSle(Operation::new(function, op, index)),
+            LLIL_CMP_ULE => LowLevelILExpressionKind::CmpUle(Operation::new(function, op, index)),
+            LLIL_CMP_SGE => LowLevelILExpressionKind::CmpSge(Operation::new(function, op, index)),
+            LLIL_CMP_UGE => LowLevelILExpressionKind::CmpUge(Operation::new(function, op, index)),
+            LLIL_CMP_SGT => LowLevelILExpressionKind::CmpSgt(Operation::new(function, op, index)),
+            LLIL_CMP_UGT => LowLevelILExpressionKind::CmpUgt(Operation::new(function, op, index)),
 
-            LLIL_FADD => LowLevelILExpressionKind::Fadd(Operation::new(function, op)),
-            LLIL_FSUB => LowLevelILExpressionKind::Fsub(Operation::new(function, op)),
-            LLIL_FMUL => LowLevelILExpressionKind::Fmul(Operation::new(function, op)),
-            LLIL_FDIV => LowLevelILExpressionKind::Fdiv(Operation::new(function, op)),
+            LLIL_TEST_BIT => LowLevelILExpressionKind::TestBit(Operation::new(function, op, index)),
+            LLIL_BOOL_TO_INT => {
+                LowLevelILExpressionKind::BoolToInt(Operation::new(function, op, index))
+            }
 
-            LLIL_FSQRT => LowLevelILExpressionKind::Fsqrt(Operation::new(function, op)),
-            LLIL_FNEG => LowLevelILExpressionKind::Fneg(Operation::new(function, op)),
-            LLIL_FABS => LowLevelILExpressionKind::Fabs(Operation::new(function, op)),
-            LLIL_FLOAT_TO_INT => LowLevelILExpressionKind::FloatToInt(Operation::new(function, op)),
-            LLIL_INT_TO_FLOAT => LowLevelILExpressionKind::IntToFloat(Operation::new(function, op)),
-            LLIL_FLOAT_CONV => LowLevelILExpressionKind::FloatConv(Operation::new(function, op)),
-            LLIL_ROUND_TO_INT => LowLevelILExpressionKind::RoundToInt(Operation::new(function, op)),
-            LLIL_FLOOR => LowLevelILExpressionKind::Floor(Operation::new(function, op)),
-            LLIL_CEIL => LowLevelILExpressionKind::Ceil(Operation::new(function, op)),
-            LLIL_FTRUNC => LowLevelILExpressionKind::Ftrunc(Operation::new(function, op)),
+            LLIL_FADD => LowLevelILExpressionKind::Fadd(Operation::new(function, op, index)),
+            LLIL_FSUB => LowLevelILExpressionKind::Fsub(Operation::new(function, op, index)),
+            LLIL_FMUL => LowLevelILExpressionKind::Fmul(Operation::new(function, op, index)),
+            LLIL_FDIV => LowLevelILExpressionKind::Fdiv(Operation::new(function, op, index)),
 
-            LLIL_FCMP_E => LowLevelILExpressionKind::FcmpE(Operation::new(function, op)),
-            LLIL_FCMP_NE => LowLevelILExpressionKind::FcmpNE(Operation::new(function, op)),
-            LLIL_FCMP_LT => LowLevelILExpressionKind::FcmpLT(Operation::new(function, op)),
-            LLIL_FCMP_LE => LowLevelILExpressionKind::FcmpLE(Operation::new(function, op)),
-            LLIL_FCMP_GT => LowLevelILExpressionKind::FcmpGT(Operation::new(function, op)),
-            LLIL_FCMP_GE => LowLevelILExpressionKind::FcmpGE(Operation::new(function, op)),
-            LLIL_FCMP_O => LowLevelILExpressionKind::FcmpO(Operation::new(function, op)),
-            LLIL_FCMP_UO => LowLevelILExpressionKind::FcmpUO(Operation::new(function, op)),
+            LLIL_FSQRT => LowLevelILExpressionKind::Fsqrt(Operation::new(function, op, index)),
+            LLIL_FNEG => LowLevelILExpressionKind::Fneg(Operation::new(function, op, index)),
+            LLIL_FABS => LowLevelILExpressionKind::Fabs(Operation::new(function, op, index)),
+            LLIL_FLOAT_TO_INT => {
+                LowLevelILExpressionKind::FloatToInt(Operation::new(function, op, index))
+            }
+            LLIL_INT_TO_FLOAT => {
+                LowLevelILExpressionKind::IntToFloat(Operation::new(function, op, index))
+            }
+            LLIL_FLOAT_CONV => {
+                LowLevelILExpressionKind::FloatConv(Operation::new(function, op, index))
+            }
+            LLIL_ROUND_TO_INT => {
+                LowLevelILExpressionKind::RoundToInt(Operation::new(function, op, index))
+            }
+            LLIL_FLOOR => LowLevelILExpressionKind::Floor(Operation::new(function, op, index)),
+            LLIL_CEIL => LowLevelILExpressionKind::Ceil(Operation::new(function, op, index)),
+            LLIL_FTRUNC => LowLevelILExpressionKind::Ftrunc(Operation::new(function, op, index)),
 
-            LLIL_UNIMPL => LowLevelILExpressionKind::Unimpl(Operation::new(function, op)),
-            LLIL_UNIMPL_MEM => LowLevelILExpressionKind::UnimplMem(Operation::new(function, op)),
+            LLIL_FCMP_E => LowLevelILExpressionKind::FcmpE(Operation::new(function, op, index)),
+            LLIL_FCMP_NE => LowLevelILExpressionKind::FcmpNE(Operation::new(function, op, index)),
+            LLIL_FCMP_LT => LowLevelILExpressionKind::FcmpLT(Operation::new(function, op, index)),
+            LLIL_FCMP_LE => LowLevelILExpressionKind::FcmpLE(Operation::new(function, op, index)),
+            LLIL_FCMP_GT => LowLevelILExpressionKind::FcmpGT(Operation::new(function, op, index)),
+            LLIL_FCMP_GE => LowLevelILExpressionKind::FcmpGE(Operation::new(function, op, index)),
+            LLIL_FCMP_O => LowLevelILExpressionKind::FcmpO(Operation::new(function, op, index)),
+            LLIL_FCMP_UO => LowLevelILExpressionKind::FcmpUO(Operation::new(function, op, index)),
 
-            // TODO TEST_BIT ADD_OVERFLOW LLIL_REG_STACK_PUSH LLIL_REG_STACK_POP
+            LLIL_FLOAT_CONST => {
+                LowLevelILExpressionKind::FloatConst(Operation::new(function, op, index))
+            }
+
+            LLIL_SEPARATE_PARAM_LIST_SSA => {
+                LowLevelILExpressionKind::SeparateParamListSsa(Operation::new(function, op, index))
+            }
+
+            LLIL_UNDEF => LowLevelILExpressionKind::Undef(Operation::new(function, op, index)),
+
+            LLIL_UNIMPL => LowLevelILExpressionKind::Unimpl(Operation::new(function, op, index)),
+            LLIL_UNIMPL_MEM => {
+                LowLevelILExpressionKind::UnimplMem(Operation::new(function, op, index))
+            }
+
             _ => {
-                #[cfg(debug_assertions)]
+                // #[cfg(debug_assertions)]
                 log::error!(
                     "Got unexpected operation {:?} in value expr at 0x{:x}",
                     op.operation,
                     op.address
                 );
 
-                LowLevelILExpressionKind::Undef(Operation::new(function, op))
+                LowLevelILExpressionKind::Undef(Operation::new(function, op, index))
             }
         }
     }
@@ -472,7 +564,6 @@ where
             }
 
             _ => Some(self.raw_struct().size),
-            //TestBit(Operation<'func, A, M, F, operation::TestBit>), // TODO
         }
     }
 
@@ -492,7 +583,7 @@ where
         }
     }
 
-    pub fn as_cmp_op(&self) -> Option<&Operation<'func, A, M, F, operation::Condition>> {
+    pub fn as_cmp_op(&self) -> Option<&Operation<'func, M, F, operation::Condition>> {
         use self::LowLevelILExpressionKind::*;
 
         match *self {
@@ -504,21 +595,20 @@ where
         }
     }
 
-    pub fn as_binary_op(&self) -> Option<&Operation<'func, A, M, F, operation::BinaryOp>> {
+    pub fn as_binary_op(&self) -> Option<&Operation<'func, M, F, operation::BinaryOp>> {
         use self::LowLevelILExpressionKind::*;
 
         match *self {
             Add(ref op) | Sub(ref op) | And(ref op) | Or(ref op) | Xor(ref op) | Lsl(ref op)
             | Lsr(ref op) | Asr(ref op) | Rol(ref op) | Ror(ref op) | Mul(ref op)
             | MulsDp(ref op) | MuluDp(ref op) | Divu(ref op) | Divs(ref op) | Modu(ref op)
-            | Mods(ref op) | Fadd(ref op) | Fsub(ref op) | Fmul(ref op) | Fdiv(ref op) => Some(op),
+            | Mods(ref op) | Fadd(ref op) | Fsub(ref op) | Fmul(ref op) | Fdiv(ref op)
+            | DivuDp(ref op) | DivsDp(ref op) | ModuDp(ref op) | ModsDp(ref op) => Some(op),
             _ => None,
         }
     }
 
-    pub fn as_binary_op_carry(
-        &self,
-    ) -> Option<&Operation<'func, A, M, F, operation::BinaryOpCarry>> {
+    pub fn as_binary_op_carry(&self) -> Option<&Operation<'func, M, F, operation::BinaryOpCarry>> {
         use self::LowLevelILExpressionKind::*;
 
         match *self {
@@ -527,18 +617,7 @@ where
         }
     }
 
-    pub fn as_double_prec_div_op(
-        &self,
-    ) -> Option<&Operation<'func, A, M, F, operation::DoublePrecDivOp>> {
-        use self::LowLevelILExpressionKind::*;
-
-        match *self {
-            DivuDp(ref op) | DivsDp(ref op) | ModuDp(ref op) | ModsDp(ref op) => Some(op),
-            _ => None,
-        }
-    }
-
-    pub fn as_unary_op(&self) -> Option<&Operation<'func, A, M, F, operation::UnaryOp>> {
+    pub fn as_unary_op(&self) -> Option<&Operation<'func, M, F, operation::UnaryOp>> {
         use self::LowLevelILExpressionKind::*;
 
         match *self {
@@ -552,7 +631,7 @@ where
 
     pub fn visit_sub_expressions<T>(&self, mut visitor: T) -> VisitorAction
     where
-        T: FnMut(LowLevelILExpression<'func, A, M, F, ValueExpr>) -> VisitorAction,
+        T: FnMut(LowLevelILExpression<'func, M, F, ValueExpr>) -> VisitorAction,
     {
         use LowLevelILExpressionKind::*;
 
@@ -577,16 +656,13 @@ where
                 visit!(op.right());
                 visit!(op.carry());
             }
-            Add(ref op) | Sub(ref op) | And(ref op) | Or(ref op) | Xor(ref op) | Lsl(ref op)
-            | Lsr(ref op) | Asr(ref op) | Rol(ref op) | Ror(ref op) | Mul(ref op)
-            | MulsDp(ref op) | MuluDp(ref op) | Divu(ref op) | Divs(ref op) | Modu(ref op)
-            | Mods(ref op) | Fadd(ref op) | Fsub(ref op) | Fmul(ref op) | Fdiv(ref op) => {
+            Add(ref op) | AddOverflow(ref op) | Sub(ref op) | And(ref op) | Or(ref op)
+            | Xor(ref op) | Lsl(ref op) | Lsr(ref op) | Asr(ref op) | Rol(ref op) | Ror(ref op)
+            | Mul(ref op) | MulsDp(ref op) | MuluDp(ref op) | Divu(ref op) | Divs(ref op)
+            | Modu(ref op) | Mods(ref op) | Fadd(ref op) | Fsub(ref op) | Fmul(ref op)
+            | DivuDp(ref op) | DivsDp(ref op) | ModuDp(ref op) | ModsDp(ref op) | Fdiv(ref op)
+            | TestBit(ref op) => {
                 visit!(op.left());
-                visit!(op.right());
-            }
-            DivuDp(ref op) | DivsDp(ref op) | ModuDp(ref op) | ModsDp(ref op) => {
-                visit!(op.high());
-                visit!(op.low());
                 visit!(op.right());
             }
             Neg(ref op) | Not(ref op) | Sx(ref op) | Zx(ref op) | LowPart(ref op)
@@ -599,12 +675,26 @@ where
                 visit!(op.mem_expr());
             }
             Load(ref op) => {
-                visit!(op.source_mem_expr());
+                visit!(op.source_expr());
+            }
+            LoadSsa(ref op) => {
+                visit!(op.source_expr());
+            }
+            CallParamSsa(ref op) => {
+                for param_expr in op.param_exprs() {
+                    visit!(param_expr);
+                }
+            }
+            SeparateParamListSsa(ref op) => {
+                for param_expr in op.param_exprs() {
+                    visit!(param_expr);
+                }
             }
             // Do not have any sub expressions.
-            Pop(_) | Reg(_) | RegSplit(_) | Const(_) | ConstPtr(_) | Flag(_) | FlagBit(_)
-            | ExternPtr(_) | FlagCond(_) | FlagGroup(_) | Unimpl(_) | Undef(_) | RegStackPop(_) => {
-            }
+            Pop(_) | Reg(_) | RegSsa(_) | RegPartialSsa(_) | RegSplit(_) | RegSplitSsa(_)
+            | Const(_) | ConstPtr(_) | Flag(_) | FlagBit(_) | ExternPtr(_) | FlagCond(_)
+            | FlagGroup(_) | Unimpl(_) | Undef(_) | RegStackPop(_) | RegStackFreeReg(_)
+            | CallOutputSsa(_) | CallStackSsa(_) | FloatConst(_) => {}
         }
 
         VisitorAction::Sibling
@@ -628,11 +718,19 @@ where
 
             Load(ref op) => &op.op,
 
+            LoadSsa(ref op) => &op.op,
+
             Pop(ref op) => &op.op,
 
             Reg(ref op) => &op.op,
 
+            RegSsa(ref op) => &op.op,
+
+            RegPartialSsa(ref op) => &op.op,
+
             RegSplit(ref op) => &op.op,
+
+            RegSplitSsa(ref op) => &op.op,
 
             Flag(ref op) => &op.op,
 
@@ -640,16 +738,24 @@ where
 
             Const(ref op) | ConstPtr(ref op) => &op.op,
 
+            FloatConst(ref op) => &op.op,
+
             ExternPtr(ref op) => &op.op,
 
             RegStackPop(ref op) => &op.op,
+            RegStackFreeReg(ref op) => &op.op,
+
+            CallOutputSsa(ref op) => &op.op,
+            CallParamSsa(ref op) => &op.op,
+            CallStackSsa(ref op) => &op.op,
 
             Adc(ref op) | Sbb(ref op) | Rlc(ref op) | Rrc(ref op) => &op.op,
 
-            Add(ref op) | Sub(ref op) | And(ref op) | Or(ref op) | Xor(ref op) | Lsl(ref op)
-            | Lsr(ref op) | Asr(ref op) | Rol(ref op) | Ror(ref op) | Mul(ref op)
-            | MulsDp(ref op) | MuluDp(ref op) | Divu(ref op) | Divs(ref op) | Modu(ref op)
-            | Mods(ref op) | Fadd(ref op) | Fsub(ref op) | Fmul(ref op) | Fdiv(ref op) => &op.op,
+            Add(ref op) | AddOverflow(ref op) | Sub(ref op) | And(ref op) | Or(ref op)
+            | Xor(ref op) | Lsl(ref op) | Lsr(ref op) | Asr(ref op) | Rol(ref op) | Ror(ref op)
+            | Mul(ref op) | MulsDp(ref op) | MuluDp(ref op) | Divu(ref op) | Divs(ref op)
+            | Modu(ref op) | Mods(ref op) | Fadd(ref op) | Fsub(ref op) | Fmul(ref op)
+            | Fdiv(ref op) | TestBit(ref op) => &op.op,
 
             DivuDp(ref op) | DivsDp(ref op) | ModuDp(ref op) | ModsDp(ref op) => &op.op,
 
@@ -658,17 +764,15 @@ where
             | FloatToInt(ref op) | IntToFloat(ref op) | FloatConv(ref op) | RoundToInt(ref op)
             | Floor(ref op) | Ceil(ref op) | Ftrunc(ref op) => &op.op,
 
+            SeparateParamListSsa(ref op) => &op.op,
+
             UnimplMem(ref op) => &op.op,
-            //TestBit(Operation<'func, A, M, F, operation::TestBit>), // TODO
         }
     }
 }
 
-impl<'func, A> LowLevelILExpressionKind<'func, A, Mutable, NonSSA<LiftedNonSSA>>
-where
-    A: 'func + Architecture,
-{
-    pub fn flag_write(&self) -> Option<A::FlagWrite> {
+impl LowLevelILExpressionKind<'_, Mutable, NonSSA> {
+    pub fn flag_write(&self) -> Option<CoreFlagWrite> {
         use self::LowLevelILExpressionKind::*;
 
         match *self {
@@ -687,11 +791,19 @@ where
 
             Load(ref op) => op.flag_write(),
 
+            LoadSsa(ref op) => op.flag_write(),
+
             Pop(ref op) => op.flag_write(),
 
             Reg(ref op) => op.flag_write(),
 
+            RegSsa(ref op) => op.flag_write(),
+
+            RegPartialSsa(ref op) => op.flag_write(),
+
             RegSplit(ref op) => op.flag_write(),
+
+            RegSplitSsa(ref op) => op.flag_write(),
 
             Flag(ref op) => op.flag_write(),
 
@@ -699,18 +811,24 @@ where
 
             Const(ref op) | ConstPtr(ref op) => op.flag_write(),
 
+            FloatConst(ref op) => op.flag_write(),
+
             ExternPtr(ref op) => op.flag_write(),
 
             RegStackPop(ref op) => op.flag_write(),
+            RegStackFreeReg(ref op) => op.flag_write(),
+
+            CallOutputSsa(ref op) => op.flag_write(),
+            CallParamSsa(ref op) => op.flag_write(),
+            CallStackSsa(ref op) => op.flag_write(),
 
             Adc(ref op) | Sbb(ref op) | Rlc(ref op) | Rrc(ref op) => op.flag_write(),
 
-            Add(ref op) | Sub(ref op) | And(ref op) | Or(ref op) | Xor(ref op) | Lsl(ref op)
-            | Lsr(ref op) | Asr(ref op) | Rol(ref op) | Ror(ref op) | Mul(ref op)
-            | MulsDp(ref op) | MuluDp(ref op) | Divu(ref op) | Divs(ref op) | Modu(ref op)
-            | Mods(ref op) | Fadd(ref op) | Fsub(ref op) | Fmul(ref op) | Fdiv(ref op) => {
-                op.flag_write()
-            }
+            Add(ref op) | AddOverflow(ref op) | Sub(ref op) | And(ref op) | Or(ref op)
+            | Xor(ref op) | Lsl(ref op) | Lsr(ref op) | Asr(ref op) | Rol(ref op) | Ror(ref op)
+            | Mul(ref op) | MulsDp(ref op) | MuluDp(ref op) | Divu(ref op) | Divs(ref op)
+            | Modu(ref op) | Mods(ref op) | Fadd(ref op) | Fsub(ref op) | Fmul(ref op)
+            | Fdiv(ref op) | TestBit(ref op) => op.flag_write(),
 
             DivuDp(ref op) | DivsDp(ref op) | ModuDp(ref op) | ModsDp(ref op) => op.flag_write(),
 
@@ -719,8 +837,9 @@ where
             | FloatToInt(ref op) | IntToFloat(ref op) | FloatConv(ref op) | RoundToInt(ref op)
             | Floor(ref op) | Ceil(ref op) | Ftrunc(ref op) => op.flag_write(),
 
+            SeparateParamListSsa(ref op) => op.flag_write(),
+
             UnimplMem(ref op) => op.flag_write(),
-            //TestBit(Operation<'func, A, M, F, operation::TestBit>), // TODO
         }
     }
 }

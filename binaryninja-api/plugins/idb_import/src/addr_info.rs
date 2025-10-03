@@ -1,55 +1,51 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use anyhow::Result;
 
-use idb_rs::id0::ID0Section;
-use idb_rs::til;
+use idb_rs::addr_info::all_address_info;
+use idb_rs::id0::{ID0Section, Netdelta};
+use idb_rs::id1::ID1Section;
+use idb_rs::id2::ID2Section;
+use idb_rs::{til, Address, IDAKind};
 
 #[derive(Default)]
 pub struct AddrInfo<'a> {
-    // TODO does binja diferenciate comments types on the API?
-    pub comments: Vec<&'a [u8]>,
-    pub label: Option<&'a str>,
+    // TODO does binja differentiate comments types on the API?
+    pub comments: Vec<Vec<u8>>,
+    pub label: Option<Cow<'a, [u8]>>,
     // TODO make this a ref
     pub ty: Option<til::Type>,
 }
 
-pub fn get_info(id0: &ID0Section, version: u16) -> Result<HashMap<u64, AddrInfo<'_>>> {
-    let mut addr_info: HashMap<u64, AddrInfo> = HashMap::new();
-
-    // the old style comments, most likely empty on new versions
-    let old_comments = id0.functions_and_comments()?.filter_map(|fc| {
-        use idb_rs::id0::FunctionsAndComments::*;
-        match fc {
-            Err(e) => Some(Err(e)),
-            Ok(Comment { address, comment }) => Some(Ok((address, comment))),
-            Ok(Name | Function(_) | Unknown { .. }) => None,
-        }
-    });
-    for old_comment in old_comments {
-        let (addr, comment) = old_comment?;
-        let comment = comment.message();
-        addr_info.entry(addr).or_default().comments.push(comment);
-    }
+pub fn get_info<'a, K: IDAKind>(
+    id0: &'a ID0Section<K>,
+    id1: &ID1Section,
+    id2: Option<&ID2Section<K>>,
+    netdelta: Netdelta<K>,
+) -> Result<HashMap<Address<K>, AddrInfo<'a>>> {
+    let mut addr_info: HashMap<Address<K>, AddrInfo> = HashMap::new();
 
     // comments defined on the address information
-    for info in id0.address_info(version)? {
-        use idb_rs::id0::AddressInfo::*;
-        let (addr, info) = info?;
-        let entry = addr_info.entry(addr).or_default();
-        match info {
-            Comment(comments) => entry.comments.push(comments.message()),
-            Label(name) => {
-                if let Some(_old) = entry.label.replace(name) {
-                    panic!("Duplicated label for an address should be impossible this is most likelly a programing error")
-                }
-            }
-            TilType(ty) => {
-                if let Some(_old) = entry.ty.replace(ty) {
-                    panic!("Duplicated type for an address should be impossible this is most likelly a programing error")
-                }
-            }
-            Other { .. } => {}
+    for (info, _info_size) in all_address_info(id0, id1, id2, netdelta) {
+        let entry = addr_info.entry(info.address()).or_default();
+        if let Some(comment) = info.comment() {
+            entry.comments.push(comment.to_vec());
+        }
+        if let Some(comment) = info.comment_repeatable() {
+            entry.comments.push(comment.to_vec());
+        }
+        if let Some(comment) = info.comment_pre() {
+            entry.comments.extend(comment.map(|line| line.to_vec()));
+        }
+        if let Some(comment) = info.comment_post() {
+            entry.comments.extend(comment.map(|line| line.to_vec()));
+        }
+        if let Some(label) = info.label()? {
+            entry.label = Some(label);
+        }
+        if let Some(ty) = info.tinfo()? {
+            entry.ty = Some(ty);
         }
     }
 

@@ -150,7 +150,7 @@ In any open file from a shared project, the Describe Changes Dialog will appear 
 ![Describe Changes Dialog](../../img/enterprise/describe-changes.png){: style="max-width:335px; display: block; margin: auto;"}
 
 ### File Changelog
-The File Changelog can be accessed via `File/Collaboration/File Changelog...`. It shows a list of changes that have been made to the current file, along with what user made those changes, when, and a description of those changes. Items in this list are *sets* of changes (typically all of the changes before a user clicked the sync button), rather than every snapshot in the database.
+The File Changelog can be accessed via `File/Collaboration/File Changelog...`. It shows a list of changes that have been made to the current file, along with what user made those changes, when, and a description of those changes. Items in this list are *sets* of changes (typically all the changes before a user clicked the sync button), rather than every snapshot in the database.
 
 ![File Changelog](../../img/enterprise/file-changelog.png){: style="max-width:901px; display: block; margin: auto;"}
 

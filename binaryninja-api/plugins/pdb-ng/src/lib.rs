@@ -1,4 +1,4 @@
-// Copyright 2022-2024 Vector 35 Inc.
+// Copyright 2022-2025 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
 // limitations under the License.
 #![allow(dead_code)]
 
-use std::collections::HashMap;
 use std::env::{current_dir, current_exe, temp_dir};
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -31,7 +30,6 @@ use binaryninja::download_provider::{DownloadInstanceInputOutputCallbacks, Downl
 use binaryninja::interaction::{MessageBoxButtonResult, MessageBoxButtonSet};
 use binaryninja::logger::Logger;
 use binaryninja::settings::{QueryOptions, Settings};
-use binaryninja::string::BnString;
 use binaryninja::{interaction, user_directory};
 use parser::PDBParserInstance;
 
@@ -196,8 +194,8 @@ fn read_from_sym_store(bv: &BinaryView, path: &str) -> Result<(bool, Vec<u8>)> {
         .perform_custom_request(
             "GET",
             path,
-            HashMap::<BnString, BnString>::new(),
-            DownloadInstanceInputOutputCallbacks {
+            vec![],
+            &DownloadInstanceInputOutputCallbacks {
                 read: None,
                 write: Some(Box::new(write)),
                 progress: None,
@@ -278,21 +276,21 @@ fn search_sym_store(
 }
 
 fn parse_pdb_info(view: &BinaryView) -> Option<PDBInfo> {
-    match view.get_metadata::<u64, _>("DEBUG_INFO_TYPE") {
+    match view.get_metadata::<u64>("DEBUG_INFO_TYPE") {
         Some(Ok(0x53445352 /* 'SDSR' */)) => {}
         _ => return None,
     }
 
     // This is stored in the BV by the PE loader
-    let file_path = match view.get_metadata::<String, _>("PDB_FILENAME") {
+    let file_path = match view.get_metadata::<String>("PDB_FILENAME") {
         Some(Ok(md)) => md,
         _ => return None,
     };
-    let mut guid = match view.get_metadata::<Vec<u8>, _>("PDB_GUID") {
+    let mut guid = match view.get_metadata::<Vec<u8>>("PDB_GUID") {
         Some(Ok(md)) => md,
         _ => return None,
     };
-    let age = match view.get_metadata::<u64, _>("PDB_AGE") {
+    let age = match view.get_metadata::<u64>("PDB_AGE") {
         Some(Ok(md)) => md as u32,
         _ => return None,
     };
@@ -540,7 +538,7 @@ impl PDBParser {
 
 impl CustomDebugInfoParser for PDBParser {
     fn is_valid(&self, view: &BinaryView) -> bool {
-        view.type_name().to_string() == "PE" || is_pdb(view)
+        view.view_type() == "PE" || is_pdb(view)
     }
 
     fn parse_info(
@@ -616,11 +614,7 @@ impl CustomDebugInfoParser for PDBParser {
             potential_path.pop();
             potential_path.push(&info.file_name);
             if potential_path.exists() {
-                match fs::read(
-                    potential_path
-                        .to_str()
-                        .expect("Potential path is a real string"),
-                ) {
+                match fs::read(potential_path) {
                     Ok(conts) => match self
                         .load_from_file(&conts, debug_info, view, &progress, true, false)
                     {
@@ -630,6 +624,35 @@ impl CustomDebugInfoParser for PDBParser {
                     },
                     Err(e) if e.to_string() == "Cancelled" => return false,
                     Err(e) => debug!("Could not read pdb: {}", e.to_string()),
+                }
+            }
+
+            // Try in the same folder in the project
+            if let Some(project_file) = view.file().project_file() {
+                let project_file_folder_id = project_file.folder().map(|x| x.id());
+                for file in project_file.project().files().iter() {
+                    let file_folder_id = file.folder().map(|x| x.id());
+                    if file.name() == info.file_name && file_folder_id == project_file_folder_id {
+                        if !file.exists_on_disk() {
+                            // If the file doesn't exist, don't consider it
+                            // TODO: if we're connected to a remote project, offer to download the file
+                            continue;
+                        }
+
+                        if let Some(path_on_disk) = file.path_on_disk() {
+                            match fs::read(path_on_disk) {
+                                Ok(conts) => match self.load_from_file(
+                                    &conts, debug_info, view, &progress, true, false,
+                                ) {
+                                    Ok(_) => return true,
+                                    Err(e) if e.to_string() == "Cancelled" => return false,
+                                    Err(e) => debug!("Skipping, {}", e.to_string()),
+                                },
+                                Err(e) if e.to_string() == "Cancelled" => return false,
+                                Err(e) => debug!("Could not read pdb: {}", e.to_string()),
+                            }
+                        }
+                    }
                 }
             }
 

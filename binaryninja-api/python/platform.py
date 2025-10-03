@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -34,7 +34,7 @@ from . import typelibrary
 from . import architecture
 from . import typecontainer
 from . import binaryview
-from .log import log_error
+from .log import log_error_for_exception
 
 
 class _PlatformMetaClass(type):
@@ -60,7 +60,35 @@ class _PlatformMetaClass(type):
 class Platform(metaclass=_PlatformMetaClass):
 	"""
 	``class Platform`` contains all information related to the execution environment of the binary, mainly the
-	calling conventions used.
+	calling conventions used, the operating system, and the architecture.
+
+    The following example showing the live list of platforms may not match your list. Some platforms are included only
+    with specific versions of Binary Ninja and others are installed by plugins. The bare architecture version of the
+    platform does not include any default ABI/calling convention::
+
+		>>> list(Platform)
+		[<platform: Solana>, <platform: decree-x86>, <platform: efi-aarch64>, <platform: efi-windows-aarch64>,
+		<platform: efi-x86>, <platform: efi-windows-x86>, <platform: efi-x86_64>, <platform: efi-windows-x86_64>,
+		<platform: efi-armv7>, <platform: efi-thumb2>, <platform: freebsd-aarch64>, <platform: freebsd-x86>,
+		<platform: freebsd-x86_64>, <platform: freebsd-armv7>, <platform: freebsd-thumb2>, <platform: ios-aarch64>,
+		<platform: ios-armv7>, <platform: ios-thumb2>, <platform: ios-kernel-aarch64>, <platform: ios-kernel-armv7>,
+		<platform: ios-kernel-thumb2>, <platform: linux-aarch64>, <platform: linux-mcore_le>,
+		<platform: linux-mcore_be>, <platform: linux-csky_le_v1>, <platform: linux-csky_le>, <platform: linux-armv7eb>,
+		<platform: linux-thumb2eb>, <platform: linux-mips>, <platform: linux-mipsel>, <platform: linux-mips3>,
+		<platform: linux-mipsel3>, <platform: linux-mips64>, <platform: linux-cnmips64>, <platform: linux-ppc32>,
+		<platform: linux-ppc64>, <platform: linux-ppc32_le>, <platform: linux-ppc64_le>, <platform: linux-rv32gc>,
+		<platform: linux-rv64gc>, <platform: linux-x86>, <platform: linux-x86_64>, <platform: linux-armv7>,
+		<platform: linux-thumb2>, <platform: mac-aarch64>, <platform: mac-x86>, <platform: mac-x86_64>,
+		<platform: mac-armv7>, <platform: mac-thumb2>, <platform: mac-kernel-aarch64>, <platform: mac-kernel-x86>,
+		<platform: mac-kernel-x86_64>, <platform: mac-kernel-armv7>, <platform: mac-kernel-thumb2>,
+		<platform: vxworks-aarch64>, <platform: vxworks-mips32>, <platform: vxworks-mipsel32>,
+		<platform: vxworks-mips64>, <platform: vxworks-cavium-mips64>, <platform: vxworks-ppc32>,
+		<platform: vxworks-ppc64>, <platform: vxworks-rv32gc>, <platform: vxworks-rv64gc>, <platform: vxworks-x86>,
+		<platform: vxworks-x86_64>, <platform: vxworks-armv7>, <platform: vxworks-thumb2>, <platform: windows-aarch64>,
+		<platform: windows-x86>, <platform: windows-x86_64>, <platform: windows-armv7>, <platform: windows-thumb2>,
+		<platform: windows-kernel-windows-aarch64>, <platform: windows-kernel-x86>, <platform: windows-kernel-x86_64>]
+		>>> thumb2 = Platform["thumb2"]
+
 	"""
 	name = None
 	type_file_path = None  # path to platform types file
@@ -85,6 +113,7 @@ class Platform(metaclass=_PlatformMetaClass):
 			self._cb.getGlobalRegisters = self._cb.getGlobalRegisters.__class__(self._get_global_regs)
 			self._cb.freeRegisterList = self._cb.freeRegisterList.__class__(self._free_register_list)
 			self._cb.getGlobalRegisterType = self._cb.getGlobalRegisterType.__class__(self._get_global_reg_type)
+			self._cb.getAddressSize = self._cb.getAddressSize.__class__(self._get_address_size)
 			self._cb.adjustTypeParserInput = self._cb.adjustTypeParserInput.__class__(self._adjust_type_parser_input)
 			self._cb.freeTypeParserInput = self._cb.freeTypeParserInput.__class__(self._free_type_parser_input)
 			self._pending_reg_lists = {}
@@ -121,6 +150,7 @@ class Platform(metaclass=_PlatformMetaClass):
 		self.handle: ctypes.POINTER(core.BNPlatform) = _handle
 		self._arch = _arch
 		self._name = None
+		self._address_size = core.BNGetPlatformAddressSize(_handle)
 
 	def _init(self, ctxt):
 		pass
@@ -130,7 +160,7 @@ class Platform(metaclass=_PlatformMetaClass):
 			view_obj = binaryview.BinaryView(handle=core.BNNewViewReference(view))
 			self.view_init(view)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Platform._view_init")
 
 	def _get_global_regs(self, ctxt, count):
 		try:
@@ -143,7 +173,7 @@ class Platform(metaclass=_PlatformMetaClass):
 			self._pending_reg_lists[result.value] = (result, reg_buf)
 			return result.value
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Platform._get_global_regs")
 			count[0] = 0
 			return None
 
@@ -154,7 +184,7 @@ class Platform(metaclass=_PlatformMetaClass):
 				raise ValueError("freeing register list that wasn't allocated")
 			del self._pending_reg_lists[buf.value]
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Platform._free_register_list")
 
 	def _get_global_reg_type(self, ctxt, reg):
 		try:
@@ -165,8 +195,14 @@ class Platform(metaclass=_PlatformMetaClass):
 				return ctypes.cast(handle, ctypes.c_void_p).value
 			return None
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Platform._get_global_reg_type")
 			return None
+
+	def _get_address_size(self, ctxt):
+		try:
+			return self.address_size
+		except:
+			return self.arch.address_size
 
 	def _adjust_type_parser_input(
 			self,
@@ -253,7 +289,7 @@ class Platform(metaclass=_PlatformMetaClass):
 					raise ValueError("freeing source_file_values list that wasn't allocated")
 				del self._pending_parser_input_lists[buf.value]
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Platform._free_type_parser_input")
 
 	def adjust_type_parser_input(
 			self,
@@ -299,6 +335,10 @@ class Platform(metaclass=_PlatformMetaClass):
 		if self._name is None:
 			self._name = core.BNGetPlatformName(self.handle)
 		return self._name
+
+	@property
+	def address_size(self) -> int:
+		return self._address_size
 
 	@classmethod
 	@property
