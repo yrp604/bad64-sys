@@ -20,9 +20,17 @@ using namespace std;
 
 /* capstone stuff */
 #include "capstone/capstone.h"
+#include "disassembler.h"
 
-//#define MYLOG printf
+#define DEBUG 0
+#if DEBUG
+#define MYLOG printf
+#else
 #define MYLOG(...) while(0);
+#endif
+
+
+// #define ENABLE_CAPSTONE
 
 #include "assembler.h"
 
@@ -35,7 +43,7 @@ struct info {
 	uint32_t mask; /* which bits to mutate */
 };
 
-map<string, info> lookup = {
+static const map<string_view, info> lookup = {
 {               "tdi NUM , GPR , NUM",{0x0800000A,0x03FFFFFF}}, // 000010xxxxxxxxxxxxxxxxxxxxxxxxxx  tdi 0, r0, 0xa
 {                  "tdlgti GPR , NUM",{0x08200000,0x001FFFFF}}, // 00001000001xxxxxxxxxxxxxxxxxxxxx  tdlgti r0, 0
 {                  "tdllti GPR , NUM",{0x08400000,0x001FFFFF}}, // 00001000010xxxxxxxxxxxxxxxxxxxxx  tdllti r0, 0
@@ -225,6 +233,7 @@ map<string, info> lookup = {
 {              "addi GPR , GPR , NUM",{0x38010000,0x03FFFFFF}}, // 001110xxxxxxxxxxxxxxxxxxxxxxxxxx  addi r0, r1, 0
 {                     "lis GPR , NUM",{0x3C000000,0x03E0FFFF}}, // 001111xxxxx00000xxxxxxxxxxxxxxxx  lis r0, 0
 {             "addis GPR , GPR , NUM",{0x3C010000,0x03FFFFFF}}, // 001111xxxxxxxxxxxxxxxxxxxxxxxxxx  addis r0, r1, 0
+{             "subis GPR , GPR , NUM",{0x3C010000,0x03FFFFFF}}, // 001111xxxxxxxxxxxxxxxxxxxxxxxxxx  subis r0, r1, 0
 {                        "bdnzf FLAG",{0x40000000,0x00230000}}, // 0100000000x000xx0000000000000000  bdnzf lt
 {                       "bdnzfl FLAG",{0x40000001,0x00230000}}, // 0100000000x000xx0000000000000001  bdnzfl lt
 {                       "bdnzfa FLAG",{0x40000002,0x00230000}}, // 0100000000x000xx0000000000000010  bdnzfa lt
@@ -1251,10 +1260,14 @@ map<string, info> lookup = {
 {"rlwinm GPR , GPR , NUM , NUM , NUM",{0x54000000,0x03FFFFFE}}, // 010101xxxxxxxxxxxxxxxxxxxxxxxxx0  rlwinm r0, r0, 0, 0, 0
 {"rlwinm . GPR , GPR , NUM , NUM , NUM",{0x54000001,0x03FFFFFE}}, // 010101xxxxxxxxxxxxxxxxxxxxxxxxx1  rlwinm. r0, r0, 0, 0, 0
 {              "slwi GPR , GPR , NUM",{0x5400003E,0x03FFF83E}}, // 010101xxxxxxxxxxxxxxx00000xxxxx0  slwi r0, r0, 0
-{          "rotlwi . GPR , GPR , NUM",{0x5400003F,0x03FFF800}}, // 010101xxxxxxxxxxxxxxx00000111111  rotlwi. r0, r0, 0
+{            "clrrwi GPR , GPR , NUM",{0x54000000,0x03FF003E}}, // 010101xxxxxxxxxx0000000000xxxxx0  clrrwi r0, r0, 1
+{          "clrrwi . GPR , GPR , NUM",{0x54000001,0x03FF003F}}, // 010101xxxxxxxxxx0000000000xxxxx0  clrrwi. r0, r0, 1
 {            "clrlwi GPR , GPR , NUM",{0x5400007E,0x03FF07C0}}, // 010101xxxxxxxxxx00000xxxxx111110  clrlwi r0, r0, 1
 {          "clrlwi . GPR , GPR , NUM",{0x5400007F,0x03FF07C0}}, // 010101xxxxxxxxxx00000xxxxx111111  clrlwi. r0, r0, 1
 {            "rotlwi GPR , GPR , NUM",{0x5400083E,0x03FFF800}}, // 010101xxxxxxxxxxxxxxx00000111110  rotlwi r0, r0, 1
+{            "rotlwi . GPR , GPR , NUM",{0x5400083F,0x03FFF800}}, // 010101xxxxxxxxxxxxxxx00000111111  rotlwi. r0, r0, 1
+{            "rotrwi GPR , GPR , NUM",{0x5400083E,0x03FFF800}}, // 010101xxxxxxxxxxxxxxx00000111110  rotrwi r0, r0, 1
+{          "rotrwi . GPR , GPR , NUM",{0x5400003F,0x03FFF800}}, // 010101xxxxxxxxxxxxxxx00000111111  rotrwi. r0, r0, 0
 {              "srwi GPR , GPR , NUM",{0x54000FFE,0x03FFFFC0}}, // 010101xxxxxxxxxxxxxxxxxxxx111110  srwi r0, r0, 0x1f
 { "rlwnm GPR , GPR , GPR , NUM , NUM",{0x5C000000,0x03FFFFFE}}, // 010111xxxxxxxxxxxxxxxxxxxxxxxxx0  rlwnm r0, r0, r0, 0, 0
 {"rlwnm . GPR , GPR , GPR , NUM , NUM",{0x5C000001,0x03FFFFFE}}, // 010111xxxxxxxxxxxxxxxxxxxxxxxxx1  rlwnm. r0, r0, r0, 0, 0
@@ -1270,8 +1283,20 @@ map<string, info> lookup = {
 {           "andis . GPR , GPR , NUM",{0x74000000,0x03FFFFFF}}, // 011101xxxxxxxxxxxxxxxxxxxxxxxxxx  andis. r0, r0, 0
 {            "rotldi GPR , GPR , NUM",{0x78000000,0x03FFF802}}, // 011110xxxxxxxxxxxxxxx000000000x0  rotldi r0, r0, 0
 {          "rotldi . GPR , GPR , NUM",{0x78000001,0x03FFF802}}, // 011110xxxxxxxxxxxxxxx000000000x1  rotldi. r0, r0, 0
+{            "rotrdi GPR , GPR , NUM",{0x78000000,0x03FFF802}}, // 011110xxxxxxxxxxxxxxx000000000x0  rotrdi r0, r0, 0
+{          "rotrdi . GPR , GPR , NUM",{0x78000001,0x03FFF802}}, // 011110xxxxxxxxxxxxxxx000000000x1  rotrdi. r0, r0, 0
+
+{    "extrdi . GPR , GPR , NUM , NUM",{0x78000023,0x03FFFFE2}}, // 011110xxxxxxxxxxxxxxxxxxxxx000x1  rldicl. r0, r0, 0x20, 0x20
+
+//                  clrrdi  r1, r1, 0x5                  782106a4                      // 011110'00001'00001'00000'110101'00100
+//                                                                                     // 000000'11111'11111'00000'111111'00000
+{            "clrrdi GPR , GPR , NUM",{0x78000004,0x03FF07E0}}, // 011110'xxxxx'xxxxx'00000'xxxxxx'00100  clrrdi r0, r0, 0x20
+{          "clrrdi . GPR , GPR , NUM",{0x78000005,0x03FF07E0}}, // 011110xxxxxxxxxx00000xxxxxx00101  clrrdi. r0, r0, 0x20
+{      "extldi GPR , GPR , NUM , NUM",{0x78000004,0x03FFFFE2}}, // 011110xxxxxxxxxxxxxxxxxxxxx001x0  extldi r0, r0, 1, 0
+{    "extldi . GPR , GPR , NUM , NUM",{0x78000005,0x03FFFFE2}}, // 011110xxxxxxxxxxxxxxxxxxxxx001x1  extldi. r0, r0, 1, 0
 {      "rldicr GPR , GPR , NUM , NUM",{0x78000004,0x03FFFFE2}}, // 011110xxxxxxxxxxxxxxxxxxxxx001x0  rldicr r0, r0, 0, 0
 {    "rldicr . GPR , GPR , NUM , NUM",{0x78000005,0x03FFFFE2}}, // 011110xxxxxxxxxxxxxxxxxxxxx001x1  rldicr. r0, r0, 0, 0
+
 {       "rldic GPR , GPR , NUM , NUM",{0x78000008,0x03FFFFE2}}, // 011110xxxxxxxxxxxxxxxxxxxxx010x0  rldic r0, r0, 0, 0
 {     "rldic . GPR , GPR , NUM , NUM",{0x78000009,0x03FFFFE2}}, // 011110xxxxxxxxxxxxxxxxxxxxx010x1  rldic. r0, r0, 0, 0
 {      "rldimi GPR , GPR , NUM , NUM",{0x7800000C,0x03FFFFE2}}, // 011110xxxxxxxxxxxxxxxxxxxxx011x0  rldimi r0, r0, 0, 0
@@ -1280,13 +1305,20 @@ map<string, info> lookup = {
 {           "rotld . GPR , GPR , GPR",{0x78000011,0x03FFF800}}, // 011110xxxxxxxxxxxxxxx00000010001  rotld. r0, r0, r0
 {       "rldcr GPR , GPR , GPR , NUM",{0x78000012,0x03FFFFE0}}, // 011110xxxxxxxxxxxxxxxxxxxxx10010  rldcr r0, r0, r0, 0
 {     "rldcr . GPR , GPR , GPR , NUM",{0x78000013,0x03FFFFE0}}, // 011110xxxxxxxxxxxxxxxxxxxxx10011  rldcr. r0, r0, r0, 0
+
 {            "clrldi GPR , GPR , NUM",{0x78000020,0x03FF07E0}}, // 011110xxxxxxxxxx00000xxxxxx00000  clrldi r0, r0, 0x20
 {          "clrldi . GPR , GPR , NUM",{0x78000021,0x03FF07E0}}, // 011110xxxxxxxxxx00000xxxxxx00001  clrldi. r0, r0, 0x20
+{      "extrdi GPR , GPR , NUM , NUM",{0x78000022,0x03FFFFE2}}, // 011110xxxxxxxxxxxxxxxxxxxxx000x0  extrdi r0, r0, 1, 0x20
+{    "extrdi . GPR , GPR , NUM , NUM",{0x78000023,0x03FFFFE2}}, // 011110xxxxxxxxxxxxxxxxxxxxx000x1  extrdi. r0, r0, 1, 0x20
 {      "rldicl GPR , GPR , NUM , NUM",{0x78000022,0x03FFFFE2}}, // 011110xxxxxxxxxxxxxxxxxxxxx000x0  rldicl r0, r0, 0x20, 0x20
 {    "rldicl . GPR , GPR , NUM , NUM",{0x78000023,0x03FFFFE2}}, // 011110xxxxxxxxxxxxxxxxxxxxx000x1  rldicl. r0, r0, 0x20, 0x20
+
 {       "rldcl GPR , GPR , GPR , NUM",{0x78000030,0x03FFFFE0}}, // 011110xxxxxxxxxxxxxxxxxxxxx10000  rldcl r0, r0, r0, 0x20
 {     "rldcl . GPR , GPR , GPR , NUM",{0x78000031,0x03FFFFE0}}, // 011110xxxxxxxxxxxxxxxxxxxxx10001  rldcl. r0, r0, r0, 0x20
 {              "sldi GPR , GPR , NUM",{0x780007C6,0x03FFFFE2}}, // 011110xxxxxxxxxxxxxxxxxxxxx001x0  sldi r0, r0, 0x20
+{              "srdi GPR , GPR , NUM",{0x780007C4,0x03FFFFE2}}, // 011110xxxxxxxxxxxxxxxxxxxxx000x0  srdi r0, r0, 0x20
+{              "sldi . GPR , GPR , NUM",{0x780007C7,0x03FFFFE2}}, // 011110xxxxxxxxxxxxxxxxxxxxx001x0  sldi. r0, r0, 0x20
+{              "srdi . GPR , GPR , NUM",{0x780007C5,0x03FFFFE2}}, // 011110xxxxxxxxxxxxxxxxxxxxx000x0  srdi. r0, r0, 0x20
 {                    "cmpw GPR , GPR",{0x7C000000,0x001FF800}}, // 01111100000xxxxxxxxxx00000000000  cmpw r0, r0
 {                "tw NUM , GPR , GPR",{0x7C000008,0x03FFF800}}, // 011111xxxxxxxxxxxxxxx00000001000  tw 0, r0, r0
 {             "lvsl VREG , NUM , GPR",{0x7C00000C,0x03E0F800}}, // 011111xxxxx00000xxxxx00000001100  lvsl v0, 0, r0
@@ -2159,8 +2191,16 @@ const char *cs_err_to_string(cs_err e)
 	}
 }
 
+int disasm_binja(uint8_t *data, uint32_t addr, string& result, string& err)
+{
+	return disassemble(data, addr, result);
+}
+
 int disasm_capstone(uint8_t *data, uint32_t addr, string& result, string& err)
 {
+#ifndef ENABLE_CAPSTONE
+	return -1;
+#endif
 	int rc = -1;
 	static bool init = false;
 
@@ -2217,18 +2257,20 @@ int disasm_capstone(uint8_t *data, uint32_t addr, string& result, string& err)
 /* instruction tokenizing */
 /*****************************************************************************/
 
-#define TT_GPR 1
-#define TT_VREG 2
-#define TT_FLAG 3
-#define TT_CREG 4
-#define TT_VSREG 5
-#define TT_FREG 6
-#define TT_NUM 7
-#define TT_PUNC 8
-#define TT_OPC 9
-
+enum t_type
+{
+	TT_GPR = 1,
+	TT_VREG = 2,
+	TT_FLAG = 3,
+	TT_CREG = 4,
+	TT_VSREG = 5,
+	TT_FREG = 6,
+	TT_NUM = 7,
+	TT_PUNC = 8,
+	TT_OPC = 9,
+};
 struct token {
-	int type;
+	t_type type;
 	uint32_t ival;
 	string sval;
 };
@@ -2379,6 +2421,7 @@ void tokens_print(vector<token>& tokens)
 			case TT_FREG:
 			case TT_VSREG:
 			case TT_NUM:
+			case TT_FLAG:
 				printf("%s: %d\n", token_type_tostr(t.type), t.ival);
 				break;
 			case TT_PUNC:
@@ -2448,6 +2491,7 @@ float fitness(vector<token> dst, vector<token> src) {
 
 float score(vector<token> baseline, uint32_t newcomer, uint32_t addr)
 {
+	// return 0;
 	vector<token> toks_child;
 	string err;
 	string src;
@@ -2463,6 +2507,86 @@ float score(vector<token> baseline, uint32_t newcomer, uint32_t addr)
 
 	/* mnemonics are the same, tokenize now... */
 	if(tokenize(src, toks_child, err)) {
+		printf("ERROR: %s\n", err.c_str());
+		return 0;
+	}
+
+	return fitness(baseline, toks_child);
+}
+
+float score_binja(vector<token> baseline, uint32_t newcomer, uint32_t addr)
+{
+	vector<token> toks_child;
+	string err;
+	string src;
+
+	if(disasm_binja((uint8_t *)&newcomer, addr, src, err))
+		return -1;
+
+	/* compare mnemonics before doing more work */
+	string mnem = baseline[0].sval;
+	if(src.compare(0, mnem.size(), mnem) != 0) {
+		// A few special case equivalences that it can't figure out on its own
+		if (mnem == "rotrdi" && src.compare(0, 6, "rotldi") == 0)
+		{
+			if (tokenize("rotrdi" + src.substr(6), toks_child, err))
+				return 0;
+			toks_child.back().ival = 64 - toks_child.back().ival;
+		}
+		else if (mnem == "rldicl" && src.compare(0, 6, "rotldi") == 0)
+		{
+			if (tokenize("rldicl" + src.substr(6), toks_child, err))
+				return 0;
+			toks_child.push_back({TT_PUNC, 0, ","});
+			toks_child.push_back({TT_NUM, 0, ""});
+		}
+		else if (mnem == "rldcl" && src.compare(0, 5, "rotld") == 0)
+		{
+			if (tokenize("rldcl" + src.substr(5), toks_child, err))
+				return 0;
+			toks_child.push_back({TT_PUNC, 0, ","});
+			toks_child.push_back({TT_NUM, 0, ""});
+		}
+		else if (mnem == "rlwinm")
+		{
+			if (src.compare(0, 6, "clrrwi") == 0)
+			{
+				if (tokenize("rlwinm" + src.substr(6), toks_child, err))
+					return 0;
+				uint32_t me = toks_child.back().ival;
+				toks_child.back().ival = 0;
+				toks_child.push_back({TT_PUNC, 0, ","});
+				toks_child.push_back({TT_NUM, 0, ""});
+				toks_child.push_back({TT_PUNC, 0, ","});
+				toks_child.push_back({TT_NUM, 31 - me, ""});
+			}
+			else if (src.compare(0, 6, "clrlwi") == 0)
+			{
+				if (tokenize("rlwinm" + src.substr(6), toks_child, err))
+					return 0;
+				uint32_t mb = toks_child.back().ival;
+				toks_child.back().ival = 0;
+				toks_child.push_back({TT_PUNC, 0, ","});
+				toks_child.push_back({TT_NUM, mb, ""});
+				toks_child.push_back({TT_PUNC, 0, ","});
+				toks_child.push_back({TT_NUM, 31, ""});
+			}
+			else if (src.compare(0, 6, "rotlwi") == 0)
+			{
+				if (tokenize("rlwinm" + src.substr(6), toks_child, err))
+					return 0;
+				toks_child.push_back({TT_PUNC, 0, ","});
+				toks_child.push_back({TT_NUM, 0, ""});
+				toks_child.push_back({TT_PUNC, 0, ","});
+				toks_child.push_back({TT_NUM, 31, ""});
+			}
+		}
+		else
+			return 0;
+	}
+
+	/* mnemonics are the same, tokenize now... */
+	if(toks_child.size() == 0 && tokenize(src, toks_child, err)) {
 		printf("ERROR: %s\n", err.c_str());
 		return 0;
 	}
@@ -2511,12 +2635,15 @@ uint32_t enforce_bit_match(uint32_t inp, unsigned bit, vector<match> matches)
 //     seed: the seed value that may need the special case
 //  insword: instruction word
 //      bit: last bit changed
-uint32_t special_handling(uint32_t seed, uint32_t insword, int bit)
+uint32_t special_handling(uint32_t seed, uint32_t insword, int bit, vector<token> baseline)
 {
 	switch(seed) {
 		/* sldi is extended mnemonic for rldicr (when mask = 63-shift) and hops
 			to it or other extended mnemonics easily */
 		case 0x780007C6:
+		// case 0x780007C4:
+		case 0x780007C7:
+		// case 0x780007C5:
 			/* if shift field changed, update mask */
 			if(bit==1 || (bit>=11 && bit<=15)) {
 				uint32_t shift = ((insword>>1)&1) | ((insword>>10)&0x3E);
@@ -2527,6 +2654,24 @@ uint32_t special_handling(uint32_t seed, uint32_t insword, int bit)
 			if(bit>=5 && bit<=10) {
 				uint32_t mask = (insword>>5)&0x3F;
 				uint32_t shift = 63-mask;
+				return (insword&0xFFFF07FD) | ((shift&0x3E)<<11) | ((shift&0x1)<<1);
+			}
+			/* neither field updated */
+			return insword;
+		// case 0x780007C6:
+		case 0x780007C4:
+		// case 0x780007C7:
+		case 0x780007C5:
+			/* if shift field changed, update mask */
+			if(bit==1 || (bit>=11 && bit<=15)) {
+				uint32_t shift = ((insword>>1)&1) | ((insword>>10)&0x3E);
+				uint32_t mask = 64-shift;
+				return (insword&0xFFFFF81F) | (mask<<5);
+			}
+			/* if mask field changed, update shift */
+			if(bit>=5 && bit<=10) {
+				uint32_t mask = (insword>>5)&0x3F;
+				uint32_t shift = 64-mask;
 				return (insword&0xFFFF07FD) | ((shift&0x3E)<<11) | ((shift&0x1)<<1);
 			}
 			/* neither field updated */
@@ -2766,6 +2911,8 @@ bool fmt_match(string fmt, string str, vector<string>& result)
 /*****************************************************************************/
 
 #define FAILURES_LIMIT 10000
+
+
 int assemble_single(string src, uint32_t addr, uint8_t *result, string& err,
   int& failures)
 {
@@ -2785,12 +2932,13 @@ int assemble_single(string src, uint32_t addr, uint8_t *result, string& err,
 
 	MYLOG("src:%s has signature:%s\n", src.c_str(), sig_src.c_str());
 
-	if(lookup.find(sig_src) == lookup.end()) {
+	auto it = lookup.find(sig_src);
+	if(it == lookup.end()) {
 		err = "invalid syntax in " + sig_src;
 		return -1;
 	}
 
-	auto info = lookup[sig_src];
+	auto info = it->second;
 	uint32_t vary_mask = info.mask;
 
 	/* for relative branches, shift the target address to 0 */
@@ -2799,11 +2947,22 @@ int assemble_single(string src, uint32_t addr, uint8_t *result, string& err,
 		toks_src.back().ival -= addr;
 		addr = 0;
 	}
+	else if(!strncmp("subis", toks_src[0].sval.c_str(), 6) &&
+	  toks_src.back().type == TT_NUM) {
+		toks_src.back().ival = -toks_src.back().ival;
+		toks_src[0].sval = "addis";
+	}
+	else if(!strncmp("rotrwi", toks_src[0].sval.c_str(), 6) &&
+	  toks_src.back().type == TT_NUM) {
+		toks_src.back().ival = 32-toks_src.back().ival;
+		toks_src[0].sval = "rotlwi";
+	}
 
 	/* start with the parent */
 	uint32_t parent = info.seed;
 	float init_score, top_score;
-	init_score = top_score = score(toks_src, parent, addr);
+	init_score = top_score = max(score(toks_src, parent, addr),
+		score_binja(toks_src, parent, addr));
 
 	/* cache the xor masks */
 	int n_flips = 0;
@@ -2833,9 +2992,10 @@ int assemble_single(string src, uint32_t addr, uint8_t *result, string& err,
 
 		for(; b1i<n_flips; b1i = (b1i+1) % n_flips) {
 			uint32_t child = parent ^ flipper[b1i];
-			child = special_handling(info.seed, child, flipper_idx[b1i]);
+			child = special_handling(info.seed, child, flipper_idx[b1i], toks_src);
 
-			float s = score(toks_src, child, addr);
+			float s = max(score(toks_src, child, addr),
+				score_binja(toks_src, child, addr));
 			if(s > top_score) {
 				parent = child;
 				top_score = s;
@@ -2858,20 +3018,22 @@ int assemble_single(string src, uint32_t addr, uint8_t *result, string& err,
 					for(int i=0; i<n_flips; ++i) {
 						if(rand()%2) {
 							parent ^= flipper[i];
-							parent = special_handling(info.seed, parent, flipper_idx[i]);
+							parent = special_handling(info.seed, parent, flipper_idx[i], toks_src);
 						}
 					}
-
-					top_score = score(toks_src, parent, addr);
+					top_score = max(score(toks_src, parent, addr),
+						score_binja(toks_src, parent, addr));
 
 					if(top_score >= init_score) {
 						MYLOG("perturbing the parent to: %08X (score:%f) (vs:%f)\n", parent, top_score, init_score);
 						break;
 					}
 					else {
+#if DEBUG
 						string tmp;
 						disasm_capstone((uint8_t *)&parent, addr, tmp, err);
 						MYLOG("%08X: %s perturb fail %f\n", parent, tmp.c_str(), top_score);
+#endif
 						failures++;
 					}
 

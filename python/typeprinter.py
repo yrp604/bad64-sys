@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -36,7 +36,7 @@ from . import types
 from . import function as _function
 from . import binaryview
 from . import typecontainer
-from .log import log_error
+from .log import log_error_for_exception
 from .enums import TokenEscapingType
 
 
@@ -128,7 +128,7 @@ class TypePrinter(metaclass=_TypePrinterMetaclass):
 
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in TypePrinter._get_type_tokens")
 			return False
 
 	def _get_type_tokens_before_name(self, ctxt, type, platform, base_confidence, parent_type, escaping, result, result_count):
@@ -149,7 +149,7 @@ class TypePrinter(metaclass=_TypePrinterMetaclass):
 
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in TypePrinter._get_type_tokens_before_name")
 			return False
 
 	def _get_type_tokens_after_name(self, ctxt, type, platform, base_confidence, parent_type, escaping, result, result_count):
@@ -170,7 +170,7 @@ class TypePrinter(metaclass=_TypePrinterMetaclass):
 
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in TypePrinter._get_type_tokens_after_name")
 			return False
 
 	def _get_type_string(self, ctxt, type, platform, name, escaping, result):
@@ -186,7 +186,7 @@ class TypePrinter(metaclass=_TypePrinterMetaclass):
 			result[0] = TypePrinter._cached_string
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in TypePrinter._get_type_string")
 			return False
 
 	def _get_type_string_before_name(self, ctxt, type, platform, escaping, result):
@@ -202,7 +202,7 @@ class TypePrinter(metaclass=_TypePrinterMetaclass):
 			result[0] = TypePrinter._cached_string
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in TypePrinter._get_type_string_before_name")
 			return False
 
 	def _get_type_string_after_name(self, ctxt, type, platform, escaping, result):
@@ -218,7 +218,7 @@ class TypePrinter(metaclass=_TypePrinterMetaclass):
 			result[0] = TypePrinter._cached_string
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in TypePrinter._get_type_string_after_name")
 			return False
 
 	def _get_type_lines(self, ctxt, type, container, name, padding_cols, collapsed, escaping, result, result_count):
@@ -237,7 +237,7 @@ class TypePrinter(metaclass=_TypePrinterMetaclass):
 
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in TypePrinter._get_type_lines")
 			return False
 
 	def _print_all_types(self, ctxt, names, types_, type_count, data, padding_cols, escaping, result):
@@ -258,7 +258,7 @@ class TypePrinter(metaclass=_TypePrinterMetaclass):
 			result[0] = TypePrinter._cached_string
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in TypePrinter._print_all_types")
 			return False
 
 	def _free_tokens(self, ctxt, tokens, count):
@@ -266,7 +266,7 @@ class TypePrinter(metaclass=_TypePrinterMetaclass):
 			TypePrinter._cached_tokens = None
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in TypePrinter._free_tokens")
 			return False
 
 	def _free_string(self, ctxt, string):
@@ -274,7 +274,7 @@ class TypePrinter(metaclass=_TypePrinterMetaclass):
 			TypePrinter._cached_string = None
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in TypePrinter._free_string")
 			return False
 
 	def _free_lines(self, ctxt, lines, count):
@@ -285,7 +285,7 @@ class TypePrinter(metaclass=_TypePrinterMetaclass):
 			TypePrinter._cached_lines = None
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in TypePrinter._free_lines")
 			return False
 
 	def _default_print_all_types(self, types_: List[Tuple[types.QualifiedNameType, types.Type]], data: binaryview.BinaryView, padding_cols = 64, escaping: TokenEscapingType = TokenEscapingType.BackticksTokenEscapingType) -> str:

@@ -417,7 +417,7 @@ bool X86CommonArchitecture::Decode(const uint8_t* data, size_t len, xed_decoded_
 	xed_decoded_inst_zero_keep_mode(xedd);
 
 	xed3_operand_set_cet(xedd, 1);
-	xed3_operand_set_mpxmode(xedd, 1);
+	xed3_operand_set_mpxmode(xedd, m_disassembly_options.mpx);
 
 	// Decode the data and check for errors
 	xed_error_enum_t xed_error = xed_decode(xedd, data, (unsigned)len);
@@ -464,7 +464,7 @@ void X86CommonArchitecture::SetInstructionInfoForInstruction(uint64_t addr, Inst
 	case XED_CATEGORY_UNCOND_BR:
 		if (xed_operand_name(xed_inst_operand(xed_decoded_inst_inst(xedd), 0)) == XED_OPERAND_RELBR)
 			result.AddBranch(UnconditionalBranch, abs_br);
-		else
+		else if (xedd_iClass != XED_ICLASS_XABORT)
 			result.AddBranch(UnresolvedBranch);
 		break;
 
@@ -1918,6 +1918,7 @@ X86CommonArchitecture::X86CommonArchitecture(const string& name, size_t bits): A
 	const bool lowercase = settings->Get<bool>("arch.x86.disassembly.lowercase");
 	const string flavor = settings->Get<string>("arch.x86.disassembly.syntax");
 	const string separator = settings->Get<string>("arch.x86.disassembly.separator");
+	const bool mpx = settings->Get<bool>("arch.x86.disassembly.mpx");
 
 	DISASSEMBLY_FLAVOR_ENUM flavorEnum;
 
@@ -1932,7 +1933,7 @@ X86CommonArchitecture::X86CommonArchitecture(const string& name, size_t bits): A
 	else
 		flavorEnum = DF_BN_INTEL;
 
-	m_disassembly_options = DISASSEMBLY_OPTIONS(flavorEnum, lowercase, separator);
+	m_disassembly_options = DISASSEMBLY_OPTIONS(flavorEnum, lowercase, separator, mpx);
 }
 
 BNEndianness X86CommonArchitecture::GetEndianness() const
@@ -4761,7 +4762,7 @@ static void InitX86Settings()
 {
 	Ref<Settings> settings = Settings::Instance();
 	settings->RegisterSetting("arch.x86.disassembly.syntax",
-			R"({
+			R"~({
 			"title" : "x86 Disassembly Syntax",
 			"type" : "string",
 			"default" : "BN_INTEL",
@@ -4769,31 +4770,40 @@ static void InitX86Settings()
 			"description" : "Specify disassembly syntax for the x86/x86_64 architectures.",
 			"enum" : ["BN_INTEL", "INTEL", "AT&T"],
 			"enumDescriptions" : [
-				"Sets the disassembly syntax to a simplified Intel format. (TBD) ",
-				"Sets the disassembly syntax to Intel format. (Destination on the left) ",
-				"Sets the disassembly syntax to AT&T format. (Destination on the right) "],
+				"Sets the disassembly syntax to a simplified Intel format.",
+				"Sets the disassembly syntax to Intel format. (Destination on the left)",
+				"Sets the disassembly syntax to AT&T format. (Destination on the right)"],
 			"ignore" : ["SettingsProjectScope", "SettingsResourceScope"]
-			})");
+			})~");
 
 	settings->RegisterSetting("arch.x86.disassembly.separator",
-			R"({
+			R"~({
 			"title" : "x86 Disassembly Separator",
 			"type" : "string",
 			"default" : ", ",
 			"aliases" : ["arch.x86.disassemblySeperator", "arch.x86.disassemblySeparator"],
 			"description" : "Specify the token separator between operands.",
 			"ignore" : ["SettingsProjectScope", "SettingsResourceScope"]
-			})");
+			})~");
 
 	settings->RegisterSetting("arch.x86.disassembly.lowercase",
-			R"({
+			R"~({
 			"title" : "x86 Disassembly Case",
 			"type" : "boolean",
 			"default" : true,
 			"aliases" : ["arch.x86.disassemblyLowercase"],
 			"description" : "Specify the case for opcodes, operands, and registers.",
 			"ignore" : ["SettingsProjectScope", "SettingsResourceScope"]
-			})");
+			})~");
+
+	settings->RegisterSetting("arch.x86.disassembly.mpx",
+			R"~({
+			"title" : "x86 Disassembly Support for MPX",
+			"type" : "boolean",
+			"default" : false,
+			"description" : "Enable support for MPX extensions in the disassembler.",
+			"ignore" : ["SettingsProjectScope", "SettingsResourceScope"]
+			})~");
 }
 
 
@@ -4851,6 +4861,7 @@ extern "C"
 		x86->RegisterCallingConvention(conv);
 
 		x86->RegisterRelocationHandler("Mach-O", new x86MachoRelocationHandler());
+		x86->RegisterRelocationHandler("KCView", new x86MachoRelocationHandler());
 		x86->RegisterRelocationHandler("ELF", new x86ElfRelocationHandler());
 		x86->RegisterRelocationHandler("COFF", new CoffRelocationHandler());
 		x86->RegisterRelocationHandler("PE", new PeRelocationHandler());
@@ -4867,6 +4878,7 @@ extern "C"
 		x64->RegisterCallingConvention(conv);
 
 		x64->RegisterRelocationHandler("Mach-O", new x64MachoRelocationHandler());
+		x64->RegisterRelocationHandler("KCView", new x64MachoRelocationHandler());
 		x64->RegisterRelocationHandler("ELF", new x64ElfRelocationHandler());
 		x64->RegisterRelocationHandler("COFF", new CoffRelocationHandler());
 		x64->RegisterRelocationHandler("PE", new PeRelocationHandler());

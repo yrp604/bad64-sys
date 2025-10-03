@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
 
 project(sharedcacheworkflow)
-file(GLOB SOURCES *.cpp *.h)
+file(GLOB SOURCES CONFIGURE_DEPENDS *.cpp *.h)
 add_library(sharedcacheworkflow OBJECT ${SOURCES})
 
 set(COMPILE_DEFS "")
@@ -68,7 +68,7 @@ target_include_directories(sharedcacheworkflow
         PUBLIC ${PROJECT_SOURCE_DIR} ${INCLUDES})
 
 set_target_properties(sharedcacheworkflow PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 20
         CXX_VISIBILITY_PRESET hidden
         CXX_STANDARD_REQUIRED ON
         VISIBILITY_INLINES_HIDDEN ON

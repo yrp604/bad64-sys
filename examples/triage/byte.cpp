@@ -67,30 +67,30 @@ ByteView::ByteView(QWidget* parent, BinaryViewRef data) : QAbstractScrollArea(pa
 	m_updateTimer->setSingleShot(false);
 	// connect(m_updateTimer, &QTimer::timeout, this, &ByteView::updateTimerEvent);
 
-	actionHandler()->bindAction("Move Cursor Up", UIAction([=]() { up(false); }));
-	actionHandler()->bindAction("Move Cursor Down", UIAction([=]() { down(false); }));
-	actionHandler()->bindAction("Move Cursor Left", UIAction([=]() { left(1, false); }));
-	actionHandler()->bindAction("Move Cursor Right", UIAction([=]() { right(1, false); }));
-	actionHandler()->bindAction("Move Cursor Word Left", UIAction([=]() { left(8, false); }));
-	actionHandler()->bindAction("Move Cursor Word Right", UIAction([=]() { right(8, false); }));
-	actionHandler()->bindAction("Extend Selection Up", UIAction([=]() { up(true); }));
-	actionHandler()->bindAction("Extend Selection Down", UIAction([=]() { down(true); }));
-	actionHandler()->bindAction("Extend Selection Left", UIAction([=]() { left(1, true); }));
-	actionHandler()->bindAction("Extend Selection Right", UIAction([=]() { right(1, true); }));
-	actionHandler()->bindAction("Extend Selection Word Left", UIAction([=]() { left(8, true); }));
-	actionHandler()->bindAction("Extend Selection Word Right", UIAction([=]() { right(8, true); }));
-	actionHandler()->bindAction("Page Up", UIAction([=]() { pageUp(false); }));
-	actionHandler()->bindAction("Page Down", UIAction([=]() { pageDown(false); }));
-	actionHandler()->bindAction("Extend Selection Page Up", UIAction([=]() { pageUp(true); }));
-	actionHandler()->bindAction("Extend Selection Page Down", UIAction([=]() { pageDown(true); }));
-	actionHandler()->bindAction("Move Cursor to Start of Line", UIAction([=]() { moveToStartOfLine(false); }));
-	actionHandler()->bindAction("Move Cursor to End of Line", UIAction([=]() { moveToEndOfLine(false); }));
-	actionHandler()->bindAction("Move Cursor to Start of View", UIAction([=]() { moveToStartOfView(false); }));
-	actionHandler()->bindAction("Move Cursor to End of View", UIAction([=]() { moveToEndOfView(false); }));
-	actionHandler()->bindAction("Extend Selection to Start of Line", UIAction([=]() { moveToStartOfLine(true); }));
-	actionHandler()->bindAction("Extend Selection to End of Line", UIAction([=]() { moveToEndOfLine(true); }));
-	actionHandler()->bindAction("Extend Selection to Start of View", UIAction([=]() { moveToStartOfView(true); }));
-	actionHandler()->bindAction("Extend Selection to End of View", UIAction([=]() { moveToEndOfView(true); }));
+	actionHandler()->bindAction("Move Cursor Up", UIAction([=, this]() { up(false); }));
+	actionHandler()->bindAction("Move Cursor Down", UIAction([=, this]() { down(false); }));
+	actionHandler()->bindAction("Move Cursor Left", UIAction([=, this]() { left(1, false); }));
+	actionHandler()->bindAction("Move Cursor Right", UIAction([=, this]() { right(1, false); }));
+	actionHandler()->bindAction("Move Cursor Word Left", UIAction([=, this]() { left(8, false); }));
+	actionHandler()->bindAction("Move Cursor Word Right", UIAction([=, this]() { right(8, false); }));
+	actionHandler()->bindAction("Extend Selection Up", UIAction([=, this]() { up(true); }));
+	actionHandler()->bindAction("Extend Selection Down", UIAction([=, this]() { down(true); }));
+	actionHandler()->bindAction("Extend Selection Left", UIAction([=, this]() { left(1, true); }));
+	actionHandler()->bindAction("Extend Selection Right", UIAction([=, this]() { right(1, true); }));
+	actionHandler()->bindAction("Extend Selection Word Left", UIAction([=, this]() { left(8, true); }));
+	actionHandler()->bindAction("Extend Selection Word Right", UIAction([=, this]() { right(8, true); }));
+	actionHandler()->bindAction("Page Up", UIAction([=, this]() { pageUp(false); }));
+	actionHandler()->bindAction("Page Down", UIAction([=, this]() { pageDown(false); }));
+	actionHandler()->bindAction("Extend Selection Page Up", UIAction([=, this]() { pageUp(true); }));
+	actionHandler()->bindAction("Extend Selection Page Down", UIAction([=, this]() { pageDown(true); }));
+	actionHandler()->bindAction("Move Cursor to Start of Line", UIAction([=, this]() { moveToStartOfLine(false); }));
+	actionHandler()->bindAction("Move Cursor to End of Line", UIAction([=, this]() { moveToEndOfLine(false); }));
+	actionHandler()->bindAction("Move Cursor to Start of View", UIAction([=, this]() { moveToStartOfView(false); }));
+	actionHandler()->bindAction("Move Cursor to End of View", UIAction([=, this]() { moveToEndOfView(false); }));
+	actionHandler()->bindAction("Extend Selection to Start of Line", UIAction([=, this]() { moveToStartOfLine(true); }));
+	actionHandler()->bindAction("Extend Selection to End of Line", UIAction([=, this]() { moveToEndOfLine(true); }));
+	actionHandler()->bindAction("Extend Selection to Start of View", UIAction([=, this]() { moveToStartOfView(true); }));
+	actionHandler()->bindAction("Extend Selection to End of View", UIAction([=, this]() { moveToEndOfView(true); }));
 }
 
 

@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -62,9 +62,9 @@ class Settings:
 	:func:`register_group` method allows for specifying a UI friendly title for use in the Binary Ninja UI. Defining a new setting requires a \
 	unique setting key and a JSON string of property, value pairs. The following table describes the available properties and values.
 
-		===================   ======================================   ==================   ========   =======================================================================
+		====================  ======================================   ==================   ========   =======================================================================
 		Property              JSON Data Type                           Prerequisite         Optional   {Allowed Values} and Notes
-		===================   ======================================   ==================   ========   =======================================================================
+		====================  ======================================   ==================   ========   =======================================================================
 		"title"               string                                   None                 No         Concise Setting Title
 		"type"                string                                   None                 No         {"array", "boolean", "number", "string", "object"}
 		"sorted"              boolean                                  "type" is "array"    Yes        Automatically sort list items (default is false)
@@ -82,9 +82,10 @@ class Settings:
 		"readOnly"            boolean                                  None                 Yes        Only enforced by UI elements
 		"optional"            boolean                                  None                 Yes        Indicates setting can be null
 		"hidden"              bool                                     "type" is "string"   Yes        Indicates the UI should conceal the content. The "ignore" property is required to specify the applicable storage scopes
-		"requiresRestart      boolean                                  None                 Yes        Enable restart notification in the UI upon change
+		"requiresRestart"     boolean                                  None                 Yes        Enable restart notification in the UI upon change
 		"uiSelectionAction"   string                                   "type" is "string"   Yes        {"file", "directory", <Registered UIAction Name>} Informs the UI to add a button to open a selection dialog or run a registered UIAction
-		===================   ======================================   ==================   ========   =======================================================================
+		"quickSettingsGroup"  string                                   None                 Yes        Groups related items in the quick settings context menu using dividers to separate groups
+		====================  ======================================   ==================   ========   =======================================================================
 
 	.. note:: In order to facilitate deterministic analysis results, settings from the *'default'* schema that impact analysis are serialized \
 	from Default, User, and Project scope into Resource scope during initial BinaryView analysis. This allows an analysis database to be opened \
@@ -243,14 +244,25 @@ class Settings:
 		"""
 		return core.BNSettingsContains(self.handle, key)
 
-	def is_empty(self) -> bool:
+	def is_empty(self, resource: Optional[Union['binaryview.BinaryView', 'function.Function']] = None, scope: 'SettingsScope' = SettingsScope.SettingsAutoScope) -> bool:
 		"""
 		``is_empty`` determine if the active settings schema is empty
 
+		:param resource: a BinaryView or Function object to check for emptiness
+		:param scope: the SettingsScope to check for emptiness
 		:return: True if the active settings schema is empty, False otherwise
 		:rtype: bool
 		"""
-		return core.BNSettingsIsEmpty(self.handle)
+		view_handle = None
+		func_handle = None
+		if resource is not None:
+			if isinstance(resource, binaryview.BinaryView):
+				view_handle = resource.handle
+			elif isinstance(resource, function.Function):
+				func_handle = resource.handle
+			else:
+				raise TypeError("Expected resource to be either a BinaryView or a Function.")
+		return core.BNSettingsIsEmpty(self.handle, view_handle, func_handle, scope)
 
 	def keys(self) -> List[str]:
 		"""
@@ -264,7 +276,10 @@ class Settings:
 		assert result is not None, "core.BNSettingsKeysList returned None"
 		out_list = []
 		for i in range(length.value):
-			out_list.append(result[i].decode('utf8'))
+			try:
+				out_list.append(result[i].decode('utf8'))
+			except UnicodeDecodeError:
+				out_list.append(result[i].decode('charmap'))
 		core.BNFreeStringList(result, length)
 		return out_list
 

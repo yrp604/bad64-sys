@@ -1,44 +1,40 @@
-# Objective-C (Beta)
+# Objective-C
 
-Recent version of Binary Ninja ship with [an additional plugin](https://github.com/Vector35/workflow_objc)
-for assisting with Objective-C analysis. It provides both a [workflow](https://docs.binary.ninja/dev/workflows.html)
-and a plugin command for enhancing Objective-C binary analysis. A brief summary
-of the features offered is as follows:
-
-- **Function Call Cleanup.** When using the Objective-C workflow, calls to
-  `objc_msgSend` can be replaced with direct calls to the relevant function's
-  implementation.
+Binary Ninja ships with built-in functionality for assisting with Objective-C analysis. 
+A brief summary of the features offered is as follows:
 
 - **Name and Type Recovery.** Using runtime information embedded in the
-  binary, Binary Ninja can automatically apply names and type information to
+  binary, Binary Ninja automatically applies names and type information to
   Objective-C functions.
 
 - **Structure Markup.** Data variables are automatically created for Objective-C
   structures such as classes and method lists to enable easy navigation.
 
-- **Data Renderers.** Formatting of Objective-C types such as tagged and/or
-  (image-)relative pointers is improved via custom data renderers.
+- **String Literal Handling.** Data variables are automatically created for all
+  `CFString` or `NSString` instances present in the binary.
 
-- **CFString Handling.** Data variables are automatically created for all
-  `CFString` instances present in the binary.
+- **Automatic Call Type Adjustments.** Binary Ninja automatically infers the number of arguments and their names
+  for individual calls to `objc_msgSend` and `objc_msgSendSuper2`. Argument names are derived from the selector
+  components, and argument types are inferred in limited cases.
+
+- **Pseudo Objective-C Language.** Decompiled code can be displayed using a _Pseudo Objective-C_
+  language syntax. This renders `objc_msgSend` and other Objective-C runtime calls using the
+  `[receiver message:argument other:argument2]` syntax found in Objective-C source code.
+  Additionally, literals such as `CFString` or `NSString` are displayed inline as `@"string"`.
+
+- **Direct Call Rewriting.** Calls to `objc_msgSend` can be rewritten to be direct calls to
+  the first known method implementation for that selector.
+  
+  This is disabled by default as it will give potentially confusing results for any selector
+  that has more than one implementation or for common selector names. That said, some users may
+  still find it to be useful. It can be enabled via `analysis.objectiveC.resolveDynamicDispatch`
+  setting.
 
 ## Usage
 
-If you have an Objective-C binary you are analyzing for the first time, or one
-you are returning to, you can run the "Objective-C — Analyze Structures" action
-from the command palette or plugins menu to perform Objective-C structure
-analysis. _If you have already marked up Objective-C structures or modified
-function types yourself, be aware that they may be overwritten when this action
-is run._
+Objective-C metadata will be automatically processed when you open a Mach-O or DYLD shared cache binary in Binary Ninja.
 
-![](../img/objc-analyze-action.png)
+The Pseudo Objective-C Language representation is available via the language pop-up menu at the top of Linear and Graph views:
 
-### Workflow
+![](../img/pseudo-objc-menu-item.png)
 
-To utilize function call cleanup, the workflows feature must be enabled, and the
-Objective-C workflow must be chosen when loading a binary for analysis.
-
-![](../img/objc-workflow-selected.png)
-
-This will automatically apply structure analysis as the binary is analyzed and
-also translate `objc_msgSend` calls to direct method calls, where possible.

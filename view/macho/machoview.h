@@ -144,6 +144,7 @@ typedef int vm_prot_t;
 #define S_THREAD_LOCAL_VARIABLES              0x13
 #define S_THREAD_LOCAL_VARIABLE_POINTERS      0x14
 #define S_THREAD_LOCAL_INIT_FUNCTION_POINTERS 0x15
+#define S_INIT_FUNC_OFFSETS                   0x16
 
 //Mach-O Commands
 #define LC_REQ_DYLD              0x80000000
@@ -817,6 +818,13 @@ namespace BinaryNinja
 		RebaseOpcodeDoRebaseUlebTimesSkippingUleb   = 0x80u, // REBASE_OPCODE_DO_REBASE_ULEB_TIMES_SKIPPING_ULEB
 	};
 
+	enum BindSpecial {
+		BindSpecialDylibSelf = 0, // BIND_SPECIAL_DYLIB_SELF
+		BindSpecialDylibMainExecutable = -1, // BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE
+		BindSpecialDylibFlatLookup = -2, // BIND_SPECIAL_DYLIB_FLAT_LOOKUP
+		BindSpecialDylibWeakLookup = -3 // BIND_SPECIAL_DYLIB_WEAK_LOOKUP
+	};
+
 	enum BindOpcode {
 		BindOpcodeMask                            = 0xF0u, // BIND_OPCODE_MASK
 		BindImmediateMask                         = 0x0Fu, // BIND_IMMEDIATE_MASK
@@ -1270,7 +1278,8 @@ namespace BinaryNinja
 		GenericArm64eFixupFormat,
 		Generic64FixupFormat,
 		Generic32FixupFormat,
-		Firmware32FixupFormat
+		Firmware32FixupFormat,
+		Kernel64Format
 	};
 
 	union Arm64e {
@@ -1364,6 +1373,22 @@ namespace BinaryNinja
 	};
 #endif
 
+	struct fileset_entry_command {
+		uint32_t cmd;
+		uint32_t cmdsize;
+		uint64_t vmaddr;
+		uint64_t fileoff;
+		uint32_t nameEntryOffsetFromBaseOfCommand;
+		uint32_t reserved;
+	};
+
+	struct BoundRelocation
+	{
+		BNRelocationInfo info;
+		std::string name;
+		int64_t ordinal;
+	};
+
 	struct MachOHeader {
 		bool isMainHeader = false;
 
@@ -1375,7 +1400,7 @@ namespace BinaryNinja
 		std::vector<std::pair<uint64_t, bool>> entryPoints;
 		std::vector<uint64_t> m_entryPoints; //list of entrypoints
 
-		std::vector<std::pair<BNRelocationInfo, std::string>> externalRelocations;
+		std::vector<BoundRelocation> bindingRelocations;
 		std::vector<BNRelocationInfo> rebaseRelocations;
 
 		symtab_command symtab;
@@ -1388,7 +1413,7 @@ namespace BinaryNinja
 		linkedit_data_command chainedFixups {};
 		section_64 chainStarts {};
 
-		DataBuffer* stringList;
+		DataBuffer stringList;
 		size_t stringListSize = 0;
 
 		uint64_t relocationBase = 0;
@@ -1445,8 +1470,6 @@ namespace BinaryNinja
 			QualifiedName filesetEntryCommandQualName;
 		} m_typeNames;
 
-		ObjCProcessor* m_objcProcessor = nullptr;
-
 		uint64_t m_universalImageOffset;
 		bool m_parseOnly, m_backedByDatabase;
 		int64_t m_imageBaseAdjustment;
@@ -1471,16 +1494,18 @@ namespace BinaryNinja
 		std::vector<section_64> m_allSections;
 
 		MachOHeader HeaderForAddress(BinaryView* data, uint64_t address, bool isMainHeader, std::string identifierPrefix = "");
-		bool InitializeHeader(MachOHeader& header, bool isMainHeader, uint64_t preferredImageBase, std::string preferredImageBaseDesc);
+		bool InitializeHeader(MachOHeader& header, bool isMainHeader, uint64_t preferredImageBase,
+			std::string preferredImageBaseDesc, bool platformSetByUser);
 
 		void RebaseThreadStarts(BinaryReader& virtualReader, std::vector<uint32_t>& threadStarts, uint64_t stepMultiplier);
 		Ref<Symbol> DefineMachoSymbol(
 			BNSymbolType type, const std::string& name, uint64_t addr, BNSymbolBinding binding, bool deferred);
-		void ParseSymbolTable(BinaryReader& reader, MachOHeader& header, const symtab_command& symtab, const std::vector<uint32_t>& symbolStubsList);
+		void ParseSymbolTable(BinaryReader& reader, MachOHeader& header, const symtab_command& symtab, const std::vector<uint32_t>& symbolStubsList, MachoObjCProcessor*);
 		bool IsValidFunctionStart(uint64_t addr);
 		void ParseFunctionStarts(Platform* platform, uint64_t textBase, function_starts_command functionStarts);
 		bool ParseRelocationEntry(const relocation_info& info, uint64_t start, BNRelocationInfo& result);
 
+		bool AddExportTerminalSymbol(const std::string& symbolName, uint64_t symbolFlags, uint64_t imageOffset);
 		void ParseExportTrie(BinaryReader& reader, linkedit_data_command exportTrie);
 		void ReadExportNode(uint64_t viewStart, DataBuffer& buffer, const std::string& currentText,
 			size_t cursor, uint32_t endGuard);
@@ -1490,8 +1515,8 @@ namespace BinaryNinja
 			BNSymbolBinding binding);
 		bool GetSectionPermissions(MachOHeader& header, uint64_t address, uint32_t &flags);
 		bool GetSegmentPermissions(MachOHeader& header, uint64_t address, uint32_t &flags);
-		void ParseChainedFixups(MachOHeader& header, linkedit_data_command chainedFixups);
-		void ParseChainedStarts(MachOHeader& header, section_64 chainedStarts);
+		void ParseChainedFixups(MachOHeader& header, linkedit_data_command chainedFixups, MachoObjCProcessor*);
+		void ParseChainedStarts(MachOHeader& header, section_64 chainedStarts, MachoObjCProcessor*);
 
 		virtual uint64_t PerformGetEntryPoint() const override;
 

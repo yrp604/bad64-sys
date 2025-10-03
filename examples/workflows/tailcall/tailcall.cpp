@@ -74,8 +74,8 @@ extern "C"
 					DataVariable var;
 					if (data->GetDataVariableAtAddress(target.value, var))
 					{
-						if (var.type && (var.type->GetClass() == PointerTypeClass)
-						    && (var.type->GetChildType()->GetClass() == FunctionTypeClass))
+						if (var.type.GetValue() && (var.type->GetClass() == PointerTypeClass)
+							&& (var.type->GetChildType()->GetClass() == FunctionTypeClass))
 							canReturn = var.type->GetChildType()->CanReturn().GetValue();
 					}
 				}
@@ -117,7 +117,7 @@ extern "C"
 
 	BINARYNINJAPLUGIN bool CorePluginInit()
 	{
-		Ref<Workflow> customTailCallWorkflow = Workflow::Instance("core.function.baseAnalysis")->Clone("CustomTailCallWorkflow");
+		Ref<Workflow> customTailCallWorkflow = Workflow::Get("core.function.baseAnalysis")->Clone("CustomTailCallWorkflow");
 		customTailCallWorkflow->RegisterActivity(new Activity("extension.translateTailCalls", &TailCallTranslation));
 		customTailCallWorkflow->Replace("core.function.translateTailCalls", "extension.translateTailCalls");
 		customTailCallWorkflow->Remove("core.function.translateTailCalls");

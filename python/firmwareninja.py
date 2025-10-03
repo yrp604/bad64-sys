@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -773,9 +773,9 @@ class FirmwareNinja:
         """
         ``get_reference_tree`` returns a tree of reference nodes for a memory region, function, or address
 
-        :param Union[Section, FirmwareNinjaDevice, DataVariable, Function, int] location: Memory location to build the
+        :param Union[Section, FirmwareNinjaDevice, DataVariable, Function, int] location: Memory location to build the \
         reference tree for
-        :param list[FirmwareNinjaFunctionMemoryAccesses] fma: List of function memory accesses or None to use cross
+        :param list[FirmwareNinjaFunctionMemoryAccesses] fma: List of function memory accesses or None to use cross \
         references. None should only be supplied if location is a Function, DataVariable, or address.
         :param Optional[int] value: Only include the node in the tree if this value is written to the location
         :return: Root reference node containing the reference tree
@@ -829,11 +829,16 @@ class FirmwareNinja:
         """
 
         count = ctypes.c_ulonglong(0)
-        relationships = core.BNFirmwareNinjaQueryRelationships(self._handle, count)
+        relationships = core.BNFirmwareNinjaQueryRelationships(self._handle, ctypes.byref(count))
         relationship_list = []
         for i in range(count.value):
-            relationship_list.append(FirmwareNinjaRelationship(self._view, handle=relationships[i]))
+            relationship_list.append(
+                FirmwareNinjaRelationship(
+                    self._view, handle=core.BNNewFirmwareNinjaRelationshipReference(relationships[i])
+                )
+            )
 
+        core.BNFirmwareNinjaFreeRelationships(relationships, count.value)
         return relationship_list
 
     def add_relationship(self, relationship: FirmwareNinjaRelationship) -> None:

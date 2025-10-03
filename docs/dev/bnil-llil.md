@@ -1,6 +1,6 @@
 # Binary Ninja Intermediate Language: Low Level IL
 
-Make sure to checkout the [BNIL overview](bnil-overview.md) first if you haven't already. Or feel free to skip to [part 2](bnil-mlil.md) which covers MLIL, or [part 3](bnil-hlil.md) which covers HLIL. This developer guide is intended to cover some of the mechanics of the LLIL to distinguish it from the other ILs in the BNIL family.
+Make sure to checkout the [BNIL overview](bnil-overview.md) first if you haven't already. Or feel free to skip to [part 2](bnil-mlil.md) which covers MLIL, or [part 3](bnil-hlil.md) which covers HLIL. This developer guide is intended to cover some mechanics of LLIL to distinguish it from the other ILs in the BNIL family.
 
 If you've already read the introduction, let's get right into the details of LLIL!
 
@@ -42,7 +42,7 @@ Next we get the [`lowlevelil.LowLevelILFunction`](https://api.binary.ninja/binar
 
 Finally, we can print out the attributes of the instruction. We first print out `address` which is the address of the corresponding assembly language instruction.  Next, we print the `instr_index`, this you can think of as the address of the IL instruction. Since translating assembly language is a many-to-many relationship, we may see multiple IL instructions needed to represent a single assembly language instruction, and thus each IL instruction needs to have its own index separate from its address. Finally, we print out the instruction text.
 
-In python, iterating over a class is a distinct operation from subscripting.  This separation is used in the `LowLevelILFunction` class. If you iterate over a `LowLevelILFunction` you get a list of `LowLevelILBasicBlocks`, however if you subscript a `LowLevelILFunction` you actually get the `LowLevelILInstruction` whose `instr_index` corresponds to the subscript:
+In python, iterating over a class is a distinct operation from subscripting. This separation is used in the `LowLevelILFunction` class. If you iterate over a `LowLevelILFunction` you get a list of `LowLevelILBasicBlocks`, however if you subscript a `LowLevelILFunction` you actually get the `LowLevelILInstruction` whose `instr_index` corresponds to the subscript:
 
 ```
 >>> list(current_function.low_level_il)
@@ -55,7 +55,7 @@ In python, iterating over a class is a distinct operation from subscripting.  Th
 ```
 
 ## Low Level IL Instructions
-Now that we've established how to access LLIL Functions, Blocks, and Instructions, let's focus in on the instructions themselves. LLIL instructions are infinite length and structured as an expression tree. An expression tree means that instruction operands can be composed of operation. Thus we can have an IL instruction like this:
+Now that we've established how to access LLIL Functions, Blocks, and Instructions, let's focus in on the instructions themselves. LLIL instructions are infinite length and structured as an expression tree. An expression tree means that instruction operands can be composed of operation. Thus, we can have an IL instruction like this:
 
 ```
 eax = eax + ecx * 4
@@ -159,7 +159,7 @@ Going into gross detail on all the instructions is out of scope of this article,
 
 ### Registers, Constants & Flags
 
-When parsing an instruction tree the terminals are registers, constants and flags. This provide the basis from which all instructions are built.
+When parsing an instruction tree the terminals are registers, constants and flags. This provides the basis from which all instructions are built.
 
 * `LLIL_REG` - A register, terminal
 * `LLIL_CONST` - A constant integer value, terminal
@@ -173,8 +173,8 @@ Reading and writing memory is accomplished through the following instructions.
 
 * `LLIL_LOAD` - Load a value from memory.
 * `LLIL_STORE` - Store a value to memory.
-* `LLIL_PUSH` - Store value to stack; adjusting stack pointer by sizeof(value) after the store.
-* `LLIL_POP` - Load value from stack; adjusting stack pointer by sizeof(value) after the store.
+* `LLIL_PUSH` - Store value to stack; adjusting stack pointer by `sizeof(value)` after the store.
+* `LLIL_POP` - Load value from stack; adjusting stack pointer by `sizeof(value)` after the store.
 
 
 ### Control Flow & Conditionals
@@ -206,7 +206,7 @@ As you can see from the above code, labels are really just used internally and a
 * `LLIL_SYSCALL` - System call instruction
 * `LLIL_TAILCALL ` - This instruction calls the expression `dest` using `params` as input and `output` for return values
 * `LLIL_IF` - `If` provides conditional execution. If condition is true execution branches to the true label and false label otherwise.
-* `LLIL_GOTO` - `Goto` is used to branch to an IL label, this is different than jump since jump can only jump to addresses.
+* `LLIL_GOTO` - `Goto` is used to branch to an IL label, this is different from jump since jump can only jump to addresses.
 * `LLIL_FLAG_COND` - Returns the flag condition expression for the specified flag condition.
 * `LLIL_CMP_E` - equality
 * `LLIL_CMP_NE` - not equal
@@ -275,7 +275,7 @@ The double precision instruction multiply, divide, modulus instructions are part
 
 ### Floating Point Conditionals
 
-These are identical to their native counterparts but are lifted separately so that the operations can impact different flags. See "Control FLow & Conditionals" above.
+These are identical to their native counterparts but are lifted separately so that the operations can impact different flags. See [Control Flow & Conditionals](#control-flow--conditionals) above.
 
 * `LLIL_FCMP_E ` - See above
 * `LLIL_FCMP_NE ` - See above

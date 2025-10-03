@@ -13,7 +13,7 @@ class FileInfoWidget : public QWidget
 
 	void addField(const QString& name, const QVariant& value);
 	void addCopyableField(const QString& name, const QVariant& value);
-	void addHashField(const QString& hashName, const QCryptographicHash::Algorithm& algorithm, const QByteArray& data);
+	void addHashFields(BinaryViewRef view);
 
   public:
 	FileInfoWidget(QWidget* parent, BinaryViewRef bv);

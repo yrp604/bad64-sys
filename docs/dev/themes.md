@@ -117,7 +117,7 @@ Colors marked "*required*" must be specified. Unmarked colors will hold default 
 3. `numberColor` (*required*) - Used to color number literals (e.g. `0xf0`)
 4. `codeSymbolColor` (*required*) - Used to color local function names (e.g. `sub_100003c50`)
 5. `dataSymbolColor` (*required*) - Used to color data symbols (e.g. `data_100003e2c`)
-6. `stackVariableColor` (*required*) - Used to color stack variables (e.g `var_8`) in disassembly and LLIL (the stack [does not exist](bnil-mlil.md) in MLIL and above)
+6. `stackVariableColor` (*required*) - Used to color stack variables (e.g. `var_8`) in disassembly and LLIL (the stack [does not exist](bnil-mlil.md) in MLIL and above)
 7. `importColor` (*required*) - Used to color imported function names (e.g. `printf`)
 8. `annotationColor` (*required*) - Used to color annotations (e.g. hints), not shown in picture above
 9. `commentColor` - Used to color code comments
@@ -223,7 +223,7 @@ Both the graph background and individual graph nodes are actually painted as a g
 
 1. `featureMapBaseColor` - Used to color the background
 2. `featureMapNavLineColor` - Used to color the line(s) that represent where you are in the binary
-3. `featureMapNavHighlightColor` - Used as a highlight outside of the navigation line(s)
+3. `featureMapNavHighlightColor` - Used as a highlight outside the navigation line(s)
 4. `featureMapDataVariableColor` - Used to highlight any area containing data variables
 5. `featureMapAsciiStringColor` - Used to highlight any area containing ASCII strings
 6. `featureMapUnicodeStringColor` - Used to highlight any area containing Unicode strings
@@ -234,12 +234,18 @@ Both the graph background and individual graph nodes are actually painted as a g
 
 #### Side Bar
 
-1. `sidebarBackgroundColor`
-2. `sidebarInactiveIconColor`
-3. `sidebarActiveIconColor`
-4. `sidebarHeaderBackgroundColor`
-5. `sidebarHeaderTextColor`
-6. `sidebarWidgetBackgroundColor`
+1. `sidebarBackgroundColor` - Used to color the background of the sidebar itself
+2. `sidebarInactiveIconColor` - Used to color the icon of a sidebar that is not active
+3. `sidebarHoverIconColor` - Used to color the icon of a sidebar the mouse is currently hovering over
+4. `sidebarActiveIconColor` - Used to color the icon of a sidebar that is active
+5. `sidebarFocusedIconColor` - Used to color the icon of a sidebar that has the keyboard focus
+6. `sidebarHoverBackgroundColor` - Used to color a rounded rectangle behind the icon of a sidebar the mouse is currently hovering over
+7. `sidebarActiveBackgroundColor` - Used to color a rounded rectangle behind the icon of a sidebar that is active
+8. `sidebarFocusedBackgroundColor` - Used to color a rounded rectangle behind the icon of a sidebar that has the keyboard focus
+9. `sidebarActiveIndicatorLineColor` - Used to show a vertical line next to a sidebar that is currently active
+10. `sidebarHeaderBackgroundColor` - Used to color the background of the sidebar header
+11. `sidebarHeaderTextColor` - Used to color the text in the sidebar header
+12. `sidebarWidgetBackgroundColor` - Used to color the background of each sidebar widget
 
 #### Mini-Graph
 
@@ -264,6 +270,7 @@ The image above shows an active pane on the left and an inactive pane on the rig
 
 1. `activePaneBackgroundColor` - Used to color the background of a pane that is active
 2. `inactivePaneBackgroundColor` - Used to color the background of a pane that is inactive
+3. `focusedPaneBackgroundColor` - Used to color the background of a pane that has the keyboard focus, not shown in picture above
 
 #### Status Bar
 

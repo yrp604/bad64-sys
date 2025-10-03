@@ -41,7 +41,7 @@ fn example_activity(analysis_context: &AnalysisContext) {
                 }
             }
         }
-        analysis_context.set_lifted_il_function(&llil);
+        analysis_context.set_llil_function(&llil.finalized());
     }
 }
 
@@ -52,8 +52,8 @@ pub fn main() {
         binaryninja::headless::Session::new().expect("Failed to initialize session");
 
     println!("Registering workflow...");
-    let old_meta_workflow = Workflow::instance("core.function.metaAnalysis");
-    let meta_workflow = old_meta_workflow.clone("core.function.metaAnalysis");
+    let old_meta_workflow = Workflow::get("core.function.metaAnalysis");
+    let meta_workflow = old_meta_workflow.clone_to("core.function.metaAnalysis");
     let activity = Activity::new_with_action(RUST_ACTIVITY_CONFIG, example_activity);
     meta_workflow.register_activity(&activity).unwrap();
     meta_workflow.insert("core.function.runFunctionRecognizers", [RUST_ACTIVITY_NAME]);

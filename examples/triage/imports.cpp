@@ -214,6 +214,8 @@ void GenericImportsModel::setFilter(const std::string& filterText)
 			m_entries.push_back(entry);
 		else if (FilteredView::match(std::to_string(entry->GetOrdinal()), filterText))
 			m_entries.push_back(entry);
+		else if (FilteredView::match(getLibrarySource(entry).toStdString(), filterText))
+		    m_entries.push_back(entry);
 	}
 	performSort(m_sortCol, m_sortOrder);
 	endResetModel();
@@ -230,7 +232,7 @@ ImportsTreeView::ImportsTreeView(ImportsWidget* parent, TriageView* view, Binary
 
 	// Allow view-specific shortcuts when imports are focused
 	m_actionHandler.setupActionHandler(this);
-	m_actionHandler.setActionContext([=]() { return m_view->actionContext(); });
+	m_actionHandler.setActionContext([=, this]() { return m_view->actionContext(); });
 
 	m_model = new GenericImportsModel(this, m_data);
 	setModel(m_model);

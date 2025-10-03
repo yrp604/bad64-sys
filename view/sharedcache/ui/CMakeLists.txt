@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.9 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 
 project(sharedcacheui)
 
@@ -6,7 +6,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 find_package(Qt6 COMPONENTS Core Gui Widgets REQUIRED)
 
-file(GLOB SOURCES *.cpp *.h)
+file(GLOB SOURCES CONFIGURE_DEPENDS *.cpp *.h)
 list(FILTER SOURCES EXCLUDE REGEX moc_.*)
 list(FILTER SOURCES EXCLUDE REGEX qrc_.*)
 
@@ -45,15 +45,17 @@ if(BN_INTERNAL_BUILD)
     set_target_properties(sharedcacheui PROPERTIES
             LIBRARY_OUTPUT_DIRECTORY ${BN_CORE_PLUGIN_DIR}
             RUNTIME_OUTPUT_DIRECTORY ${BN_CORE_PLUGIN_DIR})
+    ui_plugin_rpath(sharedcacheui)
 else()
     set_target_properties(sharedcacheui PROPERTIES
             LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/out/plugins
             RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/out/plugins
             )
+    bn_install_plugin(sharedcacheui)
 endif()
 
 set_target_properties(sharedcacheui PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
         CXX_VISIBILITY_PRESET hidden
         VISIBILITY_INLINES_HIDDEN ON
@@ -92,4 +94,5 @@ get_recursive_include_dirs(sharedcacheapi INCLUDES)
 target_include_directories(sharedcacheui PRIVATE ${INCLUDES})
 
 target_link_libraries(sharedcacheui sharedcacheapi sharedcache binaryninjaui Qt6::Core Qt6::Gui Qt6::Widgets)
+
 

@@ -1,22 +1,14 @@
 use binaryninja::binary_view::BinaryViewExt;
-use binaryninja::collaboration::{
-    has_collaboration_support, NoNameChangeset, Remote, RemoteFileType, RemoteProject,
-};
+use binaryninja::collaboration::{NoNameChangeset, Remote, RemoteFileType, RemoteProject};
 use binaryninja::headless::Session;
+use binaryninja::rc::Ref;
 use binaryninja::symbol::{SymbolBuilder, SymbolType};
 use rstest::*;
 use serial_test::serial;
+use std::env;
 use std::path::PathBuf;
 
-#[fixture]
-#[once]
-fn session() -> Session {
-    Session::new().expect("Failed to initialize session")
-}
-
-// TODO: This cannot run in CI, as headless does not have collaboration, we should gate this.
 // TODO: Why cant we create_project for the same project name? why does that fail.
-
 // TODO: Remote connection / disconnection is NOT thread safe, the core needs to lock on each.
 // TODO: Because of this we run these tests serially, this isnt _really_ an issue for real code, as
 // TODO: Real code shouldnt be trying to connect to the same remote on multiple threads.
@@ -26,7 +18,7 @@ fn temp_project_scope<T: Fn(&RemoteProject)>(remote: &Remote, project_name: &str
         // TODO: Because connecting is not thread safe we wont check the error here, this is because we might already
         // TODO: be connecting in some other thread and will error out on this thread. But we _probably_ will
         // TODO: have connected by the time this errors out. Maybe?
-        let _ = remote.connect();
+        remote.connect().expect("Failed to connect to remote");
     }
     let project = remote
         .create_project(project_name, "Test project for test purposes")
@@ -56,15 +48,38 @@ fn temp_project_scope<T: Fn(&RemoteProject)>(remote: &Remote, project_name: &str
         .expect("Failed to delete project");
 }
 
+/// Get the selected remote to test with.
+fn selected_remote() -> Option<Ref<Remote>> {
+    // TODO: Ability to override this with some environment variable?
+    // Assuming we already have called this we will have an active remote.
+    match binaryninja::collaboration::active_remote() {
+        Some(remote) => Some(remote),
+        // Assuming the user is initialized with an enterprise client we should contact that one first.
+        None => match binaryninja::collaboration::enterprise_remote() {
+            Some(remote) => Some(remote),
+            None => {
+                let remotes = binaryninja::collaboration::known_remotes();
+                remotes.iter().next().map(|r| r.clone())
+            }
+        },
+    }
+}
+
 #[rstest]
 #[serial]
-fn test_connection(_session: &Session) {
-    if !has_collaboration_support() {
-        eprintln!("No collaboration support, skipping test...");
+fn test_connection() {
+    let _session = Session::new().expect("Failed to initialize session");
+    let Some(remote) = selected_remote() else {
+        eprintln!("No known remotes, skipping test...");
         return;
+    };
+    // Another test might have already connected.
+    if remote.is_connected() {
+        remote
+            .disconnect()
+            .expect("Failed to disconnect from remote");
+        assert!(!remote.is_connected(), "Connection was not disconnected");
     }
-    let remotes = binaryninja::collaboration::known_remotes();
-    let remote = remotes.iter().next().expect("No known remotes!");
     assert!(remote.connect().is_ok(), "Failed to connect to remote");
     remote
         .disconnect()
@@ -74,13 +89,12 @@ fn test_connection(_session: &Session) {
 
 #[rstest]
 #[serial]
-fn test_project_creation(_session: &Session) {
-    if !has_collaboration_support() {
-        eprintln!("No collaboration support, skipping test...");
+fn test_project_creation() {
+    let _session = Session::new().expect("Failed to initialize session");
+    let Some(remote) = selected_remote() else {
+        eprintln!("No known remotes, skipping test...");
         return;
-    }
-    let remotes = binaryninja::collaboration::known_remotes();
-    let remote = remotes.iter().next().expect("No known remotes!");
+    };
     temp_project_scope(&remote, "test_creation", |project| {
         // Create the file than verify it by opening and checking contents.
         let created_file = project
@@ -100,7 +114,7 @@ fn test_project_creation(_session: &Session) {
             .expect("Failed to delete file");
         assert!(
             !project
-                .get_file_by_id(created_file_id)
+                .get_file_by_id(&created_file_id)
                 .is_ok_and(|f| f.is_some()),
             "File was not deleted"
         );
@@ -127,7 +141,7 @@ fn test_project_creation(_session: &Session) {
         let created_folder_file_id = created_folder_file.id();
         // Verify the file exists in the folder.
         let check_folder_file = project
-            .get_file_by_id(created_folder_file_id)
+            .get_file_by_id(&created_folder_file_id)
             .expect("Failed to get folder file by id")
             .unwrap();
         assert_eq!(check_folder_file.name().as_str(), "test_folder_file");
@@ -146,7 +160,7 @@ fn test_project_creation(_session: &Session) {
             .expect("Failed to delete folder");
         assert!(
             !project
-                .get_folder_by_id(created_folder_id)
+                .get_folder_by_id(&created_folder_id)
                 .is_ok_and(|f| f.is_some()),
             "Folder was not deleted"
         );
@@ -155,13 +169,12 @@ fn test_project_creation(_session: &Session) {
 
 #[rstest]
 #[serial]
-fn test_project_sync(_session: &Session) {
-    if !has_collaboration_support() {
-        eprintln!("No collaboration support, skipping test...");
+fn test_project_sync() {
+    let _session = Session::new().expect("Failed to initialize session");
+    let Some(remote) = selected_remote() else {
+        eprintln!("No known remotes, skipping test...");
         return;
-    }
-    let remotes = binaryninja::collaboration::known_remotes();
-    let remote = remotes.iter().next().expect("No known remotes!");
+    };
     temp_project_scope(&remote, "test_sync", |project| {
         // Open a view so that we can upload it.
         let out_dir = env!("OUT_DIR").parse::<PathBuf>().unwrap();
@@ -182,7 +195,7 @@ fn test_project_sync(_session: &Session) {
             SymbolBuilder::new(SymbolType::Function, "test", entry_function.start()).create();
         view.define_user_symbol(&new_entry_func_symbol);
         // Verify that we modified the binary
-        assert_eq!(entry_function.symbol().raw_name().as_str(), "test");
+        assert_eq!(entry_function.symbol().raw_name(), "test".into());
         // Make new snapshot.
         assert!(view.file().save_auto_snapshot());
         // We should have two snapshots.
@@ -202,20 +215,20 @@ fn test_project_sync(_session: &Session) {
         drop(view);
         // Verify that the remote file exists.
         project
-            .get_file_by_id(remote_file.id())
+            .get_file_by_id(&remote_file.id())
             .expect("Failed to get remote file by id");
         // Download the remote database with our changes.
         let downloaded_file = remote_file
-            .download_database(out_dir.join("downloaded_atox.obj.bndb"))
+            .download_database(&out_dir.join("downloaded_atox.obj.bndb"))
             .expect("Failed to download database");
         let downloaded_view = downloaded_file
-            .view_of_type(view_type)
+            .view_of_type(&view_type)
             .expect("Failed to open downloaded view");
         // Verify the changes in the entry function.
         let entry_function = downloaded_view
             .entry_point_function()
             .expect("Failed to get entry point function");
-        assert_eq!(entry_function.symbol().raw_name().as_str(), "test");
+        assert_eq!(entry_function.symbol().raw_name(), "test".into());
         project
             .delete_file(&remote_file)
             .expect("Failed to delete file");

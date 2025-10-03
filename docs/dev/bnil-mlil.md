@@ -34,7 +34,7 @@ First, it's important to understand what we mean when we talk about a MLIL varia
 <class 'binaryninja.function.Variable'>
 ```
 
-Variables in MLIL have a very specific meaning, that is not completely obvious at first. They represent a single storage location within the scope of a single function. To those not well versed in program analysis, a storage location is where a value is located at a given point in time. In the process of compilation a compiler conducts a step called _Register Allocation_; this is the process of figuring out how to map the potentially infinite number of variables specified in the original source code to a finite set of registers. When there are more variables and intermediate values than registers available, the compiler _spills_ them on to the stack. Thus a single high-level-language variable can be mapped across a number of storage locations. A variable can simultaneously be in multiple registers and on the stack at the same time. However, unlike high-level-language variables, MLIL variables represent one and only one storage location. Binary Ninja's High Level IL (HLIL) will be responsible for storing this mapping.
+Variables in MLIL have a very specific meaning, that is not completely obvious at first. They represent a single storage location within the scope of a single function. To those not well versed in program analysis, a storage location is where a value is located at a given point in time. In the process of compilation a compiler conducts a step called _Register Allocation_; this is the process of figuring out how to map the potentially infinite number of variables specified in the original source code to a finite set of registers. When there are more variables and intermediate values than registers available, the compiler _spills_ them on to the stack. Thus, a single high-level-language variable can be mapped across a number of storage locations. A variable can simultaneously be in multiple registers and on the stack at the same time. However, unlike high-level-language variables, MLIL variables represent one and only one storage location. Binary Ninja's High Level IL (HLIL) will be responsible for storing this mapping.
 
 So let's look at the properties available on a [`Variable`](https://api.binary.ninja/binaryninja.variable-module.html#binaryninja.variable.Variable) object.
 
@@ -76,7 +76,7 @@ The `storage` property changes meaning depending on the [`VariableSourceType`](h
 '-0x260'
 ```
 
-Given the above information it might now be intuitive how variable names are constructed. First we determine the `source_type` of the variable. If it's a `RegisterVariableSourceType` we just use the register's name directly. If it’s  a `StackVariableSourceType` then we use `var_` + `hex(-storage)`. Finally, we append a count each time that that storage location is reused.
+Given the above information it might now be intuitive how variable names are constructed. First we determine the `source_type` of the variable. If it's a `RegisterVariableSourceType` we just use the register's name directly. If it’s a `StackVariableSourceType` then we use `var_` + `hex(-storage)`. Finally, we append a count each time that that storage location is reused.
 
 ### `index`
 The `index` is an identifier chosen to be unique across different analysis passes.
@@ -128,7 +128,7 @@ A boolean type is an integer which has a value of False (0) or True (!0).
 
 ### IntegerTypeClass
 
-An integer type has a sign, a width (in bytes), and a display type. The display type determines how the integer should be displayed; the options are self explanatory:
+An integer type has a sign, a width (in bytes), and a display type. The display type determines how the integer should be displayed; the options are self-explanatory:
 
 ```
 enum IntegerDisplayType
@@ -150,7 +150,7 @@ enum IntegerDisplayType
 
 ### FloatTypeClass
 
-The float type is a IEEE 754 variable precision type, and can represent floating point numbers up to 10 bytes in width. All floating point numbers are assumed to be signed.
+The float type is an IEEE 754 variable precision type, and can represent floating point numbers up to 10 bytes in width. All floating point numbers are assumed to be signed.
 
 
 ### WideCharTypeClass
@@ -163,7 +163,7 @@ A varargs type is used to indicate that a function is variadic and thus represen
 
 ### ValueTypeClass
 
-A value type is simply a constant value. It is used mainly in demangling for types which only have a have a name or value.
+A value type is simply a constant value. It is used mainly in demangling for types which only have a name or value.
 
 
 ### FunctionTypeClass
@@ -189,7 +189,7 @@ Array types function similarly to pointer types however the array type knows how
 
 * `target`/`element_type` - the type of element this array is constructed of
 * `count` - the count of array elements
-* `width` - the size of the array (count * target.width)
+* `width` - the size of the array (`count * target.width`)
 
 ### EnumerationTypeClass
 
@@ -243,7 +243,7 @@ From the code in [`mediumlevelil.py`](https://github.com/Vector35/binaryninja-ap
 MediumLevelILOperation.MLIL_CALL: [("output", "var_list"), ("dest", "expr"), ("params", "expr_list")],
 ```
 
-Thus we can query the call's `output` which is a list of variables:
+Thus, we can query the call's `output` which is a list of variables:
 
 ```
 >>> inst.output
@@ -288,7 +288,7 @@ The parameter list can be accessed through the `params` property:
 * `MLIL_IF` - Branch to the `true`/`false` MLIL instruction identifier depending on the result of the `condition` expression
 * `MLIL_GOTO` - Branch to the `dest` expression id
 * `MLIL_TAILCALL` - This instruction calls the expression `dest` using `params` as input and `output` for return values
-* `MLIL_TAILCALL_UNTYPED ` - A tailcall where the stack stack resolution could not be determined and thus a list of parameters and return values do not exist
+* `MLIL_TAILCALL_UNTYPED ` - A tailcall where the stack resolution could not be determined and thus a list of parameters and return values do not exist
 * `MLIL_SYSCALL` - Make a system/service call with parameters `params` and output `output`
 * `MLIL_SYSCALL_UNTYPED` - Makes a system/service call, but an exact set of parameters couldn't be determined.
 
@@ -308,8 +308,8 @@ The parameter list can be accessed through the `params` property:
 * `MLIL_VAR_ALIASED_FIELD` -
 * `MLIL_VAR_FIELD` - A variable and offset expression `src`, `offset`
 * `MLIL_VAR_SPLIT` - A split pair of variables `high`:`low` which can be used a single expression
-* `MLIL_VAR_PHI` - A `PHI` represents the combination of several prior versions of a variable when differnet basic blocks coalesce into a single destination and it's unknown which path was taken.
-* `MLIL_MEM_PHI` - A memory `PHI` represents memory modifications that could have occured down different source basic blocks similar to a `VAR_PHI`.
+* `MLIL_VAR_PHI` - A `PHI` represents the combination of several prior versions of a variable when different basic blocks coalesce into a single destination and it's unknown which path was taken.
+* `MLIL_MEM_PHI` - A memory `PHI` represents memory modifications that could have occurred down different source basic blocks similar to a `VAR_PHI`.
 * `MLIL_ADDRESS_OF` - The address of variable `src`
 * `MLIL_ADDRESS_OF_FIELD` - The address and `offset` of the variable `src`
 * `MLIL_CONST` - A constant integral value `constant`

@@ -5,13 +5,13 @@
 
 ### Creating the Plugin
 
-First, take a look at some of the [example](https://github.com/Vector35/binaryninja-api/tree/dev/python/examples) plugins, or some of the [community](https://github.com/Vector35/community-plugins) plugins to get a feel for different APIs you might be interested in. Of course, the full [API](https://api.binary.ninja/) docs are online and available offline via the `Help`/`Open Python API Reference...`.
+First, take a look at some [example](https://github.com/Vector35/binaryninja-api/tree/dev/python/examples) plugins, or some of the [community](https://github.com/Vector35/community-plugins) plugins to get a feel for different APIs you might be interested in. Of course, the full [API](https://api.binary.ninja/) docs are online and available offline via the `Help`/`Open Python API Reference...`.
 
-To start, we suggest you download the [sample plugin](https://github.com/Vector35/sample_plugin) as a template since it contains all of the elements you're likely to need.
+To start, we suggest you download the [sample plugin](https://github.com/Vector35/sample_plugin) as a template since it contains all the elements you're likely to need.
 
 - Begin by editing the `plugin.json` file
 - Next, update the `LICENSE`
-- For small scripts, you can include all the code inside of `__init__.py`, though we recommend for most larger scripts that init just act as an initializer and call into functions organized appropriately in other files.
+- For small scripts, you can include all the code inside `__init__.py`, though we recommend for larger scripts that `__init__.py` just act as an initializer and calls into functions organized appropriately in other files.
 - If you have python dependencies, create a [requirements.txt](https://pip.pypa.io/en/latest/cli/pip_freeze/) listing any python dependencies.
 
 ### Submitting to the Plugin Manager
@@ -33,7 +33,7 @@ The [`add_repository`](https://api.binary.ninja/binaryninja.pluginmanager-module
 
 ### Testing
 
-It's useful to be able to reload your plugin during testing. On the Commercial or Ultimate editions of Binary Ninja, this is easily accomplished with a stand-alone headless install using `import binaryninja` after [installing the API](https://github.com/Vector35/binaryninja-api/blob/dev/scripts/install_api.py).  (install_api.py is included in each platforms respective [installation folder](../guide/index.md#binary-path))
+It's useful to be able to reload your plugin during testing. On the Commercial or Ultimate editions of Binary Ninja, this is easily accomplished with a stand-alone headless install using `import binaryninja` after [installing the API](https://github.com/Vector35/binaryninja-api/blob/dev/scripts/install_api.py).  (install_api.py is included in each platform's respective [installation folder](../guide/index.md#binary-path))
 
 Additionally, some plugin types like Architectures or BinaryViews are only loaded at launch and cannot be reloaded during a running session.
 
@@ -45,7 +45,7 @@ import importlib
 importlib.reload(pluginname);pluginname.callbackmethod(bv)
 ```
 
-Then just `[UP] [ENTER]` to trigger the reload when the plugin has changed.
+Then just `[UP] [ENTER]` to trigger a reload when the plugin has changed.
 
 ## Writing plugins using other IDEs (tab completion)
 
@@ -83,14 +83,14 @@ Binary Ninja UI plugins should always `import binaryninjaui` before an `import P
 
 UI plugins can take many forms. Some, like [Snippets](https://github.com/vector35/snippets) create their own UI elements and interact via UIActions. Others extend the UI via existing UI elements such as [Triage](https://github.com/Vector35/binaryninja-api/tree/dev/python/examples/triage), [Kaitai](https://github.com/Vector35/kaitai), [hellosidebar](https://github.com/Vector35/binaryninja-api/blob/dev/python/examples/hellosidebar.py), or [helloglobalarea](https://github.com/Vector35/binaryninja-api/blob/dev/python/examples/helloglobalarea.py).
 
-Many other [third-party](https://github.com/vector35/community-plugins/) plugins also implement UI based examples, such as [BNIL Graph](https://github.com/withzombies/bnil-graph) using the FlowGraph APIs. 
+Many other [third-party](https://github.com/vector35/community-plugins/) plugins also implement UI based examples, such as [BNIL Graph](https://github.com/withzombies/bnil-graph) using the FlowGraph APIs.
 
 Unfortunately, due to a PySide documentation generation issue, the best and most reliable documentation on the UI system is not in the regular [python](https://api.binary.ninja/) API docs, but in the [C++ documentation](https://api.binary.ninja/cpp/) which translates fairly cleanly to their python equivalent.
 
 
 ## Writing Native Plugins
 
-Writing native plugins allows for higher performance code and lower level access to the Binary Ninja API, but comes with a couple more hurdles than Python. 
+Writing native plugins allows for higher performance code and lower level access to the Binary Ninja API, but comes with a couple more hurdles than Python.
 Notably, native plugins are built against a specific version of the API, cannot be hot-reloaded, and require more sophisticated build setups.
 
 ### Supported Toolchains
@@ -98,11 +98,11 @@ Notably, native plugins are built against a specific version of the API, cannot 
 When building native plugins for Binary Ninja, the following toolchains and dependencies are required, based on host OS.
 Older versions may work but are not supported.
 
-- macOS: Xcode 13+
-- Windows: VS 2019 Professional with C/C++ Native Tools package
-- Linux: GCC 9.4+
+- macOS: Xcode 15 or Command Line Tools for macOS 14 (Apple Clang 15.0.0)
+- Windows: VS 2022 Professional with C/C++ Native Tools package, v143 (14.34)
+- Linux: GCC 11.4+
 
-Additionally, Binary Ninja uses C++17 features, and requires a C++17 compatible compiler.
+Additionally, Binary Ninja uses C++20 features, and requires a C++20 compatible compiler.
 
 ### CMake Setup
 
@@ -112,16 +112,16 @@ although it is recommended to use the latest version.
 
 ### Project Setup
 
-The first things to specify in your CMake file are a couple boilerplate options for building C++:  
+The first things to specify in your CMake file are a couple boilerplate options for building C++:
 
     # Pick whatever version you have
     cmake_minimum_required(VERSION 3.24)
 
     # Name your plugin
     project(TestPlugin CXX)
-    
-    set(CMAKE_CXX_STANDARD 17)
-    
+
+    set(CMAKE_CXX_STANDARD 20)
+
     # Unless you are writing a plugin that needs Qt's UI, specify this
     set(HEADLESS 1)
 
@@ -135,14 +135,14 @@ and reference it directly in your plugin. If you're using git, this can be accom
     git submodule add https://github.com/Vector35/binaryninja-api.git binaryninjaapi
     cd binaryninjaapi
     # Pick the revision from api_REVISION.txt
-    git checkout 6466fba3341b2ea7dbfceeeebbc6c0322a5d8514 
+    git checkout 6466fba3341b2ea7dbfceeeebbc6c0322a5d8514
 
 If you're not using git, you can clone the repository elsewhere:
 
     git clone https://github.com/Vector35/binaryninja-api.git binaryninjaapi
-    cd binaryninjaapi 
+    cd binaryninjaapi
     # Pick the revision from api_REVISION.txt
-    git checkout 6466fba3341b2ea7dbfceeeebbc6c0322a5d8514 
+    git checkout 6466fba3341b2ea7dbfceeeebbc6c0322a5d8514
 
 Now that you have the correct copy of the api, you need to point CMake at it and include it for use.
 Include something like the following in your CMake script and either add the path of your clone
@@ -162,18 +162,18 @@ Be sure to create a shared library and link against the Binary Ninja api. Also, 
 when you use `cmake install`.
 
     # Use whichever sources and plugin name you want
-    add_library(TestPlugin SHARED TestPlugin.cpp) 
-    
+    add_library(TestPlugin SHARED TestPlugin.cpp)
+
     # Link with Binary Ninja
     target_link_libraries(TestPlugin PUBLIC binaryninjaapi)
-    
+
     # Tell `cmake --install` to copy your plugin to the plugins directory
     bn_install_plugin(TestPlugin)
 
 From there you can write the rest of your plugin's CMake configuration, including any other dependencies or
 options that you want. When you want to run your plugin, you can use `cmake --build` and `cmake --install`
 to compile and copy your plugin to your Binary Ninja plugins directory, or set up an IDE to do that for you.
-You could also copy the plugin manually if you are using a different plugins directory location. 
+You could also copy the plugin manually if you are using a different plugins directory location.
 
 In the source code of your plugin, you will need to export some functions that Binary Ninja uses to load your plugin
 at runtime:
@@ -182,7 +182,7 @@ at runtime:
     extern "C" {
         // Tells Binary Ninja which version of the API you compiled against
         BN_DECLARE_CORE_ABI_VERSION
-        
+
         // Function run on plugin startup, do simple initialization here (Settings, BinaryViewTypes, etc)
         BINARYNINJAPLUGIN bool CorePluginInit()
         {
@@ -206,14 +206,14 @@ class, and you should only ever handle Refs or bare pointers. When in doubt, fee
 
 ### Automated GitHub CI
 
-Managing build infrastructure to build cross-platform native plugins can be a headache even for stables, let alone 
+Managing build infrastructure to build cross-platform native plugins can be a headache even for stables, let alone
 trying to track all dev releases. To help with that, we've published an [example plugin](https://github.com/Vector35/sample_plugin_cpp) that includes GitHub
 actions to build on MacOS, Linux, and Windows. Combining this with something like a [plugin loader](https://github.com/rikodot/binja_native_sigscan_loader) can simplify
 both publishing and using native plugins.
 
 ### UI Plugins
 
-If you want to include UI in your plugin, you can integrate with Binary Ninja's Qt-based UI by linking with Qt and `binaryninjaui`.
+If you want to include a UI in your plugin, you can integrate with Binary Ninja's Qt-based UI by linking with Qt and `binaryninjaui`.
 You will need to use the same version of Qt as Binary Ninja. We provide steps for building it [here](../about/open-source.md#building-qt),
 or you can attempt to use a system-provided copy if you use Linux and like to live dangerously.
 Building it is a bit of a process, but should provide you with a working installation. Once you have a Qt build,
@@ -225,10 +225,10 @@ you can amend your CMake file to make a UI plugin. You will need the following C
     # If you are using Qt MOC (i.e. use Q_OBJECT/Q_SIGNALS/Q_SLOTS)
     set(CMAKE_AUTOMOC ON)
     set(CMAKE_AUTORCC ON)
-    
+
     # Locate Qt installation for linking
     find_package(Qt6 COMPONENTS Core Gui Widgets REQUIRED)
-    
+
     # Add MOCS to your build
     add_library(TestPlugin SHARED library.cpp ${MOCS})
 
@@ -240,11 +240,11 @@ Then, in your plugin code, instead of using the exported functions for a core pl
     #include "binaryninjaapi.h"
     #include "uitypes.h"
     #include "uicontext.h"
-    
+
     extern "C" {
         // Tells Binary Ninja which version of the API you compiled against
         BN_DECLARE_UI_ABI_VERSION
-    
+
         // Function run on plugin startup, do simple initialization here (ViewTypes, SidebarWidgetTypes, etc)
         BINARYNINJAPLUGIN bool UIPluginInit()
         {
@@ -252,7 +252,7 @@ Then, in your plugin code, instead of using the exported functions for a core pl
         }
 
         // (Optional) Function to add other plugin dependencies in case your plugin requires them
-        // Historically, these have never actually been used 
+        // Historically, these have never actually been used
         BINARYNINJAPLUGIN void UIPluginDependencies()
         {
             // For example, if you require triage view to be loaded before your plugin
@@ -277,16 +277,16 @@ are no cookie-cutter solutions to this problem, but there is a general strategy:
 
 Again, I'm going to point out [the debugger](https://github.com/vector35/debugger) as a fantastic example of how to
 implement this. Generally speaking, you will either need to write both sides of the FFI in a similar way, or you may
-be able to find a library that does that for you. Possibly [libffi](https://sourceware.org/libffi/), although there 
+be able to find a library that does that for you. Possibly [libffi](https://sourceware.org/libffi/), although there
 aren't any examples of using it for Binary Ninja specifically. If you manage to get something working, let us know!
-We would love to see more complex plugins with extensible behavior! 
+We would love to see more complex plugins with extensible behavior!
 
 ## IDE Setup
 
 ### CLion
 
 CLion is generally pretty good at handling CMake projects. Given the above CMake configuration, it can
-automatically detect the plugin target and will compile and install correctly. Here are a a few steps to finish
+automatically detect the plugin target and will compile and install correctly. Here are a few steps to finish
 setup for building and live debugging your plugin:
 
 1. If you installed Binary Ninja somewhere other than the default, add an environment variable in your CMake Profile pointing at the installation, e.g.: `BN_INSTALL_DIR=/Applications/Binary Ninja.app`
@@ -294,7 +294,7 @@ setup for building and live debugging your plugin:
 3. In your Run Configuration's Before Launch steps, add an Install step. This will copy the updated version of your plugin before starting, so you don't have to run Install manually.
 4. Set the Executable of your Run Configuration to point to the Binary Ninja executable. This allows you to compile your plugin and start Binary Ninja automatically.
    i. On macOS, you will need the full path to /Applications/Binary Ninja.app/Contents/MacOS/binaryninja
-5. (Optionally) Add the `-e` flag to the Program Arguments to get error logs printed to your console 
+5. (Optionally) Add the `-e` flag to the Program Arguments to get error logs printed to your console
 6. (Optionally) Add the `-e -d` flags to the Program Arguments to get debug logs printed to your console. This may slow down Binary Ninja (and CLion) due to the large volume of logs produced.
 7. (Optionally) Add the `-l /tmp/bn_out.txt` flags to the Program Arguments so your logs also get printed to a text file when you inevitably fill up the Console buffer in CLion and want to see what happened.
 8. (Optionally on macOS) Add the Environment Variables `MallocScribble=1` and `MallocPreScribble=1` to make memory errors easier to spot.
@@ -317,7 +317,7 @@ You need to set up a task in `.vscode/tasks.json` to build and install your plug
                 "detail": "CMake template install task",
                 "options": {
                     "environment": {
-                        // You will need this if your Binary Ninja installation is not in the default location   
+                        // You will need this if your Binary Ninja installation is not in the default location
                         "BN_INSTALL_DIR": "C:\\Users\\User\\AppData\\Local\\Vector35\\BinaryNinja",
                         // You will need this if you are writing a UI plugin
                         "PATH": "C:\\Users\\User\\Qt\\6.8.2\\msvc2019_64\\bin"
@@ -363,7 +363,7 @@ and use command-line lldb or gdb to debug their code. Shout-outs to people tryin
 
 ## Submitting to the plugin manager
 
-While native plugins are not supported in the plugin manager at this time, it's possible to work around this limitation by pre-building a native plugin for all three platforms and using a python plugin that acts as a loader for the native plugin. There aren't any good examples of automated workflows for this, but [binexport](https://github.com/google/binexport) has supposedly got it working. But given that the people you're distributing your plugin to may have a different version of the API, you will likely want to just distribute the source code and build setup, and have them build against whatever version of Binary Ninja they have installed.
+While native plugins are not fully supported in the plugin manager at this time, it's possible to work around this limitation by pre-building a native plugin for all three platforms and using a python plugin that acts as a loader for the native plugin. Additionally, you can submit a plugin as "view_only" which helps with discoverability.
 
 ## Examples
 
@@ -372,11 +372,11 @@ Several native plugin examples exist:
  - [Triage](https://github.com/Vector35/binaryninja-api/tree/dev/examples/triage)
  - [Debugger](https://github.com/Vector35/debugger)
  - [ObjectiveNinja](https://github.com/jonpalmisc/ObjectiveNinja)
- - [BinExport](https://github.com/google/binexport#binary-ninja) (Used with BinDiff)
+ - [BinExport](https://github.com/vector35/binexport#binary-ninja) (Used with BinDiff)
  - [Binliner](https://github.com/holmesmr/binliner)
 
 ## Contributing to Official Plugins
 
-There are many many official plugins released as open source. Python ones are included in the [official plugin repository](https://github.com/vector35/official-plugins), [native architectures](https://github.com/vector35/?q=arch-&type=all&language=&sort=) are available on GitHub along with several others that are included with the default product such as the [debugger](https://github.com/Vector35/debugger), the [views](https://github.com/vector35/?q=view-&type=public&language=&sort=), [platforms](https://github.com/vector35/?q=platform&type=public&language=&sort=), and some [rust plugins](https://github.com/Vector35/binaryninja-api/tree/dev/rust/examples).
+There are many official plugins released as open source. Python ones are included in the [official plugin repository](https://github.com/vector35/official-plugins), [native architectures](https://github.com/vector35/?q=arch-&type=all&language=&sort=) are available on GitHub along with several others that are included with the default product such as the [debugger](https://github.com/Vector35/debugger), the [views](https://github.com/vector35/?q=view-&type=public&language=&sort=), [platforms](https://github.com/vector35/?q=platform&type=public&language=&sort=), and some [rust plugins](https://github.com/Vector35/binaryninja-api/tree/dev/rust/examples).
 
 The first time you contribute, you'll be asked to sign a [CLA](https://gist.github.com/psifertex/a207c2e070f4e342554dc011e920b341) automatically by [cla-assistant](https://cla-assistant.io/). Further commits after the first should not require any changes.

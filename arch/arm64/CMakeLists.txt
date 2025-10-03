@@ -1,14 +1,15 @@
-cmake_minimum_required(VERSION 3.9 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 
 project(arch_arm64 CXX C)
 
-file(GLOB SOURCES
+file(GLOB SOURCES CONFIGURE_DEPENDS
 	*.cpp
 	*.c
 	*.h
 	disassembler/decode.c
 	disassembler/format.c
-	disassembler/sysregs.c
+	disassembler/sysregs_gen.c
+	disassembler/sysregs_fmt_gen.c
 	disassembler/regs.c
 	disassembler/encodings_dec.c
 	disassembler/encodings_fmt.c
@@ -20,6 +21,8 @@ file(GLOB SOURCES
 	disassembler/decode_fields32.c
 	disassembler/decode_scratchpad.c
 	disassembler/*.h)
+
+list(FILTER SOURCES EXCLUDE REGEX "sysregs\\.(h|cpp)$")
 
 if(DEMO)
 	add_library(${PROJECT_NAME} STATIC ${SOURCES})
@@ -57,10 +60,10 @@ ELSE()
 ENDIF()
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
-	CXX_STANDARD 17
+	CXX_STANDARD 20
 	CXX_VISIBILITY_PRESET hidden
 	CXX_STANDARD_REQUIRED ON
-	C_STANDARD 99
+	C_STANDARD 11
 	C_STANDARD_REQUIRED ON
 	C_VISIBILITY_PRESET hidden
 	VISIBILITY_INLINES_HIDDEN ON

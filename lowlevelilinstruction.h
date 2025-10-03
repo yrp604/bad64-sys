@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2024 Vector 35 Inc
+// Copyright (c) 2015-2025 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -371,6 +371,12 @@ namespace BinaryNinja
 	{
 		struct ListIterator
 		{
+			typedef std::forward_iterator_tag iterator_category;
+			typedef uint64_t value_type;
+			typedef std::ptrdiff_t difference_type;
+			typedef void pointer;
+			typedef value_type reference;
+
 #ifdef BINARYNINJACORE_LIBRARY
 			LowLevelILFunction* function;
 			const BNLowLevelILInstruction* instr;
@@ -410,6 +416,12 @@ namespace BinaryNinja
 	{
 		struct ListIterator
 		{
+			typedef std::forward_iterator_tag iterator_category;
+			typedef size_t value_type;
+			typedef std::ptrdiff_t difference_type;
+			typedef void pointer;
+			typedef value_type reference;
+
 			LowLevelILIntegerList::const_iterator pos;
 			bool operator==(const ListIterator& a) const { return pos == a.pos; }
 			bool operator!=(const ListIterator& a) const { return pos != a.pos; }
@@ -444,6 +456,12 @@ namespace BinaryNinja
 	{
 		struct ListIterator
 		{
+			typedef std::forward_iterator_tag iterator_category;
+			typedef std::pair<uint64_t, size_t> value_type;
+			typedef std::ptrdiff_t difference_type;
+			typedef void pointer;
+			typedef value_type reference;
+
 			LowLevelILIntegerList::const_iterator pos;
 			bool operator==(const ListIterator& a) const { return pos == a.pos; }
 			bool operator!=(const ListIterator& a) const { return pos != a.pos; }
@@ -479,6 +497,12 @@ namespace BinaryNinja
 	{
 		struct ListIterator
 		{
+			typedef std::forward_iterator_tag iterator_category;
+			typedef LowLevelILInstruction value_type;
+			typedef std::ptrdiff_t difference_type;
+			typedef void pointer;
+			typedef value_type reference;
+
 			LowLevelILIntegerList::const_iterator pos;
 			size_t instructionIndex;
 			bool operator==(const ListIterator& a) const { return pos == a.pos; }
@@ -516,6 +540,12 @@ namespace BinaryNinja
 	{
 		struct ListIterator
 		{
+			typedef std::forward_iterator_tag iterator_category;
+			typedef RegisterOrFlag value_type;
+			typedef std::ptrdiff_t difference_type;
+			typedef void pointer;
+			typedef value_type reference;
+
 			LowLevelILIntegerList::const_iterator pos;
 			bool operator==(const ListIterator& a) const { return pos == a.pos; }
 			bool operator!=(const ListIterator& a) const { return pos != a.pos; }
@@ -550,6 +580,12 @@ namespace BinaryNinja
 	{
 		struct ListIterator
 		{
+			typedef std::forward_iterator_tag iterator_category;
+			typedef SSARegister value_type;
+			typedef std::ptrdiff_t difference_type;
+			typedef void pointer;
+			typedef value_type reference;
+
 			LowLevelILIntegerList::const_iterator pos;
 			bool operator==(const ListIterator& a) const { return pos == a.pos; }
 			bool operator!=(const ListIterator& a) const { return pos != a.pos; }
@@ -585,6 +621,12 @@ namespace BinaryNinja
 	{
 		struct ListIterator
 		{
+			typedef std::forward_iterator_tag iterator_category;
+			typedef SSARegisterStack value_type;
+			typedef std::ptrdiff_t difference_type;
+			typedef void pointer;
+			typedef value_type reference;
+
 			LowLevelILIntegerList::const_iterator pos;
 			bool operator==(const ListIterator& a) const { return pos == a.pos; }
 			bool operator!=(const ListIterator& a) const { return pos != a.pos; }
@@ -620,6 +662,12 @@ namespace BinaryNinja
 	{
 		struct ListIterator
 		{
+			typedef std::forward_iterator_tag iterator_category;
+			typedef SSAFlag value_type;
+			typedef std::ptrdiff_t difference_type;
+			typedef void pointer;
+			typedef value_type reference;
+
 			LowLevelILIntegerList::const_iterator pos;
 			bool operator==(const ListIterator& a) const { return pos == a.pos; }
 			bool operator!=(const ListIterator& a) const { return pos != a.pos; }
@@ -655,6 +703,12 @@ namespace BinaryNinja
 	{
 		struct ListIterator
 		{
+			typedef std::forward_iterator_tag iterator_category;
+			typedef SSARegisterOrFlag value_type;
+			typedef std::ptrdiff_t difference_type;
+			typedef void pointer;
+			typedef value_type reference;
+
 			LowLevelILIntegerList::const_iterator pos;
 			bool operator==(const ListIterator& a) const { return pos == a.pos; }
 			bool operator!=(const ListIterator& a) const { return pos != a.pos; }
@@ -1227,6 +1281,12 @@ namespace BinaryNinja
 	{
 		struct ListIterator
 		{
+			typedef std::forward_iterator_tag iterator_category;
+			typedef LowLevelILOperand value_type;
+			typedef std::ptrdiff_t difference_type;
+			typedef void pointer;
+			typedef value_type reference;
+
 			const LowLevelILOperandList* owner;
 			_STD_VECTOR<LowLevelILOperandUsage>::const_iterator pos;
 			bool operator==(const ListIterator& a) const { return pos == a.pos; }

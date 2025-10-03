@@ -6,6 +6,31 @@
 - Then you should contact [support]!
 
 ## Bug Reproduction
+
+We recommend the following steps to produce the best bug-reports:
+
+1. Try to reproduce your issue with both the latest stable release and [the latest development release](index.md#updates).
+2. Try temporarily [disabling plugins](#disabling-plugins)
+3. Try temporarily [disabling user settings](#disabling-user-settings)
+4. Try temporarily [resetting QSettings](#resetting-qsettings)
+5. Enable [extra logging](#extra-logging)
+
+### Disabling Plugins
+
+Disabling plugins can be a quick way to diagnose whether some unexpected behavior is caused by Binary Ninja itself or a plugin. Simply launch the process with the extra command-line option `-p` to disable all user plugins at load time. Note that repository plugins are currently not disabled with this switch.
+
+### Disabling User Settings
+
+In addition to the above-mentioned method of disabling user-plugins, you can also set the environment variable `BN_DISABLE_USER_PLUGINS` (the value doesn't matter, the mere existence of the variable is enough). Related, there is another setting: `BN_DISABLE_USER_SETTINGS` that will launch BN without relying on any user settings which is useful for identifying whether a particular behavior is the result of a setting without having to manually change a number of settings.
+
+### Resetting QSettings
+
+Some UI features rely on [QSettings](https://doc.qt.io/qt-6/qsettings.html#platform-specific-notes) to save state, window location, etc. You can temporarily reset your QSettings by setting the `BN_QSETTINGS_POSTFIX` environment variable which will cause Binary Ninja to use a different QSettings for that launch.
+
+Removing the environment variable or running without it will revert to the default QSettings locations.
+
+### Extra logging
+
 Running Binary Ninja with debug logging will make your bug report more useful.
 
 ``` bash
@@ -20,19 +45,7 @@ Alternatively, it might be easier to save debug logs to a file instead:
 
 (note that both long and short-form of the command-line arguments are demonstrated in the above examples)
 
-
 ## Troubleshooting Plugins
-
-### Disabling Plugins
-
-Disabling plugins can be a quick way to diagnose whether some unexpected behavior is caused by Binary Ninja itself or a plugin. Simply launch the process with the extra command-line option `-p` to disable all user plugins at load time. Note that repository plugins are currently not disabled with this switch.
-
-
-### Disabling User Settings
-
-In addition to the above-mentioned method of disabling user-plugins, you can also set the environment variable `BN_DISABLE_USER_PLUGINS` (the value doesn't matter, the mere existence of the variable is enough). Related, there is another setting: `BN_DISABLE_USER_SETTINGS` that will launch BN without relying on any user settings which is useful for identifying whether a particular behavior is the result of a setting without having to manually change a number of settings.
-
-### Other Steps
 
 While third party plugins are not officially supported, there are a number of troubleshooting tips that can help identify the cause. The most important is to enable debug logging as suggested in the previous section. This will often highlight problems with python paths or any other issues that prevent plugins from running.
 
@@ -51,7 +64,7 @@ Binary Ninja will refuse to run as root on Linux and macOS platforms. You can wo
 
 ## API
 
- - If the GUI launches but the license file is not valid when launched from the command-line, check that you're using the right version of Python as only 64-bit Python 2.7, or 3.x versions are supported. Additionally, the [personal][purchase] edition does not support headless operation.
+ - If the GUI launches, but the license file is not valid when launched from the command-line, check that you're using the right version of Python as only 64-bit Python 3.x versions are supported. Additionally, the [personal][purchase] edition does not support headless operation.
 
 ## Database Issues
 
@@ -59,7 +72,7 @@ Binary Ninja will refuse to run as root on Linux and macOS platforms. You can wo
 
 Binary Ninja currently uses SQLite for its analysis databases (`.bndb`), projects (`.bnpr`), and type archives (`.bnta`). This means it is only able to have a single instance of these open at any time.
 
-The message `Error while saving database snapshot: database is locked` means multiple copies are open at the same time. All instances will need to be closed and a new one opened to allow saving again (this includes syncing to an Enterprise server).
+The message `Error while saving database snapshot: database is locked` means multiple copies are open at the same time. All instances will need to be closed, and a new one opened to allow saving again (this includes syncing to an Enterprise server).
 
 ### Large File Size
 
@@ -209,7 +222,7 @@ The following environment variables may be helpful when troubleshooting issues:
 | BN_DISABLE_USER_SETTINGS | Flag (True if exists) | This flag will cause Binary Ninja to ignore any [`settings.json`](https://docs.binary.ninja/guide/settings.html).|
 | BN_SCREENSHOT | Flag (True if exists) | This flag removes some small UI clutter to enable cleaner screenshots. |
 | BN_DEBUG_HTTP | Flag (True if exists) | This flag enables additional debug logging of HTTP activity. |
-| BN_DEBUG_EXCEPTION_TRACES | Flag (True if exists) | This variable includes stack traces when exceptions are handled (MacOS and Linux only). |
+| BN_DEBUG_EXCEPTION_TRACES | Flag (Disabled by default, enabled if set to "1") | This variable includes stack traces when exceptions are handled. |
 | BN_DEBUG_CLANG | Flag (True if exists) | If set, this flag adds additional debugging information to stdout from clang type parsing. |
 
 
@@ -248,7 +261,7 @@ By default, Binary Ninja does full analysis of the binary and decompiles every f
 * Changing `analysis.mode` to an option less than `full` will prevent Binary Ninja from doing full decompilation for every function.
 * Turning on `analysis.suppressNewAutoFunctionAnalysis` will prevent new functions from being analyzed at all until they are accessed.
 
-Other [analysis settings](settings.md#all-settings) can also help. Check the descriptions to see what they do.
+Other [analysis settings](settings.md#settings-reference) can also help. Check the descriptions to see what they do.
 
 
 ## Collaboration Issues

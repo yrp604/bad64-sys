@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -61,6 +61,22 @@ class BasicBlockEdge:
 			return f"<{self.type.name}: {self.target.start:#x}>"
 
 
+@dataclass(frozen=True)
+class PendingBasicBlockEdge:
+	"""
+	``class PendingBasicBlockEdge`` represents a pending edge that has not yet been resolved.
+
+	:cvar type: The edge branch type.
+	:cvar arch: The architecture of the target basic block.
+	:cvar target: The address of the target basic block.
+	:cvar fall_through: Whether this edge is a fallthrough edge.
+	"""
+	type: BranchType
+	arch: 'architecture.Architecture'
+	target: int
+	fallthrough: bool
+
+
 class BasicBlock:
 	"""
 	The ``class BasicBlock`` object is returned during analysis and should not be directly instantiated.
@@ -118,10 +134,17 @@ class BasicBlock:
 
 	def __repr__(self):
 		arch = self.arch
-		if arch:
-			return f"<{self.__class__.__name__}: {arch.name}@{self.start:#x}-{self.end:#x}>"
+		if self.is_il:
+			# IL indices are shown as decimal
+			if arch:
+				return f"<{self.__class__.__name__}: {arch.name}@{self.start}-{self.end}>"
+			else:
+				return f"<{self.__class__.__name__}: {self.start}-{self.end}>"
 		else:
-			return f"<{self.__class__.__name__}: {self.start:#x}-{self.end:#x}>"
+			if arch:
+				return f"<{self.__class__.__name__}: {arch.name}@{self.start:#x}-{self.end:#x}>"
+			else:
+				return f"<{self.__class__.__name__}: {self.start:#x}-{self.end:#x}>"
 
 	def __len__(self):
 		return int(core.BNGetBasicBlockLength(self.handle))
@@ -252,19 +275,23 @@ class BasicBlock:
 		elif il_type == _function.FunctionGraphType.LiftedILFunctionGraph:
 			return func.lifted_il
 		elif il_type == _function.FunctionGraphType.LowLevelILSSAFormFunctionGraph:
-			return func.low_level_il.ssa_form
+			func_llil = func.low_level_il
+			return func_llil.ssa_form if func_llil is not None else None
 		elif il_type == _function.FunctionGraphType.MediumLevelILFunctionGraph:
 			return func.medium_level_il
 		elif il_type == _function.FunctionGraphType.MediumLevelILSSAFormFunctionGraph:
-			return func.medium_level_il.ssa_form
+			func_mlil = func.medium_level_il
+			return func_mlil.ssa_form if func_mlil is not None else None
 		elif il_type == _function.FunctionGraphType.MappedMediumLevelILFunctionGraph:
 			return func.mapped_medium_level_il
 		elif il_type == _function.FunctionGraphType.MappedMediumLevelILSSAFormFunctionGraph:
-			return func.mapped_medium_level_il.ssa_form
+			func_mmlil = func.mapped_medium_level_il
+			return func_mmlil.ssa_form if func_mmlil is not None else None
 		elif il_type == _function.FunctionGraphType.HighLevelILFunctionGraph:
 			return func.high_level_il
 		elif il_type == _function.FunctionGraphType.HighLevelILSSAFormFunctionGraph:
-			return func.high_level_il.ssa_form
+			func_hlil = func.high_level_il
+			return func_hlil.ssa_form if func_hlil is not None else None
 		elif il_type == _function.FunctionGraphType.HighLevelLanguageRepresentationFunctionGraph:
 			return func.high_level_il
 		else:
@@ -350,6 +377,14 @@ class BasicBlock:
 		"""Basic block end (read-only)"""
 		return core.BNGetBasicBlockEnd(self.handle)
 
+	@end.setter
+	def end(self, value: int) -> None:
+		"""Sets the end of the basic block
+
+		.. note:: This setter is intended for use by architecture plugins only.
+		"""
+		core.BNSetBasicBlockEnd(self.handle, value)
+
 	@property
 	def length(self) -> int:
 		"""Basic block length (read-only)"""
@@ -397,6 +432,11 @@ class BasicBlock:
 		"""Whether basic block has undetermined outgoing edges (read-only)"""
 		return core.BNBasicBlockHasUndeterminedOutgoingEdges(self.handle)
 
+	@has_undetermined_outgoing_edges.setter
+	def has_undetermined_outgoing_edges(self, value: bool) -> None:
+		"""Sets whether basic block has undetermined outgoing edges"""
+		core.BNBasicBlockSetUndeterminedOutgoingEdges(self.handle, value)
+
 	@property
 	def can_exit(self) -> bool:
 		"""Whether basic block can return or is tagged as 'No Return' (read-only)"""
@@ -412,6 +452,104 @@ class BasicBlock:
 		"""Whether basic block has any invalid instructions (read-only)"""
 		return core.BNBasicBlockHasInvalidInstructions(self.handle)
 
+	@has_invalid_instructions.setter
+	def has_invalid_instructions(self, value: bool) -> None:
+		"""Sets whether basic block has any invalid instructions"""
+		core.BNBasicBlockSetHasInvalidInstructions(self.handle, value)
+
+	def add_pending_outgoing_edge(self, typ: BranchType, addr: int, arch: 'architecture.Architecture', fallthrough: bool = False) -> None:
+		"""
+		Adds a pending outgoing edge to the basic block. This is used to add edges that are not yet resolved.
+
+		.. note:: This method is intended for use by architecture plugins only.
+
+		:param BranchType typ: The type of the branch.
+		:param int addr: The address of the target basic block.
+		:param Architecture arch: The architecture of the target basic block.
+		:param bool fallthrough: Whether this edge is a fallthrough edge.
+		"""
+
+		core.BNBasicBlockAddPendingOutgoingEdge(self.handle, typ.value, addr, arch.handle, fallthrough)
+
+	def get_pending_outgoing_edges(self) -> list[PendingBasicBlockEdge]:
+		"""
+		Returns a list of pending outgoing edges for the basic block. These are edges that have not yet been resolved.
+
+		.. note:: This method is intended for use by architecture plugins only.
+
+		:return: List of PendingBasicBlockEdge objects.
+		"""
+		count = ctypes.c_ulonglong(0)
+		pending_edges = core.BNGetBasicBlockPendingOutgoingEdges(self.handle, ctypes.byref(count))
+		if pending_edges is None:
+			return []
+
+		result: List[PendingBasicBlockEdge] = []
+		try:
+			for i in range(count.value):
+				result.append(PendingBasicBlockEdge(
+					type=BranchType(pending_edges[i].type),
+					arch=architecture.CoreArchitecture._from_cache(pending_edges[i].arch),
+					target=pending_edges[i].target,
+					fallthrough=pending_edges[i].fallThrough
+				))
+			return result
+		finally:
+			core.BNFreePendingBasicBlockEdgeList(pending_edges)
+
+	def clear_pending_outgoing_edges(self) -> None:
+		"""
+		Clears all pending outgoing edges for the basic block. This is used to remove edges that have not yet been resolved.
+
+		.. note:: This method is intended for use by architecture plugins only.
+		"""
+		core.BNClearBasicBlockPendingOutgoingEdges(self.handle)
+
+	def get_instruction_data(self, addr: int) -> bytes:
+		"""
+		Returns the raw instruction data for the basic block at the specified address.
+
+		.. note:: This method is intended for use by architecture plugins only.
+
+		:return: Raw instruction data as bytes.
+		"""
+
+		size = ctypes.c_ulonglong(0)
+		data = core.BNBasicBlockGetInstructionData(self.handle, addr, ctypes.byref(size))
+		if data is None:
+			return b''
+
+		return ctypes.string_at(data, size.value)
+
+	def add_instruction_data(self, data: bytes) -> None:
+		"""
+		Adds raw instruction data to the basic block.
+
+		.. note:: This method is intended for use by architecture plugins only.
+
+		:param bytes data: Raw instruction data to add to the basic block.
+		"""
+		if not isinstance(data, bytes):
+			raise TypeError("data must be of type bytes")
+
+		core.BNBasicBlockAddInstructionData(self.handle, data, len(data))
+
+	@property
+	def fallthrough_to_function(self) -> bool:
+		"""Whether the basic block has a fallthrough edge to a function."""
+
+		return core.BNBasicBlockIsFallThroughToFunction(self.handle)
+
+	@fallthrough_to_function.setter
+	def fallthrough_to_function(self, value: bool) -> None:
+		"""Sets whether the basic block has a fallthrough edge to a function.
+
+		.. note:: This setter is intended for use by architecture plugins only.
+		"""
+		if not isinstance(value, bool):
+			raise TypeError("value must be of type bool")
+		core.BNBasicBlockSetFallThroughToFunction(self.handle, value)
+
 	def _make_blocks(self, blocks, count: int) -> List['BasicBlock']:
 		assert blocks is not None, "core returned empty block list"
 		try:
@@ -426,28 +564,66 @@ class BasicBlock:
 
 	@property
 	def dominators(self) -> List['BasicBlock']:
-		"""List of dominators for this basic block (read-only)"""
+		"""
+		List of dominators for this basic block (read-only).
+
+		A dominator of a basic block B is a block that must be executed before B can be executed.
+		In other words, every path from the entry block to B must go through the dominator.
+		This includes B itself - every block dominates itself. See
+		:py:func:`BasicBlock.strict_dominators` for dominators that don't include B.
+		"""
 		count = ctypes.c_ulonglong()
 		blocks = core.BNGetBasicBlockDominators(self.handle, count, False)
 		return self._make_blocks(blocks, count.value)
 
 	@property
 	def post_dominators(self) -> List['BasicBlock']:
-		"""List of dominators for this basic block (read-only)"""
+		"""
+		List of post-dominators for this basic block (read-only)
+
+		A post-dominator of a basic block B is a block that must be executed after B is executed.
+		In other words, every path from B to an exit block must go through the post-dominator.
+		This includes B itself - every block post-dominates itself. See
+		:py:func:`BasicBlock.strict_post_dominators` for post-dominators that don't include B.
+		If B has outgoing edges that can lead to different exit blocks, then this will only include B.
+		"""
 		count = ctypes.c_ulonglong()
 		blocks = core.BNGetBasicBlockDominators(self.handle, count, True)
 		return self._make_blocks(blocks, count.value)
 
 	@property
 	def strict_dominators(self) -> List['BasicBlock']:
-		"""List of strict dominators for this basic block (read-only)"""
+		"""
+		List of strict dominators for this basic block (read-only)
+
+		A strict dominator of a basic block B is a dominator of B that is not B itself.
+		See :py:func:`BasicBlock.dominators` for the definition of a dominator.
+		"""
 		count = ctypes.c_ulonglong()
 		blocks = core.BNGetBasicBlockStrictDominators(self.handle, count, False)
 		return self._make_blocks(blocks, count.value)
 
 	@property
+	def strict_post_dominators(self) -> List['BasicBlock']:
+		"""
+		List of strict post-dominators for this basic block (read-only)
+
+		A strict post-dominator of a basic block B is a post-dominator of B that is not B itself.
+		See :py:func:`BasicBlock.post_dominators` for the definition of a post-dominator.
+		"""
+		count = ctypes.c_ulonglong()
+		blocks = core.BNGetBasicBlockStrictDominators(self.handle, count, True)
+		return self._make_blocks(blocks, count.value)
+
+	@property
 	def immediate_dominator(self) -> Optional['BasicBlock']:
-		"""Immediate dominator of this basic block (read-only)"""
+		"""
+		Immediate dominator of this basic block (read-only)
+
+		The immediate dominator of a basic block B is the dominator closest to B in the control flow graph.
+		In other words, among all dominators of B, it is the dominator that doesn't dominate any other
+		dominator of B except itself. Each basic block except the entry block has a unique immediate dominator.
+		"""
 		result = core.BNGetBasicBlockImmediateDominator(self.handle, False)
 		if not result:
 			return None
@@ -455,7 +631,14 @@ class BasicBlock:
 
 	@property
 	def immediate_post_dominator(self) -> Optional['BasicBlock']:
-		"""Immediate dominator of this basic block (read-only)"""
+		"""
+		Immediate post-dominator of this basic block (read-only)
+
+		The immediate post-dominator of a basic block B is the post-dominator closest to B in the control flow graph.
+		In other words, among all post-dominators of B, it is the post-dominator that doesn't post-dominate any other
+		post-dominator of B except itself.
+		If B has outgoing edges that can lead to different exit blocks, then this will not exist.
+		"""
 		result = core.BNGetBasicBlockImmediateDominator(self.handle, True)
 		if not result:
 			return None
@@ -463,28 +646,52 @@ class BasicBlock:
 
 	@property
 	def dominator_tree_children(self) -> List['BasicBlock']:
-		"""List of child blocks in the dominator tree for this basic block (read-only)"""
+		"""
+		List of child blocks in the dominator tree for this basic block (read-only)
+
+		The dominator tree children of a basic block B are the blocks dominated by B.
+		See :py:func:`BasicBlock.dominators` for the definition of a dominator.
+		"""
 		count = ctypes.c_ulonglong()
 		blocks = core.BNGetBasicBlockDominatorTreeChildren(self.handle, count, False)
 		return self._make_blocks(blocks, count.value)
 
 	@property
 	def post_dominator_tree_children(self) -> List['BasicBlock']:
-		"""List of child blocks in the post dominator tree for this basic block (read-only)"""
+		"""
+		List of child blocks in the post-dominator tree for this basic block (read-only)
+
+		The post-dominator tree children of a basic block B are the blocks post-dominated by B.
+		See :py:func:`BasicBlock.post_dominators` for the definition of a post-dominator.
+		"""
 		count = ctypes.c_ulonglong()
 		blocks = core.BNGetBasicBlockDominatorTreeChildren(self.handle, count, True)
 		return self._make_blocks(blocks, count.value)
 
 	@property
 	def dominance_frontier(self) -> List['BasicBlock']:
-		"""Dominance frontier for this basic block (read-only)"""
+		"""
+		Dominance frontier for this basic block (read-only)
+
+		The dominance frontier of a basic block B is the set of blocks that are not strictly dominated by B,
+		but are immediately control-dependent on B. In other words, it contains the blocks where B's dominance 
+		"stops" - the blocks that have at least one predecessor not dominated by B, while having another 
+		predecessor that is dominated by B.
+		"""
 		count = ctypes.c_ulonglong()
 		blocks = core.BNGetBasicBlockDominanceFrontier(self.handle, count, False)
 		return self._make_blocks(blocks, count.value)
 
 	@property
 	def post_dominance_frontier(self) -> List['BasicBlock']:
-		"""Post dominance frontier for this basic block (read-only)"""
+		"""
+		Post-dominance frontier for this basic block (read-only)
+
+		The post-dominance frontier of a basic block B is the set of blocks that are not strictly post-dominated
+		by B, but have at least one successor that is post-dominated by B. In other words, it contains the blocks
+		where B's post-dominance "stops" - the blocks that have at least one successor not post-dominated by B,
+		while having another successor that is post-dominated by B.
+		"""
 		count = ctypes.c_ulonglong()
 		blocks = core.BNGetBasicBlockDominanceFrontier(self.handle, count, True)
 		return self._make_blocks(blocks, count.value)

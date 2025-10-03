@@ -1,4 +1,4 @@
-// Copyright 2021-2024 Vector 35 Inc.
+// Copyright 2021-2025 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 //! Sections are [crate::segment::Segment]s that are loaded into memory at run time
 
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::ops::Range;
 
 use binaryninjacore_sys::*;
@@ -23,8 +24,9 @@ use crate::binary_view::BinaryView;
 use crate::rc::*;
 use crate::string::*;
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
 pub enum Semantics {
+    #[default]
     DefaultSection,
     ReadOnlyCode,
     ReadOnlyData,
@@ -60,7 +62,6 @@ impl From<Semantics> for BNSectionSemantics {
     }
 }
 
-#[derive(PartialEq, Eq, Hash)]
 pub struct Section {
     handle: *mut BNSection,
 }
@@ -82,9 +83,9 @@ impl Section {
     /// # use binaryninja::section::Section;
     /// # use binaryninja::binary_view::BinaryViewExt;
     /// let bv = binaryninja::load("example").unwrap();
-    /// bv.add_section(Section::builder("example", 0..1024).align(4).entry_size(4))
+    /// bv.add_section(Section::builder("example".to_string(), 0..1024).align(4).entry_size(4))
     /// ```
-    pub fn builder<S: BnStrCompatible>(name: S, range: Range<u64>) -> SectionBuilder<S> {
+    pub fn builder(name: String, range: Range<u64>) -> SectionBuilder {
         SectionBuilder::new(name, range)
     }
 
@@ -92,8 +93,8 @@ impl Section {
         unsafe { BnString::from_raw(BNSectionGetName(self.handle)) }
     }
 
-    pub fn section_type(&self) -> BnString {
-        unsafe { BnString::from_raw(BNSectionGetType(self.handle)) }
+    pub fn section_type(&self) -> String {
+        unsafe { BnString::into_string(BNSectionGetType(self.handle)) }
     }
 
     pub fn start(&self) -> u64 {
@@ -160,6 +161,30 @@ impl fmt::Debug for Section {
     }
 }
 
+impl PartialEq for Section {
+    fn eq(&self, other: &Self) -> bool {
+        // TODO: Do we want to make this complete match like this?
+        self.name() == other.name()
+            && self.address_range() == other.address_range()
+            && self.semantics() == other.semantics()
+            && self.linked_section() == other.linked_section()
+            && self.info_section() == other.info_section()
+            && self.info_data() == other.info_data()
+            && self.align() == other.align()
+            && self.entry_size() == other.entry_size()
+            && self.auto_defined() == other.auto_defined()
+    }
+}
+
+impl Eq for Section {}
+
+impl Hash for Section {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name().hash(state);
+        self.address_range().hash(state);
+    }
+}
+
 impl ToOwned for Section {
     type Owned = Ref<Self>;
 
@@ -197,31 +222,32 @@ unsafe impl CoreArrayProviderInner for Section {
 }
 
 #[must_use]
-pub struct SectionBuilder<S: BnStrCompatible> {
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct SectionBuilder {
     is_auto: bool,
-    name: S,
+    name: String,
     range: Range<u64>,
     semantics: Semantics,
-    _ty: Option<S>,
+    ty: String,
     align: u64,
     entry_size: u64,
-    linked_section: Option<S>,
-    info_section: Option<S>,
+    linked_section: String,
+    info_section: String,
     info_data: u64,
 }
 
-impl<S: BnStrCompatible> SectionBuilder<S> {
-    pub fn new(name: S, range: Range<u64>) -> Self {
+impl SectionBuilder {
+    pub fn new(name: String, range: Range<u64>) -> Self {
         Self {
             is_auto: false,
             name,
             range,
             semantics: Semantics::DefaultSection,
-            _ty: None,
+            ty: "".to_string(),
             align: 1,
             entry_size: 1,
-            linked_section: None,
-            info_section: None,
+            linked_section: "".to_string(),
+            info_section: "".to_string(),
             info_data: 0,
         }
     }
@@ -231,8 +257,8 @@ impl<S: BnStrCompatible> SectionBuilder<S> {
         self
     }
 
-    pub fn section_type(mut self, ty: S) -> Self {
-        self._ty = Some(ty);
+    pub fn section_type(mut self, ty: String) -> Self {
+        self.ty = ty;
         self
     }
 
@@ -246,13 +272,13 @@ impl<S: BnStrCompatible> SectionBuilder<S> {
         self
     }
 
-    pub fn linked_section(mut self, linked_section: S) -> Self {
-        self.linked_section = Some(linked_section);
+    pub fn linked_section(mut self, linked_section: String) -> Self {
+        self.linked_section = linked_section;
         self
     }
 
-    pub fn info_section(mut self, info_section: S) -> Self {
-        self.info_section = Some(info_section);
+    pub fn info_section(mut self, info_section: String) -> Self {
+        self.info_section = info_section;
         self
     }
 
@@ -267,51 +293,67 @@ impl<S: BnStrCompatible> SectionBuilder<S> {
     }
 
     pub(crate) fn create(self, view: &BinaryView) {
-        let name = self.name.into_bytes_with_nul();
-        let ty = self._ty.map(|s| s.into_bytes_with_nul());
-        let linked_section = self.linked_section.map(|s| s.into_bytes_with_nul());
-        let info_section = self.info_section.map(|s| s.into_bytes_with_nul());
+        let name = self.name.to_cstr();
+        let ty = self.ty.to_cstr();
+        let linked_section = self.linked_section.to_cstr();
+        let info_section = self.info_section.to_cstr();
 
         let start = self.range.start;
         let len = self.range.end.wrapping_sub(start);
 
         unsafe {
-            let nul_str = c"".as_ptr();
-            let name_ptr = name.as_ref().as_ptr() as *mut _;
-            let ty_ptr = ty.map_or(nul_str, |s| s.as_ref().as_ptr() as *mut _);
-            let linked_section_ptr =
-                linked_section.map_or(nul_str, |s| s.as_ref().as_ptr() as *mut _);
-            let info_section_ptr = info_section.map_or(nul_str, |s| s.as_ref().as_ptr() as *mut _);
-
             if self.is_auto {
                 BNAddAutoSection(
                     view.handle,
-                    name_ptr,
+                    name.as_ptr(),
                     start,
                     len,
                     self.semantics.into(),
-                    ty_ptr,
+                    ty.as_ptr(),
                     self.align,
                     self.entry_size,
-                    linked_section_ptr,
-                    info_section_ptr,
+                    linked_section.as_ptr(),
+                    info_section.as_ptr(),
                     self.info_data,
                 );
             } else {
                 BNAddUserSection(
                     view.handle,
-                    name_ptr,
+                    name.as_ptr(),
                     start,
                     len,
                     self.semantics.into(),
-                    ty_ptr,
+                    ty.as_ptr(),
                     self.align,
                     self.entry_size,
-                    linked_section_ptr,
-                    info_section_ptr,
+                    linked_section.as_ptr(),
+                    info_section.as_ptr(),
                     self.info_data,
                 );
             }
+        }
+    }
+}
+
+impl<T: AsRef<Section>> From<T> for SectionBuilder {
+    fn from(value: T) -> Self {
+        let value = value.as_ref();
+        let name = value.name().to_string_lossy().to_string();
+        let ty = value.section_type().to_string();
+        let linked_section = value.linked_section().to_string_lossy().to_string();
+        let info_section = value.info_section().to_string_lossy().to_string();
+
+        Self {
+            is_auto: value.auto_defined(),
+            name,
+            range: value.address_range(),
+            semantics: value.semantics(),
+            ty,
+            align: value.align(),
+            entry_size: value.entry_size() as u64,
+            linked_section,
+            info_section,
+            info_data: value.info_data(),
         }
     }
 }

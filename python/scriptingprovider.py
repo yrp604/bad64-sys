@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -51,6 +51,8 @@ from . import function
 from . import log
 from .pluginmanager import RepositoryManager
 from .enums import ScriptingProviderExecuteResult, ScriptingProviderInputReadyState
+from .settings import Settings
+from .enums import SettingsScope
 
 _WARNING_REGEX = re.compile(r'^\S+:\d+: \w+Warning: ')
 
@@ -96,26 +98,26 @@ class ScriptingOutputListener:
 		try:
 			self.notify_output(text)
 		except:
-			logger.log_error(traceback.format_exc())
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingOutputListener._output")
 
 	def _warning(self, ctxt, text):
 		try:
 			self.notify_warning(text)
 		except:
-			logger.log_error(traceback.format_exc())
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingOutputListener._warning")
 
 
 	def _error(self, ctxt, text):
 		try:
 			self.notify_error(text)
 		except:
-			logger.log_error(traceback.format_exc())
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingOutputListener._error")
 
 	def _input_ready_state_changed(self, ctxt, state):
 		try:
 			self.notify_input_ready_state_changed(state)
 		except:
-			logger.log_error(traceback.format_exc())
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingOutputListener._input_ready_state_changed")
 
 	def notify_output(self, text):
 		pass
@@ -165,40 +167,40 @@ class ScriptingInstance:
 		try:
 			self.__class__._registered_instances.append(self)
 		except:
-			logger.log_error(traceback.format_exc())
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._external_ref_taken")
 
 	def _external_ref_released(self, ctxt):
 		try:
 			self.__class__._registered_instances.remove(self)
 		except:
-			logger.log_error(traceback.format_exc())
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._external_ref_released")
 
 	def _execute_script_input(self, ctxt, text):
 		try:
 			return self.perform_execute_script_input(text)
 		except:
-			logger.log_error(traceback.format_exc())
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._execute_script_input")
 			return ScriptingProviderExecuteResult.InvalidScriptInput
 
 	def _execute_script_input_from_filename(self, ctxt, filename):
 		try:
 			return self.perform_execute_script_input_from_filename(filename)
 		except:
-			logger.log_error(traceback.format_exc())
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._execute_script_input_from_filename")
 			return ScriptingProviderExecuteResult.InvalidScriptInput
 
 	def _cancel_script_input(self, ctxt):
 		try:
 			return self.perform_cancel_script_input()
 		except:
-			logger.log_error(traceback.format_exc())
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._cancel_script_input")
 			return ScriptingProviderExecuteResult.ScriptExecutionCancelled
 
 	def _release_binary_view(self, ctxt, view):
 		try:
 			binaryview.BinaryView._cache_remove(view)
 		except:
-			logger.log_error(traceback.format_exc())
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._release_binary_view")
 
 	def _set_current_binary_view(self, ctxt, view):
 		try:
@@ -209,7 +211,7 @@ class ScriptingInstance:
 				view = None
 			self.perform_set_current_binary_view(view)
 		except:
-			logger.log_error(traceback.format_exc())
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._set_current_binary_view")
 
 	def _set_current_function(self, ctxt, func):
 		try:
@@ -219,7 +221,7 @@ class ScriptingInstance:
 				func = None
 			self.perform_set_current_function(func)
 		except:
-			logger.log_error(traceback.format_exc())
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._set_current_function")
 
 	def _set_current_basic_block(self, ctxt, block):
 		try:
@@ -238,19 +240,19 @@ class ScriptingInstance:
 				block = None
 			self.perform_set_current_basic_block(block)
 		except:
-			logger.log_error(traceback.format_exc())
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._set_current_basic_block")
 
 	def _set_current_address(self, ctxt, addr):
 		try:
 			self.perform_set_current_address(addr)
 		except:
-			logger.log_error(traceback.format_exc())
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._set_current_address")
 
 	def _set_current_selection(self, ctxt, begin, end):
 		try:
 			self.perform_set_current_selection(begin, end)
 		except:
-			logger.log_error(traceback.format_exc())
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._set_current_selection")
 
 	def _complete_input(self, ctxt, text, state):
 		try:
@@ -258,14 +260,14 @@ class ScriptingInstance:
 				text = text.decode("utf-8")
 			return core.BNAllocString(self.perform_complete_input(text, state))
 		except:
-			logger.log_error(traceback.format_exc())
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._complete_input")
 			return core.BNAllocString("")
 
 	def _stop(self, ctxt):
 		try:
 			self.perform_stop()
 		except:
-			logger.log_error(traceback.format_exc())
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._stop")
 
 	@abc.abstractmethod
 	def perform_execute_script_input(self, text):
@@ -429,7 +431,7 @@ class ScriptingProvider(metaclass=_ScriptingProviderMetaclass):
 			assert script_instance is not None, "core.BNNewScriptingInstanceReference returned None"
 			return ctypes.cast(script_instance, ctypes.c_void_p).value
 		except:
-			logger.log_error(traceback.format_exc())
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingProvider._create_instance")
 			return None
 
 	def create_instance(self) -> Optional[ScriptingInstance]:
@@ -762,6 +764,7 @@ from binaryninja import *
 			return ""
 
 		def run(self):
+			core.BNSetThreadName("PythonInterpreterThread")
 			while not self.exit:
 				self.event.wait()
 				self.event.clear()
@@ -798,7 +801,9 @@ from binaryninja import *
 						self.apply_locals()
 
 						if self.active_view is not None:
-							self.active_view.update_analysis()
+							value, scope = Settings().get_bool_with_scope("python.updateAnalysisAfterCommand")
+							if scope == SettingsScope.SettingsInvalidScope or value:
+								self.active_view.update_analysis()
 					except:
 						traceback.print_exc()
 					finally:
@@ -893,6 +898,11 @@ from binaryninja import *
 		self.input_ready_state = ScriptingProviderInputReadyState.ReadyForScriptExecution
 		self.debugger_imported = False
 		from binaryninja.settings import Settings
+		settings = Settings()
+		if settings.contains('corePlugins.view.sharedCache') and settings.get_bool('corePlugins.view.sharedCache'):
+			from .sharedcache import SharedCacheController
+		if settings.contains('corePlugins.view.kernelCache') and settings.get_bool('corePlugins.view.kernelCache'):
+			from .kernelcache import KernelCacheController
 		if os.environ.get('BN_STANDALONE_DEBUGGER'):
 			# By the time this scriptingprovider.py file is imported, the user plugins are not loaded yet.
 			# So `from debugger import DebuggerController` would not work.
@@ -900,7 +910,6 @@ from binaryninja import *
 			self.DebuggerController = DebuggerController
 			self.debugger_imported = True
 		else:
-			settings = Settings()
 			if settings.contains('corePlugins.debugger') and settings.get_bool('corePlugins.debugger') and \
 				(os.environ.get('BN_DISABLE_CORE_DEBUGGER') is None):
 				from .debugger import DebuggerController
@@ -1092,9 +1101,9 @@ class PythonScriptingProvider(ScriptingProvider):
 				__import__(module)
 			return True
 		except KeyError:
-			logger.log_error(f"Failed to find python plugin: {repo_path}/{module}")
+			logger.log_error_for_exception(f"Failed to find python plugin: {repo_path}/{module}")
 		except ImportError as ie:
-			logger.log_error(f"Failed to import python plugin: {repo_path}/{module}: {ie}")
+			logger.log_error_for_exception(f"Failed to import python plugin: {repo_path}/{module}: {ie}")
 		except binaryninja.UIPluginInHeadlessError:
 			logger.log_info(f"Ignored python UI plugin: {repo_path}/{module}")
 		return False
@@ -1277,12 +1286,12 @@ class PythonScriptingProvider(ScriptingProvider):
 		"""
 		Add a magic variable to all scripting instances created by the scripting provider
 		:param name: Variable name identifier to be used in the interpreter
-		:param get_value: Function to call, before every time a script is evaluated,
+		:param get_value: Function to call, before every time a script is evaluated, \
 		                  to get the value of the variable
-		:param set_value: (Optional) Function to call after a script is evaluated, if the
-		                  value of the variable has changed during the course of the script.
-		                  If None, a warning will be printed stating that the variable is read-only.
-		                  Signature:
+		:param set_value: (Optional) Function to call after a script is evaluated, if the \
+		                  value of the variable has changed during the course of the script. \
+		                  If None, a warning will be printed stating that the variable is read-only. \
+		                  Signature: \
 		                  (instance: PythonScriptingInstance, old_value: any, new_value: any) -> None
 		:param depends_on: List of other variables whose values on which this variable's value depends
 		"""
@@ -1763,7 +1772,7 @@ PythonScriptingProvider.register_magic_variable(
 
 def _get_current_token(instance: PythonScriptingInstance):
 	if instance.interpreter.locals["current_ui_token_state"] is not None:
-		if instance.interpreter.locals["current_ui_token_state"].valid:
+		if instance.interpreter.locals["current_ui_token_state"].tokenIndex != 0xffffffff:  # BN_INVALID_OPERAND
 			return instance.interpreter.locals["current_ui_token_state"].token
 	return None
 
@@ -1802,6 +1811,19 @@ PythonScriptingProvider.register_magic_variable(
 	"current_il_index",
 	_get_current_il_index,
 	depends_on=["current_ui_view_location"]
+)
+
+
+def _get_current_il_expr_index(instance: PythonScriptingInstance):
+	if instance.interpreter.locals["current_token"] is not None:
+		return instance.interpreter.locals["current_token"].il_expr_index
+	return None
+
+
+PythonScriptingProvider.register_magic_variable(
+	"current_il_expr_index",
+	_get_current_il_expr_index,
+	depends_on=["current_token"]
 )
 
 
@@ -1862,6 +1884,25 @@ PythonScriptingProvider.register_magic_variable(
 	_get_current_il_instruction,
 	depends_on=[
 		"current_il_index",
+		"current_il_function"
+	]
+)
+
+
+def _get_current_il_expr(instance: PythonScriptingInstance):
+	if instance.interpreter.locals["current_il_function"] is not None \
+			and instance.interpreter.locals["current_il_expr_index"] is not None:
+		return instance.interpreter.locals["current_il_function"].get_expr(
+			instance.interpreter.locals["current_il_expr_index"]
+		)
+	return None
+
+
+PythonScriptingProvider.register_magic_variable(
+	"current_il_expr",
+	_get_current_il_expr,
+	depends_on=[
+		"current_il_expr_index",
 		"current_il_function"
 	]
 )

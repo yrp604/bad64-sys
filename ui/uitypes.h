@@ -6,14 +6,14 @@
 // there are changes to the API that affect linking, including new functions,
 // new types, modifications to existing functions or types, or new versions
 // of the Qt libraries.
-#define BN_CURRENT_UI_ABI_VERSION 9
+#define BN_CURRENT_UI_ABI_VERSION 11
 
 // Minimum ABI version that is supported for loading of plugins. Plugins that
 // are linked to an ABI version less than this will not be able to load and
 // will require rebuilding. The minimum version is increased when there are
 // incompatible changes that break binary compatibility, such as changes to
 // existing types or functions, or a new version of Qt.
-#define BN_MINIMUM_UI_ABI_VERSION 9
+#define BN_MINIMUM_UI_ABI_VERSION 11
 
 #ifdef __GNUC__
 	#ifdef BINARYNINJAUI_LIBRARY
@@ -77,6 +77,7 @@ typedef BinaryNinja::Ref<BinaryNinja::DownloadProvider> DownloadProviderRef;
 typedef BinaryNinja::Ref<BinaryNinja::Enumeration> EnumerationRef;
 typedef BinaryNinja::Ref<BinaryNinja::ExternalLibrary> ExternalLibraryRef;
 typedef BinaryNinja::Ref<BinaryNinja::ExternalLocation> ExternalLocationRef;
+typedef BinaryNinja::Ref<BinaryNinja::FieldResolutionInfo> FieldResolutionInfoRef;
 typedef BinaryNinja::Ref<BinaryNinja::FileMetadata> FileMetadataRef;
 typedef BinaryNinja::Ref<BinaryNinja::FlowGraph> FlowGraphRef;
 typedef BinaryNinja::Ref<BinaryNinja::FlowGraphLayoutRequest> FlowGraphLayoutRequestRef;
@@ -98,6 +99,7 @@ typedef BinaryNinja::Ref<BinaryNinja::ScriptingProvider> ScriptingProviderRef;
 typedef BinaryNinja::Ref<BinaryNinja::SecretsProvider> SecretsProviderRef;
 typedef BinaryNinja::Ref<BinaryNinja::Section> SectionRef;
 typedef BinaryNinja::Ref<BinaryNinja::Segment> SegmentRef;
+typedef BinaryNinja::Ref<BinaryNinja::MemoryMap> MemoryMapRef;
 typedef BinaryNinja::Ref<BinaryNinja::Settings> SettingsRef;
 typedef BinaryNinja::Ref<BinaryNinja::Snapshot> SnapshotRef;
 typedef BinaryNinja::Ref<BinaryNinja::Structure> StructureRef;
@@ -106,11 +108,14 @@ typedef BinaryNinja::Ref<BinaryNinja::Tag> TagRef;
 typedef BinaryNinja::Ref<BinaryNinja::TagType> TagTypeRef;
 typedef BinaryNinja::Ref<BinaryNinja::TemporaryFile> TemporaryFileRef;
 typedef BinaryNinja::Ref<BinaryNinja::Transform> TransformRef;
+typedef BinaryNinja::Ref<BinaryNinja::TransformContext> TransformContextRef;
+typedef BinaryNinja::Ref<BinaryNinja::TransformSession> TransformSessionRef;
 typedef BinaryNinja::Ref<BinaryNinja::Type> TypeRef;
 typedef BinaryNinja::Ref<BinaryNinja::TypeArchive> TypeArchiveRef;
 typedef BinaryNinja::Ref<BinaryNinja::TypeLibrary> TypeLibraryRef;
 typedef BinaryNinja::Ref<BinaryNinja::WebsocketClient> WebsocketClientRef;
 typedef BinaryNinja::Ref<BinaryNinja::WebsocketProvider> WebsocketProviderRef;
+typedef BinaryNinja::Ref<BinaryNinja::Workflow> WorkflowRef;
 typedef BinaryNinja::Ref<BinaryNinja::RepoPlugin> RepoPluginRef;
 typedef BinaryNinja::Ref<BinaryNinja::Repository> RepositoryRef;
 typedef BinaryNinja::Ref<BinaryNinja::RepositoryManager> RepositoryManagerRef;

@@ -1,4 +1,4 @@
-// Copyright (c) 2019 Vector 35 Inc
+// Copyright (c) 2019-2025 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -24,6 +24,12 @@
 
 using namespace BinaryNinja;
 using namespace std;
+
+
+ILSourceLocation::ILSourceLocation(const struct HighLevelILInstruction& instr):
+	address(instr.address), sourceOperand(instr.sourceOperand), valid(true),
+	ilBased(true), ilDirect(true), ilExprIndex(instr.exprIndex)
+{}
 
 
 HighLevelILFunction::HighLevelILFunction(Architecture* arch, Function* func)
@@ -564,6 +570,13 @@ Ref<FlowGraph> HighLevelILFunction::CreateFunctionGraph(DisassemblySettings* set
 }
 
 
+Ref<FlowGraph> HighLevelILFunction::CreateFunctionGraphImmediate(DisassemblySettings* settings)
+{
+	BNFlowGraph* graph = BNCreateHighLevelILImmediateFunctionGraph(m_object, settings ? settings->GetObject() : nullptr);
+	return new CoreFlowGraph(graph);
+}
+
+
 size_t HighLevelILFunction::GetExprIndexForLabel(uint64_t label)
 {
 	return BNGetHighLevelILExprIndexForLabel(m_object, label);
@@ -821,6 +834,15 @@ vector<InstructionTextToken> HighLevelILTokenEmitter::GetCurrentTokens() const
 }
 
 
+void HighLevelILTokenEmitter::SetCurrentTokens(const std::vector<InstructionTextToken>& newTokens)
+{
+	size_t count;
+	auto* tokens = AllocAPIObjectList<InstructionTextToken>(newTokens, &count);
+	BNHighLevelILTokenEmitterSetCurrentTokens(m_object, tokens, count);
+	FreeAPIObjectList<InstructionTextToken>(tokens, count);
+}
+
+
 void HighLevelILTokenEmitter::SetBraceRequirement(BNBraceRequirement required)
 {
 	BNHighLevelILTokenEmitterSetBraceRequirement(m_object, required);
@@ -860,6 +882,11 @@ bool HighLevelILTokenEmitter::HasBracesAroundSwitchCases() const
 bool HighLevelILTokenEmitter::GetDefaultBracesOnSameLine() const
 {
 	return BNHighLevelILTokenEmitterGetDefaultBracesOnSameLine(m_object);
+}
+
+size_t HighLevelILTokenEmitter::GetMaxTernarySimplificationTokens() const
+{
+	return BNHighLevelILTokenEmitterGetMaxTernarySimplficationTokens(m_object);
 }
 
 

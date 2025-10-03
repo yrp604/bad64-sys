@@ -79,6 +79,15 @@ enum MipsIntrinsic : uint32_t
 		CNMIPS_INTRIN_HWR31,
 		CNMIPS_INTRIN_POP,
 		CNMIPS_INTRIN_DPOP,
+
+		MIPS_INTRIN_R5900_VWAITQ,
+		MIPS_INTRIN_R5900_VU_MEM_LOAD,
+		MIPS_INTRIN_R5900_VU_MEM_STORE,
+		MIPS_INTRIN_R5900_VU0_CALLMS,
+		MIPS_INTRIN_R5900_VU0_CALLMSR,
+
+		MIPS_INTRIN_COP0_CONDITION,
+
 		MIPS_INTRIN_INVALID=0xFFFFFFFF,
 };
 
@@ -88,6 +97,79 @@ bool GetLowLevelILForInstruction(
 		BinaryNinja::LowLevelILFunction& il,
 		mips::Instruction& instr,
 		size_t addrSize,
-		uint32_t decomposeFlags);
+		uint32_t decomposeFlags,
+		mips::MipsVersion version);
 
-BinaryNinja::ExprId GetConditionForInstruction(BinaryNinja::LowLevelILFunction& il, mips::Instruction& instr, size_t registerSize);
+BinaryNinja::ExprId GetConditionForInstruction(BinaryNinja::LowLevelILFunction& il, mips::Instruction& instr, std::function<size_t(mips::InstructionOperand&)> registerSize);
+#ifdef __cplusplus
+extern "C" {
+	namespace mips {
+#endif
+
+static inline const size_t get_register_width(size_t reg, MipsVersion version, size_t maxWidth=8) {
+	size_t width = 32;
+	switch (version)
+	{
+	case MIPS_1:
+		width = 32;
+		break;
+	case MIPS_2:
+	case MIPS_3:
+	case MIPS_4:
+	case MIPS_32:
+		if (reg < FPREG_F0 || reg > FPREG_F31)
+		{
+			width = 32;
+			break;
+		}
+	case MIPS_64:
+		width = 64;
+		break;
+	case MIPS_R5900:
+		switch (reg)
+		{
+		case REG_LO:
+		case REG_HI:
+			width = 128;
+			break;
+		case REG_LO1:
+		case REG_HI1:
+			width = 64;
+			break;
+		case R5900_SA:
+		case REG_VI:
+		case REG_VQ:
+		case REG_VR:  // Technically 23-bit
+		case REG_VP:
+			width = 32;
+			break;
+		default:
+			if (reg >= REG_VI0 && reg <= REG_VI15)
+				width = 16;
+			else if (reg >= REG_VCCR_STATUS && reg <= REG_VCCR_CMSAR1)
+				width = 32;
+			else if (REG_ZERO <= reg && reg <= REG_RA)
+				width = 128;  // 64;  // 128
+			else if (FPREG_F0 <= reg && reg <= FPREG_F31)
+				width = 32;
+			else if (reg >= REG_VACC  && reg <= REG_VF31)
+				width = 128;
+			else if (reg >= REG_VACC_X  && reg <= REG_VF31_W)
+				width = 32;
+			else if (reg >= REG_VACC_XY  && reg <= REG_VF31_ZW)
+				width = 64;
+			else if (reg >= REG_VACC_XYZ  && reg <= REG_VF31_YZW)
+				width = 96;
+			else if (reg >= REG_VACC_XYZW  && reg <= REG_VF31_XYZW)
+				width = 128;
+		}
+	default:
+		break;
+	}
+	width /= 8;
+	return width <= maxWidth ? width : maxWidth;
+}
+#ifdef __cplusplus
+}
+}//end namespace
+#endif

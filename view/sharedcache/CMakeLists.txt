@@ -33,6 +33,7 @@ endif()
 set(HARD_FAIL_MODE OFF CACHE BOOL "Enable hard fail mode")
 set(SLIDEINFO_DEBUG_TAGS OFF CACHE BOOL "Enable debug tags in slideinfo")
 set(VIEW_NAME "DSCView" CACHE STRING "Name of the view")
+# TODO: Remove this, if we want to keep a metadata version around we must have this in the source.
 set(METADATA_VERSION 5 CACHE STRING "Version of the metadata")
 
 add_subdirectory(core)
@@ -47,15 +48,17 @@ if(BN_INTERNAL_BUILD)
     set_target_properties(sharedcache PROPERTIES
             LIBRARY_OUTPUT_DIRECTORY ${BN_CORE_PLUGIN_DIR}
             RUNTIME_OUTPUT_DIRECTORY ${BN_CORE_PLUGIN_DIR})
+    plugin_rpath(sharedcache)
 else()
     set_target_properties(sharedcache PROPERTIES
             LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/out/plugins
             RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/out/plugins
             )
+    bn_install_plugin(sharedcache)
 endif()
 
 set_target_properties(sharedcache PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
         CXX_VISIBILITY_PRESET hidden
         VISIBILITY_INLINES_HIDDEN ON
@@ -65,7 +68,6 @@ set_target_properties(sharedcache PROPERTIES
 target_include_directories(sharedcache PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/core ${CMAKE_CURRENT_SOURCE_DIR}/api ${CMAKE_CURRENT_SOURCE_DIR}/workflow)
 
 target_link_libraries(sharedcache PUBLIC sharedcacheapi binaryninjaapi sharedcachecore sharedcacheworkflow)
-
 
 set(COMPILE_DEFS "")
 

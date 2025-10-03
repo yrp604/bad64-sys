@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 
 project(arch_x86)
 
@@ -20,7 +20,7 @@ if(NOT BN_INTERNAL_BUILD)
 	add_subdirectory(${PROJECT_SOURCE_DIR}/../.. ${PROJECT_BINARY_DIR}/api)
 endif()
 
-file(GLOB SOURCES *.cpp *.h
+file(GLOB SOURCES CONFIGURE_DEPENDS *.cpp *.h
 	${PROJECT_SOURCE_DIR}/xed/src/common/*.c
 	${PROJECT_SOURCE_DIR}/xed/src/dec/*.c
 	${PROJECT_BINARY_DIR}/obj/*.c)
@@ -56,7 +56,7 @@ if(UNIX AND NOT APPLE)
 endif()
 
 set_target_properties(arch_x86 PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 20
 	CXX_VISIBILITY_PRESET hidden
 	CXX_STANDARD_REQUIRED ON
 	C_STANDARD 11

@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -47,10 +47,10 @@ from .enums import (
     TypeClass, BinaryViewEventType, FunctionGraphType, TagReferenceType, TagTypeType, RegisterValueType, DisassemblyOption,
 	RelocationType
 )
-from .exceptions import RelocationWriteException, ILException, ExternalLinkException
+from .exceptions import RelocationWriteException, ExternalLinkException
 
 from . import associateddatastore  # required for _BinaryViewAssociatedDataStore
-from .log import log_warn, log_error, Logger
+from .log import log_warn, log_error_for_exception, Logger
 from . import typelibrary
 from . import fileaccessor
 from . import databuffer
@@ -126,10 +126,26 @@ class ReferenceSource:
 		return self.function.get_low_level_il_at(self.address, self.arch)
 
 	@property
+	def llils(self) -> Iterator[lowlevelil.LowLevelILInstruction]:
+		"""Returns the low level il instructions at the current location if any exists"""
+		if self.function is None or self.arch is None:
+			return
+		return self.function.get_low_level_ils_at(self.address, self.arch)
+
+	@property
 	def mlil(self) -> Optional[mediumlevelil.MediumLevelILInstruction]:
 		"""Returns the medium level il instruction at the current location if one exists"""
 		llil = self.llil
 		return llil.mlil if llil is not None else None
+
+	@property
+	def mlils(self) -> Iterator[mediumlevelil.MediumLevelILInstruction]:
+		"""Returns the medium level il instructions at the current location if any exists"""
+		if self.function is None or self.arch is None:
+			return
+		for llil in self.llils:
+			for mlil in llil.mlils:
+				yield mlil
 
 	@property
 	def hlil(self) -> Optional[highlevelil.HighLevelILInstruction]:
@@ -137,6 +153,14 @@ class ReferenceSource:
 		mlil = self.mlil
 		return mlil.hlil if mlil is not None else None
 
+	@property
+	def hlils(self) -> Iterator[highlevelil.HighLevelILInstruction]:
+		"""Returns the high level il instructions at the current location if any exists"""
+		if self.function is None or self.arch is None:
+			return
+		for llil in self.llils:
+			for hlil in llil.hlils:
+				yield hlil
 
 class NotificationType(IntFlag):
 	NotificationBarrier = 1 << 0
@@ -532,7 +556,7 @@ class AnalysisCompletionEvent:
 			else:
 				self.callback()  # type: ignore
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in AnalysisCompletionEvent._notify")
 
 	def _empty_callback(self):
 		pass
@@ -595,7 +619,7 @@ class BinaryViewEvent:
 			view_obj = BinaryView(file_metadata=file_metadata, handle=core.BNNewViewReference(view))
 			callback(view_obj)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryViewEvent._notify")
 
 
 @dataclass(frozen=True)
@@ -632,6 +656,8 @@ class AnalysisProgress:
 			return "Hold"
 		if self.state == AnalysisState.IdleState:
 			return "Idle"
+		if self.state == AnalysisState.DiscoveryState:
+			return "Discovery"
 		if self.state == AnalysisState.DisassembleState:
 			return "Disassembling (%d/%d)" % (self.count, self.total)
 		if self.state == AnalysisState.AnalyzeState:
@@ -805,43 +831,43 @@ class BinaryDataNotificationCallbacks:
 		try:
 			return self._notify.notification_barrier(self._view)
 		except OSError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._notification_barrier")
 
 	def _data_written(self, ctxt, view: core.BNBinaryView, offset: int, length: int) -> None:
 		try:
 			self._notify.data_written(self._view, offset, length)
 		except OSError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._data_written")
 
 	def _data_inserted(self, ctxt, view: core.BNBinaryView, offset: int, length: int) -> None:
 		try:
 			self._notify.data_inserted(self._view, offset, length)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._data_inserted")
 
 	def _data_removed(self, ctxt, view: core.BNBinaryView, offset: int, length: int) -> None:
 		try:
 			self._notify.data_removed(self._view, offset, length)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._data_removed")
 
 	def _function_added(self, ctxt, view: core.BNBinaryView, func: core.BNFunctionHandle) -> None:
 		try:
 			self._notify.function_added(self._view, _function.Function(self._view, core.BNNewFunctionReference(func)))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._function_added")
 
 	def _function_removed(self, ctxt, view: core.BNBinaryView, func: core.BNFunctionHandle) -> None:
 		try:
 			self._notify.function_removed(self._view, _function.Function(self._view, core.BNNewFunctionReference(func)))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._function_removed")
 
 	def _function_updated(self, ctxt, view: core.BNBinaryView, func: core.BNFunctionHandle) -> None:
 		try:
 			self._notify.function_updated(self._view, _function.Function(self._view, core.BNNewFunctionReference(func)))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._function_updated")
 
 	def _function_update_requested(self, ctxt, view: core.BNBinaryView, func: core.BNFunctionHandle) -> None:
 		try:
@@ -849,31 +875,31 @@ class BinaryDataNotificationCallbacks:
 			    self._view, _function.Function(self._view, core.BNNewFunctionReference(func))
 			)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._function_update_requested")
 
 	def _data_var_added(self, ctxt, view: core.BNBinaryView, var: core.BNDataVariableHandle) -> None:
 		try:
 			self._notify.data_var_added(self._view, DataVariable.from_core_struct(var[0], self._view))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._data_var_added")
 
 	def _data_var_removed(self, ctxt, view: core.BNBinaryView, var: core.BNDataVariableHandle) -> None:
 		try:
 			self._notify.data_var_removed(self._view, DataVariable.from_core_struct(var[0], self._view))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._data_var_removed")
 
 	def _data_var_updated(self, ctxt, view: core.BNBinaryView, var: core.BNDataVariableHandle) -> None:
 		try:
 			self._notify.data_var_updated(self._view, DataVariable.from_core_struct(var[0], self._view))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._data_var_updated")
 
 	def _data_metadata_updated(self, ctxt, view: core.BNBinaryView, offset: int) -> None:
 		try:
 			self._notify.data_metadata_updated(self._view, offset)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._data_metadata_updated")
 
 	def _tag_type_updated(self, ctxt, view: core.BNBinaryView, tag_type: core.BNTagTypeHandle) -> None:
 		try:
@@ -881,7 +907,7 @@ class BinaryDataNotificationCallbacks:
 			assert core_tag_type is not None, "core.BNNewTagTypeReference returned None"
 			self._notify.tag_type_updated(self._view, TagType(core_tag_type))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._tag_type_updated")
 
 	def _tag_added(self, ctxt, view: core.BNBinaryView, tag_ref: core.BNTagReferenceHandle) -> None:
 		try:
@@ -902,7 +928,7 @@ class BinaryDataNotificationCallbacks:
 			addr = tag_ref[0].addr
 			self._notify.tag_added(self._view, tag, ref_type, auto_defined, arch, func, addr)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._tag_added")
 
 	def _tag_updated(self, ctxt, view: core.BNBinaryView, tag_ref: core.BNTagReferenceHandle) -> None:
 		try:
@@ -923,7 +949,7 @@ class BinaryDataNotificationCallbacks:
 			addr = tag_ref[0].addr
 			self._notify.tag_updated(self._view, tag, ref_type, auto_defined, arch, func, addr)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._tag_updated")
 
 	def _tag_removed(self, ctxt, view: core.BNBinaryView, tag_ref: core.BNTagReferenceHandle) -> None:
 		try:
@@ -944,7 +970,7 @@ class BinaryDataNotificationCallbacks:
 			addr = tag_ref[0].addr
 			self._notify.tag_removed(self._view, tag, ref_type, auto_defined, arch, func, addr)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._tag_removed")
 
 	def _symbol_added(self, ctxt, view: core.BNBinaryView, sym: core.BNSymbol) -> None:
 		try:
@@ -952,7 +978,7 @@ class BinaryDataNotificationCallbacks:
 			assert _handle is not None, "core.BNNewSymbolReference returned None"
 			self._notify.symbol_added(self._view, _types.CoreSymbol(_handle))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._symbol_added")
 
 	def _symbol_updated(self, ctxt, view: core.BNBinaryView, sym: core.BNSymbol) -> None:
 		try:
@@ -960,7 +986,7 @@ class BinaryDataNotificationCallbacks:
 			assert _handle is not None, "core.BNNewSymbolReference returned None"
 			self._notify.symbol_updated(self._view, _types.CoreSymbol(_handle))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._symbol_updated")
 
 	def _symbol_removed(self, ctxt, view: core.BNBinaryView, sym: core.BNSymbol) -> None:
 		try:
@@ -968,19 +994,19 @@ class BinaryDataNotificationCallbacks:
 			assert _handle is not None, "core.BNNewSymbolReference returned None"
 			self._notify.symbol_removed(self._view, _types.CoreSymbol(_handle))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._symbol_removed")
 
 	def _string_found(self, ctxt, view: core.BNBinaryView, string_type: int, offset: int, length: int) -> None:
 		try:
 			self._notify.string_found(self._view, StringType(string_type), offset, length)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._string_found")
 
 	def _string_removed(self, ctxt, view: core.BNBinaryView, string_type: int, offset: int, length: int) -> None:
 		try:
 			self._notify.string_removed(self._view, StringType(string_type), offset, length)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._string_removed")
 
 	def _type_defined(self, ctxt, view: core.BNBinaryView, name: str, type_obj: '_types.Type') -> None:
 		try:
@@ -990,7 +1016,7 @@ class BinaryDataNotificationCallbacks:
 			    _types.Type.create(core.BNNewTypeReference(type_obj), platform=self._view.platform)
 			)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._type_defined")
 
 	def _type_undefined(self, ctxt, view: core.BNBinaryView, name: str, type_obj: '_types.Type') -> None:
 		try:
@@ -1000,7 +1026,7 @@ class BinaryDataNotificationCallbacks:
 			    _types.Type.create(core.BNNewTypeReference(type_obj), platform=self._view.platform)
 			)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._type_undefined")
 
 	def _type_ref_changed(self, ctxt, view: core.BNBinaryView, name: str, type_obj: '_types.Type') -> None:
 		try:
@@ -1010,14 +1036,14 @@ class BinaryDataNotificationCallbacks:
 			    _types.Type.create(core.BNNewTypeReference(type_obj), platform=self._view.platform)
 			)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._type_ref_changed")
 
 	def _type_field_ref_changed(self, ctxt, view: core.BNBinaryView, name: str, offset: int) -> None:
 		try:
 			qualified_name = _types.QualifiedName._from_core_struct(name[0])
 			self._notify.type_field_ref_changed(self._view, qualified_name, offset)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._type_field_ref_changed")
 
 	def _segment_added(self, ctxt, view: core.BNBinaryView, segment_obj: core.BNSegment) -> None:
 		try:
@@ -1026,7 +1052,7 @@ class BinaryDataNotificationCallbacks:
 			result = Segment(segment_handle)
 			self._notify.segment_added(self._view, result)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._segment_added")
 
 	def _segment_updated(self, ctxt, view: core.BNBinaryView, segment_obj: core.BNSegment) -> None:
 		try:
@@ -1035,7 +1061,7 @@ class BinaryDataNotificationCallbacks:
 			result = Segment(segment_handle)
 			self._notify.segment_updated(self._view, result)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._segment_updated")
 
 	def _segment_removed(self, ctxt, view: core.BNBinaryView, segment_obj: core.BNSegment) -> None:
 		try:
@@ -1044,7 +1070,7 @@ class BinaryDataNotificationCallbacks:
 			result = Segment(segment_handle)
 			self._notify.segment_removed(self._view, result)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._segment_removed")
 
 	def _section_added(self, ctxt, view: core.BNBinaryView, section_obj: core.BNSection) -> None:
 		try:
@@ -1053,7 +1079,7 @@ class BinaryDataNotificationCallbacks:
 			result = Section(section_handle)
 			self._notify.section_added(self._view, result)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._section_added")
 
 	def _section_updated(self, ctxt, view: core.BNBinaryView, section_obj: core.BNSection) -> None:
 		try:
@@ -1062,7 +1088,7 @@ class BinaryDataNotificationCallbacks:
 			result = Section(section_handle)
 			self._notify.section_updated(self._view, result)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._section_updated")
 
 	def _section_removed(self, ctxt, view: core.BNBinaryView, section_obj: core.BNSection) -> None:
 		try:
@@ -1071,7 +1097,7 @@ class BinaryDataNotificationCallbacks:
 			result = Section(section_handle)
 			self._notify.section_removed(self._view, result)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._section_removed")
 
 	def _component_added(self, ctxt, view: core.BNBinaryView, _component: core.BNComponent):
 		try:
@@ -1080,7 +1106,7 @@ class BinaryDataNotificationCallbacks:
 			result = component.Component(component_handle)
 			self._notify.component_added(self._view, result)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._component_added")
 
 	def _component_removed(self, ctxt, view: core.BNBinaryView, formerParent: core.BNComponent, _component: core.BNComponent):
 		try:
@@ -1092,7 +1118,7 @@ class BinaryDataNotificationCallbacks:
 			result = component.Component(component_handle)
 			self._notify.component_removed(self._view, formerParentResult, result)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._component_removed")
 
 	def _component_name_updated(self, ctxt, view: core.BNBinaryView, previous_name: str, _component: core.BNComponent):
 		try:
@@ -1101,7 +1127,7 @@ class BinaryDataNotificationCallbacks:
 			result = component.Component(component_handle)
 			self._notify.component_name_updated(self._view, previous_name, result)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._component_name_updated")
 
 	def _component_moved(self, ctxt, view: core.BNBinaryView, formerParent: core.BNComponent,
 						 newParent: core.BNComponent, _component: core.BNComponent):
@@ -1117,7 +1143,7 @@ class BinaryDataNotificationCallbacks:
 			result = component.Component(component_handle)
 			self._notify.component_moved(self._view, formerParentResult, newParentResult, result)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._component_moved")
 
 	def _component_function_added(self, ctxt, view: core.BNBinaryView, _component: core.BNComponent,
 								  func: '_function.Function'):
@@ -1130,7 +1156,7 @@ class BinaryDataNotificationCallbacks:
 			function = _function.Function(self._view, function_handle)
 			self._notify.component_function_added(self._view, result, function)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._component_function_added")
 
 	def _component_function_removed(self, ctxt, view: core.BNBinaryView, _component: core.BNComponent,
 								func: '_function.Function'):
@@ -1143,7 +1169,7 @@ class BinaryDataNotificationCallbacks:
 			function = _function.Function(self._view, function_handle)
 			self._notify.component_function_removed(self._view, result, function)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._component_function_removed")
 
 	def _component_data_variable_added(self, ctxt, view: core.BNBinaryView, _component: core.BNComponent,
 									   var: core.BNDataVariable):
@@ -1153,7 +1179,7 @@ class BinaryDataNotificationCallbacks:
 			result = component.Component(component_handle)
 			self._notify.component_data_var_added(self._view, result, DataVariable.from_core_struct(var, self._view))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._component_data_variable_added")
 
 	def _component_data_variable_removed(self, ctxt, view: core.BNBinaryView, _component: core.BNComponent,
 									var: core.BNDataVariable):
@@ -1163,54 +1189,54 @@ class BinaryDataNotificationCallbacks:
 			result = component.Component(component_handle)
 			self._notify.component_data_var_removed(self._view, result, DataVariable.from_core_struct(var, self._view))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._component_data_variable_removed")
 
 	def _type_archive_attached(self, ctxt, view: core.BNBinaryView, id: ctypes.c_char_p, path: ctypes.c_char_p):
 		try:
 			self._notify.type_archive_attached(self._view, core.pyNativeStr(id), core.pyNativeStr(path))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._type_archive_attached")
 
 	def _type_archive_detached(self, ctxt, view: core.BNBinaryView, id: ctypes.c_char_p, path: ctypes.c_char_p):
 		try:
 			self._notify.type_archive_detached(self._view, core.pyNativeStr(id), core.pyNativeStr(path))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._type_archive_detached")
 
 	def _type_archive_connected(self, ctxt, view: core.BNBinaryView, archive: core.BNTypeArchive):
 		try:
 			py_archive = typearchive.TypeArchive(handle=core.BNNewTypeArchiveReference(archive))
 			self._notify.type_archive_connected(self._view, py_archive)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._type_archive_connected")
 
 	def _type_archive_disconnected(self, ctxt, view: core.BNBinaryView, archive: core.BNTypeArchive):
 		try:
 			py_archive = typearchive.TypeArchive(handle=core.BNNewTypeArchiveReference(archive))
 			self._notify.type_archive_disconnected(self._view, py_archive)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._type_archive_disconnected")
 
 	def _undo_entry_added(self, ctxt, view: core.BNBinaryView, entry: core.BNUndoEntry):
 		try:
 			py_entry = undo.UndoEntry(handle=core.BNNewUndoEntryReference(entry))
 			self._notify.undo_entry_added(self._view, py_entry)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._undo_entry_added")
 
 	def _undo_entry_taken(self, ctxt, view: core.BNBinaryView, entry: core.BNUndoEntry):
 		try:
 			py_entry = undo.UndoEntry(handle=core.BNNewUndoEntryReference(entry))
 			self._notify.undo_entry_taken(self._view, py_entry)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._undo_entry_taken")
 
 	def _redo_entry_taken(self, ctxt, view: core.BNBinaryView, entry: core.BNUndoEntry):
 		try:
 			py_entry = undo.UndoEntry(handle=core.BNNewUndoEntryReference(entry))
 			self._notify.redo_entry_taken(self._view, py_entry)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._redo_entry_taken")
 
 	@property
 	def view(self) -> 'BinaryView':
@@ -1348,7 +1374,7 @@ class BinaryViewType(metaclass=_BinaryViewTypeMetaclass):
 					assert handle is not None, "core.BNNewPlatformReference returned None"
 					return ctypes.cast(handle, ctypes.c_void_p).value
 			except:
-				binaryninja.log_error(traceback.format_exc())
+				binaryninja.log_error_for_exception("Unhandled Python exception in BinaryViewType.register_platform_recognizer")
 			return None
 
 		callback_obj = ctypes.CFUNCTYPE(
@@ -2381,35 +2407,50 @@ class MemoryMap:
 		"""
 		core.BNSetLogicalMemoryMapEnabled(self.handle, enabled)
 
-	def add_memory_region(self, name: str, start: int, source: Union['os.PathLike', str, bytes, bytearray, 'BinaryView', 'databuffer.DataBuffer', 'fileaccessor.FileAccessor'], flags: SegmentFlag = 0) -> bool:
+	@property
+	def is_activated(self):
+		"""Whether the memory map is activated for the associated view."""
+		return core.BNIsMemoryMapActivated(self.handle)
+
+	def add_memory_region(self, name: str, start: int, source: Optional[Union['os.PathLike', str, bytes, bytearray, 'BinaryView', 'databuffer.DataBuffer', 'fileaccessor.FileAccessor']] = None, flags: SegmentFlag = 0, fill: int = 0, length: Optional[int] = None) -> bool:
 		"""
 		Adds a memory region to the memory map. Depending on the source parameter, the memory region is created as one of the following types:
 
-		- **BinaryMemoryRegion** (***Unimplemented***): Represents a memory region loaded from a binary format, providing persistence across sessions.
-		- **DataMemoryRegion**: Represents a memory region loaded from flat files or raw bytes, providing persistence across sessions.
-		- **RemoteMemoryRegion**: Represents a memory region managed via a proxy callback interface. This region is ephemeral and not persisted across sessions.
+		- **BinaryMemoryRegion** (***Unimplemented***): Represents a memory region loaded from a binary format.
+		- **DataMemoryRegion**: Region backed by flat file or raw data (str, bytes, DataBuffer).
+		- **RemoteMemoryRegion**: Ephemeral memory region via FileAccessor.
+		- **UnbackedMemoryRegion**: Region not backed by any data source (requires `length` to be set).
 
-		The type of memory region created is determined by the `source` parameter:
-		- `os.PathLike` or `str`: Treated as a file path to be loaded into memory as a `DataMemoryRegion`.
+		The `source` parameter determines the type:
+		- `os.PathLike` or `str`: File path to be loaded into memory as a `DataMemoryRegion`.
 		- `bytes` or `bytearray`: Directly loaded into memory as a `DataMemoryRegion`.
 		- `databuffer.DataBuffer`: Loaded as a `DataMemoryRegion`.
-		- `fileaccessor.FileAccessor`: Creates a `RemoteMemoryRegion` that fetches data via a remote source.
-		- `BinaryView`: (Not yet implemented) Intended for future exploration.
+		- `fileaccessor.FileAccessor`: Remote proxy source.
+		- `BinaryView`: (Reserved for future).
+		- `None`: Creates an unbacked memory region (must specify `length`).
 
 		.. note:: If no flags are specified and the new memory region overlaps with one or more existing regions, the overlapping portions of the new region will inherit the flags of the respective underlying regions.
 
 		Parameters:
 			name (str): A unique name for the memory region.
-			start (int): The starting address in memory for the region.
-			source (Union[os.PathLike, str, bytes, bytearray, BinaryView, databuffer.DataBuffer, fileaccessor.FileAccessor]): The source from which the memory is loaded.
-			flags (SegmentFlag, optional): Flags to apply to the memory region. Defaults to 0 (no flags).
+			start (int): Starting address.
+			source (Optional[Union[os.PathLike, str, bytes, bytearray, BinaryView, databuffer.DataBuffer, fileaccessor.FileAccessor]]): Source of data or `None` for unbacked.
+			length (Optional[int]): Required if source is None (unbacked).
+			flags (SegmentFlag): Flags to apply to the memory region. Defaults to 0 (no flags).
+			fill (int): Fill byte for unbacked regions. Defaults to 0.
 
 		Returns:
 			bool: `True` if the memory region was successfully added, `False` otherwise.
 
 		Raises:
-			NotImplementedError: If the specified `source` type is unsupported.
+			NotImplementedError: If source type is unsupported.
+			ValueError: If source is None and length is not specified.
 		"""
+		if source is None:
+			if length is None:
+				raise ValueError("Must specify `length` when `source` is None for unbacked memory region")
+			return core.BNAddUnbackedMemoryRegion(self.handle, name, start, length, flags, fill)
+
 		if isinstance(source, os.PathLike):
 			source = str(source)
 		if isinstance(source, bytes) or isinstance(source, bytearray):
@@ -2428,7 +2469,7 @@ class MemoryMap:
 		elif isinstance(source, fileaccessor.FileAccessor):
 			return core.BNAddRemoteMemoryRegion(self.handle, name, start, source._cb, flags)
 		else:
-			raise NotImplementedError
+			raise NotImplementedError(f"Unsupported memory region source type: {type(source)}")
 
 	def remove_memory_region(self, name: str) -> bool:
 		return core.BNRemoveMemoryRegion(self.handle, name)
@@ -2460,6 +2501,9 @@ class MemoryMap:
 
 	def set_memory_region_fill(self, name: str, fill: int) -> bool:
 		return core.BNSetMemoryRegionFill(self.handle, name, fill)
+
+	def is_memory_region_local(self, name: str) -> bool:
+		return core.BNIsMemoryRegionLocal(self.handle, name)
 
 	def reset(self):
 		core.BNResetMemoryMap(self.handle)
@@ -2605,18 +2649,25 @@ class BinaryView:
 		self._platform = None
 		self._endianness = None
 
-	def __enter__(self) -> 'BinaryView':
-		return self
-
-	def __exit__(self, type, value, traceback):
-		self.file.close()
-
-	def __del__(self):
+	def _cleanup(self):
 		if core is None:
 			return
 		for i in self._notifications.values():
 			i._unregister()
-		core.BNFreeBinaryView(self.handle)
+		self._notifications.clear()
+		if self.handle is not None:
+			core.BNFreeBinaryView(self.handle)
+			self.handle = None
+
+	def __enter__(self) -> 'BinaryView':
+		return self
+
+	def __exit__(self, type, value, traceback):
+		self._cleanup()
+		self.file.close()
+
+	def __del__(self):
+		self._cleanup()
 
 	def __repr__(self):
 		start = self.start
@@ -2761,7 +2812,7 @@ class BinaryView:
 			assert view_handle is not None, "core.BNNewViewReference returned None"
 			return ctypes.cast(view_handle, ctypes.c_void_p).value
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._create")
 			return None
 
 	@classmethod
@@ -2776,7 +2827,7 @@ class BinaryView:
 			assert view_handle is not None, "core.BNNewViewReference returned None"
 			return ctypes.cast(view_handle, ctypes.c_void_p).value
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._parse")
 			return None
 
 	@classmethod
@@ -2785,7 +2836,7 @@ class BinaryView:
 			# I'm not sure whats going on here even so I've suppressed the linter warning
 			return cls.is_valid_for_data(BinaryView(handle=core.BNNewViewReference(data)))  # type: ignore
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._is_valid_for_data")
 			return False
 
 	@classmethod
@@ -2798,7 +2849,7 @@ class BinaryView:
 		try:
 			return cls.is_deprecated()  # type: ignore
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._is_deprecated")
 			return False
 
 	@classmethod
@@ -2809,7 +2860,7 @@ class BinaryView:
 		try:
 			return cls.is_force_loadable()  # type: ignore
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._is_force_loadable")
 			return False
 
 	@classmethod
@@ -2826,7 +2877,7 @@ class BinaryView:
 			else:
 				return None
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._get_load_settings_for_data")
 			return None
 
 	@staticmethod
@@ -3181,10 +3232,9 @@ class BinaryView:
 		for func in AdvancedILFunctionList(
 		    self, self.preload_limit if preload_limit is None else preload_limit, function_generator
 		):
-			try:
-				yield func.mlil
-			except ILException:
-				pass
+			mlil = func.mlil
+			if mlil is not None:
+				yield mlil
 
 	def hlil_functions(
 	    self, preload_limit: Optional[int] = None,
@@ -3197,10 +3247,9 @@ class BinaryView:
 		for func in AdvancedILFunctionList(
 		    self, self.preload_limit if preload_limit is None else preload_limit, function_generator
 		):
-			try:
-				yield func.hlil
-			except ILException:
-				pass
+			hlil = func.hlil
+			if hlil is not None:
+				yield hlil
 
 	@property
 	def has_functions(self) -> bool:
@@ -3375,7 +3424,12 @@ class BinaryView:
 	def analysis_progress(self) -> AnalysisProgress:
 		"""Status of current analysis (read-only)"""
 		result = core.BNGetAnalysisProgress(self.handle)
-		return AnalysisProgress(result.state, result.count, result.total)
+		return AnalysisProgress(AnalysisState(result.state), result.count, result.total)
+
+	@property
+	def analysis_state(self) -> AnalysisState:
+		"""State of current analysis (read-only)"""
+		return AnalysisState(core.BNGetAnalysisState(self.handle))
 
 	@property
 	def linear_disassembly(self) -> Iterator['lineardisassembly.LinearDisassemblyLine']:
@@ -3571,27 +3625,28 @@ class BinaryView:
 	def set_user_global_pointer_value(self, value: variable.RegisterValue, confidence = 255):
 		"""
 		Set a user global pointer value. This is useful when the auto analysis fails to find out the value of the global
-		pointer, or the value is wrong. In this case, we can call `set_user_global_pointer_value` with a
-		`ConstantRegisterValue` or `ConstantPointerRegisterValue`to provide a user global pointer value to assist the
+		pointer, or the value is wrong. In this case, we can call ``set_user_global_pointer_value`` with a
+		``ConstantRegisterValue`` or ``ConstantPointerRegisterValue`` to provide a user global pointer value to assist the
 		analysis.
 
 		On the other hand, if the auto analysis figures out a global pointer value, but there should not be one, we can
-		call `set_user_global_pointer_value` with an `Undetermined` value to override it.
+		call ``set_user_global_pointer_value`` with an `Undetermined` value to override it.
 
 		Whenever a user global pointer value is set/cleared, an analysis update must occur for it to take effect and
 		all functions using the global pointer to be updated.
 
-		We can use `user_global_pointer_value_set` to query whether a user global pointer value is set, and use
-		`clear_user_global_pointer_value` to clear a user global pointer value. Note, `clear_user_global_pointer_value`
-		is different from calling `set_user_global_pointer_value` with an `Undetermined` value. The former clears the
+		We can use ``user_global_pointer_value_set`` to query whether a user global pointer value is set, and use
+		``clear_user_global_pointer_value`` to clear a user global pointer value. Note, ``clear_user_global_pointer_value``
+		is different from calling ``set_user_global_pointer_value`` with an ``Undetermined`` value. The former clears the
 		user global pointer value and let the analysis decide the global pointer value, whereas the latte forces the
 		global pointer value to become undetermined.
 
 		:param variable.RegisterValue value: the user global pointer value to be set
-		:param int confidence: the confidence value of the user global pointer value. In most cases this should be set
-		to 255. Setting a value lower than the confidence of the global pointer value from the auto analysis will cause
-		undesired effect.
-		:return:
+		:param int confidence: the confidence value of the user global pointer value. In most cases this should be \
+			set to 255. Setting a value lower than the confidence of the global pointer value from the auto analysis \
+			will cause undesired effect.
+		:return: None
+		:rtype: None
 		:Example:
 
 			>>> bv.global_pointer_value
@@ -3678,6 +3733,21 @@ class BinaryView:
 		finally:
 			core.BNFreeRelocationRanges(ranges)
 
+	def finalize_new_segments(self) -> bool:
+		"""
+		Performs "finalization" on segments added after initial Finalization (performed after an Init() has completed).
+
+		Finalizing a segment involves optimizing the relocation info stored in that segment, so if a segment is added
+			and relocations are defined for that segment by some automated process, this function should be called afterwards.
+
+		An example of this can be seen in the KernelCache plugin, in `KernelCache::LoadImageWithInstallName`.
+			After we load an image, map new segments, and define relocations for all of them, we call this function
+			to let core know it is now safe to finalize the new segments
+
+		:return: Whether finalization was successful
+		"""
+		return core.BNBinaryViewFinalizeNewSegments(self.handle)
+
 	def range_contains_relocation(self, addr: int, size: int) -> bool:
 		"""Checks if the specified range overlaps with a relocation"""
 		return core.BNRangeContainsRelocation(self.handle, addr, size)
@@ -3703,20 +3773,20 @@ class BinaryView:
 		try:
 			return self.init()
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._init")
 			return False
 
 	def _external_ref_taken(self, ctxt):
 		try:
 			self.__class__._registered_instances.append(self)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._external_ref_taken")
 
 	def _external_ref_released(self, ctxt):
 		try:
 			self.__class__._registered_instances.remove(self)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._external_ref_released")
 
 	def _read(self, ctxt, dest, offset, length):
 		try:
@@ -3728,7 +3798,7 @@ class BinaryView:
 			ctypes.memmove(dest, data, len(data))
 			return len(data)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._read")
 			return 0
 
 	def _write(self, ctxt, offset, src, length):
@@ -3737,7 +3807,7 @@ class BinaryView:
 			ctypes.memmove(data, src, length)
 			return self.perform_write(offset, data.raw)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._write")
 			return 0
 
 	def _insert(self, ctxt, offset, src, length):
@@ -3746,112 +3816,112 @@ class BinaryView:
 			ctypes.memmove(data, src, length)
 			return self.perform_insert(offset, data.raw)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._insert")
 			return 0
 
 	def _remove(self, ctxt, offset, length):
 		try:
 			return self.perform_remove(offset, length)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._remove")
 			return 0
 
 	def _get_modification(self, ctxt, offset):
 		try:
 			return self.perform_get_modification(offset)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._get_modification")
 			return ModificationStatus.Original
 
 	def _is_valid_offset(self, ctxt, offset):
 		try:
 			return self.perform_is_valid_offset(offset)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._is_valid_offset")
 			return False
 
 	def _is_offset_readable(self, ctxt, offset):
 		try:
 			return self.perform_is_offset_readable(offset)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._is_offset_readable")
 			return False
 
 	def _is_offset_writable(self, ctxt, offset):
 		try:
 			return self.perform_is_offset_writable(offset)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._is_offset_writable")
 			return False
 
 	def _is_offset_executable(self, ctxt, offset):
 		try:
 			return self.perform_is_offset_executable(offset)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._is_offset_executable")
 			return False
 
 	def _get_next_valid_offset(self, ctxt, offset):
 		try:
 			return self.perform_get_next_valid_offset(offset)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._get_next_valid_offset")
 			return offset
 
 	def _get_start(self, ctxt):
 		try:
 			return self.perform_get_start()
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._get_start")
 			return 0
 
 	def _get_length(self, ctxt):
 		try:
 			return self.perform_get_length()
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._get_length")
 			return 0
 
 	def _get_entry_point(self, ctxt):
 		try:
 			return self.perform_get_entry_point()
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._get_entry_point")
 			return 0
 
 	def _is_executable(self, ctxt):
 		try:
 			return self.perform_is_executable()
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._is_executable")
 			return False
 
 	def _get_default_endianness(self, ctxt):
 		try:
 			return self.perform_get_default_endianness()
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._get_default_endianness")
 			return Endianness.LittleEndian
 
 	def _is_relocatable(self, ctxt):
 		try:
 			return self.perform_is_relocatable()
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._is_relocatable")
 			return False
 
 	def _get_address_size(self, ctxt):
 		try:
 			return self.perform_get_address_size()
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._get_address_size")
 			return 8
 
 	def _save(self, ctxt, file_accessor):
 		try:
 			return self.perform_save(fileaccessor.CoreFileAccessor(file_accessor))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in BinaryView._save")
 			return False
 
 	def init(self) -> bool:
@@ -4183,6 +4253,8 @@ class BinaryView:
 	) -> bool:
 		"""
 		``create_database`` writes the current database (.bndb) out to the specified file.
+
+		.. warning:: This API will only save a database, NOT the original file from a view. To save the original file, use :py:func:`save`. To update a database, use :py:func:`save_auto_snapshot`
 
 		:param str filename: path and filename to write the bndb to, this string `should` have ".bndb" appended to it.
 		:param callback progress_func: optional function to be called with the current progress and total count.
@@ -4671,6 +4743,8 @@ class BinaryView:
 		"""
 		``save`` saves the original binary file to the provided destination ``dest`` along with any modifications.
 
+		.. warning:: This API will only save the original file from a view. To save a database, use :py:func:`create_database`.
+
 		:param str dest: destination path and filename of file to be written
 		:return: True on success, False on failure
 		:rtype: bool
@@ -4888,6 +4962,7 @@ class BinaryView:
 		``set_function_analysis_update_disabled``, functions would not be put into the analysis queue at all.
 
 		Use with caution -- in most cases, this is NOT what you want, and you should use ``set_analysis_hold`` instead.
+
 		:param disabled:
 		:return:
 		"""
@@ -4930,13 +5005,49 @@ class BinaryView:
 
 	def abort_analysis(self) -> None:
 		"""
-		``abort_analysis`` will abort the currently running analysis.
-
-		.. warning:: This method should be considered non-recoverable and generally only used when shutdown is imminent after stopping.
+		``abort_analysis`` aborts analysis and suspends the workflow machine. This operation is recoverable, and the workflow machine
+		can be re-enabled via the ``enable`` API on WorkflowMachine.
 
 		:rtype: None
 		"""
 		core.BNAbortAnalysis(self.handle)
+
+	@property
+	def analysis_is_aborted(self) -> bool:
+		"""
+		``analysis_is_aborted`` checks if the analysis has been aborted.
+
+		.. note:: This property is intended for use by architecture plugins only.
+
+		:return: True if the analysis has been aborted, False otherwise
+		:rtype: bool
+		"""
+
+		return core.BNAnalysisIsAborted(self.handle)
+
+	def should_skip_target_analysis(self, source_location: '_function.ArchAndAddr', source_function: '_function.Function',
+		end: int, target_location: '_function.ArchAndAddr') -> bool:
+		"""
+		``should_skip_target_analysis`` checks if target analysis should be skipped.
+
+		.. note:: This method is intended for use by architecture plugins only.
+
+		:param _function.ArchAndAddr source_location: The source location.
+		:param _function.Function source_function: The source function.
+		:param int end: The end address of the source branch instruction.
+		:param _function.ArchAndAddr target_location: The target location.
+		:return: True if the target analysis should be skipped, False otherwise
+		:rtype: bool
+		"""
+
+		bn_src_arch_and_addr = core.BNArchitectureAndAddress()
+		bn_src_arch_and_addr.arch = source_location.arch.handle
+		bn_src_arch_and_addr.address = source_location.addr
+		bn_target_arch_and_addr = core.BNArchitectureAndAddress()
+		bn_target_arch_and_addr.arch = target_location.arch.handle
+		bn_target_arch_and_addr.address = target_location.addr
+		return core.BNShouldSkipTargetAnalysis(self.handle, bn_src_arch_and_addr, source_function.handle, end,
+			bn_target_arch_and_addr)
 
 	def define_data_var(
 	    self, addr: int, var_type: StringOrType, name: Optional[Union[str, '_types.CoreSymbol']] = None
@@ -5224,7 +5335,7 @@ class BinaryView:
 			return None
 		return basicblock.BasicBlock(block, self)
 
-	def get_code_refs(self, addr: int, length: Optional[int] = None) -> Generator['ReferenceSource', None, None]:
+	def get_code_refs(self, addr: int, length: Optional[int] = None, max_items: Optional[int] = None) -> Generator['ReferenceSource', None, None]:
 		"""
 		``get_code_refs`` returns a generator of :py:class:`~binaryninja.binaryview.ReferenceSource` objects (xrefs or cross-references) that point to the provided virtual address.
 		This function returns both autoanalysis ("auto") and user-specified ("user") xrefs.
@@ -5238,6 +5349,7 @@ class BinaryView:
 
 		:param int addr: virtual address to query for references
 		:param int length: optional length of query
+		:param int max_items: optional maximum number of references to fetch
 		:return: A generator of References for the given virtual address
 		:rtype: Generator[ReferenceSource, None, None]
 		:Example:
@@ -5248,11 +5360,13 @@ class BinaryView:
 
 		"""
 		count = ctypes.c_ulonglong(0)
+		has_max_items = max_items is not None
+		max_items_value = max_items if has_max_items else 0
 		if length is None:
-			refs = core.BNGetCodeReferences(self.handle, addr, count)
+			refs = core.BNGetCodeReferences(self.handle, addr, count, has_max_items, max_items_value)
 			assert refs is not None, "core.BNGetCodeReferences returned None"
 		else:
-			refs = core.BNGetCodeReferencesInRange(self.handle, addr, length, count)
+			refs = core.BNGetCodeReferencesInRange(self.handle, addr, length, count, has_max_items, max_items_value)
 			assert refs is not None, "core.BNGetCodeReferencesInRange returned None"
 
 		try:
@@ -5300,7 +5414,7 @@ class BinaryView:
 			core.BNFreeAddressList(refs)
 		return result
 
-	def get_data_refs(self, addr: int, length: Optional[int] = None) -> Generator[int, None, None]:
+	def get_data_refs(self, addr: int, length: Optional[int] = None, max_items: Optional[int] = None) -> Generator[int, None, None]:
 		"""
 		``get_data_refs`` returns a list of virtual addresses of _data_ (not code) which references ``addr``, optionally specifying
 		a length. When ``length`` is set ``get_data_refs`` returns the data which references in the range ``addr``-``addr``+``length``.
@@ -5323,11 +5437,13 @@ class BinaryView:
 			>>>
 		"""
 		count = ctypes.c_ulonglong(0)
+		has_max_items = max_items is not None
+		max_items_value = max_items if has_max_items else 0
 		if length is None:
-			refs = core.BNGetDataReferences(self.handle, addr, count)
+			refs = core.BNGetDataReferences(self.handle, addr, count, has_max_items, max_items_value)
 			assert refs is not None, "core.BNGetDataReferences returned None"
 		else:
-			refs = core.BNGetDataReferencesInRange(self.handle, addr, length, count)
+			refs = core.BNGetDataReferencesInRange(self.handle, addr, length, count, has_max_items, max_items_value)
 			assert refs is not None, "core.BNGetDataReferencesInRange returned None"
 
 		try:
@@ -5368,11 +5484,12 @@ class BinaryView:
 		finally:
 			core.BNFreeDataReferences(refs)
 
-	def get_code_refs_for_type(self, name: str) -> Generator[ReferenceSource, None, None]:
+	def get_code_refs_for_type(self, name: str, max_items: Optional[int] = None) -> Generator[ReferenceSource, None, None]:
 		"""
 		``get_code_refs_for_type`` returns a Generator[ReferenceSource] objects (xrefs or cross-references) that reference the provided QualifiedName.
 
 		:param QualifiedName name: name of type to query for references
+		:param int max_items: optional maximum number of references to fetch
 		:return: List of References for the given type
 		:rtype: list(ReferenceSource)
 		:Example:
@@ -5384,7 +5501,9 @@ class BinaryView:
 		"""
 		count = ctypes.c_ulonglong(0)
 		_name = _types.QualifiedName(name)._to_core_struct()
-		refs = core.BNGetCodeReferencesForType(self.handle, _name, count)
+		has_max_items = max_items is not None
+		max_items_value = max_items if has_max_items else 0
+		refs = core.BNGetCodeReferencesForType(self.handle, _name, count, has_max_items, max_items_value)
 		assert refs is not None, "core.BNGetCodeReferencesForType returned None"
 
 		try:
@@ -5393,13 +5512,13 @@ class BinaryView:
 		finally:
 			core.BNFreeCodeReferences(refs, count.value)
 
-	def get_code_refs_for_type_field(self, name: str,
-	                                 offset: int) -> Generator['_types.TypeFieldReference', None, None]:
+	def get_code_refs_for_type_field(self, name: str, offset: int, max_items: Optional[int] = None) -> Generator['_types.TypeFieldReference', None, None]:
 		"""
 		``get_code_refs_for_type`` returns a Generator[TypeFieldReference] objects (xrefs or cross-references) that reference the provided type field.
 
 		:param QualifiedName name: name of type to query for references
 		:param int offset: offset of the field, relative to the type
+		:param int max_items: optional maximum number of references to fetch
 		:return: Generator of References for the given type
 		:rtype: Generator[TypeFieldReference]
 		:Example:
@@ -5411,7 +5530,9 @@ class BinaryView:
 		"""
 		count = ctypes.c_ulonglong(0)
 		_name = _types.QualifiedName(name)._to_core_struct()
-		refs = core.BNGetCodeReferencesForTypeField(self.handle, _name, offset, count)
+		has_max_items = max_items is not None
+		max_items_value = max_items if has_max_items else 0
+		refs = core.BNGetCodeReferencesForTypeField(self.handle, _name, offset, count, has_max_items, max_items_value)
 		assert refs is not None, "core.BNGetCodeReferencesForTypeField returned None"
 
 		try:
@@ -5435,7 +5556,7 @@ class BinaryView:
 		finally:
 			core.BNFreeTypeFieldReferences(refs, count.value)
 
-	def get_data_refs_for_type(self, name: str) -> Generator[int, None, None]:
+	def get_data_refs_for_type(self, name: str, max_items: Optional[int] = None) -> Generator[int, None, None]:
 		"""
 		``get_data_refs_for_type`` returns a list of virtual addresses of data which references the type ``name``.
 		Note, the returned addresses are the actual start of the queried type. For example, suppose there is a DataVariable
@@ -5443,6 +5564,7 @@ class BinaryView:
 		return 0x1010 for it.
 
 		:param QualifiedName name: name of type to query for references
+		:param int max_items: optional maximum number of references to fetch
 		:return: list of integers
 		:rtype: list(integer)
 		:Example:
@@ -5453,7 +5575,9 @@ class BinaryView:
 		"""
 		count = ctypes.c_ulonglong(0)
 		_name = _types.QualifiedName(name)._to_core_struct()
-		refs = core.BNGetDataReferencesForType(self.handle, _name, count)
+		has_max_items = max_items is not None
+		max_items_value = max_items if has_max_items else 0
+		refs = core.BNGetDataReferencesForType(self.handle, _name, count, has_max_items, max_items_value)
 		assert refs is not None, "core.BNGetDataReferencesForType returned None"
 
 		try:
@@ -5462,7 +5586,7 @@ class BinaryView:
 		finally:
 			core.BNFreeDataReferences(refs)
 
-	def get_data_refs_for_type_field(self, name: '_types.QualifiedNameType', offset: int) -> List[int]:
+	def get_data_refs_for_type_field(self, name: '_types.QualifiedNameType', offset: int, max_items: Optional[int] = None) -> List[int]:
 		"""
 		``get_data_refs_for_type_field`` returns a list of virtual addresses of data which references the type ``name``.
 		Note, the returned addresses are the actual start of the queried type field. For example, suppose there is a
@@ -5471,6 +5595,7 @@ class BinaryView:
 
 		:param QualifiedName name: name of type to query for references
 		:param int offset: offset of the field, relative to the type
+		:param int max_items: optional maximum number of references to fetch
 		:return: list of integers
 		:rtype: list(integer)
 		:Example:
@@ -5481,7 +5606,9 @@ class BinaryView:
 		"""
 		count = ctypes.c_ulonglong(0)
 		_name = _types.QualifiedName(name)._to_core_struct()
-		refs = core.BNGetDataReferencesForTypeField(self.handle, _name, offset, count)
+		has_max_items = max_items is not None
+		max_items_value = max_items if has_max_items else 0
+		refs = core.BNGetDataReferencesForTypeField(self.handle, _name, offset, count, has_max_items, max_items_value)
 		assert refs is not None, "core.BNGetDataReferencesForTypeField returned None"
 
 		result = []
@@ -5492,7 +5619,7 @@ class BinaryView:
 		finally:
 			core.BNFreeDataReferences(refs)
 
-	def get_data_refs_from_for_type_field(self, name: '_types.QualifiedNameType', offset: int) -> List[int]:
+	def get_data_refs_from_for_type_field(self, name: '_types.QualifiedNameType', offset: int, max_items: Optional[int] = None) -> List[int]:
 		"""
 		``get_data_refs_from_for_type_field`` returns a list of virtual addresses of data which are referenced by the type ``name``.
 
@@ -5500,6 +5627,7 @@ class BinaryView:
 
 		:param QualifiedName name: name of type to query for references
 		:param int offset: offset of the field, relative to the type
+		:param int max_items: optional maximum number of references to fetch
 		:return: list of integers
 		:rtype: list(integer)
 		:Example:
@@ -5510,7 +5638,9 @@ class BinaryView:
 		"""
 		count = ctypes.c_ulonglong(0)
 		_name = _types.QualifiedName(name)._to_core_struct()
-		refs = core.BNGetDataReferencesFromForTypeField(self.handle, _name, offset, count)
+		has_max_items = max_items is not None
+		max_items_value = max_items if has_max_items else 0
+		refs = core.BNGetDataReferencesFromForTypeField(self.handle, _name, offset, count, has_max_items, max_items_value)
 		assert refs is not None, "core.BNGetDataReferencesFromForTypeField returned None"
 
 		result = []
@@ -5521,11 +5651,12 @@ class BinaryView:
 		finally:
 			core.BNFreeDataReferences(refs)
 
-	def get_type_refs_for_type(self, name: '_types.QualifiedNameType') -> List['_types.TypeReferenceSource']:
+	def get_type_refs_for_type(self, name: '_types.QualifiedNameType', max_items: Optional[int] = None) -> List['_types.TypeReferenceSource']:
 		"""
 		``get_type_refs_for_type`` returns a list of TypeReferenceSource objects (xrefs or cross-references) that reference the provided QualifiedName.
 
 		:param QualifiedName name: name of type to query for references
+		:param int max_items: optional maximum number of references to fetch
 		:return: List of references for the given type
 		:rtype: list(TypeReferenceSource)
 		:Example:
@@ -5537,7 +5668,9 @@ class BinaryView:
 		"""
 		count = ctypes.c_ulonglong(0)
 		_name = _types.QualifiedName(name)._to_core_struct()
-		refs = core.BNGetTypeReferencesForType(self.handle, _name, count)
+		has_max_items = max_items is not None
+		max_items_value = max_items if has_max_items else 0
+		refs = core.BNGetTypeReferencesForType(self.handle, _name, count, has_max_items, max_items_value)
 		assert refs is not None, "core.BNGetTypeReferencesForType returned None"
 
 		result = []
@@ -5551,13 +5684,13 @@ class BinaryView:
 		finally:
 			core.BNFreeTypeReferences(refs, count.value)
 
-	def get_type_refs_for_type_field(self, name: '_types.QualifiedNameType',
-	                                 offset: int) -> List['_types.TypeReferenceSource']:
+	def get_type_refs_for_type_field(self, name: '_types.QualifiedNameType', offset: int, max_items: Optional[int] = None) -> List['_types.TypeReferenceSource']:
 		"""
 		``get_type_refs_for_type`` returns a list of TypeReferenceSource objects (xrefs or cross-references) that reference the provided type field.
 
 		:param QualifiedName name: name of type to query for references
 		:param int offset: offset of the field, relative to the type
+		:param int max_items: optional maximum number of references to fetch
 		:return: List of references for the given type
 		:rtype: list(TypeReferenceSource)
 		:Example:
@@ -5569,7 +5702,9 @@ class BinaryView:
 		"""
 		count = ctypes.c_ulonglong(0)
 		_name = _types.QualifiedName(name)._to_core_struct()
-		refs = core.BNGetTypeReferencesForTypeField(self.handle, _name, offset, count)
+		has_max_items = max_items is not None
+		max_items_value = max_items if has_max_items else 0
+		refs = core.BNGetTypeReferencesForTypeField(self.handle, _name, offset, count, has_max_items, max_items_value)
 		assert refs is not None, "core.BNGetTypeReferencesForTypeField returned None"
 
 		result = []
@@ -5662,6 +5797,33 @@ class BinaryView:
 			finally:
 				core.BNFreeTypeReferences(refs, count.value)
 		return result
+
+	def add_data_ref(self, from_addr: int, to_addr: int) -> None:
+		"""
+		``add_data_ref`` adds an auto data cross-reference (xref) from the address ``from_addr`` to the address ``to_addr``.
+
+		:param int from_addr: the reference's source virtual address.
+		:param int to_addr: the reference's destination virtual address.
+		:rtype: None
+
+		.. note:: It is intended to be used from within workflows or binary view initialization.
+		"""
+		core.BNAddUserDataReference(self.handle, from_addr, to_addr)
+
+	def remove_data_ref(self, from_addr: int, to_addr: int) -> None:
+		"""
+		``remove_data_ref`` removes an  auto data cross-reference (xref) from the address ``from_addr`` to the address ``to_addr``.
+		This function will only remove ones generated during autoanalysis.
+		If the reference does not exist, no action is performed.
+
+		:param int from_addr: the reference's source virtual address.
+		:param int to_addr: the reference's destination virtual address.
+		:rtype: None
+
+		.. note:: It is intended to be used from within workflows or other reoccurring analysis tasks. Removed \
+		  references will be re-created whenever auto analysis is re-run for the
+		"""
+		core.BNRemoveDataReference(self.handle, from_addr, to_addr)
 
 	def add_user_data_ref(self, from_addr: int, to_addr: int) -> None:
 		"""
@@ -6248,7 +6410,8 @@ class BinaryView:
 		``define_auto_symbol`` adds a symbol to the internal list of automatically discovered Symbol objects in a given
 		namespace.
 
-		.. warning:: If multiple symbols for the same address are defined, only the most recent symbol will ever be used.
+		.. warning:: If multiple symbols for the same address are defined, the symbol with the highest confidence and
+		  lowest SymbolType value will be used. Ties are broken by symbol name.
 
 		:param sym: the symbol to define
 		:rtype: None
@@ -6256,16 +6419,18 @@ class BinaryView:
 		core.BNDefineAutoSymbol(self.handle, sym.handle)
 
 	def define_auto_symbol_and_var_or_function(
-	    self, sym: '_types.CoreSymbol', type: '_types.Type', plat: Optional['_platform.Platform'] = None
+		self, sym: '_types.CoreSymbol', type: Optional['_types.Type'] = None, plat: Optional['_platform.Platform'] = None, type_confidence: Optional[int] = 0
 	) -> Optional['_types.CoreSymbol']:
 		"""
 		``define_auto_symbol_and_var_or_function`` Defines an "Auto" symbol, and a Variable/Function alongside it.
 
-		.. warning:: If multiple symbols for the same address are defined, only the most recent symbol will ever be used.
+		.. warning:: If multiple symbols for the same address are defined, the symbol with the highest confidence and
+		  lowest SymbolType value will be used. Ties are broken by symbol name.
 
 		:param sym: Symbol to define
 		:param type: Type for the function/variable being defined (can be None)
 		:param plat: Platform (optional)
+		:param type_confidence: Optional confidence value for the type
 		:rtype: Optional[CoreSymbol]
 		"""
 		if plat is None:
@@ -6275,12 +6440,16 @@ class BinaryView:
 		elif not isinstance(plat, _platform.Platform):
 			raise ValueError("Provided platform is not of type `Platform`")
 
+		tc = core.BNTypeWithConfidence()
+		tc.type = None
+		tc.confidence = 0
 		if isinstance(type, _types.Type):
-			type = type.handle
+			tc.type = type.handle
+			tc.confidence = type_confidence
 		elif type is not None:
 			raise ValueError("Provided type is not of type `binaryninja.Type`")
 
-		_sym = core.BNDefineAutoSymbolAndVariableOrFunction(self.handle, plat.handle, sym.handle, type)
+		_sym = core.BNDefineAutoSymbolAndVariableOrFunction(self.handle, plat.handle, sym.handle, tc)
 		if _sym is None:
 			return None
 		return _types.CoreSymbol(_sym)
@@ -6298,7 +6467,8 @@ class BinaryView:
 		"""
 		``define_user_symbol`` adds a symbol to the internal list of user added Symbol objects.
 
-		.. warning:: If multiple symbols for the same address are defined, only the most recent symbol will ever be used.
+		.. warning:: If multiple symbols for the same address are defined, the symbol with the highest confidence and
+		  lowest SymbolType value will be used. Ties are broken by symbol name.
 
 		:param Symbol sym: the symbol to define
 		:rtype: None
@@ -7674,9 +7844,9 @@ class BinaryView:
 		finally:
 			core.BNFreeQualifiedNameAndType(result)
 
-	def parse_types_from_string(self, text: str, options: Optional[List[str]] = None, include_dirs: Optional[List[str]] = None, import_dependencies: bool = True) -> '_types.TypeParserResult':
+	def parse_types_from_string(self, text: str, options: Optional[List[str]] = None, include_dirs: Optional[List[str]] = None, import_dependencies: bool = True) -> '_types.BasicTypeParserResult':
 		"""
-		``parse_types_from_string`` parses string containing C into a :py:class:`TypeParserResult` objects. This API
+		``parse_types_from_string`` parses string containing C into a :py:class:`BasicTypeParserResult` objects. This API
 		unlike the :py:func:`~binaryninja.platform.Platform.parse_types_from_source` allows the reference of types already defined
 		in the BinaryView.
 
@@ -7684,8 +7854,8 @@ class BinaryView:
 		:param options: Optional list of string options to be passed into the type parser
 		:param include_dirs: Optional list of header search directories
 		:param import_dependencies: If Type Library types should be imported during parsing
-		:return: :py:class:`~binaryninja.typeparser.TypeParserResult` (a SyntaxError is thrown on parse error)
-		:rtype: TypeParserResult
+		:return: :py:class:`~binaryninja.typeparser.BasicTypeParserResult` (a SyntaxError is thrown on parse error)
+		:rtype: BasicTypeParserResult
 		:Example:
 
 			>>> bv.parse_types_from_string('int foo;\\nint bar(int x);\\nstruct bas{int x,y;};\\n')
@@ -7740,7 +7910,7 @@ class BinaryView:
 				functions[name] = _types.Type.create(
 				    core.BNNewTypeReference(parse.functions[i].type), platform=self.platform
 				)
-			return _types.TypeParserResult(type_dict, variables, functions)
+			return _types.BasicTypeParserResult(type_dict, variables, functions)
 		finally:
 			core.BNFreeTypeParserResult(parse)
 
@@ -8156,6 +8326,26 @@ class BinaryView:
 		_old_name = _types.QualifiedName(old_name)._to_core_struct()
 		_new_name = _types.QualifiedName(new_name)._to_core_struct()
 		core.BNRenameAnalysisType(self.handle, _old_name, _new_name)
+
+	def get_system_call_type(self, id: int, platform: Optional['_platform.Platform'] = None) -> Optional['_types.Type']:
+		if platform is None:
+			platform = self.platform
+		if platform is None:
+			raise Exception("Unable to retrieve system call type without a platform")
+		handle = core.BNGetAnalysisSystemCallType(self.handle, platform.handle, id)
+		if handle is None:
+			return None
+		return _types.Type.create(handle, platform=platform)
+
+	def get_system_call_name(self, id: int, platform: Optional['_platform.Platform'] = None) -> Optional[str]:
+		if platform is None:
+			platform = self.platform
+		if platform is None:
+			raise Exception("Unable to retrieve system call type without a platform")
+		result = core.BNGetAnalysisSystemCallName(self.handle, platform.handle, id)
+		if result is None:
+			return None
+		return result
 
 	def import_library_type(self, name: str, lib: Optional[typelibrary.TypeLibrary] = None) -> Optional['_types.Type']:
 		"""
@@ -8889,7 +9079,7 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 
 	def find_next_text(
 	    self, start: int, text: str, settings: Optional[_function.DisassemblySettings] = None,
-	    flags: FindFlag = FindFlag.FindCaseSensitive,
+	    flags: int = FindFlag.FindCaseSensitive,
 	    graph_type: _function.FunctionViewTypeOrName = FunctionGraphType.NormalFunctionGraph
 	) -> Optional[int]:
 		"""
@@ -8899,13 +9089,14 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 		:param int start: virtual address to start searching from.
 		:param str text: text to search for
 		:param DisassemblySettings settings: disassembly settings
-		:param FindFlag flags: (optional) defaults to case-insensitive data search
+		:param FindFlag flags: (optional) bit-flags list of options, defaults to case-insensitive data search
 
 			==================== ============================
 			FindFlag             Description
 			==================== ============================
 			FindCaseSensitive    Case-sensitive search
 			FindCaseInsensitive  Case-insensitive search
+			FindIgnoreWhitespace Ignore whitespace characters
 			==================== ============================
 		:param FunctionViewType graph_type: the IL to search within
 		"""
@@ -9055,13 +9246,14 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 		:param str text: text to search for
 		:param DisassemblySettings settings: DisassemblySettings object used to render the text \
 		to be searched
-		:param FindFlag flags: (optional) defaults to case-insensitive data search
+		:param FindFlag flags: (optional) bit-flags list of options, defaults to case-insensitive data search
 
 			==================== ============================
 			FindFlag             Description
 			==================== ============================
 			FindCaseSensitive    Case-sensitive search
 			FindCaseInsensitive  Case-insensitive search
+			FindIgnoreWhitespace Ignore whitespace characters
 			==================== ============================
 		:param FunctionViewType graph_type: the IL to search within
 		:param callback progress_func: optional function to be called with the current progress \
@@ -9211,14 +9403,15 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 
 			return self.QueueGenerator(t, results)
 
-	def search(self, pattern: str, start: int = None, end: int = None, raw: bool = False, ignore_case: bool = False, overlap: bool = False, align: int = 1) -> QueueGenerator:
+	def search(self, pattern: str, start: int = None, end: int = None, raw: bool = False, ignore_case: bool = False, overlap: bool = False, align: int = 1,
+		limit: int = None, progress_callback: Optional[ProgressFuncType] = None, match_callback: Optional[DataMatchCallbackType] = None) -> QueueGenerator:
 		r"""
-		Searches for matches of the specified `pattern` within this BinaryView with an optionally provided address range specified by `start` and `end`.
+		Searches for matches of the specified ``pattern`` within this BinaryView with an optionally provided address range specified by ``start`` and ``end``.
 		The search pattern can be interpreted in various ways:
 
 			- specified as a string of hexadecimal digits where whitespace is ignored, and the '?' character acts as a wildcard
 			- a regular expression suitable for working with bytes
-			- or if the `raw` option is enabled, the pattern is interpreted as a raw string, and any special characters are escaped and interpreted literally
+			- or if the ``raw`` option is enabled, the pattern is interpreted as a raw string, and any special characters are escaped and interpreted literally
 
 		:param pattern: The pattern to search for.
 		:type pattern: :py:class:`str`
@@ -9230,6 +9423,12 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 		:param bool ignore_case: Whether to perform case-insensitive matching (default: False).
 		:param bool overlap: Whether to allow matches to overlap (default: False).
 		:param int align: The alignment of matches, must be a power of 2 (default: 1).
+		:param int limit: The maximum number of matches to return (default: None).
+		:param callback progress_callback: An optional function to be called with the current progress and total count. \
+			This function should return a boolean value that decides whether the search should continue or stop.
+		:param callback match_callback: A function that gets called when a match is found. The callback takes two parameters: \
+			the address of the match, and the actual DataBuffer that satisfies the search. This function can return a boolean \
+			value that decides whether the search should continue or stop.
 
 		:return: A generator object that yields the offset and matched DataBuffer for each match found.
 		:rtype: QueueGenerator
@@ -9260,10 +9459,33 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 			"overlap": overlap,
 			"align": align
 		}
+
+		if progress_callback:
+			progress_callback_obj = ctypes.CFUNCTYPE(
+				ctypes.c_bool, ctypes.c_void_p, ctypes.c_ulonglong, ctypes.c_ulonglong
+			)(lambda ctxt, cur, total: progress_callback(cur, total))
+		else:
+			progress_callback_obj = ctypes.CFUNCTYPE(
+				ctypes.c_bool, ctypes.c_void_p, ctypes.c_ulonglong, ctypes.c_ulonglong
+			)(lambda ctxt, cur, total: True)
+
+		match_count = 0
+		def internal_match_callback(ctxt, offset, match):
+			nonlocal match_count
+			match_count += 1
+			data_buffer = databuffer.DataBuffer(handle=match)
+			results.put((offset, data_buffer))
+			if match_callback is not None:
+				should_continue = match_callback(offset, data_buffer)
+				if not should_continue:
+					return False
+			if limit is not None and match_count >= limit:
+				return False
+			return True
+
+		match_callback_obj = ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_ulonglong, ctypes.POINTER(core.BNDataBuffer))(internal_match_callback)
 		results = queue.Queue()
-		match_callback_obj = ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_ulonglong, ctypes.POINTER(core.BNDataBuffer)
-		)(lambda ctxt, offset, match: results.put((offset, databuffer.DataBuffer(handle=match))) or True)
-		t = threading.Thread(target=lambda: core.BNSearch(self.handle, json.dumps(query), None, match_callback_obj))
+		t = threading.Thread(target=lambda: core.BNSearch(self.handle, json.dumps(query), None, progress_callback_obj, None, match_callback_obj))
 		return self.QueueGenerator(t, results)
 
 	def reanalyze(self) -> None:
@@ -9287,7 +9509,8 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 		``rebase`` rebase the existing :py:class:`BinaryView` into a new :py:class:`BinaryView` at the specified virtual address
 
 		.. note:: This method does not update corresponding UI components. If the `BinaryView` is associated with \
-		UI components then initiate the rebase operation within the UI, e.g. using the command palette. If working with views that \
+		UI components then initiate the rebase operation within the UI, e.g. using the command palette or \
+		``binaryninjaui.UIContext.activeContext().rebaseCurrentView()``. If working with views that \
 		are not associated with UI components while the UI is active, then set ``force`` to ``True`` to enable rebasing.
 
 		:param int address: virtual address of the start of the :py:class:`BinaryView`
@@ -9302,6 +9525,10 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 			>>> newbv = bv.rebase(0x400000)
 			>>> print(newbv)
 			<BinaryView: '/bin/ls', start 0x400000, len 0x182f8>
+			>>>
+			>>> # For rebasing the current view in the UI:
+			>>> import binaryninjaui
+			>>> execute_on_main_thread_and_wait(lambda: binaryninjaui.UIContext.activeContext().rebaseCurrentView(0x800000))
 		"""
 		result = False
 		if core.BNIsUIEnabled() and not force:
@@ -9501,9 +9728,7 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 		seg = core.BNGetSegmentAt(self.handle, addr)
 		if not seg:
 			return None
-		segment_handle = core.BNNewSegmentReference(seg)
-		assert segment_handle is not None, "core.BNNewSegmentReference returned None"
-		return Segment(segment_handle)
+		return Segment(seg)
 
 	def get_address_for_data_offset(self, offset: int) -> Optional[int]:
 		"""
@@ -9595,9 +9820,7 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 		section = core.BNGetSectionByName(self.handle, name)
 		if section is None:
 			return None
-		section_handle = core.BNNewSectionReference(section)
-		assert section_handle is not None, "core.BNNewSectionReference returned None"
-		result = Section(section_handle)
+		result = Section(section)
 		return result
 
 	def get_unique_section_names(self, name_list: List[str]) -> List[str]:
@@ -9670,9 +9893,8 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 	def debug_info(self) -> "debuginfo.DebugInfo":
 		"""The current debug info object for this binary view"""
 		debug_handle = core.BNGetDebugInfo(self.handle)
-		debug_ref = core.BNNewDebugInfoReference(debug_handle)
-		assert debug_ref is not None, "core.BNNewDebugInfoReference returned None"
-		return debuginfo.DebugInfo(debug_ref)
+		assert debug_handle is not None, "core.BNGetDebugInfo returned None"
+		return debuginfo.DebugInfo(debug_handle)
 
 	@debug_info.setter
 	def debug_info(self, value: "debuginfo.DebugInfo") -> None:
@@ -10042,19 +10264,26 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 		"""
 		return MemoryMap(handle=self.handle)
 
-	def stringify_unicode_data(
-			self, arch: Optional['architecture.Architecture'], buffer: 'databuffer.DataBuffer',
-			allow_short_strings: bool = False
-	) -> Tuple[Optional[str], Optional[StringType]]:
+	def stringify_unicode_data(self, arch: Optional['architecture.Architecture'], buffer: 'databuffer.DataBuffer', null_terminates: bool = True, allow_short_strings: bool = False) -> Tuple[Optional[str], Optional[StringType]]:
+		"""
+		``stringify_unicode_data`` converts a buffer of unicode data into a string representation.
+		:param arch: The architecture to use for stringification, or None to use the current architecture of the BinaryView
+		:param buffer: The DataBuffer containing the unicode data to stringify
+		:param null_terminates: If True, stops stringification at the first null character, otherwise continues until the end of the buffer
+		:param allow_short_strings: If True, allows short strings to be returned, otherwise only long strings are returned
+		:return: A tuple containing the string representation and its type, or (None, None) if the stringification fails
+		:rtype: Tuple[Optional[str], Optional[StringType]]
+		"""
+		if not isinstance(buffer, databuffer.DataBuffer):
+			raise TypeError("buffer must be an instance of databuffer.DataBuffer")
 		string = ctypes.c_char_p()
 		string_type = ctypes.c_int()
 		if arch is not None:
 			arch = arch.handle
-		if not core.BNStringifyUnicodeData(
-				self.handle, arch, buffer.handle, allow_short_strings, ctypes.byref(string), ctypes.byref(string_type)):
+		if not core.BNStringifyUnicodeData(self.handle, arch, buffer.handle, null_terminates, allow_short_strings, ctypes.byref(string), ctypes.byref(string_type)):
 			return None, None
-		result = string.value
-		core.BNFreeString(string)
+		result = string.value.decode('utf-8')
+		core.free_string(string)
 		return result, StringType(string_type.value)
 
 class BinaryReader:
@@ -11078,11 +11307,16 @@ class DataVariable(CoreDataVariable):
 
 	@symbol.setter
 	def symbol(self, value: Optional[Union[str, '_types.CoreSymbol']]) -> None:  # type: ignore
+		existing_symbol = self.symbol
 		if value is None or value == "":
-			if self.symbol is not None:
-				self.view.undefine_user_symbol(self.symbol)
+			if existing_symbol is not None:
+				self.view.undefine_user_symbol(existing_symbol)
 		elif isinstance(value, (str, _types.QualifiedName)):
-			symbol = _types.Symbol(SymbolType.DataSymbol, self.address, str(value))
+			if existing_symbol is not None:
+				symbol_type = existing_symbol.type
+			else:
+				symbol_type = SymbolType.DataSymbol
+			symbol = _types.Symbol(symbol_type, self.address, str(value))
 			self.view.define_user_symbol(symbol)
 		elif isinstance(value, _types.CoreSymbol):
 			self.view.define_user_symbol(value)

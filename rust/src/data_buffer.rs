@@ -1,4 +1,4 @@
-// Copyright 2021-2024 Vector 35 Inc.
+// Copyright 2021-2025 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ use binaryninjacore_sys::*;
 use std::ffi::c_void;
 use std::slice;
 
-use crate::string::BnString;
+use crate::string::{BnString, IntoCStr};
 
 pub struct DataBuffer(*mut BNDataBuffer);
 
@@ -30,6 +30,12 @@ impl DataBuffer {
 
     pub(crate) fn as_raw(&self) -> *mut BNDataBuffer {
         self.0
+    }
+
+    pub fn new(data: &[u8]) -> Self {
+        let buffer = unsafe { BNCreateDataBuffer(data.as_ptr() as *const c_void, data.len()) };
+        assert!(!buffer.is_null());
+        DataBuffer::from_raw(buffer)
     }
 
     pub fn get_data(&self) -> &[u8] {
@@ -110,9 +116,9 @@ impl DataBuffer {
         }
     }
 
-    pub fn to_escaped_string(&self, null_terminates: bool, escape_printable: bool) -> BnString {
+    pub fn to_escaped_string(&self, null_terminates: bool, escape_printable: bool) -> String {
         unsafe {
-            BnString::from_raw(BNDataBufferToEscapedString(
+            BnString::into_string(BNDataBufferToEscapedString(
                 self.0,
                 null_terminates,
                 escape_printable,
@@ -120,16 +126,18 @@ impl DataBuffer {
         }
     }
 
-    pub fn from_escaped_string(value: &BnString) -> Self {
+    pub fn from_escaped_string(value: &str) -> Self {
+        let value = value.to_cstr();
         Self(unsafe { BNDecodeEscapedString(value.as_ptr()) })
     }
 
-    pub fn to_base64(&self) -> BnString {
-        unsafe { BnString::from_raw(BNDataBufferToBase64(self.0)) }
+    pub fn to_base64(&self) -> String {
+        unsafe { BnString::into_string(BNDataBufferToBase64(self.0)) }
     }
 
-    pub fn from_base64(value: &BnString) -> Self {
-        Self(unsafe { BNDecodeBase64(value.as_ptr()) })
+    pub fn from_base64(value: &str) -> Self {
+        let t = value.to_cstr();
+        Self(unsafe { BNDecodeBase64(t.as_ptr()) })
     }
 
     pub fn zlib_compress(&self) -> Self {
@@ -159,15 +167,6 @@ impl DataBuffer {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-
-    pub fn new(data: &[u8]) -> Result<Self, ()> {
-        let buffer = unsafe { BNCreateDataBuffer(data.as_ptr() as *const c_void, data.len()) };
-        if buffer.is_null() {
-            Err(())
-        } else {
-            Ok(DataBuffer::from_raw(buffer))
-        }
-    }
 }
 
 impl Default for DataBuffer {
@@ -190,10 +189,8 @@ impl Clone for DataBuffer {
     }
 }
 
-impl TryFrom<&[u8]> for DataBuffer {
-    type Error = ();
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+impl From<&[u8]> for DataBuffer {
+    fn from(value: &[u8]) -> Self {
         DataBuffer::new(value)
     }
 }

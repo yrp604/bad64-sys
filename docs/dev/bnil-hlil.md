@@ -14,7 +14,15 @@ The High Level Intermediate Language (HLIL) is Binary Ninja's decompiler output.
 * Small discrete operations
 * Enables source-level forms of queries and analysis
 
-In the rest of this article we will explore the instruction set.
+## Debug Report
+
+To observe the transformations that occur from MLIL to HLIL, you can use the built-in [`debug report`](https://api.binary.ninja/binaryninja.function-module.html#binaryninja.function.Function.request_debug_report) API:
+
+```py
+> current_function.request_debug_report("hlil")
+```
+
+![HLIL Debug Report](../img/hlil-debug-report.png)
 
 ## The Instruction Set
 
@@ -43,22 +51,22 @@ There are a number of properties that can be queried on the [`HighLevelILInstruc
 * `HLIL_TAILCALL` - This instruction calls the expression `dest` using `params` as input and `output` for return values
 not exist
 * `HLIL_SYSCALL` - Make a system/service call with parameters `params` and output `output`
-* `HLIL_WHILE` - 
-* `HLIL_DO_WHILE` - 
-* `HLIL_FOR` - 
-* `HLIL_SWITCH` - 
-* `HLIL_CASE` - 
-* `HLIL_BREAK` - 
-* `HLIL_CONTINUE` - 
+* `HLIL_WHILE` -
+* `HLIL_DO_WHILE` -
+* `HLIL_FOR` -
+* `HLIL_SWITCH` -
+* `HLIL_CASE` -
+* `HLIL_BREAK` -
+* `HLIL_CONTINUE` -
 
 ### Variable Reads and Writes
 
 * `HLIL_VAR_DECLARE` - A declaration of `var`
 * `HLIL_VAR_INIT` - Initializes `dest` to the result of an expression `src`
 * `HLIL_ASSIGN` - Sets a variable `dest` to the result of an expression `src`
-* `HLIL_ASSIGN_UNPACK` - 
+* `HLIL_ASSIGN_UNPACK` -
 * `HLIL_VAR` - A variable expression `src`
-* `HLIL_VAR_PHI` - A `PHI` represents the combination of several prior versions of a variable when differnet basic blocks coalesce into a single destination and it's unknown which path was taken.
+* `HLIL_VAR_PHI` - A `PHI` represents the combination of several prior versions of a variable when different basic blocks coalesce into a single destination and it's unknown which path was taken.
 * `HLIL_MEM_PHI` - A memory `PHI` represents memory modifications that could have occured down different source basic blocks similar to a `VAR_PHI`.
 * `HLIL_ADDRESS_OF` - The address of variable `src`
 * `HLIL_CONST` - A constant integral value `constant`
@@ -68,11 +76,11 @@ not exist
 * `HLIL_FLOAT_CONST` - A floating point constant `constant`
 * `HLIL_IMPORT` - A `constant` integral value representing an imported address
 * `HLIL_LOW_PART` - `size` bytes from the low end of `src` expression
-* `HLIL_STRUCT_FIELD` - 
-* `HLIL_ARRAY_INDEX` - 
+* `HLIL_STRUCT_FIELD` -
+* `HLIL_ARRAY_INDEX` -
 * `HLIL_SPLIT` - A split pair of variables `high`:`low` which can be used a single expression
 * `HLIL_DEREF` - Dereferences `src`
-* `HLIL_DEREF_FIELD` - 
+* `HLIL_DEREF_FIELD` -
 
 ### Arithmetic Operations
 
@@ -153,6 +161,6 @@ not exist
 * `HLIL_UNDEF` - The expression performs undefined behavior
 * `HLIL_UNIMPL` - The expression is not implemented
 * `HLIL_UNIMPL_MEM` - The expression is not implemented but does access `src` memory
-* `HLIL_BLOCK` - 
-* `HLIL_LABEL` - 
-* `HLIL_UNREACHABLE` - 
+* `HLIL_BLOCK` -
+* `HLIL_LABEL` -
+* `HLIL_UNREACHABLE` -

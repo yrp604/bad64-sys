@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Vector 35 Inc
+# Copyright (c) 2024-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -33,9 +33,9 @@ from . import highlight
 from . import lineformatter
 from . import variable
 from . import types
-from .log import log_error
+from .log import log_error_for_exception
 from .enums import BraceRequirement, HighlightStandardColor, InstructionTextTokenType, OperatorPrecedence, ScopeType, \
-	SymbolDisplayType, SymbolDisplayResult
+	SymbolDisplayType, SymbolDisplayResult, InstructionTextTokenContext
 
 
 class HighLevelILTokenEmitter:
@@ -52,6 +52,10 @@ class HighLevelILTokenEmitter:
 	def __del__(self):
 		if core is not None:
 			core.BNFreeHighLevelILTokenEmitter(self.handle)
+
+	def init_line(self):
+		"""Initialize a new line, creating indentation tokens at the start."""
+		core.BNHighLevelILTokenEmitterInitLine(self.handle)
 
 	def new_line(self):
 		"""Starts a new line in the output."""
@@ -91,6 +95,60 @@ class HighLevelILTokenEmitter:
 	def no_indent_for_this_line(self):
 		"""Forces there to be no indentation for the next line."""
 		core.BNHighLevelILTokenEmitterNoIndentForThisLine(self.handle)
+
+	def prepend_blank_collapse_indicator(self):
+		"""
+		Insert, at the beginning of the line, a collapse indicator token.
+		The indicator will be a blank space and not have any functionality.
+		"""
+		core.BNHighLevelILTokenPrependCollapseBlankIndicator(self.handle);
+
+	def prepend_instr_collapse_indicator(
+		self,
+		function_: 'function.Function',
+		instr: 'highlevelil.HighLevelILInstruction',
+		discriminator: int = 0
+	):
+		"""
+		Insert, at the beginning of the line, a collapse indicator token.
+
+		The indicator will allow the user to collapse the region specified by
+		(instr, discriminator) on the function.
+		Implementations can use :py:func:`Function.is_instruction_collapsed` and
+		:py:func:`Function.is_region_collapsed` to account for collapsed regions in rendering.
+
+		:param function_: Function whose instructions are being emitted
+		:param instr: Instruction being emitted which can be collapsed
+		:param discriminator: Unique discriminator id for the region
+		"""
+		if not self.has_collapsable_regions:
+			return
+
+		# Insert the collapse indicator at the beginning of the line if one isn't already there or the
+		# one that is there is empty
+		context = InstructionTextTokenContext.ContentCollapsiblePadding
+		if instr.can_collapse:
+			if function_ and function_.is_instruction_collapsed(instr, discriminator):
+				context = InstructionTextTokenContext.ContentCollapsedContext
+			else:
+				context = InstructionTextTokenContext.ContentExpandedContext
+		self.prepend_region_collapse_indicator(context, instr.get_instruction_hash(discriminator))
+
+	def prepend_region_collapse_indicator(
+		self,
+		context: InstructionTextTokenContext,
+		hash: int
+	):
+		core.BNHighLevelILTokenPrependCollapseIndicator(self.handle, context, hash)
+
+	@property
+	def has_collapsable_regions(self) -> bool:
+		"""If the emitter can emit regions which can be collapsed"""
+		return core.BNHighLevelILTokenEmitterHasCollapsableRegions(self.handle)
+
+	@has_collapsable_regions.setter
+	def has_collapsable_regions(self, value: bool):
+		core.BNHighLevelILTokenEmitterSetHasCollapsableRegions(self.handle, value)
 
 	class ZeroConfidenceContext:
 		"""
@@ -186,7 +244,7 @@ class HighLevelILTokenEmitter:
 
 	@property
 	def current_tokens(self) -> List['function.InstructionTextToken']:
-		"""The list of tokens on the current line (read-only)."""
+		"""The list of tokens on the current line."""
 		count = ctypes.c_ulonglong()
 		tokens = core.BNHighLevelILTokenEmitterGetCurrentTokens(self.handle, count)
 		result = []
@@ -194,6 +252,11 @@ class HighLevelILTokenEmitter:
 			result = function.InstructionTextToken._from_core_struct(tokens, count.value)
 			core.BNFreeInstructionText(tokens, count.value)
 		return result
+
+	@current_tokens.setter
+	def current_tokens(self, tokens: List['function.InstructionTextToken']):
+		buf = function.InstructionTextToken._get_core_struct(tokens)
+		core.BNHighLevelILTokenEmitterSetCurrentTokens(self.handle, buf, len(tokens))
 
 	@property
 	def lines(self) -> List['function.DisassemblyTextLine']:
@@ -377,20 +440,20 @@ class LanguageRepresentationFunction:
 		try:
 			self.__class__._registered_instances.append(self)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in LanguageRepresentationFunction._external_ref_taken")
 
 	def _external_ref_released(self, ctxt):
 		try:
 			self.__class__._registered_instances.remove(self)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in LanguageRepresentationFunction._external_ref_released")
 
 	def _init_token_emitter(self, ctxt, emitter: core.BNHighLevelILTokenEmitterHandle):
 		try:
 			emitter = HighLevelILTokenEmitter(core.BNNewHighLevelILTokenEmitterReference(emitter))
 			self.perform_init_token_emitter(emitter)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in LanguageRepresentationFunction._init_token_emitter")
 
 	def _get_expr_text(
 			self, ctxt, hlil: core.BNHighLevelILFunctionHandle, expr_index: int,
@@ -405,7 +468,7 @@ class LanguageRepresentationFunction:
 				settings = function.DisassemblySettings(core.BNNewDisassemblySettingsReference(settings))
 			self.perform_get_expr_text(instr, tokens, settings, precedence, statement)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in LanguageRepresentationFunction._get_expr_text")
 
 	def _begin_lines(
 			self, ctxt, hlil: core.BNHighLevelILFunctionHandle, expr_index: int,
@@ -417,7 +480,7 @@ class LanguageRepresentationFunction:
 			tokens = HighLevelILTokenEmitter(core.BNNewHighLevelILTokenEmitterReference(tokens))
 			self.perform_begin_lines(instr, tokens)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in LanguageRepresentationFunction._begin_lines")
 
 	def _end_lines(
 			self, ctxt, hlil: core.BNHighLevelILFunctionHandle, expr_index: int,
@@ -429,34 +492,34 @@ class LanguageRepresentationFunction:
 			tokens = HighLevelILTokenEmitter(core.BNNewHighLevelILTokenEmitterReference(tokens))
 			self.perform_end_lines(instr, tokens)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in LanguageRepresentationFunction._end_lines")
 
 	def _comment_start_string(self, ctxt):
 		try:
 			return core.BNAllocString(self.comment_start_string)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in LanguageRepresentationFunction._comment_start_string")
 			return core.BNAllocString("// ")
 
 	def _comment_end_string(self, ctxt):
 		try:
 			return core.BNAllocString(self.comment_end_string)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in LanguageRepresentationFunction._comment_end_string")
 			return core.BNAllocString("")
 
 	def _annotation_start_string(self, ctxt):
 		try:
 			return core.BNAllocString(self.annotation_start_string)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in LanguageRepresentationFunction._annotation_start_string")
 			return core.BNAllocString("{")
 
 	def _annotation_end_string(self, ctxt):
 		try:
 			return core.BNAllocString(self.annotation_end_string)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in LanguageRepresentationFunction._annotation_end_string")
 			return core.BNAllocString("}")
 
 	def perform_init_token_emitter(self, emitter: HighLevelILTokenEmitter):
@@ -646,7 +709,7 @@ class LanguageRepresentationFunctionType(metaclass=_LanguageRepresentationFuncti
 			assert handle is not None, "core.BNNewLanguageRepresentationFunctionReference returned None"
 			return ctypes.cast(handle, ctypes.c_void_p).value
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in LangugeRepresentationFunctionType._create")
 			return None
 
 	def _is_valid(self, ctxt, view: core.BNBinaryViewHandle) -> bool:
@@ -654,7 +717,7 @@ class LanguageRepresentationFunctionType(metaclass=_LanguageRepresentationFuncti
 			view = binaryview.BinaryView(handle=core.BNNewViewReference(view))
 			return self.is_valid(view)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in LanguageRepresentationFunctionType._is_valid")
 			return False
 
 	def _type_printer(self, ctxt):
@@ -664,7 +727,7 @@ class LanguageRepresentationFunctionType(metaclass=_LanguageRepresentationFuncti
 				return None
 			return ctypes.cast(result.handle, ctypes.c_void_p).value
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in LanguageRepresentationFunctionType._type_printer")
 			return None
 
 	def _type_parser(self, ctxt):
@@ -674,7 +737,7 @@ class LanguageRepresentationFunctionType(metaclass=_LanguageRepresentationFuncti
 				return None
 			return ctypes.cast(result.handle, ctypes.c_void_p).value
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in LanguageRepresentationFunctionType._type_parser")
 			return None
 
 	def _line_formatter(self, ctxt):
@@ -684,7 +747,7 @@ class LanguageRepresentationFunctionType(metaclass=_LanguageRepresentationFuncti
 				return None
 			return ctypes.cast(result.handle, ctypes.c_void_p).value
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in LanguageRepresentationFunctionType._line_formatter")
 			return None
 
 	def _function_type_tokens(
@@ -724,7 +787,7 @@ class LanguageRepresentationFunctionType(metaclass=_LanguageRepresentationFuncti
 
 			return ctypes.cast(self.line_buf, ctypes.c_void_p).value
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in LanguageRepresentationFunctionType._function_type_tokens")
 			count[0] = 0
 			return None
 

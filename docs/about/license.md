@@ -244,7 +244,7 @@ We will license Binary Ninja™ Ultimate, a software application (the "Software"
 
 1.	Non-Exclusive License Grant. Under the terms of this License, the Software is licensed on a non-exclusive basis and is not sold. You receive no title to or ownership of the Software itself. This License grants you the rights to install and use the software by you on a particular single computer you own and run that software, provided that upon authentication with Binary Ninja™ Enterprise Server, no more than the number of Maximum Simultaneous Users described in the Enterprise Server license are currently operating at that time. This License does not permit any other concurrent use. You may check out this License from the Enterprise Server for purely local use, in which case the total remaining number of Maximum Simultaneous Users will be reduced by one for each license checked out.  All rights not expressly granted herein are reserved by us.
 
-2.	Termination. Your license to the Software automatically terminates if you fail to comply with the terms of this License. Upon termination of this License, all licenses granted in Section 1 will terminate and you are required to stop using the Software and delete all copies in your possession or control. The following provisions will survive termination of this License: (i) your obligation to pay for services rendered before termination; (ii) Sections 6 through 14; and (iii) any other provision of this License that must survive termination to fulfill its essential purpose.
+2.	Termination. Your license to the Software automatically terminates if you fail to comply with the terms of this License. Upon termination of this License, all licenses granted in Section 1 will terminate and you are required to stop using the Software and delete all copies in your possession or control. The following provisions will survive termination of this License: (i) your obligation to pay for services rendered before termination; (ii) Sections 6 through 13; and (iii) any other provision of this License that must survive termination to fulfill its essential purpose.
 
 3.	Modification and Upgrades. We may, from time to time, and in certain cases for a fee, replace, modify, or upgrade the Software. The license fee includes one year of free upgrades. When accepted by you, any such replacement or modified Software code or upgrade to the Software will be considered part of the Software and subject to the terms of this License (unless this License is superseded by a further License accompanying such replacement or modified version of or upgrade to the Software).
 
@@ -274,7 +274,7 @@ BINARY NINJA™ ENTERPRISE SERVER LICENSE
 
 Preamble and Definitions
 This License Agreement (the "License") is entered into between you ("you" or "your") and Vector 35 Inc, a Delaware corporation ("us", "we" or "our",) that owns Binary Ninja™ Enterprise Server, a software application (the "Server Software") that is subject to the terms and conditions of this License.
-	
+
 You, your employees and authorized subcontractors which you permit to access the Server Software via Client Software ("Enterprise Users") are subject to the Enterprise Client License ("ECL").  Server Software is accompanied with a minimum of three floating ECLs, which number may be increased depending on your purchase (“Maximum Simultaneous Users”.)
 
 The terms “you” or “your” in this License mean you as the Server Software licensee.  The terms "you" and "your" include you or the entity on behalf of which you are accepting the License, and you represent that you have the authority to bind that entity. Any reference to “we”, “us”, or “our” means Vector 35 Inc, a Delaware Corporation, the company that owns the Server Software.
@@ -289,8 +289,7 @@ d.	If you will use the Server Software on any servers other than the Designated 
 
 2.	License Fee. Prices are subject to change without prior notice and the price of a License today does not guarantee a similar price in the future.
 
-3.	Term and Termination. 
-
+3.	Term and Termination.
 a.	License is valid for one year from date of purchase, unless renewed. 
 b.	Your license to the Server Software automatically terminates if you fail to comply with the terms of this License.
 c.	Upon termination of this License, all licenses granted in Section 1 will terminate, and you will be unable to use the collaboration features of the Server Software.

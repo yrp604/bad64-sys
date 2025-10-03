@@ -20,6 +20,8 @@ struct BINARYNINJAUIAPI SidebarMetrics
 	int iconTotalWidth, iconTotalHeight;
 	int dragIconPadding;
 	int dropIconPadding;
+	int focusRectPadding;
+	int focusRectRadius;
 };
 
 /*!
@@ -60,6 +62,7 @@ class BINARYNINJAUIAPI Sidebar : public QObject
 	static std::set<Sidebar*> m_instances;
 	static std::set<SidebarWidgetType*> m_defaultTypes;
 	static std::optional<SidebarMetrics> m_metrics;
+	static std::map<QString, SidebarIconVisibility> m_iconVisibility;
 
 private Q_SLOTS:
 	void containerUpdated();
@@ -122,6 +125,8 @@ public:
 	bool isContentActive() const;
 	bool isSideContentActive() const;
 	bool isBottomContentActive() const;
+	bool allIconsVisible() const;
+	std::vector<SidebarWidgetType*> hiddenIcons() const;
 
 	void updateTheme();
 	void updateFonts();
@@ -137,6 +142,8 @@ public:
 	void restoreState(const QSettings& settings, const QString& windowStateName, bool globalStateOnly = false);
 	bool restoreActiveState(const QVariant& state);
 
+	void focusChanged(SidebarWidgetAndHeader* widget);
+
 	static void addSidebarWidgetType(SidebarWidgetType* type);
 	static void moveSidebarWidgetType(SidebarWidgetType* type, SidebarWidgetLocation newLocation, size_t newIndex);
 	static SidebarWidgetType* typeFromName(const QString& name);
@@ -146,12 +153,19 @@ public:
 	static std::vector<SidebarWidgetType*> typesForContainerLocation(SidebarContainerLocation location);
 	static void initSavedTypeOrdering();
 	static void saveTypeOrdering();
+	static void initIconVisibility();
+	static void saveIconVisibility();
 
 	static SidebarMetrics metrics();
 	static void refreshMetrics();
 
 	static std::set<SidebarWidgetType*> defaultTypes() { return m_defaultTypes; }
 	static void setDefaultTypes(const std::set<SidebarWidgetType*>& types) { m_defaultTypes = types; }
+
+	static SidebarIconVisibility iconVisibility(SidebarWidgetType* type);
+	static SidebarIconVisibility iconVisibility(const QString& name);
+	static void setIconVisibility(SidebarWidgetType* type, SidebarIconVisibility visibility);
+	static void setIconVisibility(const QString& name, SidebarIconVisibility visibility);
 
 	static Sidebar* current()
 	{

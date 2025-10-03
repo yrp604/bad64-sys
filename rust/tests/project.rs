@@ -2,23 +2,17 @@ use binaryninja::headless::Session;
 use binaryninja::metadata::Metadata;
 use binaryninja::project::Project;
 use binaryninja::rc::Ref;
-use rstest::*;
 use std::time::SystemTime;
 
 // TODO: We should use tempdir to manage the project directory.
-
-#[fixture]
-#[once]
-fn session() -> Session {
-    Session::new().expect("Failed to initialize session")
-}
 
 fn unique_project(name: &str) -> String {
     format!("{}/{}", std::env::temp_dir().to_str().unwrap(), name)
 }
 
-#[rstest]
-fn create_delete_empty(_session: &Session) {
+#[test]
+fn create_delete_empty() {
+    let _session = Session::new().expect("Failed to initialize session");
     use std::fs::canonicalize;
 
     let project_name = "create_delete_empty_project";
@@ -46,8 +40,9 @@ fn create_delete_empty(_session: &Session) {
     std::fs::remove_dir_all(project_path).unwrap();
 }
 
-#[rstest]
-fn create_close_open_close(_session: &Session) {
+#[test]
+fn create_close_open_close() {
+    let _session = Session::new().expect("Failed to initialize session");
     let project_name = "create_close_open_close";
     let project_path = unique_project(project_name);
     // create the project
@@ -74,8 +69,9 @@ fn create_close_open_close(_session: &Session) {
     std::fs::remove_dir_all(project_path).unwrap();
 }
 
-#[rstest]
-fn modify_project(_session: &Session) {
+#[test]
+fn modify_project() {
+    let _session = Session::new().expect("Failed to initialize session");
     let project_name = "modify_project_project";
     let project_path = unique_project(project_name);
     // create the project
@@ -155,10 +151,10 @@ fn modify_project(_session: &Session) {
         .create_folder(None, "deleted_folder", folder_4_desc)
         .unwrap();
 
-    assert_eq!(project.folders().unwrap().len(), 5);
-    let last_folder = project.folder_by_id(folder_5.id()).unwrap();
+    assert_eq!(project.folders().len(), 5);
+    let last_folder = project.folder_by_id(&folder_5.id()).unwrap();
     project.delete_folder(&last_folder).unwrap();
-    assert_eq!(project.folders().unwrap().len(), 4);
+    assert_eq!(project.folders().len(), 4);
     drop(folder_5);
 
     // create, import and delete file
@@ -249,8 +245,10 @@ fn modify_project(_session: &Session) {
     .unwrap();
 
     assert_eq!(project.files().len(), 10);
-    let file_a = project.file_by_id(file_8.id()).unwrap();
-    let file_b = project.file_by_path(file_7.path_on_disk()).unwrap();
+    let file_a = project.file_by_id(&file_8.id()).unwrap();
+    let file_b = project
+        .file_by_path(&file_7.path_on_disk().unwrap())
+        .unwrap();
     project.delete_file(&file_a);
     project.delete_file(&file_b);
     assert_eq!(project.files().len(), 8);
@@ -286,7 +284,7 @@ fn modify_project(_session: &Session) {
         (&tmp_folder_1_name, None),
         (&tmp_folder_2_name, None),
     ];
-    for folder in project.folders().unwrap().iter() {
+    for folder in project.folders().iter() {
         let found = folders
             .iter()
             .find(|f| folder.name().as_str() == f.0)
@@ -333,7 +331,7 @@ fn modify_project(_session: &Session) {
                     .as_secs()
             );
         }
-        let content = std::fs::read(file.path_on_disk().as_str()).unwrap();
+        let content = std::fs::read(file.path_on_disk().unwrap()).unwrap();
         assert_eq!(content, found.1);
     }
 

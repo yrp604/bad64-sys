@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2024 Vector 35 Inc
+// Copyright (c) 2015-2025 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -64,12 +64,6 @@ FirmwareNinjaRelationship::FirmwareNinjaRelationship(Ref<BinaryView> view, BNFir
 		m_object = handle;
 	else
 		m_object = BNNewFirmwareNinjaRelationshipReference(BNCreateFirmwareNinjaRelationship(view->GetObject()));
-}
-
-
-FirmwareNinjaRelationship::~FirmwareNinjaRelationship()
-{
-	BNFreeFirmwareNinjaRelationship(m_object);
 }
 
 
@@ -140,7 +134,7 @@ Ref<Function> FirmwareNinjaRelationship::GetPrimaryFunction() const
 	if (!bnFunction)
 		return nullptr;
 
-	return new Function(BNNewFunctionReference(bnFunction));
+	return new Function(bnFunction);
 }
 
 
@@ -245,17 +239,17 @@ Ref<Function> FirmwareNinjaRelationship::GetSecondaryFunction() const
 	if (!bnFunction)
 		return nullptr;
 
-	return new Function(BNNewFunctionReference(bnFunction));
+	return new Function(bnFunction);
 }
 
 
 std::string FirmwareNinjaRelationship::GetSecondaryExternalSymbol() const
 {
-	std::string result = "";
 	auto bnSymbol = BNFirmwareNinjaRelationshipGetSecondaryExternalSymbol(m_object);
-	if (bnSymbol)
-		result = std::string(bnSymbol);
-
+	if (!bnSymbol)
+		return "";
+	std::string result = bnSymbol;
+	BNFreeString(bnSymbol);
 	return result;
 }
 
@@ -268,11 +262,11 @@ void FirmwareNinjaRelationship::SetDescription(const std::string& description)
 
 std::string FirmwareNinjaRelationship::GetDescription() const
 {
-	std::string result = "";
 	auto bnDescription = BNFirmwareNinjaRelationshipGetDescription(m_object);
-	if (bnDescription)
-		result = std::string(bnDescription);
-
+	if (!bnDescription)
+		return "";
+	std::string result = bnDescription;
+	BNFreeString(bnDescription);
 	return result;
 }
 
@@ -285,18 +279,23 @@ void FirmwareNinjaRelationship::SetProvenance(const std::string& provenance)
 
 std::string FirmwareNinjaRelationship::GetProvenance() const
 {
-	std::string result = "";
 	auto bnProvenance = BNFirmwareNinjaRelationshipGetProvenance(m_object);
-	if (bnProvenance)
-		result = std::string(bnProvenance);
-
+	if (!bnProvenance)
+		return "";
+	std::string result = bnProvenance;
+	BNFreeString(bnProvenance);
 	return result;
 }
 
 
 std::string FirmwareNinjaRelationship::GetGuid() const
 {
-	return BNFirmwareNinjaRelationshipGetGuid(m_object);
+	auto bnGuid = BNFirmwareNinjaRelationshipGetGuid(m_object);
+	if (!bnGuid)
+		return "";
+	std::string result = bnGuid;
+	BNFreeString(bnGuid);
+	return result;
 }
 
 
@@ -336,7 +335,7 @@ bool FirmwareNinjaReferenceNode::GetFunction(Ref<Function>& function)
 	if (!bnFunction)
 		return false;
 
-	function = new Function(BNNewFunctionReference(bnFunction));
+	function = new Function(bnFunction);
 	return true;
 }
 
@@ -674,6 +673,7 @@ std::vector<Ref<FirmwareNinjaRelationship>> FirmwareNinja::QueryRelationships()
 			BNNewFirmwareNinjaRelationshipReference(bnRelationships[i])));
 	}
 
+	BNFirmwareNinjaFreeRelationships(bnRelationships, count);
 	return result;
 }
 

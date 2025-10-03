@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -29,7 +29,7 @@ from urllib.parse import urlencode
 import binaryninja
 import binaryninja._binaryninjacore as core
 from . import settings
-from .log import log_error
+from .log import log_error_for_exception
 
 
 def to_bytes(field):
@@ -83,7 +83,7 @@ class SecretsProvider(metaclass=_SecretsProviderMetaclass):
 		try:
 			return self.perform_has_data(key)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in SecretsProvider._has_data")
 			return False
 
 	def _get_data(self, ctxt, key: str):
@@ -91,21 +91,21 @@ class SecretsProvider(metaclass=_SecretsProviderMetaclass):
 			data = self.perform_get_data(key)
 			return core.BNAllocString(data)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in SecretsProvider._get_data")
 			return None
 
 	def _store_data(self, ctxt, key: str, data: str) -> bool:
 		try:
 			return self.perform_store_data(key, data)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in SecretsProvider._store_data")
 			return False
 
 	def _delete_data(self, ctxt, key: str) -> bool:
 		try:
 			return self.perform_delete_data(key)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in SecretsProvider._delete_data")
 			return False
 
 	def perform_has_data(self, key: str) -> bool:

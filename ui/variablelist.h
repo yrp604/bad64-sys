@@ -1,5 +1,6 @@
 #pragma once
 
+#include <clickablelabel.h>
 #include <QtCore/QSortFilterProxyModel>
 #include <QtCore/QTimer>
 #include <QtWidgets/QListView>
@@ -44,14 +45,15 @@ class VariableListItem
 	BinaryNinja::DataVariable m_dataVar;
 	BinaryNinja::PossibleValueSet m_pvs;
 	bool m_hasUidf;
+	bool m_showPlacementInformation;
 
   public:
 	//! Create a new VariableListItem of the LocalVariable type.
 	VariableListItem(
-	    FunctionRef func, BinaryNinja::Variable var, BinaryNinja::PossibleValueSet pvs, bool hasUidf, std::string name);
+	    FunctionRef func, BinaryNinja::Variable var, BinaryNinja::PossibleValueSet pvs, bool hasUidf, std::string name, bool showPlacementInformation);
 
 	//! Create a new VariableListItem of the DataVariable type.
-	VariableListItem(FunctionRef func, BinaryNinja::DataVariable dataVar, uint64_t refPoint, std::string name);
+	VariableListItem(FunctionRef func, BinaryNinja::DataVariable dataVar, uint64_t refPoint, std::string name, bool showPlacementInformation);
 
 	//! Get the type of this list item.
 	VariableListItemType type() const;
@@ -70,6 +72,7 @@ class VariableListItem
 
 	std::vector<BinaryNinja::InstructionTextToken> tokensBeforeName() const;
 	std::vector<BinaryNinja::InstructionTextToken> tokensAfterName() const;
+	void displayVariablePlacementInfo(std::vector<BinaryNinja::InstructionTextToken>& tokens) const;
 
 	//! Shorthand to get concatenated type, name, and value tokens.
 	std::vector<BinaryNinja::InstructionTextToken> displayTokens() const;
@@ -111,6 +114,7 @@ class BINARYNINJAUIAPI VariableListModel : public QAbstractListModel
 
 	size_t m_prevVariableCount;
 	uint64_t m_prevSelectionId;
+	bool m_showPlacementInformation;
 
   public:
 	VariableListModel(QWidget* parent, ViewFrame* view, BinaryViewRef data);
@@ -126,6 +130,9 @@ class BINARYNINJAUIAPI VariableListModel : public QAbstractListModel
 
 	//! Whether or not the function exceeds the set complexity threshold
 	bool functionExceedsComplexity() const { return m_funcExceedsComplexity; }
+
+	//! Get the showPlacementInformation setting
+	bool showPlacementInformation() const { return m_showPlacementInformation; }
 
 	//! Set the focused function and update the content of the list.
 	void setFunction(FunctionRef func, const BinaryNinja::FunctionViewType& il, const HighlightTokenState& hts);
@@ -162,7 +169,7 @@ class VariableListItemDelegate : public QStyledItemDelegate
 	Q_OBJECT
 
   public:
-	VariableListItemDelegate();
+	VariableListItemDelegate(QObject* parent = nullptr) : QStyledItemDelegate(parent) {};
 
 	void paint(QPainter* painter, const QStyleOptionViewItem& opt, const QModelIndex& index) const;
 	QSize sizeHint(const QStyleOptionViewItem& opt, const QModelIndex& index) const;
@@ -179,6 +186,9 @@ class BINARYNINJAUIAPI VariableList : public SidebarWidget, public FilterTarget
 	QWidget* m_header;
 	FilterEdit* m_filterEdit;
 	FilteredView* m_filteredList;
+
+	ClickableIcon* m_hamburgerButton;
+	QMenu* m_hamburgerMenu;
 
 	ViewFrame* m_view;
 	BinaryViewRef m_data;
@@ -206,6 +216,7 @@ class BINARYNINJAUIAPI VariableList : public SidebarWidget, public FilterTarget
 
 	//! Get the VariableListItem corresponding to the current selection.
 	VariableListItem* selectedItem() const;
+	void showHamburgerMenu() const;
 
 	//! Show the rename dialog for the selected variable.
 	void changeSelectedVariableName();

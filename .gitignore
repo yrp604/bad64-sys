@@ -34,6 +34,8 @@ python/generator.tlog
 .cache/
 target/
 view/sharedcache/api/python/_sharedcachecore.py
+view/kernelcache/api/python/_kernelcachecore.py
+plugins/warp/api/python/_warpcore.py
 
 # Unit Tests
 suite/unit.py

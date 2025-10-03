@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -27,7 +27,7 @@ import binaryninja
 from . import _binaryninjacore as core
 from .enums import SaveOption
 from . import associateddatastore  #required for _FileMetadataAssociatedDataStore
-from .log import log_error
+from .log import log_error_for_exception
 from . import binaryview
 from . import database
 from . import deprecation
@@ -51,7 +51,7 @@ class NavigationHandler:
 		try:
 			view = self.get_current_view()
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in NavigationHandler._get_current_view")
 			view = ""
 		return core.BNAllocString(view)
 
@@ -59,14 +59,14 @@ class NavigationHandler:
 		try:
 			return self.get_current_offset()
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in NavigationHandler._get_current_offset")
 			return 0
 
 	def _navigate(self, ctxt: Any, view: ViewName, offset: int) -> bool:
 		try:
 			return self.navigate(view, offset)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in NavigationHandler._navigate")
 			return False
 
 	def get_current_view(self) -> str:
@@ -207,6 +207,15 @@ class FileMetadata:
 	@filename.setter
 	def filename(self, value: str) -> None:
 		core.BNSetFilename(self.handle, str(value))
+
+	@property
+	def virtual_path(self) -> str:
+		"""The virtual path of the file including container and internal path (e.g., 'archive.zip:folder/file.bin') (read/write)"""
+		return core.BNGetVirtualPath(self.handle)
+
+	@virtual_path.setter
+	def virtual_path(self, value: str) -> None:
+		core.BNSetVirtualPath(self.handle, str(value))
 
 	@property
 	def modified(self) -> bool:

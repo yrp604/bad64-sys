@@ -35,10 +35,10 @@ use binaryninjacore_sys::{
 };
 
 use crate::rc::{Ref, RefCountable};
-use crate::string::BnString;
+use crate::string::{raw_to_string, BnString, IntoCStr};
 use log;
 use log::LevelFilter;
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::os::raw::{c_char, c_void};
 use std::ptr::NonNull;
 
@@ -66,8 +66,8 @@ impl Logger {
         }
     }
 
-    pub fn name(&self) -> BnString {
-        unsafe { BnString::from_raw(BNLoggerGetName(self.handle.as_ptr())) }
+    pub fn name(&self) -> String {
+        unsafe { BnString::into_string(BNLoggerGetName(self.handle.as_ptr())) }
     }
 
     pub fn session_id(&self) -> usize {
@@ -138,15 +138,14 @@ impl log::Log for Ref<Logger> {
         };
 
         if let Ok(msg) = CString::new(format!("{}", record.args())) {
-            let percent_s = CString::new("%s").expect("'%s' has no null bytes");
-            let logger_name = self.name();
+            let logger_name = self.name().to_cstr();
             unsafe {
                 BNLog(
                     self.session_id(),
                     level,
                     logger_name.as_ptr(),
                     0,
-                    percent_s.as_ptr(),
+                    c"%s".as_ptr(),
                     msg.as_ptr(),
                 );
             }
@@ -160,9 +159,21 @@ unsafe impl Send for Logger {}
 unsafe impl Sync for Logger {}
 
 pub trait LogListener: 'static + Sync {
-    fn log(&self, session: usize, level: Level, msg: &CStr, logger_name: &CStr, tid: usize);
+    fn log(&self, session: usize, level: Level, msg: &str, logger_name: &str, tid: usize);
     fn level(&self) -> Level;
     fn close(&self) {}
+
+    fn log_with_stack_trace(
+        &self,
+        session: usize,
+        level: Level,
+        _stack_trace: &str,
+        msg: &str,
+        logger_name: &str,
+        tid: usize,
+    ) {
+        self.log(session, level, msg, logger_name, tid);
+    }
 }
 
 pub struct LogGuard<L: LogListener> {
@@ -176,6 +187,7 @@ impl<L: LogListener> Drop for LogGuard<L> {
         let mut bn_obj = BNLogListener {
             context: self.ctxt as *mut _,
             log: Some(cb_log::<L>),
+            logWithStackTrace: Some(cb_log_with_stack_trace::<L>),
             close: Some(cb_close::<L>),
             getLogLevel: Some(cb_level::<L>),
         };
@@ -196,6 +208,7 @@ pub fn register_listener<L: LogListener>(listener: L) -> LogGuard<L> {
     let mut bn_obj = BNLogListener {
         context: raw as *mut _,
         log: Some(cb_log::<L>),
+        logWithStackTrace: Some(cb_log_with_stack_trace::<L>),
         close: Some(cb_close::<L>),
         getLogLevel: Some(cb_level::<L>),
     };
@@ -220,11 +233,34 @@ extern "C" fn cb_log<L>(
 {
     ffi_wrap!("LogListener::log", unsafe {
         let listener = &*(ctxt as *const L);
-        listener.log(
+        let msg_str = raw_to_string(msg).unwrap();
+        let logger_name_str = raw_to_string(logger_name).unwrap();
+        listener.log(session, level, &msg_str, &logger_name_str, tid);
+    })
+}
+
+extern "C" fn cb_log_with_stack_trace<L>(
+    ctxt: *mut c_void,
+    session: usize,
+    level: Level,
+    stack_trace: *const c_char,
+    msg: *const c_char,
+    logger_name: *const c_char,
+    tid: usize,
+) where
+    L: LogListener,
+{
+    ffi_wrap!("LogListener::log_with_stack_trace", unsafe {
+        let listener = &*(ctxt as *const L);
+        let stack_trace_str = raw_to_string(stack_trace).unwrap();
+        let msg_str = raw_to_string(msg).unwrap();
+        let logger_name_str = raw_to_string(logger_name).unwrap();
+        listener.log_with_stack_trace(
             session,
             level,
-            CStr::from_ptr(msg),
-            CStr::from_ptr(logger_name),
+            &stack_trace_str,
+            &msg_str,
+            &logger_name_str,
             tid,
         );
     })

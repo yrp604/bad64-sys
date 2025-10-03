@@ -32,6 +32,7 @@ class BINARYNINJAUIAPI DockableTabCollection : public QObject
 	std::set<DockableTabWidget*> m_containers;
 
 public:
+	DockableTabCollection(QObject* parent = nullptr) : QObject(parent) {}
 	void registerContainer(DockableTabWidget* widget);
 	void unregisterContainer(DockableTabWidget* widget);
 
@@ -396,7 +397,9 @@ class BINARYNINJAUIAPI SplitTabWidget : public QWidget
 	QString savedLayoutString() const;
 	void restoreLayoutString(const QString& layout);
 
-  Q_SIGNALS:
+	bool isEmpty() const;
+
+Q_SIGNALS:
 	void tabClosed(QWidget* widget);
 	void currentChanged(QWidget* widget);
 	void layoutChanged();
