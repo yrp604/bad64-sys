@@ -1,6 +1,6 @@
 [package]
 name = "bad64-sys"
-version = "0.8.0"
+version = "0.8.2"
 authors = ["yrp <yrp604@protonmail.com>"]
 edition = "2024"
 description = "Rust bindings for Binja's arm64 disassembler"
@@ -12,6 +12,6 @@ categories = ["external-ffi-bindings"]
 [dependencies]
 
 [build-dependencies]
-bindgen = "0.71"
+bindgen = "0.72"
 cc = { version = "1", features = ["parallel"] }
 glob = "0.3"
