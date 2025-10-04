@@ -19,6 +19,8 @@ using namespace std;
 #define snprintf _snprintf
 #endif
 
+#define E_MIPS_MACH_5900 0x00920000
+
 uint32_t bswap32(uint32_t x)
 {
 	return ((x << 24) & 0xff000000 ) |
@@ -102,6 +104,7 @@ enum ElfMipsRelocationType : uint32_t
 
 	// This range is reserved for vendor specific relocations.
 	R_MIPS_LOVENDOR  =  100,
+	R_MIPS_VCALLMS   =  119,  // MIPS R5900-specific relocation for the Vector Unit (VU) micromode call instruction
 	R_MIPS64_COPY    =  125,
 	R_MIPS_COPY      =  126,
 	R_MIPS_JUMP_SLOT =  127,
@@ -165,6 +168,7 @@ static const char* GetRelocationString(ElfMipsRelocationType rel)
 		{ R_MIPS_TLS_TPREL_LO16, "R_MIPS_TLS_TPREL_LO16"},
 		{ R_MIPS_GLOB_DAT, "R_MIPS_GLOB_DAT"},
 		{ R_MIPS_LOVENDOR, "R_MIPS_LOVENDOR"},
+		{ R_MIPS_VCALLMS,  "R_MIPS_VCALLMS"},
 		{ R_MIPS64_COPY, "R_MIPS64_COPY"},
 		{ R_MIPS_COPY, "R_MIPS_COPY"},
 		{ R_MIPS_JUMP_SLOT, "R_MIPS_JUMP_SLOT"},
@@ -179,27 +183,24 @@ static const char* GetRelocationString(ElfMipsRelocationType rel)
 class MipsArchitecture: public Architecture
 {
 protected:
+	bool m_userWarnedAboutDelaySlots = false;
+	MipsVersion m_version;
 	size_t m_bits;
 	BNEndianness m_endian;
-	MipsVersion version_overwrite;
 	uint32_t m_decomposeFlags;
 
 	virtual bool Disassemble(const uint8_t* data, uint64_t addr, size_t maxLen, Instruction& result)
 	{
-		MipsVersion version = version_overwrite;
-
 		memset(&result, 0, sizeof(result));
-		if (m_bits == 64)
-		{
-			version = MIPS_64;
-		}
-
-		if (mips_decompose((uint32_t*)data, maxLen, &result, version, addr, m_endian, m_decomposeFlags) != 0)
+		if (mips_decompose((uint32_t*)data, maxLen,  &result, m_version, addr, m_endian, m_decomposeFlags) != 0)
 			return false;
 		return true;
 	}
 
-	virtual size_t GetAddressSize() const override { return m_bits / 8; }
+	virtual size_t GetAddressSize() const override
+	{
+		return m_bits / 8;
+	}
 
 	size_t InstructionHasBranchDelay(const Instruction& instr)
 	{
@@ -231,6 +232,10 @@ protected:
 			case MIPS_JAL:
 			case MIPS_JALR:
 			case MIPS_JALR_HB:
+			case MIPS_BC0F:
+			case MIPS_BC0FL:
+			case MIPS_BC0T:
+			case MIPS_BC0TL:
 			case MIPS_BC1F:
 			case MIPS_BC1FL:
 			case MIPS_BC1T:
@@ -383,6 +388,10 @@ protected:
 			else
 				result.AddBranch(UnresolvedBranch, 0, nullptr, hasBranchDelay);
 			break;
+		case MIPS_BC0F:
+		case MIPS_BC0FL:
+		case MIPS_BC0T:
+		case MIPS_BC0TL:
 		case MIPS_BC1F:
 		case MIPS_BC1FL:
 		case MIPS_BC1T:
@@ -407,8 +416,8 @@ protected:
 	}
 
 public:
-	MipsArchitecture(const std::string& name, BNEndianness endian, size_t bits, MipsVersion version_in, uint32_t decomposeFlags = 0)
-		: Architecture(name), m_bits(bits), m_endian(endian), version_overwrite(version_in), m_decomposeFlags(decomposeFlags)
+	MipsArchitecture(const std::string& name, MipsVersion version, BNEndianness endian, size_t bits, uint32_t decomposeFlags = 0)
+		: Architecture(name), m_version(version), m_bits(bits), m_endian(endian), m_decomposeFlags(decomposeFlags)
 	{
 		Ref<Settings> settings = Settings::Instance();
 		uint32_t flag_pseudo_ops = settings->Get<bool>("arch.mips.disassembly.pseudoOps") ? DECOMPOSE_FLAGS_PSEUDO_OP : 0;
@@ -508,7 +517,16 @@ public:
 		{
 			if (len < 8)
 			{
-				LogWarn("Can not lift instruction with delay slot @ 0x%08" PRIx64, addr);
+				if (!m_userWarnedAboutDelaySlots)
+				{
+
+					LogWarn("Can not lift instruction with delay slot @ 0x%08" PRIx64 "\n"
+							"Any future delay slot errors will be printed as debug logs\n"
+							"and can be viewed by setting the log capture level to debug.", addr);
+					m_userWarnedAboutDelaySlots = true;
+				}
+				else
+					LogDebug("Can not lift instruction with delay slot @ 0x%08" PRIx64, addr);
 				return false;
 			}
 
@@ -524,11 +542,16 @@ public:
 			{
 				InstructionInfo instrInfo;
 				LowLevelILLabel trueCode, falseCode;
+				auto registerSize = [this](const InstructionOperand& op) -> size_t const
+				{
+					return get_register_width(Reg(op.reg), m_version);
+				};
+
 				SetInstructionInfoForInstruction(addr, instr, instrInfo);
-				il.AddInstruction(il.If(GetConditionForInstruction(il, instr, GetAddressSize()), trueCode, falseCode));
+				il.AddInstruction(il.If(GetConditionForInstruction(il, instr, registerSize), trueCode, falseCode));
 				il.MarkLabel(trueCode);
 				il.SetCurrentAddress(this, addr + instr.size);
-				GetLowLevelILForInstruction(this, addr + instr.size, il, secondInstr, GetAddressSize(), m_decomposeFlags);
+				GetLowLevelILForInstruction(this, addr + instr.size, il, secondInstr, GetAddressSize(), m_decomposeFlags, m_version);
 				for (size_t i = 0; i < instrInfo.branchCount; i++)
 				{
 					if (instrInfo.branchType[i] == TrueBranch)
@@ -554,7 +577,7 @@ public:
 				nop = il.Nop();
 				il.AddInstruction(nop);
 
-				GetLowLevelILForInstruction(this, addr + instr.size, il, secondInstr, GetAddressSize(), m_decomposeFlags);
+				GetLowLevelILForInstruction(this, addr + instr.size, il, secondInstr, GetAddressSize(), m_decomposeFlags, m_version);
 
 				LowLevelILInstruction delayed;
 				uint32_t clobbered = BN_INVALID_REGISTER;
@@ -581,7 +604,7 @@ public:
 				}
 				else
 				{
-					status = GetLowLevelILForInstruction(this, addr, il, instr, GetAddressSize(), m_decomposeFlags);
+					status = GetLowLevelILForInstruction(this, addr, il, instr, GetAddressSize(), m_decomposeFlags, m_version);
 				}
 
 				if (clobbered != BN_INVALID_REGISTER)
@@ -732,7 +755,8 @@ public:
 				else
 				{
 					proceed = proceed && (left->operands[1].immediate == (right->operands[1].immediate + 7));
-					addrToUse = (uint32_t)addr + ((&instr == right) ? 0 : 8);
+					// addrToUse = (uint32_t)addr + ((&instr == right) ? 0 : 8);
+					addrToUse = (uint32_t)addr + ((&instr == right) ? 0 : 4);
 				}
 				base = right;
 			}
@@ -746,12 +770,12 @@ public:
 				else
 					base->operation = is32bit ? MIPS_LW : MIPS_LD;
 
-				return GetLowLevelILForInstruction(this, addrToUse, il, *base, GetAddressSize(), m_decomposeFlags);
+				return GetLowLevelILForInstruction(this, addrToUse, il, *base, GetAddressSize(), m_decomposeFlags, m_version);
 			}
 		}
 
 		len = instr.size;
-		return GetLowLevelILForInstruction(this, addr, il, instr, GetAddressSize(), m_decomposeFlags);
+		return GetLowLevelILForInstruction(this, addr, il, instr, GetAddressSize(), m_decomposeFlags, m_version);
 	}
 
 	virtual bool GetInstructionInfo(const uint8_t* data, uint64_t addr, size_t maxLen, InstructionInfo& result) override
@@ -770,17 +794,38 @@ public:
 	virtual bool GetInstructionText(const uint8_t* data, uint64_t addr, size_t& len, vector<InstructionTextToken>& result) override
 	{
 		Instruction instr;
-		char operand[64];
+		char operand[64] = {0};
+		char operation[64] = {0};
 		char padding[9];
 		const char* reg = NULL;
+		char dest[5] = {0};
+		int first_operand = 0;
 		if (!Disassemble(data, addr, len, instr))
 			return false;
 
 		len = instr.size;
 		memset(padding, 0x20, sizeof(padding));
-		const char* operation = get_operation(instr.operation);
-		if (operation == NULL)
+		const char* operation_name = get_operation(instr.operation);
+		if (operation_name == NULL)
 			return false;
+		strncpy(operation, operation_name, sizeof(operation));
+
+		if (instr.operands[0].operandClass == V_DEST)
+		{
+			char* p = dest;
+			if (instr.operands[0].reg & 8)
+				*p++ = 'x';
+			if (instr.operands[0].reg & 4)
+				*p++ = 'y';
+			if (instr.operands[0].reg & 2)
+				*p++ = 'z';
+			if (instr.operands[0].reg & 1)
+				*p++ = 'w';
+			*p = '\0';
+			strcat(operation, ".");
+			strcat(operation, dest);
+			first_operand++;
+		}
 
 		size_t operationLen = strlen(operation);
 		if (operationLen < 8)
@@ -792,15 +837,17 @@ public:
 
 		result.emplace_back(InstructionToken, operation);
 		result.emplace_back(TextToken, padding);
-		for (size_t i = 0; i < MAX_OPERANDS; i++)
+		for (size_t i = first_operand; i < MAX_OPERANDS; i++)
 		{
 			if (instr.operands[i].operandClass == NONE)
 				return true;
 
+			operand[0] = '\0';
+
 			int32_t imm = instr.operands[i].immediate;
 			uint64_t label_imm = instr.operands[i].immediate;
 
-			if (i != 0)
+			if (i != first_operand)
 				result.emplace_back(OperandSeparatorToken, ", ");
 
 			switch (instr.operands[i].operandClass)
@@ -847,18 +894,15 @@ public:
 				break;
 			case MEM_IMM:
 				result.emplace_back(BeginMemoryOperandToken, "");
-				if (imm != 0)
-				{
-					if (imm < -9)
-						snprintf(operand, sizeof(operand), "-%#x", -imm);
-					else if (imm < 0)
-						snprintf(operand, sizeof(operand), "-%d", -imm);
-					else if (imm < 10)
-						snprintf(operand, sizeof(operand), "%d", imm);
-					else
-						snprintf(operand, sizeof(operand), "%#x", imm);
-					result.emplace_back(IntegerToken, operand, imm);
-				}
+				if (imm < -9)
+					snprintf(operand, sizeof(operand), "-%#x", -imm);
+				else if (imm < 0)
+					snprintf(operand, sizeof(operand), "-%d", -imm);
+				else if (imm < 10)
+					snprintf(operand, sizeof(operand), "%d", imm);
+				else
+					snprintf(operand, sizeof(operand), "%#x", imm);
+				result.emplace_back(IntegerToken, operand, imm);
 				if (instr.operands[i].reg == REG_ZERO)
 					break;
 				result.emplace_back(BraceToken, "(");
@@ -884,6 +928,114 @@ public:
 				result.emplace_back(BraceToken, ")");
 				result.emplace_back(EndMemoryOperandToken, "");
 				break;
+			case V_REG:
+				// #define V_FMT "$vf%02d"  // Use this if leading zeroes are preferred
+				#define V_FMT "$vf%d"
+				reg = NULL;
+				if (instr.operands[i].reg >= REG_VP)
+					reg = get_register((Reg)instr.operands[i].reg);
+				if (reg != NULL)
+				{
+					char reg_tmp[sizeof(operand)] = {0};
+					if (instr.operands[i].reg >= REG_VI0 && instr.operands[i].reg <= REG_VI15)
+					{
+						switch (instr.operation)
+						{
+						case MIPS_VISWR:
+						case MIPS_VILWR:
+							if (i == 2)
+							{
+								snprintf(reg_tmp, sizeof(reg_tmp), "(%s).%s", reg, dest);
+								reg = reg_tmp;
+							}
+							break;
+						case MIPS_VLQI:
+						case MIPS_VSQI:
+							snprintf(reg_tmp, sizeof(reg_tmp), "(%s++)", reg);
+							reg = reg_tmp;
+							break;
+						case MIPS_VLQD:
+						case MIPS_VSQD:
+							snprintf(reg_tmp, sizeof(reg_tmp), "(--%s)", reg);
+							reg = reg_tmp;
+							break;
+						default:
+							break;
+						}
+					}
+					if (reg == reg_tmp)
+					{
+						// Done
+					}
+					else if (instr.operands[i].reg >= REG_VF0 && instr.operands[i].reg <= REG_VF31)
+					{
+						if (instr.operands[i].immediate > 0 && instr.operands[i].immediate <= 4)
+							snprintf(operand, sizeof(operand), "%s.%c",
+								reg,
+								"xyzw"[instr.operands[i].immediate-1]);
+						else if (dest[0])
+							snprintf(operand, sizeof(operand), "%s.%s", reg, dest);
+					}
+					if (!operand[0])
+						snprintf(operand, sizeof(operand), "%s", reg);
+				}
+				// else if ((instr.operands[i].reg >= REG_VACC && instr.operands[i].reg <= REG_VI15) &&
+				// 	(reg = get_register((Reg)instr.operands[i].reg)) != NULL)
+				// {
+				// 	// if (instr.operands[i].reg == REG_VACC && dest[0])
+				// 	// 	snprintf(operand, sizeof(operand), "%s.%s", reg, dest);
+				// 	// else
+				// 		snprintf(operand, sizeof(operand), "%s", reg);
+				// }
+				else if (instr.operands[i].immediate > 0 && instr.operands[i].immediate <= 4)
+					snprintf(operand, sizeof(operand), V_FMT ".%c",
+						instr.operands[i].reg,
+						"xyzw"[instr.operands[i].immediate-1]);
+				else if (instr.operands[i].immediate == 'A')
+				{
+					if (dest[0])
+						snprintf(operand, sizeof(operand), "ACC.%s", dest);
+					else
+						snprintf(operand, sizeof(operand), "ACC");
+				}
+				else if (instr.operands[i].immediate > 'A' && instr.operands[i].immediate <= 'Z')
+					snprintf(operand, sizeof(operand), "%c",
+						(char) instr.operands[i].immediate);
+				else if (dest[0])
+					snprintf(operand, sizeof(operand), V_FMT ".%s",
+						instr.operands[i].reg, dest);
+				else
+					snprintf(operand, sizeof(operand), V_FMT, instr.operands[i].reg);
+				result.emplace_back(RegisterToken, operand);
+				break;
+			case V_DEST:
+			{
+				char* p = dest;
+				if (*p == '\0' && (instr.operands[i].reg & 0xF) != 0)
+				{
+					if (instr.operands[i].reg & 8)
+						*p++ = 'x';
+					if (instr.operands[i].reg & 4)
+						*p++ = 'y';
+					if (instr.operands[i].reg & 2)
+						*p++ = 'z';
+					if (instr.operands[i].reg & 1)
+						*p++ = 'w';
+					*p = '\0';
+				}
+				break;
+			}
+			case V_REG_FIELD:
+			{
+				snprintf(operand, sizeof(operand), V_FMT ".%c",
+					instr.operands[i].reg,
+					"xyzw"[instr.operands[i].immediate]);
+				// char *p = operand;
+				// *p++ = "xyzw"[instr.operands[i].reg];
+				// *p = '\0';
+				result.emplace_back(RegisterToken, operand);
+				break;
+			}
 			default:
 				LogError("operandClass %x\n", instr.operands[i].operandClass);
 				return false;
@@ -1005,6 +1157,21 @@ public:
 				return "_countOnes32";
 			case CNMIPS_INTRIN_DPOP:
 				return "_countOnes64";
+
+			case MIPS_INTRIN_R5900_VWAITQ:
+				return "__vwaitq";
+			case MIPS_INTRIN_R5900_VU_MEM_LOAD:
+				return "__vu_mem_load";
+			case MIPS_INTRIN_R5900_VU_MEM_STORE:
+				return "__vu_mem_store";
+			case MIPS_INTRIN_R5900_VU0_CALLMS:
+				return "__vu0_callms";
+			case MIPS_INTRIN_R5900_VU0_CALLMSR:
+				return "__vu0_callmsr";
+
+			case MIPS_INTRIN_COP0_CONDITION:
+				return "__COP0Condition";
+
 			default:
 				return "";
 		}
@@ -1012,7 +1179,7 @@ public:
 
 	virtual vector<uint32_t> GetAllIntrinsics() override
 	{
-		return vector<uint32_t>{
+		auto intrinsics = vector<uint32_t>{
 			MIPS_INTRIN_WSBH,
 			MIPS_INTRIN_DSBH,
 			MIPS_INTRIN_DSHD,
@@ -1064,6 +1231,18 @@ public:
 			CNMIPS_INTRIN_POP,
 			CNMIPS_INTRIN_DPOP,
 		};
+		if (m_version == MIPS_R5900)
+		{
+			auto r5900_intrinsics = {
+				MIPS_INTRIN_R5900_VWAITQ,
+				MIPS_INTRIN_R5900_VU_MEM_LOAD,
+				MIPS_INTRIN_R5900_VU_MEM_STORE,
+				MIPS_INTRIN_R5900_VU0_CALLMS,
+				MIPS_INTRIN_R5900_VU0_CALLMSR,
+			};
+			intrinsics.insert(intrinsics.end(), std::begin(r5900_intrinsics), std::end(r5900_intrinsics));
+		}
+		return intrinsics;
 	}
 
 	virtual vector<NameAndType> GetIntrinsicInputs(uint32_t intrinsic) override
@@ -1220,6 +1399,29 @@ public:
 				return {
 					NameAndType("index", Type::IntegerType(8, false)),
 				};
+
+			case MIPS_INTRIN_R5900_VU_MEM_LOAD:
+				return {
+					NameAndType("offset", Type::IntegerType(4, false)),
+					NameAndType("field", Type::IntegerType(2, false)),
+				};
+			case MIPS_INTRIN_R5900_VU_MEM_STORE:
+				return {
+					NameAndType("offset", Type::IntegerType(4, false)),
+					NameAndType("field", Type::IntegerType(2, false)),
+					NameAndType("value", Type::FloatType(4)),
+				};
+			case MIPS_INTRIN_R5900_VU0_CALLMS:
+				return {
+					NameAndType("address", Type::IntegerType(4, false)),
+				};
+			case MIPS_INTRIN_R5900_VU0_CALLMSR:
+				// return {
+				// 	NameAndType("reg", Type::IntegerType(4, false)),
+				// };
+
+			case MIPS_INTRIN_COP0_CONDITION:
+			case MIPS_INTRIN_R5900_VWAITQ:
 			default:
 				return vector<NameAndType>();
 		}
@@ -1276,6 +1478,16 @@ public:
 				};
 			case MIPS_INTRIN_TLBSEARCH:
 				return { Type::IntegerType(8, false) };
+
+			case MIPS_INTRIN_R5900_VU_MEM_LOAD:
+				// return { Type::ArrayType(Type::FloatType(4), 4) };
+				return { Type::FloatType(4) };
+			case MIPS_INTRIN_COP0_CONDITION:
+				return { Type::BoolType() };
+			case MIPS_INTRIN_R5900_VU_MEM_STORE:
+			case MIPS_INTRIN_R5900_VU0_CALLMS:
+			case MIPS_INTRIN_R5900_VU0_CALLMSR:
+			case MIPS_INTRIN_R5900_VWAITQ:
 			default:
 				return vector<Confidence<Ref<Type>>>();
 		}
@@ -1460,6 +1672,10 @@ public:
 			FPREG_F8,      FPREG_F9,      FPREG_F10,     FPREG_F11,     FPREG_F12,     FPREG_F13,     FPREG_F14,     FPREG_F15,
 			FPREG_F16,     FPREG_F17,     FPREG_F18,     FPREG_F19,     FPREG_F20,     FPREG_F21,     FPREG_F22,     FPREG_F23,
 			FPREG_F24,     FPREG_F25,     FPREG_F26,     FPREG_F27,     FPREG_F28,     FPREG_F29,     FPREG_F30,     FPREG_F31,
+			FPREG_FCR0,    FPREG_FCR1, 	  FPREG_FCR2,    FPREG_FCR3,    FPREG_FCR4,    FPREG_FCR5,    FPREG_FCR6,    FPREG_FCR7,
+			FPREG_FCR8,    FPREG_FCR9, 	  FPREG_FCR10,   FPREG_FCR11,   FPREG_FCR12,   FPREG_FCR13,   FPREG_FCR14,   FPREG_FCR15,
+			FPREG_FCR16,   FPREG_FCR17,   FPREG_FCR18, 	 FPREG_FCR19, 	FPREG_FCR20,   FPREG_FCR21,   FPREG_FCR22,   FPREG_FCR23,
+			FPREG_FCR24,   FPREG_FCR25,   FPREG_FCR26, 	 FPREG_FCR27, 	FPREG_FCR28,   FPREG_FCR29,   FPREG_FCR30,   FPREG_FCR31,
 			FPCCREG_FCC0,  FPCCREG_FCC1,  FPCCREG_FCC2,  FPCCREG_FCC3,  FPCCREG_FCC4,  FPCCREG_FCC5,  FPCCREG_FCC6,  FPCCREG_FCC7,
 			REG_LO, REG_HI,
 			// Coprocessor 0 register 0
@@ -1564,7 +1780,32 @@ public:
 			REG_DESAVE,
 		};
 
-		if ((m_decomposeFlags & DECOMPOSE_FLAGS_CAVIUM) != 0)
+		if (m_version == MIPS_R5900) {
+			// Note: R5900 has 128-bit wide GPRs, $lo and $hi are 128-bit, and $lo1 and $hi1 are the upper 64 bits of $lo and $hi
+			uint32_t r5900_registers[] = {
+				R5900_SA,
+				REG_LO1, REG_HI1,
+
+				REG_VP,
+
+				REG_VI0, REG_VI1, REG_VI2, REG_VI3, REG_VI4, REG_VI5, REG_VI6, REG_VI7, REG_VI8, REG_VI9,
+				REG_VI10, REG_VI11, REG_VI12, REG_VI13, REG_VI14, REG_VI15,
+				REG_VCCR_STATUS, REG_VCCR_MAC, REG_VCCR_CLIPPING, REG_VCCR_19,
+				REG_VR,  // CCR[2,20]
+				REG_VI,  // CCR[2,21]
+				REG_VQ,  // CCR[2,22]
+				REG_VCCR_23, REG_VCCR_24, REG_VCCR_25, REG_VCCR_TPC, REG_VCCR_CMSAR0,
+				REG_VCCR_FBRST, REG_VCCR_VPU_STAT, REG_VCCR_30, REG_VCCR_CMSAR1,
+
+				REG_VACC,
+				REG_VF0, REG_VF1, REG_VF2, REG_VF3, REG_VF4, REG_VF5, REG_VF6, REG_VF7, REG_VF8, REG_VF9,
+				REG_VF10, REG_VF11, REG_VF12, REG_VF13, REG_VF14, REG_VF15, REG_VF16, REG_VF17, REG_VF18, REG_VF19,
+				REG_VF20, REG_VF21, REG_VF22, REG_VF23, REG_VF24, REG_VF25, REG_VF26, REG_VF27, REG_VF28, REG_VF29,
+				REG_VF30, REG_VF31,
+			};
+			registers.insert(registers.end(), std::begin(r5900_registers), std::end(r5900_registers));
+		}
+		else if ((m_decomposeFlags & DECOMPOSE_FLAGS_CAVIUM) != 0)
 		{
 			uint32_t cavium_registers[] =
 			{
@@ -1779,6 +2020,11 @@ public:
 			FPREG_F8,      FPREG_F9,      FPREG_F10,     FPREG_F11,     FPREG_F12,     FPREG_F13,     FPREG_F14,     FPREG_F15,
 			FPREG_F16,     FPREG_F17,     FPREG_F18,     FPREG_F19,     FPREG_F20,     FPREG_F21,     FPREG_F22,     FPREG_F23,
 			FPREG_F24,     FPREG_F25,     FPREG_F26,     FPREG_F27,     FPREG_F28,     FPREG_F29,     FPREG_F30,     FPREG_F31,
+			FPREG_FCR0,    FPREG_FCR1, 	  FPREG_FCR2,    FPREG_FCR3,    FPREG_FCR4,    FPREG_FCR5,    FPREG_FCR6,    FPREG_FCR7,
+			FPREG_FCR8,    FPREG_FCR9, 	  FPREG_FCR10,   FPREG_FCR11,   FPREG_FCR12,   FPREG_FCR13,   FPREG_FCR14,   FPREG_FCR15,
+			FPREG_FCR16,   FPREG_FCR17,   FPREG_FCR18, 	 FPREG_FCR19, 	FPREG_FCR20,   FPREG_FCR21,   FPREG_FCR22,   FPREG_FCR23,
+			FPREG_FCR24,   FPREG_FCR25,   FPREG_FCR26, 	 FPREG_FCR27, 	FPREG_FCR28,   FPREG_FCR29,   FPREG_FCR30,   FPREG_FCR31,
+
 			REG_LO, REG_HI,
 			// Coprocessor 0 register 0
 			REG_INDEX,
@@ -1882,7 +2128,39 @@ public:
 			REG_DESAVE,
 		};
 
-		if ((m_decomposeFlags & DECOMPOSE_FLAGS_CAVIUM) != 0)
+		if (m_version == MIPS_R5900) {
+			// TODO: R5900 has 128-bit wide GPRs, $lo and $hi are 128-bit, and $lo1 and $hi1 are the upper 64 bits of $lo and $hi
+			uint32_t r5900_registers[] = {
+				R5900_SA,
+				REG_LO1, REG_HI1,
+				REG_VP,
+
+				REG_VI0, REG_VI1, REG_VI2, REG_VI3, REG_VI4, REG_VI5, REG_VI6, REG_VI7, REG_VI8, REG_VI9,
+				REG_VI10, REG_VI11, REG_VI12, REG_VI13, REG_VI14, REG_VI15,
+				REG_VCCR_STATUS, REG_VCCR_MAC, REG_VCCR_CLIPPING, REG_VCCR_19,
+				REG_VR,  // CCR[2,20]
+				REG_VI,  // CCR[2,21]
+				REG_VQ,  // CCR[2,22]
+				REG_VCCR_23, REG_VCCR_24, REG_VCCR_25, REG_VCCR_TPC, REG_VCCR_CMSAR0,
+				REG_VCCR_FBRST, REG_VCCR_VPU_STAT, REG_VCCR_30, REG_VCCR_CMSAR1,
+
+				REG_VACC,
+				REG_VF0, REG_VF1, REG_VF2, REG_VF3, REG_VF4, REG_VF5, REG_VF6, REG_VF7, REG_VF8, REG_VF9,
+				REG_VF10, REG_VF11, REG_VF12, REG_VF13, REG_VF14, REG_VF15, REG_VF16, REG_VF17, REG_VF18, REG_VF19,
+				REG_VF20, REG_VF21, REG_VF22, REG_VF23, REG_VF24, REG_VF25, REG_VF26, REG_VF27, REG_VF28, REG_VF29,
+				REG_VF30, REG_VF31,
+			};
+			registers.insert(registers.end(), std::begin(r5900_registers), std::end(r5900_registers));
+			constexpr auto _r5900_registers_vpu = []() {
+				vector<Reg> registers;
+				for (uint32_t i = REG_VACC_X; i < REG_VF31_XYZW; i++)
+					registers.push_back((Reg) i);
+				return registers;
+			};
+			auto r5900_registers_vpu = _r5900_registers_vpu();
+			registers.insert(registers.end(), r5900_registers_vpu.begin(), r5900_registers_vpu.end());
+		}
+		else if ((m_decomposeFlags & DECOMPOSE_FLAGS_CAVIUM) != 0)
 		{
 			uint32_t cavium_registers[] =
 			{
@@ -2092,6 +2370,45 @@ public:
 	virtual BNRegisterInfo GetRegisterInfo(uint32_t reg) override
 	{
 		BNRegisterInfo result = {reg, 0, m_bits / 8, NoExtend};
+		if (m_version == MIPS_R5900) {
+			result.size = get_register_width(reg, m_version, 16);
+			switch (reg) {
+			// case REG_LO:
+			// case REG_HI:
+			// 	result.size = 64 / 8;
+			// 	break;
+			case REG_LO1:
+			case REG_HI1:
+				// result.size = (128 / 2);
+				result.offset = 8;
+				if (reg == REG_LO1)
+					result.fullWidthRegister = REG_LO;
+				else if (reg == REG_HI1)
+					result.fullWidthRegister = REG_HI;
+				break;
+			default:
+				if (reg >= REG_VACC_X && reg <= REG_VF31_XYZW)
+				{
+					result.fullWidthRegister = REG_VACC + ((reg - REG_VACC_X) % 33);
+					if (reg >= REG_VACC_Y && reg <= REG_VF31_Y)
+						result.offset = 4;
+					else if (reg >= REG_VACC_Z && reg <= REG_VF31_Z)
+						result.offset = 8;
+					else if (reg >= REG_VACC_W && reg <= REG_VF31_W)
+						result.offset = 12;
+
+					else if (reg >= REG_VACC_YZ && reg <= REG_VF31_YZ)
+						result.offset = 4;
+					else if (reg >= REG_VACC_ZW && reg <= REG_VF31_ZW)
+						result.offset = 12;
+
+					else if (reg >= REG_VACC_YZW && reg <= REG_VF31_YZW)
+						result.offset = 4;
+
+					// XXX: offsets are just wrong for discontinuous registers: XZ, XW, YW, XYW, XZW
+				}
+			}
+		}
 		return result;
 	}
 
@@ -2410,7 +2727,6 @@ public:
 
 		return registers;
 	}
-
 };
 
 class MipsO32CallingConvention: public CallingConvention
@@ -2450,6 +2766,77 @@ public:
 	{
 		return vector<uint32_t> { REG_S0, REG_S1, REG_S2, REG_S3, REG_S4, REG_S5, REG_S6, REG_S7,
 			REG_GP, REG_FP };
+	}
+
+	virtual uint32_t GetGlobalPointerRegister() override
+	{
+		return REG_GP;
+	}
+
+	virtual vector<uint32_t> GetImplicitlyDefinedRegisters() override
+	{
+		return vector<uint32_t> { REG_T9 };
+	}
+
+	virtual RegisterValue GetIncomingRegisterValue(uint32_t reg, Function* func) override
+	{
+		RegisterValue result;
+		if (reg == REG_T9)
+		{
+			result.state = ConstantPointerValue;
+			result.value = func->GetStart();
+		}
+		return result;
+	}
+};
+
+class MipsPS2CallingConvention: public CallingConvention
+{
+public:
+	MipsPS2CallingConvention(Architecture* arch): CallingConvention(arch, "ps2")
+	{
+	}
+	virtual uint32_t GetIntegerReturnValueRegister() override
+	{
+		return REG_V0;
+	}
+
+	virtual uint32_t GetHighIntegerReturnValueRegister() override
+	{
+		return REG_V1;
+	}
+
+	virtual vector<uint32_t> GetIntegerArgumentRegisters() override
+	{
+		return vector<uint32_t>{ REG_A0, REG_A1, REG_A2, REG_A3, REG_T0, REG_T1, REG_T2, REG_T3 };
+	}
+
+	virtual vector<uint32_t> GetFloatArgumentRegisters() override
+	{
+		return vector<uint32_t>{ FPREG_F12, FPREG_F13, FPREG_F14, FPREG_F15, FPREG_F16, FPREG_F17, FPREG_F18, FPREG_F19 };
+	}
+
+	virtual uint32_t GetFloatReturnValueRegister() override
+	{
+		return FPREG_F0;
+	}
+
+	virtual bool IsStackReservedForArgumentRegisters() override
+	{
+		return true;
+	}
+
+	virtual vector<uint32_t> GetCallerSavedRegisters() override
+	{
+		return vector<uint32_t> { REG_AT, REG_V0, REG_V1, REG_A0, REG_A1, REG_A2, REG_A3, REG_T0, REG_T1,
+			REG_T2, REG_T3, REG_T4, REG_T5, REG_T6, REG_T7, REG_T8, REG_T9 };
+	}
+
+	virtual vector<uint32_t> GetCalleeSavedRegisters() override
+	{
+		return vector<uint32_t> { REG_S0, REG_S1, REG_S2, REG_S3, REG_S4, REG_S5, REG_S6, REG_S7,
+			REG_GP, REG_FP, FPREG_F20, FPREG_F21, FPREG_F22, FPREG_F23, FPREG_F24, FPREG_F25,
+			FPREG_F26, FPREG_F27, FPREG_F28, FPREG_F29, FPREG_F30, FPREG_F31 };
 	}
 
 	virtual uint32_t GetGlobalPointerRegister() override
@@ -2577,6 +2964,11 @@ public:
 	virtual bool IsEligibleForHeuristics() override
 	{
 		return false;
+	}
+
+	virtual bool IsStackReservedForArgumentRegisters() override
+	{
+		return true;
 	}
 };
 
@@ -2724,7 +3116,7 @@ private:
 			DataVariable var;
 			if (data->GetDataVariableAtAddress(extSym.front()->GetAddress(), var))
 			{
-				func->ApplyImportedTypes(funcSym, var.type);
+				func->ApplyImportedTypes(funcSym, var.type.GetValue());
 			}
 			return true;
 		}
@@ -2797,7 +3189,7 @@ private:
 				DataVariable var;
 				if (data->GetDataVariableAtAddress(extSym.front()->GetAddress(), var))
 				{
-					func->ApplyImportedTypes(pltSym, var.type);
+					func->ApplyImportedTypes(pltSym, var.type.GetValue());
 				}
 				return true;
 			}
@@ -2922,7 +3314,7 @@ private:
 			DataVariable var;
 			if (data->GetDataVariableAtAddress(extSym.front()->GetAddress(), var))
 			{
-				func->ApplyImportedTypes(funcSym, var.type);
+				func->ApplyImportedTypes(funcSym, var.type.GetValue());
 			}
 			return true;
 		}
@@ -3016,7 +3408,11 @@ public:
 				uint32_t inst2 = *(uint32_t*)(cur->relocationDataCache);
 				Instruction instruction;
 				memset(&instruction, 0, sizeof(instruction));
-				if (mips_decompose(&inst2, sizeof(uint32_t), &instruction, arch->GetAddressSize() == 8 ? MIPS_64 : MIPS_32, cur->address, arch->GetEndianness(), DECOMPOSE_FLAGS_PSEUDO_OP))
+				auto version = arch->GetAddressSize() == 8 ? MIPS_64 : MIPS_32;
+				if (Architecture::GetByName("r5900l") == arch)
+					version = MIPS_R5900;
+				if (mips_decompose(&inst2, sizeof(uint32_t), &instruction,
+					version, cur->address, arch->GetEndianness(), DECOMPOSE_FLAGS_PSEUDO_OP))
 					break;
 
 				int32_t immediate = swap(inst2) & 0xffff;
@@ -3080,6 +3476,7 @@ public:
 			dest64[0] = swap64(originalValue + displacement);
 			break;
 		}
+		case R_MIPS_LITERAL:
 		case R_MIPS_GPREL32:
 		{
 			if (!GetGpAddr(view, gpAddr))
@@ -3088,6 +3485,8 @@ public:
 			dest32[0] = swap(vRel32);
 			break;
 		}
+		case R_MIPS_VCALLMS:
+			break;
 		default:
 			break;
 		}
@@ -3167,6 +3566,10 @@ public:
 			case R_MIPS_HIGHER:
 			case R_MIPS_HIGHEST:
 				break;
+			case R_MIPS_VCALLMS:
+				break;
+			case R_MIPS_LITERAL:
+				break;
 			default:
 				result[i].type = UnhandledRelocation;
 				LogWarn("Unsupported relocation type: %llu (%s) @0x%llX", result[i].nativeType,
@@ -3193,6 +3596,8 @@ public:
 			case R_MIPS_LO16:
 			case R_MIPS_CALL16:
 			case R_MIPS_GOT16:
+			case R_MIPS_HIGHER:
+			case R_MIPS_HIGHEST:
 				result = BN_NOCOERCE_EXTERN_PTR;
 				break;
 			default:
@@ -3242,6 +3647,9 @@ static Ref<Platform> ElfFlagsRecognize(BinaryView* view, Metadata* metadata)
 		case 0x8e:	// EF_MIPS_MACH_OCTEON3
 			LogInfo("ELF flags 0x%08" PRIx64 " machine variant 0x%02x: using cavium architecture", flagsValue, machineVariant);
 			return Platform::GetByName("linux-cnmips64");
+		case 0x92:  // E_MIPS_MACH_5900
+			LogInfo("ELF flags 0x%08" PRIx64 " machine variant 0x%02x: using R5900 architecture", flagsValue, machineVariant);
+			return Platform::GetByName("r5900l");
 		default:
 			return nullptr;
 	}
@@ -3263,16 +3671,21 @@ extern "C"
 	{
 		InitMipsSettings();
 
-		Architecture* mipseb = new MipsArchitecture("mips32", BigEndian, 32, MIPS_32);
-		Architecture* mipsel = new MipsArchitecture("mipsel32", LittleEndian, 32, MIPS_32);
-		Architecture* mips3 = new MipsArchitecture("mips3", BigEndian, 32, MIPS_3);
-		Architecture* mips3el = new MipsArchitecture("mipsel3", LittleEndian, 32, MIPS_3);
-		Architecture* mips64el = new MipsArchitecture("mipsel64", LittleEndian, 64, MIPS_64);
-		Architecture* mips64eb = new MipsArchitecture("mips64", BigEndian, 64, MIPS_64);
-		Architecture* cnmips64eb = new MipsArchitecture("cavium-mips64", BigEndian, 64, MIPS_64, DECOMPOSE_FLAGS_CAVIUM);
+		Architecture* mipsel = new MipsArchitecture("mipsel32", MIPS_32, LittleEndian, 32);
+		Architecture* mipseb = new MipsArchitecture("mips32", MIPS_32, BigEndian, 32);
+		Architecture* mips3 = new MipsArchitecture("mips3", MIPS_3, BigEndian, 32);
+		Architecture* mips3el = new MipsArchitecture("mipsel3", MIPS_3, LittleEndian, 32);
+		Architecture* mips64el = new MipsArchitecture("mipsel64", MIPS_64, LittleEndian, 64);
+		Architecture* mips64eb = new MipsArchitecture("mips64", MIPS_64, BigEndian, 64);
+		Architecture* cnmips64eb = new MipsArchitecture("cavium-mips64", MIPS_64, BigEndian, 64, DECOMPOSE_FLAGS_CAVIUM);
+		Architecture* r5900l = new MipsArchitecture("r5900l", MIPS_R5900, LittleEndian, 32);
+		// R5900 should only be Little-Endian, so until someone complains, I'm leaving the Big-Endian variant disabled.
+		// Architecture* r5900b = new MipsArchitecture("r5900b", MIPS_R5900, BigEndian, 32);
 
-		Architecture::Register(mipseb);
 		Architecture::Register(mipsel);
+		Architecture::Register(mipseb);
+		Architecture::Register(r5900l);
+		// Architecture::Register(r5900b);
 		Architecture::Register(mips3);
 		Architecture::Register(mips3el);
 		Architecture::Register(mips64el);
@@ -3285,6 +3698,8 @@ extern "C"
 		MipsN64CallingConvention* n64LE = new MipsN64CallingConvention(mips64el);
 		MipsN64CallingConvention* n64BE = new MipsN64CallingConvention(mips64eb);
 		MipsN64CallingConvention* n64BEc = new MipsN64CallingConvention(cnmips64eb);
+		MipsPS2CallingConvention* ps2LE = new MipsPS2CallingConvention(r5900l);
+		// MipsPS2CallingConvention* ps2BE = new MipsPS2CallingConvention(r5900b);
 
 		mipseb->RegisterCallingConvention(o32BE);
 		mipseb->SetDefaultCallingConvention(o32BE);
@@ -3292,24 +3707,36 @@ extern "C"
 		mipsel->SetDefaultCallingConvention(o32LE);
 		mips3->RegisterCallingConvention(o32BE);
 		mips3->SetDefaultCallingConvention(o32BE);
-		mips3->RegisterCallingConvention(o32LE);
-		mips3->SetDefaultCallingConvention(o32LE);
+		mips3el->RegisterCallingConvention(o32LE);
+		mips3el->SetDefaultCallingConvention(o32LE);
 		mips64el->RegisterCallingConvention(n64LE);
 		mips64el->SetDefaultCallingConvention(n64LE);
 		mips64eb->RegisterCallingConvention(n64BE);
 		mips64eb->SetDefaultCallingConvention(n64BE);
 		cnmips64eb->RegisterCallingConvention(n64BEc);
 		cnmips64eb->SetDefaultCallingConvention(n64BEc);
+		r5900l->RegisterCallingConvention(ps2LE);
+		r5900l->SetDefaultCallingConvention(ps2LE);
+		// r5900b->RegisterCallingConvention(ps2BE);
+		// r5900b->SetDefaultCallingConvention(ps2BE);
 
-		MipsLinuxSyscallCallingConvention* linuxSyscallLE = new MipsLinuxSyscallCallingConvention(mipsel);
 		MipsLinuxSyscallCallingConvention* linuxSyscallBE = new MipsLinuxSyscallCallingConvention(mipseb);
+		MipsLinuxSyscallCallingConvention* linuxSyscallLE = new MipsLinuxSyscallCallingConvention(mipsel);
 		mipseb->RegisterCallingConvention(linuxSyscallBE);
 		mipsel->RegisterCallingConvention(linuxSyscallLE);
-		mips3->RegisterCallingConvention(linuxSyscallBE);
-		mips3el->RegisterCallingConvention(linuxSyscallLE);
+		MipsLinuxSyscallCallingConvention* linuxSyscallBE3 = new MipsLinuxSyscallCallingConvention(mips3);
+		MipsLinuxSyscallCallingConvention* linuxSyscallLE3 = new MipsLinuxSyscallCallingConvention(mips3el);
+		mips3->RegisterCallingConvention(linuxSyscallBE3);
+		mips3el->RegisterCallingConvention(linuxSyscallLE3);
+		MipsLinuxSyscallCallingConvention* linuxSyscallr5900LE = new MipsLinuxSyscallCallingConvention(r5900l);
+		// MipsLinuxSyscallCallingConvention* linuxSyscallr5900BE = new MipsLinuxSyscallCallingConvention(r5900b);
+		r5900l->RegisterCallingConvention(linuxSyscallr5900LE);
+		// r5900b->RegisterCallingConvention(linuxSyscallr5900BE);
 
-		mipseb->RegisterCallingConvention(new MipsLinuxRtlResolveCallingConvention(mipseb));
 		mipsel->RegisterCallingConvention(new MipsLinuxRtlResolveCallingConvention(mipsel));
+		mipseb->RegisterCallingConvention(new MipsLinuxRtlResolveCallingConvention(mipseb));
+		r5900l->RegisterCallingConvention(new MipsLinuxRtlResolveCallingConvention(r5900l));
+		// r5900b->RegisterCallingConvention(new MipsLinuxRtlResolveCallingConvention(r5900b));
 		mips3->RegisterCallingConvention(new MipsLinuxRtlResolveCallingConvention(mips3));
 		mips3el->RegisterCallingConvention(new MipsLinuxRtlResolveCallingConvention(mips3el));
 		mips64el->RegisterCallingConvention(new MipsLinuxRtlResolveCallingConvention(mips64el));
@@ -3317,8 +3744,8 @@ extern "C"
 		cnmips64eb->RegisterCallingConvention(new MipsLinuxRtlResolveCallingConvention(cnmips64eb));
 
 		/* function recognizers */
-		mipseb->RegisterFunctionRecognizer(new MipsImportedFunctionRecognizer());
 		mipsel->RegisterFunctionRecognizer(new MipsImportedFunctionRecognizer());
+		mipseb->RegisterFunctionRecognizer(new MipsImportedFunctionRecognizer());
 		mips3->RegisterFunctionRecognizer(new MipsImportedFunctionRecognizer());
 		mips3el->RegisterFunctionRecognizer(new MipsImportedFunctionRecognizer());
 
@@ -3326,8 +3753,10 @@ extern "C"
 		mipsel->RegisterRelocationHandler("ELF", new MipsElfRelocationHandler());
 		mips3->RegisterRelocationHandler("ELF", new MipsElfRelocationHandler());
 		mips3el->RegisterRelocationHandler("ELF", new MipsElfRelocationHandler());
-		mips64el->RegisterRelocationHandler("ELF", new MipsElfRelocationHandler());
 		mips64eb->RegisterRelocationHandler("ELF", new MipsElfRelocationHandler());
+		mips64el->RegisterRelocationHandler("ELF", new MipsElfRelocationHandler());
+		r5900l->RegisterRelocationHandler("ELF", new MipsElfRelocationHandler());
+		// r5900b->RegisterRelocationHandler("ELF", new MipsElfRelocationHandler());
 		cnmips64eb->RegisterRelocationHandler("ELF", new MipsElfRelocationHandler());
 
 		// Register the architectures with the binary format parsers so that they know when to use
@@ -3350,6 +3779,7 @@ extern "C"
 		{
 			elf->RegisterPlatformRecognizer(ARCH_ID_MIPS64, LittleEndian, ElfFlagsRecognize);
 			elf->RegisterPlatformRecognizer(ARCH_ID_MIPS64, BigEndian, ElfFlagsRecognize);
+			elf->RegisterPlatformRecognizer(ARCH_ID_MIPS32, LittleEndian, ElfFlagsRecognize); // R5900
 		}
 
 		BinaryViewType::RegisterArchitecture("PE", 0x166, LittleEndian, mipsel);

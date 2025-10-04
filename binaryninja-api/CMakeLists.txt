@@ -1,9 +1,10 @@
-cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 
 project(binaryninjaapi CXX C)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 option(BN_API_BUILD_EXAMPLES "Builds example plugins" OFF)
+option(BN_ALLOW_STUBS "Allow generating and linking against stubs if a Binary Ninja installation was not found" OFF)
 
 option(BN_REF_COUNT_DEBUG "Add extra debugging checks for RefCountObject leaks" OFF)
 mark_as_advanced(BN_REF_COUNT_DEBUG)
@@ -33,44 +34,37 @@ add_library(binaryninjaapi STATIC ${BN_API_SOURCES})
 target_include_directories(binaryninjaapi
     PUBLIC ${PROJECT_SOURCE_DIR})
 
+# Store path to user plugin dir
+if(WIN32)
+    set(BN_USER_PLUGINS_DIR "$ENV{APPDATA}\\Binary Ninja\\plugins")
+elseif(APPLE)
+    set(BN_USER_PLUGINS_DIR "$ENV{HOME}/Library/Application Support/Binary Ninja/plugins")
+else()
+    set(BN_USER_PLUGINS_DIR "$ENV{HOME}/.binaryninja/plugins")
+endif()
+message(STATUS "Binary Ninja User Plugins Dir: ${BN_USER_PLUGINS_DIR}")
+
 find_package(BinaryNinjaCore)
 if(BinaryNinjaCore_FOUND)
     target_link_libraries(binaryninjaapi PUBLIC ${BinaryNinjaCore_LIBRARIES})
     target_link_directories(binaryninjaapi PUBLIC ${BinaryNinjaCore_LIBRARY_DIRS})
     target_compile_definitions(binaryninjaapi PUBLIC ${BinaryNinjaCore_DEFINITIONS})
+elseif(BN_ALLOW_STUBS)
+    add_subdirectory(stubs EXCLUDE_FROM_ALL)
+
+    # Be sure to only link against the stubs archive file
+    add_dependencies(binaryninjaapi binaryninjacore_stubs)
+    target_link_libraries(binaryninjaapi PUBLIC binaryninjacore_stubs)
 else()
-    if(APPLE)
-        target_link_options(binaryninjaapi PUBLIC -undefined dynamic_lookup)
-    elseif(MSVC)
-        # Generate stubs.cpp with implementations of all the BNAPI functions
-        execute_process(COMMAND python ${PROJECT_SOURCE_DIR}/cmake/generate_stubs.py ${PROJECT_SOURCE_DIR}/binaryninjacore.h ${PROJECT_BINARY_DIR}/stubs)
-        
-        # Compile those stubs into a stub library we can use to fool the linker
-        add_library(binaryninjacore SHARED ${PROJECT_BINARY_DIR}/stubs/stubs.cpp)
-        set_target_properties(binaryninjacore
-            PROPERTIES OUTPUT_NAME binaryninjacore
-            SOVERSION 1
-            ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/stubs
-            LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/stubs
-            RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/stubs
-        )
-        target_include_directories(binaryninjacore PUBLIC ${PROJECT_SOURCE_DIR})
-        
-        # Be sure to only link against the stubs archive file
-        add_dependencies(binaryninjaapi binaryninjacore)
-        if(${CMAKE_GENERATOR} MATCHES "^Visual Studio")
-            # Visual Studio's generator adds the config to the file path
-            target_link_libraries(binaryninjaapi PUBLIC "$<TARGET_PROPERTY:binaryninjacore,ARCHIVE_OUTPUT_DIRECTORY>/$<CONFIG>/$<TARGET_PROPERTY:binaryninjacore,OUTPUT_NAME>.lib")
-        else()
-            target_link_libraries(binaryninjaapi PUBLIC "$<TARGET_PROPERTY:binaryninjacore,ARCHIVE_OUTPUT_DIRECTORY>/$<TARGET_PROPERTY:binaryninjacore,OUTPUT_NAME>.lib")
-        endif()
-    else()
-        target_link_options(binaryninjaapi PUBLIC "LINKER:--allow-shlib-undefined")
-    endif()
+    message(FATAL_ERROR "No Binary Ninja installation was found and stub generation is disabled")
 endif()
 
 if(BN_REF_COUNT_DEBUG)
     target_compile_definitions(binaryninjaapi PUBLIC BN_REF_COUNT_DEBUG)
+endif()
+
+if(CMAKE_BUILD_TYPE MATCHES Debug OR CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
+    target_compile_definitions(binaryninjaapi PRIVATE BN_ENABLE_LOG_TRACE)
 endif()
 
 add_subdirectory(vendor/fmt EXCLUDE_FROM_ALL)
@@ -83,7 +77,7 @@ if(APPLE)
 endif()
 
 set_target_properties(binaryninjaapi PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 20
     CXX_VISIBILITY_PRESET hidden
     CXX_STANDARD_REQUIRED ON
     VISIBILITY_INLINES_HIDDEN ON
@@ -99,7 +93,7 @@ if(NOT HEADLESS)
         if(BinaryNinjaUI_FOUND)
             # Precompiled ui library
             add_library(binaryninjaui INTERFACE)
-            target_link_libraries(binaryninjaui INTERFACE ${BinaryNinjaUI_LIBRARIES})
+            target_link_libraries(binaryninjaui INTERFACE binaryninjaapi ${BinaryNinjaUI_LIBRARIES})
             target_link_directories(binaryninjaui INTERFACE ${BinaryNinjaUI_LIBRARY_DIRS})
             target_compile_definitions(binaryninjaui INTERFACE ${BinaryNinjaUI_DEFINITIONS})
 
@@ -118,25 +112,24 @@ if(NOT HEADLESS)
 endif()
 
 function(bn_install_plugin target)
+    if(WIN32)
+        set(BN_USER_PLUGINS_DIR "$ENV{APPDATA}\\Binary Ninja\\plugins")
+    elseif(APPLE)
+        set(BN_USER_PLUGINS_DIR "$ENV{HOME}/Library/Application Support/Binary Ninja/plugins")
+    else()
+        set(BN_USER_PLUGINS_DIR "$ENV{HOME}/.binaryninja/plugins")
+    endif()
+
     if(NOT BN_INTERNAL_BUILD)
-        # Get API source directory so we can find BinaryNinjaCore
-        get_target_property(BN_API_SOURCE_DIR binaryninjaapi SOURCE_DIR)
-        message(STATUS "${BN_API_SOURCE_DIR}")
-        list(APPEND CMAKE_MODULE_PATH "${BN_API_SOURCE_DIR}/cmake")
+        if(WIN32)
+            install(TARGETS ${target} RUNTIME
+                DESTINATION ${BN_USER_PLUGINS_DIR})
 
-        # BinaryNinjaCore has the user plugins dir define that we want
-        find_package(BinaryNinjaCore)
-        if(BinaryNinjaCore_FOUND)
-            if(WIN32)
-                install(TARGETS ${target} RUNTIME
-                    DESTINATION ${BinaryNinjaCore_USER_PLUGINS_DIR})
-
-                install(FILES $<TARGET_PDB_FILE:${target}>
-                    DESTINATION ${BinaryNinjaCore_USER_PLUGINS_DIR} OPTIONAL)
-            else()
-                install(TARGETS ${target} LIBRARY
-                    DESTINATION ${BinaryNinjaCore_USER_PLUGINS_DIR})
-            endif()
+            install(FILES $<TARGET_PDB_FILE:${target}>
+                DESTINATION ${BN_USER_PLUGINS_DIR} OPTIONAL)
+        else()
+            install(TARGETS ${target} LIBRARY
+                DESTINATION ${BN_USER_PLUGINS_DIR})
         endif()
     endif()
 endfunction()

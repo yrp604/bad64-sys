@@ -16,6 +16,11 @@ enum ItemType
 	ArgumentSeparator,
 	Statement,
 	StatementSeparator,
+	StringComponent,
+	StringSeparator,
+	StringWhitespace,
+	FormatSpecifier,
+	EscapeSequence,
 	Group,
 	Container,
 	StartOfContainer,
@@ -154,7 +159,7 @@ struct Item
 				string trimmedText = TrimLeadingWhitespace(token.text);
 				token.width -= token.text.size() - trimmedText.size();
 				token.text = trimmedText;
-				output.push_back(token);
+				output.emplace_back(token);
 				output.insert(output.end(), tokens.begin() + 1, tokens.end());
 				firstTokenOfLine = false;
 			}
@@ -171,11 +176,21 @@ struct Item
 	void AddTokenToLastAtom(const InstructionTextToken& token)
 	{
 		if (!tokens.empty())
-			tokens.push_back(token);
+			tokens.emplace_back(token);
 		else if (items.empty())
-			items.push_back(Item {Atom, {}, {token}, 0});
+			items.emplace_back(Item {Atom, {}, {token}, 0});
 		else
 			items.back().AddTokenToLastAtom(token);
+	}
+
+	void AddTokenToLastStringComponent(const InstructionTextToken& token)
+	{
+		if (!tokens.empty())
+			tokens.emplace_back(token);
+		else if (items.empty())
+			items.emplace_back(Item {StringComponent, {}, {token}, 0});
+		else
+			items.back().AddTokenToLastStringComponent(token);
 	}
 
 	void CalculateWidth()
@@ -198,63 +213,334 @@ struct ItemLayoutStackEntry
 	size_t additionalContinuationIndentation;
 	size_t desiredWidth;
 	size_t desiredContinuationWidth;
+	size_t desiredStringWidth;
 	bool newLineOnReenteringScope;
 };
 
-
 static vector<Item> CreateStatementItems(const vector<Item>& items)
 {
-	vector<Item> result, pending;
-	bool hasArgs = false;
-	for (auto& i : items)
-	{
-		if (i.type == StatementSeparator)
-		{
-			if (pending.empty())
-			{
-				result.push_back(Item {Atom, {}, {i.tokens}, 0});
-			}
-			else
-			{
-				for (auto& j : i.tokens)
-					pending.back().AddTokenToLastAtom(j);
-				result.push_back(Item {Statement, pending, {}, 0});
-			}
-			pending.clear();
-			hasArgs = true;
-		}
-		else if (i.type == StartOfContainer && pending.empty())
-		{
-			result.push_back(i);
-		}
-		else if (i.type == EndOfContainer && hasArgs && !pending.empty())
-		{
-			result.push_back(Item {Statement, pending, {}, 0});
-			result.push_back(i);
-			pending.clear();
-		}
-		else
-		{
-			pending.push_back(Item {i.type, CreateStatementItems(i.items), i.tokens, 0});
-		}
-	}
+    vector<Item> result;
+    result.reserve(items.size());
 
-	if (!pending.empty())
-	{
-		if (hasArgs)
-			result.push_back(Item {Statement, pending, {}, 0});
-		else
-			result.insert(result.end(), pending.begin(), pending.end());
-	}
+    vector<Item> pending;
+    pending.reserve(items.size());
 
-	return result;
+    bool hasArgs = false;
+
+    auto flushStatement = [&]() {
+        if (!pending.empty()) {
+            result.emplace_back(
+                Item{
+                    Statement,
+                    std::move(pending),
+                    vector<InstructionTextToken>{},
+                    0
+                }
+            );
+            pending.clear();
+        }
+    };
+
+    for (auto const& orig : items) {
+        // copy so we can move out of i.tokens / i.items safely
+        Item i = orig;
+
+        if (i.type == StatementSeparator) {
+            hasArgs = true;
+
+            if (pending.empty()) {
+                // first separator in this statement
+                result.emplace_back(
+                    Item{
+                        Atom,
+                        {},
+                        std::move(i.tokens),
+                        0
+                    }
+                );
+            } else {
+                // append tokens to last atom in pending, then flush
+                for (auto& t : i.tokens)
+                    pending.back().AddTokenToLastAtom(std::move(t));
+                flushStatement();
+            }
+        }
+        else if (i.type == StartOfContainer && pending.empty()) {
+            // emit container boundary directly if no pending args
+            result.emplace_back(std::move(i));
+        }
+        else if (i.type == EndOfContainer && hasArgs && !pending.empty()) {
+            // flush any accumulated args as a Statement, then emit the container end
+            flushStatement();
+            result.emplace_back(std::move(i));
+        }
+        else {
+            // accumulate everything else for possible statement grouping
+            vector<Item> nested;
+            if (!i.items.empty())
+                nested = CreateStatementItems(i.items);
+
+            pending.emplace_back(
+                Item{
+                    i.type,
+                    std::move(nested),
+                    std::move(i.tokens),
+                    0
+                }
+            );
+        }
+    }
+
+    // final tail: either flush into a Statement or append raw
+    if (!pending.empty()) {
+        if (hasArgs) {
+            flushStatement();
+        } else {
+            result.insert(
+                result.end(),
+                make_move_iterator(pending.begin()),
+                make_move_iterator(pending.end())
+            );
+        }
+    }
+
+    return result;
 }
 
+static vector<InstructionTextToken> ParseStringToken(
+    const InstructionTextToken& unprocessedStringToken,
+    const size_t maxParsingLength
+)
+{
+	const string_view src = unprocessedStringToken.text;
+	const size_t tail = src.size();
+
+	vector<InstructionTextToken> result;
+	size_t curStart = 0, curEnd = 0;
+
+	auto ConstructToken = [&](size_t start, size_t end)
+	{
+		InstructionTextToken token = unprocessedStringToken;
+		token.text = string(src.substr(start, end - start));
+		token.width = token.text.size();
+		result.emplace_back(std::move(token));
+	};
+
+	auto flushToken = [&](size_t start, size_t end)
+	{
+		if (start < end)
+			ConstructToken(start, end);
+	};
+
+	// We generally split along spaces while keeping words intact, but some cases have
+	// specific splitting behavior:
+	//
+	// - Any format specifier (starting with %) will be treated as an atom even if embedded
+	//   within a word
+	// - Any escape sequence will also be treated as an atom
+	// - We split along punctuation like commas, colons, periods, and semicolons, grouping
+	//   trailing punctuation together.
+    while (curEnd < tail)
+    {
+        char c = src[curEnd];
+
+        if (c == '%')
+        {
+        	// Flush before format specifier
+        	flushToken(curStart, curEnd);
+
+            size_t start = curEnd;
+            curEnd++;
+            while (curEnd < tail && (isalnum(src[curEnd]) || src[curEnd]=='.' || src[curEnd]=='-'))
+                curEnd++;
+            ConstructToken(start, curEnd);
+            curStart = curEnd;
+        }
+        else if (c == '\\')
+        {
+        	// Flush before escape sequence
+			flushToken(curStart, curEnd);
+
+            size_t start = curEnd;
+            curEnd++;  // consume '\'
+            if (curEnd < tail)
+                curEnd++;  // consume escaped char
+            ConstructToken(start, curEnd);
+            curStart = curEnd;
+        }
+    	else if (isspace(c))
+    	{
+    		// Flush before whitespace
+    		flushToken(curStart, curEnd);
+
+    		size_t start = curEnd;
+    		while (curEnd < tail && isspace(src[curEnd]))
+    			curEnd++;
+    		ConstructToken(start, curEnd);
+    		curStart = curEnd;
+    	}
+        else if (c == ',' || c == '.' || c == ':' || c == ';')
+        {
+        	// Flush before punctuation
+        	flushToken(curStart, curEnd);
+
+			// Group together repeated punctuation
+            size_t start = curEnd;
+            while (curEnd < tail && src[curEnd] == c)
+                curEnd++;
+            ConstructToken(start, curEnd);
+            curStart = curEnd;
+        }
+        else
+        {
+            curEnd++;
+        }
+
+        // Check if we've exceeded max parsing length
+        if (curEnd > maxParsingLength)
+        {
+	        // Flush any pending token
+	        flushToken(curStart, maxParsingLength);
+
+	        // Create single token with remaining text
+	        InstructionTextToken remainingToken = unprocessedStringToken;
+	        remainingToken.text = string(src.substr(maxParsingLength));
+	        remainingToken.width = remainingToken.text.size();
+	        result.emplace_back(std::move(remainingToken));
+	        return result;
+        }
+    }
+
+	flushToken(curStart, curEnd);
+    return result;
+}
+
+static vector<Item> CreateStringGroups(const vector<Item>& items)
+{
+    // We handle strings mostly the same as other types except the introduction
+    // of the StringComponent and StringWhitespace types.
+    //
+    // The reason we introduce these is for the specific behaviors when formatting multiline
+    // string annotations. String annotations have a different desired width than tokens
+    // like arguments, comments, etc.
+    //
+    // Additionally, we don't wrap trailing whitespace until the preceding token is within
+    // the wrapping width, unlike other token types.
+
+	vector<Item> result;
+    result.reserve(items.size());
+    vector<Item> pending;
+    pending.reserve(items.size());
+    bool hasStrings = false;
+
+    // flush pending into one StringComponent
+    auto flushString = [&]() {
+        if (!pending.empty()) {
+            result.emplace_back(
+                Item{ StringComponent,
+                      std::move(pending),
+                      {},
+                      0 }
+            );
+            pending.clear();
+        }
+    };
+
+    for (auto const& orig : items) {
+        Item i = orig;
+
+        if (i.type == StringSeparator && !i.tokens.empty()) {
+            if (pending.empty()) {
+                result.emplace_back(
+                    Item{ StringComponent,
+                          vector<Item>{},
+                          std::move(i.tokens),
+                          0 }
+                );
+            } else {
+                for (auto& t : i.tokens)
+                    pending.back().AddTokenToLastStringComponent(std::move(t));
+                flushString();
+            }
+            hasStrings = true;
+        }
+        else if (i.type == StringWhitespace) {
+            flushString();
+            result.emplace_back(
+                Item{ StringWhitespace,
+                      std::move(i.items),
+                      std::move(i.tokens),
+                      0 }
+            );
+        }
+        else if (i.type == FormatSpecifier || i.type == EscapeSequence) {
+            flushString();
+            result.emplace_back(
+                Item{ StringComponent,
+                      std::move(i.items),
+                      std::move(i.tokens),
+                      0 }
+            );
+        }
+        else if (i.type == StartOfContainer && pending.empty()) {
+            result.emplace_back(std::move(i));
+        }
+        else if (i.type == EndOfContainer && hasStrings && !pending.empty()) {
+            result.emplace_back(
+                Item{ Group,
+                      std::move(pending),
+                      vector<InstructionTextToken>{},
+                      0 }
+            );
+            result.emplace_back(std::move(i));
+            pending.clear();
+        }
+        else {
+            vector<Item> nested;
+            if (!i.items.empty())
+                nested = CreateStringGroups(i.items);
+            pending.emplace_back(
+                Item{ i.type,
+                      std::move(nested),
+                      std::move(i.tokens),
+                      0 }
+            );
+        }
+    }
+
+    if (!pending.empty()) {
+        if (hasStrings) {
+            flushString();
+        } else {
+            result.insert(
+                result.end(),
+                make_move_iterator(pending.begin()),
+                make_move_iterator(pending.end())
+            );
+        }
+    }
+
+    return result;
+}
 
 static vector<Item> CreateAssignmentOperatorGroups(const vector<Item>& items)
 {
-	vector<Item> result, pending;
+	vector<Item> result;
+	result.reserve(items.size());
+	vector<Item> pending;
+	pending.reserve(items.size());
+
 	bool hasOperators = false;
+
+	auto flushStatement = [&]()
+	{
+		if (!pending.empty())
+		{
+			result.emplace_back(Item {Statement, std::move(pending), {}, 0});
+			pending.clear();
+		}
+	};
+
 	for (auto& i : items)
 	{
 		if (i.type == Operator && !i.tokens.empty())
@@ -264,15 +550,14 @@ static vector<Item> CreateAssignmentOperatorGroups(const vector<Item>& items)
 			{
 				if (pending.empty())
 				{
-					result.push_back(Item {Atom, {}, {i.tokens}, 0});
+					result.emplace_back(Item {Atom, {}, std::move(i.tokens), 0});
 				}
 				else
 				{
 					for (auto& j : i.tokens)
 						pending.back().AddTokenToLastAtom(j);
-					result.push_back(Item {Statement, pending, {}, 0});
+					flushStatement();
 				}
-				pending.clear();
 				hasOperators = true;
 				continue;
 			}
@@ -280,24 +565,24 @@ static vector<Item> CreateAssignmentOperatorGroups(const vector<Item>& items)
 
 		if (i.type == StartOfContainer && pending.empty())
 		{
-			result.push_back(i);
+			result.emplace_back(std::move(i));
 		}
 		else if (i.type == EndOfContainer && hasOperators && !pending.empty())
 		{
-			result.push_back(Item {Group, pending, {}, 0});
-			result.push_back(i);
+			result.emplace_back(Item {Group, std::move(pending), {}, 0});
+			result.emplace_back(i);
 			pending.clear();
 		}
 		else
 		{
-			pending.push_back(Item {i.type, CreateAssignmentOperatorGroups(i.items), i.tokens, 0});
+			pending.emplace_back(Item {i.type, CreateAssignmentOperatorGroups(i.items), i.tokens, 0});
 		}
 	}
 
 	if (!pending.empty())
 	{
 		if (hasOperators)
-			result.push_back(Item {Group, pending, {}, 0});
+			result.emplace_back(Item {Group, std::move(pending), {}, 0});
 		else
 			result.insert(result.end(), pending.begin(), pending.end());
 	}
@@ -308,47 +593,92 @@ static vector<Item> CreateAssignmentOperatorGroups(const vector<Item>& items)
 
 static vector<Item> CreateArgumentItems(const vector<Item>& items, bool inContainer)
 {
-	vector<Item> result, pending;
+	vector<Item> result;
+	result.reserve(items.size());
+	vector<Item> pending;
+	pending.reserve(items.size());
 	bool hasArgs = false;
-	for (auto& i : items)
+
+	auto flushArgument = [&]()
 	{
+		if (!pending.empty())
+		{
+			result.emplace_back(
+				Item{
+					inContainer ? Argument : Group,
+					std::move(pending),
+					vector<InstructionTextToken>{},
+					0
+				}
+			);
+			pending.clear();
+		}
+	};
+
+	for (auto const& orig: items)
+	{
+		Item i = orig;
+
 		if (i.type == ArgumentSeparator)
 		{
 			if (pending.empty())
 			{
-				result.push_back(Item {Atom, {}, {i.tokens}, 0});
+				result.emplace_back(
+					Item{
+						Atom,
+						vector<Item>{},
+						std::move(i.tokens),
+						0
+					}
+				);
 			}
 			else
 			{
-				for (auto& j : i.tokens)
-					pending.back().AddTokenToLastAtom(j);
-				result.push_back(Item {inContainer ? Argument : Group, pending, {}, 0});
+				for (auto& t: i.tokens)
+					pending.back().AddTokenToLastAtom(std::move(t));
+				flushArgument();
 			}
-			pending.clear();
 			hasArgs = true;
 		}
 		else if (i.type == StartOfContainer && pending.empty())
 		{
-			result.push_back(i);
+			result.emplace_back(std::move(i));
 		}
 		else if (i.type == EndOfContainer && hasArgs && !pending.empty())
 		{
-			result.push_back(Item {inContainer ? Argument : Group, pending, {}, 0});
-			result.push_back(i);
-			pending.clear();
+			flushArgument();
+			result.emplace_back(std::move(i));
 		}
 		else
 		{
-			pending.push_back(Item {i.type, CreateArgumentItems(i.items, i.type == Container), i.tokens, 0});
+			vector<Item> nested;
+			if (!i.items.empty())
+				nested = CreateArgumentItems(i.items, i.type == Container);
+			pending.emplace_back(
+				Item{
+					i.type,
+					std::move(nested),
+					std::move(i.tokens),
+					0
+				}
+			);
 		}
 	}
 
 	if (!pending.empty())
 	{
 		if (hasArgs)
-			result.push_back(Item {inContainer ? Argument : Group, pending, {}, 0});
+		{
+			flushArgument();
+		}
 		else
-			result.insert(result.end(), pending.begin(), pending.end());
+		{
+			result.insert(
+				result.end(),
+				make_move_iterator(pending.begin()),
+				make_move_iterator(pending.end())
+			);
+		}
 	}
 
 	return result;
@@ -357,44 +687,84 @@ static vector<Item> CreateArgumentItems(const vector<Item>& items, bool inContai
 
 static vector<Item> CreateOperatorGroups(const vector<Item>& items)
 {
-	vector<Item> result, pending;
+	vector<Item> result;
+	result.reserve(items.size());
+	vector<Item> pending;
+	pending.reserve(items.size());
 	bool hasOperators = false;
-	for (auto& i : items)
+
+	auto flushOperator = [&]()
 	{
-		if (i.type == Operator)
+		if (!pending.empty())
 		{
 			if (pending.size() == 1)
-				result.push_back(pending[0]);
-			else if (!pending.empty())
-				result.push_back(Item {Group, pending, {}, 0});
-			result.push_back(i);
+			{
+				result.emplace_back(std::move(pending[0]));
+			}
+			else
+			{
+				result.emplace_back(
+					Item{
+						Group,
+						std::move(pending),
+						{},
+						0
+					}
+				);
+			}
 			pending.clear();
-			hasOperators = true;
-			continue;
 		}
+	};
 
-		if (i.type == StartOfContainer && pending.empty())
+	for (auto const& orig: items)
+	{
+		Item i = orig;
+
+		if (i.type == Operator)
 		{
-			result.push_back(i);
+			flushOperator();
+			result.emplace_back(std::move(i));
+			hasOperators = true;
+		}
+		else if (i.type == StartOfContainer && pending.empty())
+		{
+			result.emplace_back(std::move(i));
 		}
 		else if (i.type == EndOfContainer && hasOperators && pending.size() > 1)
 		{
-			result.push_back(Item {Group, pending, {}, 0});
-			result.push_back(i);
-			pending.clear();
+			flushOperator();
+			result.emplace_back(std::move(i));
 		}
 		else
 		{
-			pending.push_back(Item {i.type, CreateOperatorGroups(i.items), i.tokens, 0});
+			vector<Item> nested;
+			if (!i.items.empty())
+				nested = CreateOperatorGroups(i.items);
+			pending.emplace_back(
+				Item{
+					i.type,
+					std::move(nested),
+					std::move(i.tokens),
+					0
+				}
+			);
 		}
 	}
 
 	if (!pending.empty())
 	{
 		if (hasOperators && pending.size() > 1)
-			result.push_back(Item {Group, pending, {}, 0});
+		{
+			flushOperator();
+		}
 		else
-			result.insert(result.end(), pending.begin(), pending.end());
+		{
+			result.insert(
+				result.end(),
+				make_move_iterator(pending.begin()),
+				make_move_iterator(pending.end())
+			);
+		}
 	}
 
 	return result;
@@ -422,7 +792,7 @@ static vector<Item> CreateOperatorPrecedenceGroups(const vector<Item>& items)
 		vector<Item> result;
 		result.reserve(items.size());
 		for (auto& i : items)
-			result.push_back({i.type, CreateOperatorPrecedenceGroups(i.items), i.tokens, 0});
+			result.emplace_back(Item {i.type, CreateOperatorPrecedenceGroups(i.items), i.tokens, 0});
 		return result;
 	}
 
@@ -437,9 +807,9 @@ static vector<Item> CreateOperatorPrecedenceGroups(const vector<Item>& items)
 			if (precedence == lowestPrecedence.value())
 			{
 				if (pending.size() == 1)
-					result.push_back(pending[0]);
+					result.emplace_back(pending[0]);
 				else if (!pending.empty())
-					result.push_back(Item {Group, pending, {}, 0});
+					result.emplace_back(Item {Group, std::move(pending), {}, 0});
 				else
 					result.insert(result.end(), pending.begin(), pending.end());
 				pending.clear();
@@ -448,24 +818,24 @@ static vector<Item> CreateOperatorPrecedenceGroups(const vector<Item>& items)
 
 		if (i->type == StartOfContainer && pending.empty())
 		{
-			result.push_back(*i);
+			result.emplace_back(*i);
 		}
 		else if (i->type == EndOfContainer && pending.size() > 1 && !result.empty())
 		{
-			result.push_back(Item {Group, pending, {}, 0});
-			result.push_back(*i);
+			result.emplace_back(Item {Group, std::move(pending), {}, 0});
+			result.emplace_back(*i);
 			pending.clear();
 		}
 		else
 		{
-			pending.push_back(*i);
+			pending.emplace_back(*i);
 		}
 	}
 
 	if (!pending.empty())
 	{
 		if (pending.size() > 1 && !result.empty())
-			result.push_back(Item {Group, pending, {}, 0});
+			result.emplace_back(Item {Group, pending, {}, 0});
 		else
 			result.insert(result.end(), pending.begin(), pending.end());
 	}
@@ -474,7 +844,7 @@ static vector<Item> CreateOperatorPrecedenceGroups(const vector<Item>& items)
 	vector<Item> processed;
 	processed.reserve(result.size());
 	for (auto& i : result)
-		processed.push_back({i.type, CreateOperatorPrecedenceGroups(i.items), i.tokens, 0});
+		processed.emplace_back(Item{i.type, CreateOperatorPrecedenceGroups(i.items), i.tokens, 0});
 	return processed;
 }
 
@@ -490,9 +860,18 @@ static vector<Item> RelocateStartAndEndOfContainerItems(const vector<Item>& item
 			for (auto& j : startOfContainer.tokens)
 				result.back().AddTokenToLastAtom(j);
 
-			vector<Item> containerItems(i.items.begin() + 1, i.items.end());
+			auto containerContents = i.items.begin() + 1;
+			if (containerContents != i.items.end() && containerContents->type == EndOfContainer)
+			{
+				for (auto& j : containerContents->tokens)
+					result.back().AddTokenToLastAtom(j);
+				++containerContents;
+			}
+
+			vector<Item> containerItems(containerContents, i.items.end());
 			containerItems = RelocateStartAndEndOfContainerItems(containerItems);
-			result.push_back({Container, containerItems, {}, 0});
+			if (!containerItems.empty())
+				result.emplace_back(Item {Container, containerItems, {}, 0});
 		}
 		else if (i.type == EndOfContainer && !result.empty())
 		{
@@ -501,7 +880,7 @@ static vector<Item> RelocateStartAndEndOfContainerItems(const vector<Item>& item
 		}
 		else
 		{
-			result.push_back(Item {i.type, RelocateStartAndEndOfContainerItems(i.items), i.tokens, 0});
+			result.emplace_back(Item {i.type, RelocateStartAndEndOfContainerItems(i.items), i.tokens, 0});
 		}
 	}
 	return result;
@@ -529,7 +908,7 @@ vector<DisassemblyTextLine> GenericLineFormatter::FormatLines(
 		if (totalLength <= settings.desiredLineLength || contentLength <= settings.minimumContentLength)
 		{
 			// Line fits, emit as-is
-			result.push_back(currentLine);
+			result.emplace_back(currentLine);
 			continue;
 		}
 
@@ -562,13 +941,21 @@ vector<DisassemblyTextLine> GenericLineFormatter::FormatLines(
 				desiredContinuationWidth = remainingWidth;
 		}
 
+		// Compute target string width for this line
+		size_t desiredStringWidth = settings.stringWrappingWidth;
+		if (indentation < settings.desiredLineLength)
+		{
+			size_t remainingStringWidth = settings.desiredLineLength - indentation;
+			if (remainingStringWidth > desiredStringWidth)
+				desiredStringWidth = remainingStringWidth;
+		}
+
 		// Gather the indentation tokens at the beginning of the line
 		vector<InstructionTextToken> indentationTokens = currentLine.GetAddressAndIndentationTokens();
 		size_t tokenIndex = indentationTokens.size();
 
 		// First break the line down into nested container items. A container is anything between a pair of
-		// BraceTokens (except for strings, where the entire string, including the quotes, are treated as
-		// a single atom).
+		// BraceTokens
 		vector<Item> items;
 		stack<vector<Item>> itemStack;
 		for (; tokenIndex < currentLine.tokens.size(); tokenIndex++)
@@ -579,42 +966,46 @@ vector<DisassemblyTextLine> GenericLineFormatter::FormatLines(
 			switch (token.type)
 			{
 			case BraceToken:
-				if (tokenIndex + 1 < currentLine.tokens.size()
-					&& currentLine.tokens[tokenIndex + 1].type == StringToken)
-				{
-					// Treat string tokens surrounded by brace tokens as a unit (this is usually the quotes
-					// surrounding the string)
-					Item atom;
-					atom.type = Atom;
-					atom.tokens.push_back(token);
-					atom.tokens.push_back(currentLine.tokens[tokenIndex + 1]);
-					atom.width = 0;
-					tokenIndex++;
-					if (tokenIndex + 1 < currentLine.tokens.size()
-						&& currentLine.tokens[tokenIndex + 1].type == BraceToken)
-					{
-						atom.tokens.push_back(currentLine.tokens[tokenIndex + 1]);
-						tokenIndex++;
-					}
-
-					items.push_back(atom);
-					break;
-				}
-
-				if (trimmedText == "(" || trimmedText == "[" || trimmedText == "{")
+				// Beginning of string
+				if (trimmedText.ends_with('"') && tokenIndex + 1 < currentLine.tokens.size() && currentLine.tokens[tokenIndex + 1].type == StringToken)
 				{
 					// Create a ContainerContents item and place it onto the item stack. This will hold anything
 					// inside the container once the end of the container is found.
-					items.push_back(Item {Container, {}, {}, 0});
+					items.emplace_back(Item {Container, {}, {}, 0});
 					itemStack.push(items);
 
 					// Starting a new context
 					items.clear();
-					items.push_back(Item {StartOfContainer, {}, {token}, 0});
+					items.emplace_back(Item {StartOfContainer, {}, {token}, 0});
+				}
+				// End of string
+				else if (trimmedText == "\"" && tokenIndex > 0 && currentLine.tokens[tokenIndex - 1].type == StringToken)
+				{
+					items.emplace_back(Item {EndOfContainer, {}, {token}, 0});
+
+					if (itemStack.empty())
+						break;
+
+					// Go back up the item stack and add the items to the container
+					vector<Item> parent = itemStack.top();
+					itemStack.pop();
+					parent.back().items.insert(parent.back().items.end(), items.begin(), items.end());
+					items = parent;
+				}
+				else if (trimmedText == "(" || trimmedText == "[" || trimmedText == "{")
+				{
+					// Create a ContainerContents item and place it onto the item stack. This will hold anything
+					// inside the container once the end of the container is found.
+					items.emplace_back(Item {Container, {}, {}, 0});
+					itemStack.push(items);
+
+					// Starting a new context
+					items.clear();
+					items.emplace_back(Item {StartOfContainer, {}, {token}, 0});
 				}
 				else if (trimmedText == ")" || trimmedText == "]" || trimmedText == "}")
 				{
-					items.push_back(Item {EndOfContainer, {}, {token}, 0});
+					items.emplace_back(Item {EndOfContainer, {}, {token}, 0});
 
 					if (itemStack.empty())
 						break;
@@ -632,30 +1023,54 @@ vector<DisassemblyTextLine> GenericLineFormatter::FormatLines(
 				// these are used to create clickable items when things are referenced by the comment.
 				Item comment {Comment, {}, {}, 0};
 				for (; tokenIndex < currentLine.tokens.size(); tokenIndex++)
-					comment.tokens.push_back(currentLine.tokens[tokenIndex]);
-				items.push_back(comment);
+					comment.tokens.emplace_back(currentLine.tokens[tokenIndex]);
+				items.emplace_back(comment);
 				break;
 			}
 			case TextToken:
 				if (trimmedText == ",")
-					items.push_back(Item {ArgumentSeparator, {}, {token}, 0});
+					items.emplace_back(Item {ArgumentSeparator, {}, {token}, 0});
 				else if ((!trimmedText.empty() && trimmedText[0] == '.') || trimmedText == "->")
-					items.push_back(Item {FieldAccessor, {}, {token}, 0});
+					items.emplace_back(Item {FieldAccessor, {}, {token}, 0});
 				else if (trimmedText == ";")
-					items.push_back(Item {StatementSeparator, {}, {token}, 0});
+					items.emplace_back(Item {StatementSeparator, {}, {token}, 0});
 				else if (trimmedText == ":" && !items.empty())
 					items.back().AddTokenToLastAtom(token);
 				else
-					items.push_back(Item {Atom, {}, {token}, 0});
+					items.emplace_back(Item {Atom, {}, {token}, 0});
 				break;
 			case OperationToken:
 				if ((!trimmedText.empty() && trimmedText[0] == '.') || trimmedText == "->")
-					items.push_back(Item {FieldAccessor, {}, {token}, 0});
+					items.emplace_back(Item {FieldAccessor, {}, {token}, 0});
 				else
-					items.push_back(Item {Operator, {}, {token}, 0});
+					items.emplace_back(Item {Operator, {}, {token}, 0});
 				break;
+			case StringToken:
+			{
+				if (token.width > desiredWidth)
+				{
+					vector<InstructionTextToken> stringTokens = ParseStringToken(token, settings.maximumAnnotationLength);
+					for (auto subToken : stringTokens)
+					{
+						string trimmedSubText = TrimString(subToken.text);
+						if (trimmedSubText.empty())
+							items.emplace_back(Item {StringWhitespace, {}, {subToken}, 0});
+						else if (trimmedSubText[0] == '%')
+							items.emplace_back(Item {FormatSpecifier, {}, {subToken}, 0});
+						else if (!trimmedSubText.empty() && trimmedSubText[0] == '\\')
+							items.emplace_back(Item {EscapeSequence, {}, {subToken}, 0});
+						else if (trimmedSubText[0] == ',' || trimmedSubText[0] == '.' || trimmedSubText[0] == ':' || trimmedSubText[0] == ';')
+							items.emplace_back(Item {StringSeparator, {}, {subToken}, 0});
+						else
+							items.emplace_back(Item {Atom, {}, {subToken}, 0});
+					}
+					break;
+				}
+				items.emplace_back(Item {Atom, {}, {token}, 0});
+				break;
+			}
 			default:
-				items.push_back(Item {Atom, {}, {token}, 0});
+				items.emplace_back(Item {Atom, {}, {token}, 0});
 				break;
 			}
 		}
@@ -690,6 +1105,10 @@ vector<DisassemblyTextLine> GenericLineFormatter::FormatLines(
 		// the previous atom.
 		items = RelocateStartAndEndOfContainerItems(items);
 
+		// Create internal groupings for displaying strings -- grouping items by punctuation, format specifiers, and
+		// escape sequences
+		items = CreateStringGroups(items);
+
 		// Now that items are done, compute widths for layout
 		for (auto& j : items)
 			j.CalculateWidth();
@@ -700,18 +1119,24 @@ vector<DisassemblyTextLine> GenericLineFormatter::FormatLines(
 		bool firstTokenOfLine = true;
 
 		stack<ItemLayoutStackEntry> layoutStack;
-		layoutStack.push({items, additionalContinuationIndentation, desiredWidth, desiredContinuationWidth, false});
+		layoutStack.push({items, additionalContinuationIndentation, desiredWidth, desiredContinuationWidth, desiredStringWidth, false});
 
-		auto newLine = [&]() {
+		auto newLine = [&](const bool forString = false) {
 			if (!firstTokenOfLine)
 			{
 				string lastTokenText = outputLine.tokens.back().text;
 				string trimmedText = TrimTrailingWhitespace(lastTokenText);
 				outputLine.tokens.back().width -= lastTokenText.size() - trimmedText.size();
 				outputLine.tokens.back().text = trimmedText;
+				if (forString && outputLine.tokens.back().type == StringToken)
+				{
+					outputLine.tokens.emplace_back(BraceToken, "\"");
+					outputLine.tokens.back().width = 1;
+					currentWidth += 1;
+				}
 			}
 
-			result.push_back(outputLine);
+			result.emplace_back(outputLine);
 			outputLine.tokens = indentationTokens;
 
 			// Make sure any collapsible state indicators are set to padding so that the indicators don't
@@ -720,6 +1145,15 @@ vector<DisassemblyTextLine> GenericLineFormatter::FormatLines(
 			{
 				if (outToken.type == CollapseStateIndicatorToken)
 					outToken.context = ContentCollapsiblePadding;
+			}
+
+			if (forString)
+			{
+				outputLine.tokens.emplace_back(BraceToken, "\"");
+				currentWidth = 1;
+				desiredWidth = desiredContinuationWidth;
+				firstTokenOfLine = true;
+				return;
 			}
 
 			outputLine.tokens.emplace_back(TextToken, string(additionalContinuationIndentation, ' '));
@@ -737,6 +1171,7 @@ vector<DisassemblyTextLine> GenericLineFormatter::FormatLines(
 			additionalContinuationIndentation = layoutStackEntry.additionalContinuationIndentation;
 			desiredWidth = layoutStackEntry.desiredWidth;
 			desiredContinuationWidth = layoutStackEntry.desiredContinuationWidth;
+			desiredStringWidth = layoutStackEntry.desiredStringWidth;
 
 			// Check to see if the scope we are returning to needs a new line. This is used when an argument
 			// spans multiple lines. The rest of the arguments are placed on separate lines from the long argument.
@@ -745,9 +1180,36 @@ vector<DisassemblyTextLine> GenericLineFormatter::FormatLines(
 
 			for (auto item = items.begin(); item != items.end();)
 			{
-				if (currentWidth + item->width > desiredWidth)
+				if (currentWidth + item->width > desiredStringWidth && item->type == StringComponent)
+				{
+					auto next = item;
+					++next;
+					if (currentWidth > 0)
+					{
+						if (next != items.end())
+						{
+							layoutStack.push({vector(next, items.end()), additionalContinuationIndentation,
+								desiredWidth, desiredContinuationWidth, desiredStringWidth, false});
+						}
+
+						newLine(true);
+						if (desiredContinuationWidth < settings.minimumContentLength)
+							desiredContinuationWidth = settings.minimumContentLength;
+
+						layoutStack.push({item->items, additionalContinuationIndentation, desiredWidth,
+							desiredContinuationWidth, desiredStringWidth, false});
+						break;
+					}
+
+					item->AppendAllTokens(outputLine.tokens, firstTokenOfLine);
+					currentWidth += item->width;
+					++item;
+					continue;
+				}
+				if (currentWidth + item->width > desiredWidth && item->type != StringWhitespace && item->type != StringComponent)
 				{
 					// Current item is too wide to fit on the current line, will need to start a new line.
+					// Whitespace is allowed to be too wide; we push it on as the preceding word is wrapped.
 					auto next = item;
 					++next;
 
@@ -763,7 +1225,7 @@ vector<DisassemblyTextLine> GenericLineFormatter::FormatLines(
 							if (next != items.end())
 							{
 								layoutStack.push({vector(next, items.end()), additionalContinuationIndentation,
-									desiredWidth, desiredContinuationWidth, true});
+									desiredWidth, desiredContinuationWidth, desiredStringWidth, true});
 							}
 
 							newLine();
@@ -775,7 +1237,7 @@ vector<DisassemblyTextLine> GenericLineFormatter::FormatLines(
 								desiredContinuationWidth -= settings.tabWidth;
 
 							layoutStack.push({item->items, additionalContinuationIndentation, desiredWidth,
-								desiredContinuationWidth, false});
+								desiredContinuationWidth, desiredStringWidth, false});
 							break;
 						}
 
@@ -785,15 +1247,16 @@ vector<DisassemblyTextLine> GenericLineFormatter::FormatLines(
 							if (next != items.end())
 							{
 								layoutStack.push({vector(next, items.end()), additionalContinuationIndentation,
-									desiredWidth, desiredContinuationWidth, false});
+									desiredWidth, desiredContinuationWidth, desiredStringWidth, false});
 							}
 							layoutStack.push({item->items, additionalContinuationIndentation, desiredWidth,
-								desiredContinuationWidth, false});
+								desiredContinuationWidth, desiredStringWidth,  false});
 							break;
 						}
 
 						// Item is an atom. We just have to emit the tokens even though it is too wide.
 						item->AppendAllTokens(outputLine.tokens, firstTokenOfLine);
+						currentWidth += item->width;
 						++item;
 						continue;
 					}

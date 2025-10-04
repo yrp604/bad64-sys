@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2023 Vector 35 Inc
+// Copyright (c) 2015-2025 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -285,6 +285,15 @@ std::string Project::GetPath() const
 	return result;
 }
 
+std::string Project::GetFilePathInProject(const Ref<ProjectFile>& file) const
+{
+	char* path = BNProjectGetFilePathInProject(m_object, file->m_object);
+	std::string result = path;
+	BNFreeString(path);
+	return result;
+}
+
+
 
 std::string Project::GetName() const
 {
@@ -338,7 +347,7 @@ void Project::RemoveMetadata(const std::string& key)
 
 
 Ref<ProjectFolder> Project::CreateFolderFromPath(const std::string& path, Ref<ProjectFolder> parent, const std::string& description,
-	const std::function<bool(size_t progress, size_t total)>& progressCallback)
+	const ProgressFunction& progressCallback)
 {
 	ProgressContext cb;
 	cb.callback = progressCallback;
@@ -399,7 +408,7 @@ void Project::PushFolder(Ref<ProjectFolder> folder)
 }
 
 
-bool Project::DeleteFolder(Ref<ProjectFolder> folder, const std::function<bool(size_t progress, size_t total)>& progressCallback)
+bool Project::DeleteFolder(Ref<ProjectFolder> folder, const ProgressFunction& progressCallback)
 {
 	ProgressContext cb;
 	cb.callback = progressCallback;
@@ -407,7 +416,7 @@ bool Project::DeleteFolder(Ref<ProjectFolder> folder, const std::function<bool(s
 }
 
 
-Ref<ProjectFile> Project::CreateFileFromPath(const std::string& path, Ref<ProjectFolder> folder, const std::string& name, const std::string& description, const std::function<bool(size_t progress, size_t total)>& progressCallback)
+Ref<ProjectFile> Project::CreateFileFromPath(const std::string& path, Ref<ProjectFolder> folder, const std::string& name, const std::string& description, const ProgressFunction& progressCallback)
 {
 	ProgressContext cb;
 	cb.callback = progressCallback;
@@ -418,7 +427,7 @@ Ref<ProjectFile> Project::CreateFileFromPath(const std::string& path, Ref<Projec
 }
 
 
-Ref<ProjectFile> Project::CreateFileFromPathUnsafe(const std::string& path, Ref<ProjectFolder> folder, const std::string& name, const std::string& description, const std::string& id, int64_t creationTimestamp, const std::function<bool(size_t progress, size_t total)>& progressCallback)
+Ref<ProjectFile> Project::CreateFileFromPathUnsafe(const std::string& path, Ref<ProjectFolder> folder, const std::string& name, const std::string& description, const std::string& id, int64_t creationTimestamp, const ProgressFunction& progressCallback)
 {
 	ProgressContext cb;
 	cb.callback = progressCallback;
@@ -429,7 +438,7 @@ Ref<ProjectFile> Project::CreateFileFromPathUnsafe(const std::string& path, Ref<
 }
 
 
-Ref<ProjectFile> Project::CreateFile_(const std::vector<uint8_t>& contents, Ref<ProjectFolder> folder, const std::string& name, const std::string& description, const std::function<bool(size_t progress, size_t total)>& progressCallback)
+Ref<ProjectFile> Project::CreateFile_(const std::vector<uint8_t>& contents, Ref<ProjectFolder> folder, const std::string& name, const std::string& description, const ProgressFunction& progressCallback)
 {
 	ProgressContext cb;
 	cb.callback = progressCallback;
@@ -440,7 +449,7 @@ Ref<ProjectFile> Project::CreateFile_(const std::vector<uint8_t>& contents, Ref<
 }
 
 
-Ref<ProjectFile> Project::CreateFileUnsafe(const std::vector<uint8_t>& contents, Ref<ProjectFolder> folder, const std::string& name, const std::string& description, const std::string& id, int64_t creationTimestamp, const std::function<bool(size_t progress, size_t total)>& progressCallback)
+Ref<ProjectFile> Project::CreateFileUnsafe(const std::vector<uint8_t>& contents, Ref<ProjectFolder> folder, const std::string& name, const std::string& description, const std::string& id, int64_t creationTimestamp, const ProgressFunction& progressCallback)
 {
 	ProgressContext cb;
 	cb.callback = progressCallback;
@@ -477,12 +486,31 @@ Ref<ProjectFile> Project::GetFileById(const std::string& id) const
 }
 
 
-Ref<ProjectFile> Project::GetFileByPathOnDisk(const std::string& path)
+Ref<ProjectFile> Project::GetFileByPathOnDisk(const std::string& path) const
 {
 	BNProjectFile* file = BNProjectGetFileByPathOnDisk(m_object, path.c_str());
 	if (file == nullptr)
 		return nullptr;
 	return new ProjectFile(file);
+}
+
+
+std::vector<Ref<ProjectFile>> Project::GetFilesByPathInProject(
+	const std::string& path
+) const
+{
+	size_t count;
+	BNProjectFile** files = BNProjectGetFilesByPathInProject(m_object, path.c_str(), &count);
+
+	std::vector<Ref<ProjectFile>> result;
+	result.reserve(count);
+	for (size_t i = 0; i < count; i++)
+	{
+		result.emplace_back(new ProjectFile(BNNewProjectFileReference(files[i])));
+	}
+
+	BNFreeProjectFileList(files, count);
+	return result;
 }
 
 
@@ -547,6 +575,14 @@ Ref<Project> ProjectFile::GetProject() const
 std::string ProjectFile::GetPathOnDisk() const
 {
 	char* path = BNProjectFileGetPathOnDisk(m_object);
+	std::string result = path;
+	BNFreeString(path);
+	return result;
+}
+
+std::string ProjectFile::GetPathInProject() const
+{
+	char* path = BNProjectFileGetPathInProject(m_object);
 	std::string result = path;
 	BNFreeString(path);
 	return result;
@@ -691,7 +727,7 @@ void ProjectFolder::SetParent(Ref<ProjectFolder> parent)
 }
 
 
-bool ProjectFolder::Export(const std::string& destination, const std::function<bool(size_t progress, size_t total)>& progressCallback) const
+bool ProjectFolder::Export(const std::string& destination, const ProgressFunction& progressCallback) const
 {
 	ProgressContext cb;
 	cb.callback = progressCallback;

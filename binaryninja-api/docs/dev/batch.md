@@ -2,7 +2,7 @@
 
 An often asked question of Binary Ninja is "How do I enable batch-processing mode?". The answer is that we don't have one--but the good news is because it doesn't need it! We have an even better solution. BN is simply a library that is trivial to include in your own scripts for batch analysis. As long as you have a Commercial or Ultimate license (or a [headless](https://binary.ninja/purchase/#container:~:text=This%20works%20especially%20well%20with%20our,that%20are%20designed%20for%20headless%2Donly%20installs.) license), it's possible to invoke the core analysis library with all of its APIs without even launching the UI.
 
-This document describes some general tips and tricks for effective batch processing. In particular, because Binary Ninja is multi-threaded, some methods for faster processing like [multiprocessing](https://docs.python.org/3/library/multiprocessing.html) can have dangerous consequences.
+This document describes some general tips and tricks for effective batch processing. In particular, because Binary Ninja is multithreaded, some methods for faster processing like [multiprocessing](https://docs.python.org/3/library/multiprocessing.html) can have dangerous consequences.
 
 ## Dedicated Python
 
@@ -74,11 +74,11 @@ Opening /bin/ls which has 50 functions
 ...
 ```
 
-Notice that we have far fewer functions in `/bin/ls` this time. By shortcutting the analysis we've prevented further function identification but we've done so much more quickly.
+Notice that we have far fewer functions in `/bin/ls` this time. By shortcutting the analysis we've prevented further function identification, but we've done so much more quickly.
 
 ### Single Function Analysis
 
-A common workflow is to analyze a single (or small number) of functions in a particular binaries. This can be done using the analysis hold feature:
+A common workflow is to analyze a single (or small number) of functions in a particular binary. This can be done using the analysis hold feature:
 
 ```python
 from binaryninja import load
@@ -127,7 +127,7 @@ To use this API, copy the contents of your license file into a string and pass i
 
 ## Parallelization
 
-Of course, one of the main reasons you might want to build some automation so to spin up a number of threads to process multiple files. Be aware though, that Binary Ninja itself is multithreaded. In fact, if the bottle neck for your analysis script is BN itself, you're almost certainly better off not using any parallelization because the multithreading BN does on its own will provide more benefit than you'd gain by extra parallelization.
+Of course, one of the main reasons you might want to build some automation so to spin up a number of threads to process multiple files. Be aware though, that Binary Ninja itself is multithreaded. In fact, if the bottleneck for your analysis script is BN itself, you're almost certainly better off not using any parallelization because the multithreading BN does on its own will provide more benefit than you'd gain by extra parallelization.
 
 That said, there are certainly several good use cases where splitting your analysis makes sense. When processing many files for example, you might want to use multiple processes so that a single big slow file doesn't slow down the rest of the analysis as much. Or if you're working with potentially malformed files that may trigger bugs or crashes and you're worried about a single script failing.
 

@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -35,7 +35,7 @@ from . import lowlevelil
 from . import mediumlevelil
 from . import highlevelil
 from . import basicblock
-from .log import log_error
+from .log import log_error_for_exception
 from . import highlight
 from . import interaction
 
@@ -359,7 +359,7 @@ class FlowGraphLayoutRequest:
 			if self.on_complete is not None:
 				self.on_complete()
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in FlowGraphLayoutRequest._complete")
 
 	@property
 	def complete(self):
@@ -475,19 +475,19 @@ class FlowGraph:
 		try:
 			self.prepare_for_layout()
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in FlowGraph._prepare_for_layout")
 
 	def _populate_nodes(self, ctxt):
 		try:
 			self.populate_nodes()
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in FlowGraph._populate_nodes")
 
 	def _complete_layout(self, ctxt):
 		try:
 			self.complete_layout()
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in FlowGraph._complete_layout")
 
 	def _update(self, ctxt):
 		try:
@@ -498,20 +498,20 @@ class FlowGraph:
 			assert flow_graph is not None, "core.BNNewFlowGraphReference returned None"
 			return ctypes.cast(flow_graph, ctypes.c_void_p).value
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in FlowGraph._update")
 			return None
 
 	def _external_ref_taken(self, ctxt):
 		try:
 			self.__class__._registered_instances.append(self)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in FlowGraph._external_ref_taken")
 
 	def _external_ref_released(self, ctxt):
 		try:
 			self.__class__._registered_instances.remove(self)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in FlowGraph._external_ref_released")
 
 	def finish_prepare_for_layout(self):
 		"""
@@ -952,7 +952,7 @@ class FlowGraphLayout:
 				nodes.append(FlowGraphNode(graph=graph, handle=node_handles[i]))
 			return self.layout(graph, nodes)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in FlowGraphLayout._layout")
 			return False
 
 	def layout(self, graph: FlowGraph, nodes: List[FlowGraphNode]) -> bool:

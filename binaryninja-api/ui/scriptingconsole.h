@@ -220,6 +220,7 @@ class BINARYNINJAUIAPI ScriptingConsole : public SidebarWidget, BinaryNinja::Scr
 
 	void moveUpInHistory();
 	void moveDownInHistory();
+	void stopMovingInHistory();
 	std::vector<std::string> reverseSearch(const QString& text);
 
 	void closing() override;

@@ -7,7 +7,7 @@ fn main() {
     println!("cargo::rustc-link-lib=dylib=binaryninjacore");
     println!("cargo::rustc-link-search={}", link_path.to_str().unwrap());
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
     {
         println!(
             "cargo::rustc-link-arg=-Wl,-rpath,{0},-L{0}",
@@ -15,9 +15,20 @@ fn main() {
         );
     }
 
+    #[cfg(target_os = "macos")]
+    {
+        let crate_name = std::env::var("CARGO_PKG_NAME").expect("CARGO_PKG_NAME not set");
+        let lib_name = crate_name.replace('-', "_");
+        println!(
+            "cargo::rustc-link-arg=-Wl,-install_name,@rpath/lib{}.dylib",
+            lib_name
+        );
+    }
+
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR specified");
     let out_dir_path = PathBuf::from(out_dir);
 
+    println!("cargo::rerun-if-changed=fixtures");
     // Copy all binaries to OUT_DIR for unit tests.
     let bin_dir: PathBuf = "fixtures/bin".into();
     if let Ok(entries) = std::fs::read_dir(bin_dir) {
@@ -31,4 +42,8 @@ fn main() {
             }
         }
     }
+
+    println!("cargo::rerun-if-changed=src/templates");
+    // Templates used for rendering reports.
+    minijinja_embed::embed_templates!("src/templates");
 }

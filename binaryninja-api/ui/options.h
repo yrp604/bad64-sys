@@ -53,7 +53,7 @@ class BINARYNINJAUIAPI OptionsDialog : public QDialog
   public:
 	OptionsDialog(QWidget* parent, const QString& name);
 	virtual ~OptionsDialog();
-	bool loadViews();
+	bool loadViews(BinaryViewRef existingView = nullptr);
 
   Q_SIGNALS:
 	void openFile(FileContext* file);

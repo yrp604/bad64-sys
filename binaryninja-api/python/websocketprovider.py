@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -27,7 +27,7 @@ import traceback
 import binaryninja._binaryninjacore as core
 
 import binaryninja
-from .log import log_error
+from .log import log_error_for_exception
 
 
 def nop(*args, **kwargs):
@@ -77,7 +77,7 @@ class WebsocketClient(object):
 				self.__class__._registered_clients.remove(self)
 			self.perform_destroy_client()
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in WebsocketClient._destroy_client")
 
 	def _connect(self, ctxt, host, header_count, header_keys, header_values):
 		# Extract headers
@@ -97,7 +97,7 @@ class WebsocketClient(object):
 			self.perform_write(data_bytes)
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in WebsocketClient._write")
 			return False
 
 	def _disconnect(self, ctxt):
@@ -281,7 +281,7 @@ class WebsocketProvider(metaclass=_WebsocketProviderMetaclass):
 				return None
 			return ctypes.cast(core.BNNewWebsocketClientReference(result.handle), ctypes.c_void_p).value
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in WebsocketProvider._create_instance")
 			return None
 
 	def create_instance(self):

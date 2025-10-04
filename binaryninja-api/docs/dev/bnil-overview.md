@@ -1,6 +1,6 @@
 # Binary Ninja Intermediate Language: Overview
 
-The Binary Ninja Intermediate Language (BNIL) is a semantic representation of the assembly language instructions for a native architecture in Binary Ninja.  BNIL is actually a family of intermediate languages that work together to provide functionality at different abstraction layers. 
+The Binary Ninja Intermediate Language (BNIL) is a semantic representation of the assembly language instructions for a native architecture in Binary Ninja. BNIL is actually a family of intermediate languages that work together to provide functionality at different abstraction layers.
 
 BNIL is a [tree-based](https://raw.githubusercontent.com/withzombies/bnil-graph/master/images/graph.png), architecture-independent intermediate representation of machine code used throughout Binary Ninja.
 
@@ -16,7 +16,7 @@ This short introduction is a very brief guide to BNIL with much more details in 
 
 ## Summary
 
-While the image above shows a bit of the logical relationships between each IL in terms of analysis, it's only an approximation. The actual analysis includes more edges than just those shown. That said, here's a short overview of some of the differences between each IL and when you might wish to use a given one:
+While the image above shows a bit of the logical relationships between each IL in terms of analysis, it's only an approximation. The actual analysis includes more edges than just those shown. That said, here's a short overview of some differences between each IL and when you might wish to use a given one:
 
 - Lifted IL is intended to be a straight-forward translation from native instruction semantics to LLIL instructions. Note that Lifted IL and LLIL share the same instructions and are substantively similar with a few small differences.
 - Low Level IL (LLIL) is converted from Lifted IL, LLIL removes NOP instructions and folds flags into conditional instructions but otherwise contains the same operations as Lifted IL.
@@ -29,7 +29,7 @@ While the image above shows a bit of the logical relationships between each IL i
 
 ## Reading IL
 
-All of the various ILs (with the exception of the SSA forms) are intended to be easily human-readable and look much like pseudo-code. There is some shorthand notation that is used throughout the ILs, though, explained below:
+All the various ILs (except the SSA forms) are intended to be easily human-readable and look much like pseudocode. There is some shorthand notation that is used throughout the ILs, though, explained below:
 
 ### Comparisons
 
@@ -97,7 +97,7 @@ It represents the lower 32-bits of variable `rax_2`, sign-extended into a 64-bit
 
 ## Using the API with ILs
 
-When you want to use the API to access BNIL instructions, here are a few tips that will help you with the task. First, if you want to learn what properties different instructions have, instead of manually using `dir()` or looking in the documentation ([1](https://docs.binary.ninja/dev/bnil-llil.html#the-instructions), [2](https://docs.binary.ninja/dev/bnil-mlil.html#the-instruction-set)) lists is to use the [BNIL Graph](https://github.com/Vector35/community-plugins#:~:text=BNIL%20Instruction%20Graph) plugin. Another very useful plugin is the [IL Hierarch](https://github.com/Vector35/community-plugins#:~:text=into%20Binary%20Ninja.-,ilhierarchy,-Fabian%20Freyer) plugin. This plugin is extremely useful for showing the _structure_ of IL instructions relative to one another. You can use several APIS ([1](https://api.binary.ninja/binaryninja.lowlevelil-module.html#binaryninja.lowlevelil.LowLevelILInstruction.show_llil_hierarchy), [2](https://api.binary.ninja/binaryninja.mediumlevelil-module.html#binaryninja.mediumlevelil.MediumLevelILInstruction.show_mlil_hierarchy), [3](https://api.binary.ninja/binaryninja.highlevelil-module.html#binaryninja.highlevelil.HighLevelILInstruction.show_hlil_hierarchy)) to see this overall structure, but the IL Hierarchy plugin lets you select a single IL instructions and see visually which categories of IL instructions it are in. 
+When you want to use the API to access BNIL instructions, here are a few tips that will help you with the task. First, if you want to learn what properties different instructions have, instead of manually using `dir()` or looking in the documentation ([1](https://docs.binary.ninja/dev/bnil-llil.html#the-instructions), [2](https://docs.binary.ninja/dev/bnil-mlil.html#the-instruction-set)) lists is to use the [BNIL Graph](https://github.com/Vector35/community-plugins#:~:text=BNIL%20Instruction%20Graph) plugin. Another very useful plugin is the [IL Hierarch](https://github.com/Vector35/community-plugins#:~:text=into%20Binary%20Ninja.-,ilhierarchy,-Fabian%20Freyer) plugin. This plugin is extremely useful for showing the _structure_ of IL instructions relative to one another. You can use several APIs ([1](https://api.binary.ninja/binaryninja.lowlevelil-module.html#binaryninja.lowlevelil.LowLevelILInstruction.show_llil_hierarchy), [2](https://api.binary.ninja/binaryninja.mediumlevelil-module.html#binaryninja.mediumlevelil.MediumLevelILInstruction.show_mlil_hierarchy), [3](https://api.binary.ninja/binaryninja.highlevelil-module.html#binaryninja.highlevelil.HighLevelILInstruction.show_hlil_hierarchy)) to see this overall structure, but the IL Hierarchy plugin lets you select a single IL instruction and see visually which categories of IL instructions it is in.
 
 ![LLIL Hierarchy](../img/llil-hierarchy.png)
 
@@ -115,9 +115,9 @@ Here's what that instruction might look like when selected with the IL Hierarchy
 
 ![HLIL Hierarchy Call Instruction](../img/hlil-hierarchy-call.png)
 
-Be warned though! HLIL in particular is very tree-based. LLIL and MLIL are much safer to use the above paradigm of simply iterating through top-level instructions. 
+Be warned though! HLIL in particular is very tree-based. LLIL and MLIL are much safer to use the above paradigm of simply iterating through top-level instructions.
 
-Make sure to also check out the specifics of each IL level for more details: [LLIL](bnil-llil.md), [MLIL](bnil-mlil.md), [HLIL](bnil-hlil.md) 
+Make sure to also check out the specifics of each IL level for more details: [LLIL](bnil-llil.md), [MLIL](bnil-mlil.md), [HLIL](bnil-hlil.md)
 
 ## Visitors
 
@@ -139,7 +139,7 @@ The visitor receives 4 operands:
 ...  match inst:
 ...    case Arithmetic(right=Constant()):
 ...      print(f"{inst.address:#x} {inst}")
-... 
+...
 >>> current_hlil.root.visit(visitor)
 0x4012a0 arg1 + 0x1404
 0x4012b0 edx_1 u>> 3
@@ -153,3 +153,7 @@ The visitor receives 4 operands:
 0x4012d8 arg1 + 0x1404
 0x4012de arg1 + 0x1400
 ```
+
+## Modifying ILs
+
+See [Modifying ILs](bnil-modifying.md).

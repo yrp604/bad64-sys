@@ -41,15 +41,37 @@ fn link_path() -> PathBuf {
         })
 }
 
+// Generate and compile stub shared library and return the path to the folder containing the built stub library
+fn generate_stubs() -> PathBuf {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+
+    let api_base_path = std::path::PathBuf::from(manifest_dir)
+        .join("../../")
+        .canonicalize()
+        .unwrap();
+
+    let stubs_path = api_base_path.join("stubs");
+
+    // TODO: does visual studio add the config name as a subdirectory?
+    cmake::Config::new(stubs_path)
+        .generator("Ninja")
+        .build()
+        .join("build")
+}
+
 fn main() {
+    println!("cargo:rerun-if-env-changed=BINARYNINJADIR");
     println!("cargo:rerun-if-changed=../../binaryninjacore.h");
 
     //Cargo's output directory
     let out_dir = env::var("OUT_DIR").unwrap();
 
-    let link_path = env::var("BINARYNINJADIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| link_path());
+    let link_path = match env::var("CARGO_FEATURE_CORE") {
+        Ok(_) => env::var("BINARYNINJADIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| link_path()),
+        Err(_) => generate_stubs(),
+    };
 
     // Linux builds of binaryninja ship with libbinaryninjacore.so.1 in the
     // application folder and no symlink. The linker will attempt to link with
@@ -87,7 +109,7 @@ fn main() {
 
     bindgen::builder()
         .header("../../binaryninjacore.h")
-        .clang_arg("-std=c++17")
+        .clang_arg("-std=c++20")
         .clang_arg("-x")
         .clang_arg("c++")
         .size_t_is_usize(true)

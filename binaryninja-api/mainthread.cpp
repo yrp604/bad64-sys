@@ -64,7 +64,7 @@ static void ExecuteAction(void* ctxt)
 	}
 	catch (const std::exception& e)
 	{
-		LogError("Exception in main thread handler: %s", e.what());
+		LogErrorForException(e, "Exception in main thread handler: %s", e.what());
 		fprintf(stderr, "Exception in main thread handler: %s\n", e.what());
 		abort();
 	}

@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2024 Vector 35 Inc
+// Copyright (c) 2015-2025 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -48,6 +48,7 @@
 #include "binaryninjacore.h"
 #include "exceptions.h"
 #include "json/json.h"
+#include "rapidjsonwrapper.h"
 #include "vendor/nlohmann/json.hpp"
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -216,7 +217,7 @@ namespace BinaryNinja {
 
 		T* GetObject() const { return m_object; }
 
-		static T* GetObject(StaticCoreRefCountObject* obj)
+		static T* GetObject(const StaticCoreRefCountObject* obj)
 		{
 			if (!obj)
 				return nullptr;
@@ -346,20 +347,42 @@ namespace BinaryNinja {
 
 		bool operator!() const { return m_obj == nullptr; }
 
-		bool operator==(const T* obj) const { return T::GetObject(m_obj) == T::GetObject(obj); }
+		bool operator==(T* obj) const { return T::GetObject(m_obj) == T::GetObject(obj); }
 
 		bool operator==(const Ref<T>& obj) const { return T::GetObject(m_obj) == T::GetObject(obj.m_obj); }
 
-		bool operator!=(const T* obj) const { return T::GetObject(m_obj) != T::GetObject(obj); }
+		bool operator!=(T* obj) const { return T::GetObject(m_obj) != T::GetObject(obj); }
 
 		bool operator!=(const Ref<T>& obj) const { return T::GetObject(m_obj) != T::GetObject(obj.m_obj); }
 
-		bool operator<(const T* obj) const { return T::GetObject(m_obj) < T::GetObject(obj); }
+		bool operator<(T* obj) const { return T::GetObject(m_obj) < T::GetObject(obj); }
 
 		bool operator<(const Ref<T>& obj) const { return T::GetObject(m_obj) < T::GetObject(obj.m_obj); }
 
+		bool operator>(T* obj) const { return T::GetObject(m_obj) > T::GetObject(obj); }
+
+		bool operator>(const Ref<T>& obj) const { return T::GetObject(m_obj) > T::GetObject(obj.m_obj); }
+
 		T* GetPtr() const { return m_obj; }
 	};
+
+	template <class T>
+	bool operator==(T* a, const Ref<T>& b)
+	{
+		return T::GetObject(a) == T::GetObject(b.GetPtr());
+	}
+
+	template <class T>
+	bool operator!=(T* a, const Ref<T>& b)
+	{
+		return T::GetObject(a) != T::GetObject(b.GetPtr());
+	}
+
+	template <class T>
+	bool operator<(T* a, const Ref<T>& b)
+	{
+		return T::GetObject(a) < T::GetObject(b.GetPtr());
+	}
 
 	/*!
 	    \ingroup refcount
@@ -375,17 +398,35 @@ namespace BinaryNinja {
 		operator T*() const { return m_obj; }
 		T* operator->() const { return m_obj; }
 		T& operator*() const { return *m_obj; }
-		bool operator==(const T* obj) const { return T::GetObject(m_obj) == T::GetObject(obj); }
+		bool operator==(T* obj) const { return T::GetObject(m_obj) == T::GetObject(obj); }
 		bool operator==(const Ref<T>& obj) const { return T::GetObject(m_obj) == T::GetObject(obj.m_obj); }
-		bool operator!=(const T* obj) const { return T::GetObject(m_obj) != T::GetObject(obj); }
+		bool operator!=(T* obj) const { return T::GetObject(m_obj) != T::GetObject(obj); }
 		bool operator!=(const Ref<T>& obj) const { return T::GetObject(m_obj) != T::GetObject(obj.m_obj); }
-		bool operator<(const T* obj) const { return T::GetObject(m_obj) < T::GetObject(obj); }
+		bool operator<(T* obj) const { return T::GetObject(m_obj) < T::GetObject(obj); }
 		bool operator<(const Ref<T>& obj) const { return T::GetObject(m_obj) < T::GetObject(obj.m_obj); }
 		T* GetPtr() const { return m_obj; }
 	};
 
+	template <class T>
+	bool operator==(T* a, const CallbackRef<T>& b)
+	{
+		return T::GetObject(a) == T::GetObjcet(b.GetPtr());
+	}
+
+	template <class T>
+	bool operator!=(T* a, const CallbackRef<T>& b)
+	{
+		return T::GetObject(a) != T::GetObject(b.GetPtr());
+	}
+
+	template <class T>
+	bool operator<(T* a, const CallbackRef<T>& b)
+	{
+		return T::GetObject(a) < T::GetObject(b.GetPtr());
+	}
+
 	/*!
-		\ingroup confidence
+	    \ingroup confidence
 	*/
 	class ConfidenceBase
 	{
@@ -494,8 +535,6 @@ namespace BinaryNinja {
 
 		Confidence(const Confidence<Ref<T>>& v) : ConfidenceBase(v.m_confidence), m_value(v.m_value) {}
 
-		operator Ref<T>() const { return m_value; }
-		operator T*() const { return m_value.GetPtr(); }
 		T* operator->() const { return m_value.GetPtr(); }
 		bool operator!() const { return !m_value; }
 
@@ -549,6 +588,8 @@ namespace BinaryNinja {
 	class LogListener
 	{
 		static void LogMessageCallback(void* ctxt, size_t session, BNLogLevel level, const char* msg, const char* logger_name = "", size_t tid = 0);
+		static void LogMessageWithStackTraceCallback(void* ctxt, size_t session, BNLogLevel level,
+			const char* stackTrace, const char* msg, const char* logger_name = "", size_t tid = 0);
 		static void CloseLogCallback(void* ctxt);
 		static BNLogLevel GetLogLevelCallback(void* ctxt);
 
@@ -560,6 +601,8 @@ namespace BinaryNinja {
 		static void UpdateLogListeners();
 
 		virtual void LogMessage(size_t session, BNLogLevel level, const std::string& msg, const std::string& logger_name = "", size_t tid = 0) = 0;
+		virtual void LogMessageWithStackTrace(size_t session, BNLogLevel level, const std::string& stackTrace,
+			const std::string& msg, const std::string& logger_name = "", size_t tid = 0);
 		virtual void CloseLog() {}
 		virtual BNLogLevel GetLogLevel() { return WarningLog; }
 	};
@@ -578,6 +621,7 @@ namespace BinaryNinja {
 	class FlowGraph;
 	class ReportCollection;
 	struct FormInputField;
+	struct ArchAndAddr;
 
 	/*! Logs to the error console with the given BNLogLevel.
 
@@ -671,14 +715,202 @@ namespace BinaryNinja {
 	BN_PRINTF_ATTRIBUTE(1, 2)
 	void LogAlert(const char* fmt, ...);
 
+	/*! Logs to the error console with the given BNLogLevel.
+
+	    @threadsafe
+
+	    \ingroup logging
+
+	    \param level BNLogLevel debug log level
+	    \param e Exception being handled.
+	    \param fmt C-style format string.
+	    \param ... Variable arguments corresponding to the format string.
+	*/
+	BN_PRINTF_ATTRIBUTE(3, 4)
+	void LogForException(BNLogLevel level, const std::exception& e, const char* fmt, ...);
+
+	/*! LogTraceForException only writes text to the error console if the console is set to log level: DebugLog
+	    Log level and the build is not a DEBUG build (i.e. the preprocessor directive _DEBUG is defined)
+
+	    @threadsafe
+
+	    \ingroup logging
+
+	    \param e Exception being handled.
+	    \param fmt C-style format string.
+	    \param ... Variable arguments corresponding to the format string.
+	*/
+	BN_PRINTF_ATTRIBUTE(2, 3)
+	void LogTraceForException(const std::exception& e, const char* fmt, ...);
+
+	/*! LogDebugForException only writes text to the error console if the console is set to log level: DebugLog
+	    Log level DebugLog is the most verbose logging level in release builds.
+
+	    @threadsafe
+
+	    \ingroup logging
+
+	    \param e Exception being handled.
+	    \param fmt C-style format string.
+	    \param ... Variable arguments corresponding to the format string.
+	*/
+	BN_PRINTF_ATTRIBUTE(2, 3)
+	void LogDebugForException(const std::exception& e, const char* fmt, ...);
+
+	/*! LogInfoForException always writes text to the error console, and corresponds to the log level: InfoLog.
+	    Log level InfoLog is the second most verbose logging level.
+
+	    @threadsafe
+
+	    \ingroup logging
+
+	    \param e Exception being handled.
+	    \param fmt C-style format string.
+	    \param ... Variable arguments corresponding to the format string.
+	*/
+	BN_PRINTF_ATTRIBUTE(2, 3)
+	void LogInfoForException(const std::exception& e, const char* fmt, ...);
+
+	/*! LogWarnForException writes text to the error console including a warning icon,
+	    and also shows a warning icon in the bottom pane. LogWarn corresponds to the log level: WarningLog.
+
+	    @threadsafe
+
+	    \ingroup logging
+
+	    \param e Exception being handled.
+	    \param fmt C-style format string.
+	    \param ... Variable arguments corresponding to the format string.
+	*/
+	BN_PRINTF_ATTRIBUTE(2, 3)
+	void LogWarnForException(const std::exception& e, const char* fmt, ...);
+
+	/*! LogErrorForException writes text to the error console and pops up the error console. Additionally,
+	    Errors in the console log include a error icon. LogError corresponds to the log level: ErrorLog.
+
+	    @threadsafe
+
+	    \ingroup logging
+
+	    \param e Exception being handled.
+	    \param fmt C-style format string.
+	    \param ... Variable arguments corresponding to the format string.
+	*/
+	BN_PRINTF_ATTRIBUTE(2, 3)
+	void LogErrorForException(const std::exception& e, const char* fmt, ...);
+
+	/*! LogAlertForException pops up a message box displaying the alert message and logs to the error console.
+	    LogAlert corresponds to the log level: AlertLog.
+
+	    @threadsafe
+
+	    \ingroup logging
+
+	    \param e Exception being handled.
+	    \param fmt C-style format string.
+	    \param ... Variable arguments corresponding to the format string.
+	*/
+	BN_PRINTF_ATTRIBUTE(2, 3)
+	void LogAlertForException(const std::exception& e, const char* fmt, ...);
+
+	/*! Logs to the error console with the given BNLogLevel.
+
+	    @threadsafe
+
+	    \ingroup logging
+
+	    \param level BNLogLevel debug log level
+	    \param fmt C-style format string.
+	    \param ... Variable arguments corresponding to the format string.
+	*/
+	BN_PRINTF_ATTRIBUTE(2, 3)
+	void LogWithStackTrace(BNLogLevel level, const char* fmt, ...);
+
+	/*! LogTraceWithStackTrace only writes text to the error console if the console is set to log level: DebugLog
+	    Log level and the build is not a DEBUG build (i.e. the preprocessor directive _DEBUG is defined)
+
+	    @threadsafe
+
+	    \ingroup logging
+
+	    \param fmt C-style format string.
+	    \param ... Variable arguments corresponding to the format string.
+	*/
+	BN_PRINTF_ATTRIBUTE(1, 2)
+	void LogTraceWithStackTrace(const char* fmt, ...);
+
+	/*! LogDebugWithStackTrace only writes text to the error console if the console is set to log level: DebugLog
+	    Log level DebugLog is the most verbose logging level in release builds.
+
+	    @threadsafe
+
+	    \ingroup logging
+
+	    \param fmt C-style format string.
+	    \param ... Variable arguments corresponding to the format string.
+	*/
+	BN_PRINTF_ATTRIBUTE(1, 2)
+	void LogDebugWithStackTrace(const char* fmt, ...);
+
+	/*! LogInfoWithStackTrace always writes text to the error console, and corresponds to the log level: InfoLog.
+	    Log level InfoLog is the second most verbose logging level.
+
+	    @threadsafe
+
+	    \ingroup logging
+
+	    \param fmt C-style format string.
+	    \param ... Variable arguments corresponding to the format string.
+	*/
+	BN_PRINTF_ATTRIBUTE(1, 2)
+	void LogInfoWithStackTrace(const char* fmt, ...);
+
+	/*! LogWarnWithStackTrace writes text to the error console including a warning icon,
+	    and also shows a warning icon in the bottom pane. LogWarn corresponds to the log level: WarningLog.
+
+	    @threadsafe
+
+	    \ingroup logging
+
+	    \param fmt C-style format string.
+	    \param ... Variable arguments corresponding to the format string.
+	*/
+	BN_PRINTF_ATTRIBUTE(1, 2)
+	void LogWarnWithStackTrace(const char* fmt, ...);
+
+	/*! LogErrorWithStackTrace writes text to the error console and pops up the error console. Additionally,
+	    Errors in the console log include a error icon. LogError corresponds to the log level: ErrorLog.
+
+	    @threadsafe
+
+	    \ingroup logging
+
+	    \param fmt C-style format string.
+	    \param ... Variable arguments corresponding to the format string.
+	*/
+	BN_PRINTF_ATTRIBUTE(1, 2)
+	void LogErrorWithStackTrace(const char* fmt, ...);
+
+	/*! LogAlertWithStackTrace pops up a message box displaying the alert message and logs to the error console.
+	    LogAlert corresponds to the log level: AlertLog.
+
+	    @threadsafe
+
+	    \ingroup logging
+
+	    \param fmt C-style format string.
+	    \param ... Variable arguments corresponding to the format string.
+	*/
+	BN_PRINTF_ATTRIBUTE(1, 2)
+	void LogAlertWithStackTrace(const char* fmt, ...);
+
 	// Implementation detail
 	void LogFV(BNLogLevel level, fmt::string_view format, fmt::format_args args);
 	void LogTraceFV(fmt::string_view format, fmt::format_args args);
-	void LogDebugFV(fmt::string_view format, fmt::format_args args);
-	void LogInfoFV(fmt::string_view format, fmt::format_args args);
-	void LogWarnFV(fmt::string_view format, fmt::format_args args);
-	void LogErrorFV(fmt::string_view format, fmt::format_args args);
-	void LogAlertFV(fmt::string_view format, fmt::format_args args);
+	void LogForExceptionFV(BNLogLevel level, const std::exception& e, fmt::string_view format, fmt::format_args args);
+	void LogTraceForExceptionFV(const std::exception& e, fmt::string_view format, fmt::format_args args);
+	void LogWithStackTraceFV(BNLogLevel level, fmt::string_view format, fmt::format_args args);
+	void LogTraceWithStackTraceFV(fmt::string_view format, fmt::format_args args);
 
 	/*! Logs to the error console with the given BNLogLevel.
 
@@ -725,7 +957,7 @@ namespace BinaryNinja {
 	template<typename... T>
 	void LogDebugF(fmt::format_string<T...> format, T&&... args)
 	{
-		LogDebugFV(format, fmt::make_format_args(args...));
+		LogFV(DebugLog, format, fmt::make_format_args(args...));
 	}
 
 	/*! LogInfo always writes text to the error console, and corresponds to the log level: InfoLog.
@@ -741,7 +973,7 @@ namespace BinaryNinja {
 	template<typename... T>
 	void LogInfoF(fmt::format_string<T...> format, T&&... args)
 	{
-		LogInfoFV(format, fmt::make_format_args(args...));
+		LogFV(InfoLog, format, fmt::make_format_args(args...));
 	}
 
 	/*! LogWarn writes text to the error console including a warning icon,
@@ -757,7 +989,7 @@ namespace BinaryNinja {
 	template<typename... T>
 	void LogWarnF(fmt::format_string<T...> format, T&&... args)
 	{
-		LogWarnFV(format, fmt::make_format_args(args...));
+		LogFV(WarningLog, format, fmt::make_format_args(args...));
 	}
 
 	/*! LogError writes text to the error console and pops up the error console. Additionally,
@@ -773,7 +1005,7 @@ namespace BinaryNinja {
 	template<typename... T>
 	void LogErrorF(fmt::format_string<T...> format, T&&... args)
 	{
-		LogErrorFV(format, fmt::make_format_args(args...));
+		LogFV(ErrorLog, format, fmt::make_format_args(args...));
 	}
 
 	/*! LogAlert pops up a message box displaying the alert message and logs to the error console.
@@ -789,7 +1021,238 @@ namespace BinaryNinja {
 	template<typename... T>
 	void LogAlertF(fmt::format_string<T...> format, T&&... args)
 	{
-		LogAlertFV(format, fmt::make_format_args(args...));
+		LogFV(AlertLog, format, fmt::make_format_args(args...));
+	}
+
+	/*! Logs to the error console with the given BNLogLevel.
+
+		@threadsafe
+
+		\ingroup logging
+
+		\param level BNLogLevel debug log level
+	    \param e Exception being handled.
+		\param format fmt-style format string.
+		\param ... Variable arguments corresponding to the format string.
+	*/
+	template <typename... T>
+	void LogForExceptionF(BNLogLevel level, const std::exception& e, fmt::format_string<T...> format, T&&... args)
+	{
+		LogForExceptionFV(level, e, format, fmt::make_format_args(args...));
+	}
+
+	/*! LogTraceForExceptionF only writes text to the error console if the console is set to log level: DebugLog
+		Log level and the build is not a DEBUG build (i.e. the preprocessor directive _DEBUG is defined)
+
+		@threadsafe
+
+		\ingroup logging
+
+		\param e Exception being handled.
+		\param format fmt-style format string.
+		\param ... Variable arguments corresponding to the format string.
+	*/
+	template <typename... T>
+	void LogTraceForExceptionF(const std::exception& e, fmt::format_string<T...> format, T&&... args)
+	{
+		LogTraceForExceptionFV(e, format, fmt::make_format_args(args...));
+	}
+
+	/*! LogDebugForExceptionF only writes text to the error console if the console is set to log level: DebugLog
+	    Log level DebugLog is the most verbose logging level in release builds.
+
+		@threadsafe
+
+	    \ingroup logging
+
+		\param e Exception being handled.
+		\param format fmt-style format string.
+		\param ... Variable arguments corresponding to the format string.
+	*/
+	template <typename... T>
+	void LogDebugForExceptionF(const std::exception& e, fmt::format_string<T...> format, T&&... args)
+	{
+		LogForExceptionFV(DebugLog, e, format, fmt::make_format_args(args...));
+	}
+
+	/*! LogInfoForExceptionF always writes text to the error console, and corresponds to the log level: InfoLog.
+		Log level InfoLog is the second most verbose logging level.
+
+		@threadsafe
+
+		\ingroup logging
+
+		\param e Exception being handled.
+		\param format fmt-style format string.
+		\param ... Variable arguments corresponding to the format string.
+	*/
+	template <typename... T>
+	void LogInfoForExceptionF(const std::exception& e, fmt::format_string<T...> format, T&&... args)
+	{
+		LogForExceptionFV(InfoLog, e, format, fmt::make_format_args(args...));
+	}
+
+	/*! LogWarnForExceptionF writes text to the error console including a warning icon,
+		and also shows a warning icon in the bottom pane. LogWarn corresponds to the log level: WarningLog.
+
+		@threadsafe
+
+		\ingroup logging
+
+		\param e Exception being handled.
+		\param format fmt-style format string.
+		\param ... Variable arguments corresponding to the format string.
+	*/
+	template <typename... T>
+	void LogWarnForExceptionF(const std::exception& e, fmt::format_string<T...> format, T&&... args)
+	{
+		LogForExceptionFV(WarningLog, e, format, fmt::make_format_args(args...));
+	}
+
+	/*! LogErrorForExceptionF writes text to the error console and pops up the error console. Additionally,
+		Errors in the console log include a error icon. LogError corresponds to the log level: ErrorLog.
+
+		@threadsafe
+
+		\ingroup logging
+
+		\param e Exception being handled.
+		\param format fmt-style format string.
+		\param ... Variable arguments corresponding to the format string.
+	*/
+	template <typename... T>
+	void LogErrorForExceptionF(const std::exception& e, fmt::format_string<T...> format, T&&... args)
+	{
+		LogForExceptionFV(ErrorLog, e, format, fmt::make_format_args(args...));
+	}
+
+	/*! LogAlertForExceptionF pops up a message box displaying the alert message and logs to the error console.
+		LogAlert corresponds to the log level: AlertLog.
+
+		@threadsafe
+
+		\ingroup logging
+
+		\param e Exception being handled.
+	    \param format fmt-style format string.
+		\param ... Variable arguments corresponding to the format string.
+	*/
+	template <typename... T>
+	void LogAlertForExceptionF(const std::exception& e, fmt::format_string<T...> format, T&&... args)
+	{
+		LogForExceptionFV(AlertLog, e, format, fmt::make_format_args(args...));
+	}
+
+	/*! Logs to the error console with the given BNLogLevel.
+
+		@threadsafe
+
+		\ingroup logging
+
+		\param level BNLogLevel debug log level
+		\param format fmt-style format string.
+		\param ... Variable arguments corresponding to the format string.
+	*/
+	template <typename... T>
+	void LogWithStackTraceF(BNLogLevel level, fmt::format_string<T...> format, T&&... args)
+	{
+		LogWithWithStackTraceFV(level, format, fmt::make_format_args(args...));
+	}
+
+	/*! LogTraceWithStackTraceF only writes text to the error console if the console is set to log level: DebugLog
+		Log level and the build is not a DEBUG build (i.e. the preprocessor directive _DEBUG is defined)
+
+		@threadsafe
+
+		\ingroup logging
+
+		\param format fmt-style format string.
+		\param ... Variable arguments corresponding to the format string.
+	*/
+	template <typename... T>
+	void LogTraceWithStackTraceF(fmt::format_string<T...> format, T&&... args)
+	{
+		LogTraceWithStackTraceFV(format, fmt::make_format_args(args...));
+	}
+
+	/*! LogDebugWithStackTraceF only writes text to the error console if the console is set to log level: DebugLog
+	    Log level DebugLog is the most verbose logging level in release builds.
+
+		@threadsafe
+
+	    \ingroup logging
+
+		\param format fmt-style format string.
+		\param ... Variable arguments corresponding to the format string.
+	*/
+	template <typename... T>
+	void LogDebugWithStackTraceF(fmt::format_string<T...> format, T&&... args)
+	{
+		LogWithStackTraceFV(DebugLog, format, fmt::make_format_args(args...));
+	}
+
+	/*! LogInfoWithStackTraceF always writes text to the error console, and corresponds to the log level: InfoLog.
+		Log level InfoLog is the second most verbose logging level.
+
+		@threadsafe
+
+		\ingroup logging
+
+		\param format fmt-style format string.
+		\param ... Variable arguments corresponding to the format string.
+	*/
+	template <typename... T>
+	void LogInfoWithStackTraceF(fmt::format_string<T...> format, T&&... args)
+	{
+		LogWithStackTraceFV(InfoLog, format, fmt::make_format_args(args...));
+	}
+
+	/*! LogWarnWithStackTraceF writes text to the error console including a warning icon,
+		and also shows a warning icon in the bottom pane. LogWarn corresponds to the log level: WarningLog.
+
+		@threadsafe
+
+		\ingroup logging
+
+		\param format fmt-style format string.
+		\param ... Variable arguments corresponding to the format string.
+	*/
+	template <typename... T>
+	void LogWarnWithStackTraceF(fmt::format_string<T...> format, T&&... args)
+	{
+		LogWithStackTraceFV(WarningLog, format, fmt::make_format_args(args...));
+	}
+
+	/*! LogErrorWithStackTraceF writes text to the error console and pops up the error console. Additionally,
+		Errors in the console log include a error icon. LogError corresponds to the log level: ErrorLog.
+
+		@threadsafe
+
+		\ingroup logging
+
+		\param format fmt-style format string.
+		\param ... Variable arguments corresponding to the format string.
+	*/
+	template <typename... T>
+	void LogErrorWithStackTraceF(fmt::format_string<T...> format, T&&... args)
+	{
+		LogWithStackTraceFV(ErrorLog, format, fmt::make_format_args(args...));
+	}
+
+	/*! LogAlertWithStackTraceF pops up a message box displaying the alert message and logs to the error console.
+		LogAlert corresponds to the log level: AlertLog.
+
+		@threadsafe
+
+		\ingroup logging
+
+	    \param format fmt-style format string.
+		\param ... Variable arguments corresponding to the format string.
+	*/
+	template <typename... T>
+	void LogAlertWithStackTraceF(fmt::format_string<T...> format, T&&... args)
+	{
+		LogWithStackTraceFV(AlertLog, format, fmt::make_format_args(args...));
 	}
 
 	/*! Redirects the minimum level passed to standard out
@@ -844,11 +1307,11 @@ namespace BinaryNinja {
 
 			void LogFV(BNLogLevel level, fmt::string_view format, fmt::format_args args);
 			void LogTraceFV(fmt::string_view format, fmt::format_args args);
-			void LogDebugFV(fmt::string_view format, fmt::format_args args);
-			void LogInfoFV(fmt::string_view format, fmt::format_args args);
-			void LogWarnFV(fmt::string_view format, fmt::format_args args);
-			void LogErrorFV(fmt::string_view format, fmt::format_args args);
-			void LogAlertFV(fmt::string_view format, fmt::format_args args);
+			void LogForExceptionFV(
+				BNLogLevel level, const std::exception& e, fmt::string_view format, fmt::format_args args);
+			void LogTraceForExceptionFV(const std::exception& e, fmt::string_view format, fmt::format_args args);
+			void LogWithStackTraceFV(BNLogLevel level, fmt::string_view format, fmt::format_args args);
+			void LogTraceWithStackTraceFV(fmt::string_view format, fmt::format_args args);
 
 		public:
 			Logger(BNLogger* logger);
@@ -948,6 +1411,153 @@ namespace BinaryNinja {
 					@threadsafe
 
 				\param level BNLogLevel debug log level
+				\param e Exception being handled.
+				\param fmt C-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			void LogForException(BNLogLevel level, const std::exception& e, const char* fmt, ...);
+
+			/*! LogTraceForException only writes text to the error console if the console is set to log level:
+				DebugLog Log level and the build is not a DEBUG build (i.e. the preprocessor directive _DEBUG is defined)
+
+					@threadsafe
+
+				\param e Exception being handled.
+				\param fmt C-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			void LogTraceForException(const std::exception& e, const char* fmt, ...);
+
+			/*! LogDebugForException only writes text to the error console if the console is set to log level:
+				DebugLog Log level DebugLog is the most verbose logging level in release builds.
+
+					@threadsafe
+
+				\param e Exception being handled.
+				\param fmt C-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			void LogDebugForException(const std::exception& e, const char* fmt, ...);
+
+			/*! LogInfoForException always writes text to the error console, and corresponds to the log level:
+				InfoLog. Log level InfoLog is the second most verbose logging level.
+
+					@threadsafe
+
+				\param e Exception being handled.
+				\param fmt C-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			void LogInfoForException(const std::exception& e, const char* fmt, ...);
+
+			/*! LogWarnForException writes text to the error console including a warning icon,
+				and also shows a warning icon in the bottom pane. LogWarn corresponds to the log level: WarningLog.
+
+					@threadsafe
+
+				\param e Exception being handled.
+				\param fmt C-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			void LogWarnForException(const std::exception& e, const char* fmt, ...);
+
+			/*! LogErrorForException writes text to the error console and pops up the error console. Additionally,
+				Errors in the console log include a error icon. LogError corresponds to the log level: ErrorLog.
+
+					@threadsafe
+
+				\param e Exception being handled.
+				\param fmt C-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			void LogErrorForException(const std::exception& e, const char* fmt, ...);
+
+			/*! LogAlertForException pops up a message box displaying the alert message and logs to the error console.
+				LogAlert corresponds to the log level: AlertLog.
+
+					@threadsafe
+
+				\param e Exception being handled.
+				\param fmt C-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			void LogAlertForException(const std::exception& e, const char* fmt, ...);
+
+			/*! Logs to the error console with the given BNLogLevel.
+
+					@threadsafe
+
+				\param level BNLogLevel debug log level
+				\param fmt C-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			void LogWithStackTrace(BNLogLevel level, const char* fmt, ...);
+
+			/*! LogTraceWithStackTrace only writes text to the error console if the console is set to log level:
+				DebugLog Log level and the build is not a DEBUG build (i.e. the preprocessor directive _DEBUG is defined)
+
+					@threadsafe
+
+				\param fmt C-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			void LogTraceWithStackTrace(const char* fmt, ...);
+
+			/*! LogDebugWithStackTrace only writes text to the error console if the console is set to log level:
+				DebugLog Log level DebugLog is the most verbose logging level in release builds.
+
+					@threadsafe
+
+				\param fmt C-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			void LogDebugWithStackTrace(const char* fmt, ...);
+
+			/*! LogInfoWithStackTrace always writes text to the error console, and corresponds to the log level:
+				InfoLog. Log level InfoLog is the second most verbose logging level.
+
+					@threadsafe
+
+				\param fmt C-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			void LogInfoWithStackTrace(const char* fmt, ...);
+
+			/*! LogWarnWithStackTrace writes text to the error console including a warning icon,
+				and also shows a warning icon in the bottom pane. LogWarn corresponds to the log level: WarningLog.
+
+					@threadsafe
+
+				\param fmt C-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			void LogWarnWithStackTrace(const char* fmt, ...);
+
+			/*! LogErrorWithStackTrace writes text to the error console and pops up the error console. Additionally,
+				Errors in the console log include a error icon. LogError corresponds to the log level: ErrorLog.
+
+					@threadsafe
+
+				\param fmt C-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			void LogErrorWithStackTrace(const char* fmt, ...);
+
+			/*! LogAlertWithStackTrace pops up a message box displaying the alert message and logs to the error console.
+				LogAlert corresponds to the log level: AlertLog.
+
+					@threadsafe
+
+				\param fmt C-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			void LogAlertWithStackTrace(const char* fmt, ...);
+
+			/*! Logs to the error console with the given BNLogLevel.
+
+					@threadsafe
+
+				\param level BNLogLevel debug log level
 				\param format fmt-style format string.
 				\param ... Variable arguments corresponding to the format string.
 			*/
@@ -982,7 +1592,7 @@ namespace BinaryNinja {
 			template<typename... T>
 			void LogDebugF(fmt::format_string<T...> format, T&&... args)
 			{
-				LogDebugFV(format, fmt::make_format_args(args...));
+				LogFV(DebugLog, format, fmt::make_format_args(args...));
 			}
 
 			/*! LogInfo always writes text to the error console, and corresponds to the log level: InfoLog.
@@ -996,7 +1606,7 @@ namespace BinaryNinja {
 			template<typename... T>
 			void LogInfoF(fmt::format_string<T...> format, T&&... args)
 			{
-				LogInfoFV(format, fmt::make_format_args(args...));
+				LogFV(InfoLog, format, fmt::make_format_args(args...));
 			}
 
 			/*! LogWarn writes text to the error console including a warning icon,
@@ -1010,7 +1620,7 @@ namespace BinaryNinja {
 			template<typename... T>
 			void LogWarnF(fmt::format_string<T...> format, T&&... args)
 			{
-				LogWarnFV(format, fmt::make_format_args(args...));
+				LogFV(WarningLog, format, fmt::make_format_args(args...));
 			}
 
 			/*! LogError writes text to the error console and pops up the error console. Additionally,
@@ -1024,7 +1634,7 @@ namespace BinaryNinja {
 			template<typename... T>
 			void LogErrorF(fmt::format_string<T...> format, T&&... args)
 			{
-				LogErrorFV(format, fmt::make_format_args(args...));
+				LogFV(ErrorLog, format, fmt::make_format_args(args...));
 			}
 
 			/*! LogAlert pops up a message box displaying the alert message and logs to the error console.
@@ -1038,7 +1648,211 @@ namespace BinaryNinja {
 			template<typename... T>
 			void LogAlertF(fmt::format_string<T...> format, T&&... args)
 			{
-				LogAlertFV(format, fmt::make_format_args(args...));
+				LogFV(AlertLog, format, fmt::make_format_args(args...));
+			}
+
+			/*! Logs to the error console with the given BNLogLevel and a stack trace.
+
+					@threadsafe
+
+				\param level BNLogLevel debug log level
+				\param e Exception being handled.
+				\param format fmt-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			template <typename... T>
+			void LogForExceptionF(
+				BNLogLevel level, const std::exception& e, fmt::format_string<T...> format, T&&... args)
+			{
+				LogForExceptionFV(level, e, format, fmt::make_format_args(args...));
+			}
+
+			/*! LogTraceForExceptionF only writes text to the error console if the console is set to log level:
+				DebugLog Log level and the build is not a DEBUG build (i.e. the preprocessor directive _DEBUG is defined)
+
+					@threadsafe
+
+				\param e Exception being handled.
+				\param format fmt-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			template <typename... T>
+			void LogTraceForExceptionF(const std::exception& e, fmt::format_string<T...> format, T&&... args)
+			{
+				LogTraceForExceptionFV(e, format, fmt::make_format_args(args...));
+			}
+
+			/*! LogDebugForExceptionF only writes text to the error console if the console is set to log level:
+				DebugLog Log level DebugLog is the most verbose logging level in release builds.
+
+					@threadsafe
+
+				\param e Exception being handled.
+				\param format fmt-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			template <typename... T>
+			void LogDebugForExceptionF(const std::exception& e, fmt::format_string<T...> format, T&&... args)
+			{
+				LogForExceptionFV(DebugLog, e, format, fmt::make_format_args(args...));
+			}
+
+			/*! LogInfoForExceptionF always writes text to the error console, and corresponds to the log level:
+				InfoLog. Log level InfoLog is the second most verbose logging level.
+
+					@threadsafe
+
+				\param e Exception being handled.
+				\param format fmt-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			template <typename... T>
+			void LogInfoForExceptionF(const std::exception& e, fmt::format_string<T...> format, T&&... args)
+			{
+				LogForExceptionFV(InfoLog, e, format, fmt::make_format_args(args...));
+			}
+
+			/*! LogWarnForExceptionF writes text to the error console including a warning icon,
+				and also shows a warning icon in the bottom pane. LogWarn corresponds to the log level: WarningLog.
+
+					@threadsafe
+
+				\param e Exception being handled.
+				\param format fmt-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			template <typename... T>
+			void LogWarnForExceptionF(const std::exception& e, fmt::format_string<T...> format, T&&... args)
+			{
+				LogForExceptionFV(WarningLog, e, format, fmt::make_format_args(args...));
+			}
+
+			/*! LogErrorForExceptionF writes text to the error console and pops up the error console. Additionally,
+				Errors in the console log include a error icon. LogError corresponds to the log level: ErrorLog.
+
+					@threadsafe
+
+				\param e Exception being handled.
+				\param format fmt-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			template <typename... T>
+			void LogErrorForExceptionF(const std::exception& e, fmt::format_string<T...> format, T&&... args)
+			{
+				LogForExceptionFV(ErrorLog, e, format, fmt::make_format_args(args...));
+			}
+
+			/*! LogAlertForExceptionF pops up a message box displaying the alert message and logs to the error
+				console. LogAlert corresponds to the log level: AlertLog.
+
+					@threadsafe
+
+				\param e Exception being handled.
+				\param format fmt-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			template <typename... T>
+			void LogAlertForExceptionF(const std::exception& e, fmt::format_string<T...> format, T&&... args)
+			{
+				LogForExceptionFV(AlertLog, e, format, fmt::make_format_args(args...));
+			}
+
+			/*! Logs to the error console with the given BNLogLevel and a stack trace.
+
+					@threadsafe
+
+				\param level BNLogLevel debug log level
+				\param format fmt-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			template <typename... T>
+			void LogWithStackTraceF(BNLogLevel level, fmt::format_string<T...> format, T&&... args)
+			{
+				LogWithStackTraceFV(level, format, fmt::make_format_args(args...));
+			}
+
+			/*! LogTraceWithStackTraceF only writes text to the error console if the console is set to log level:
+				DebugLog Log level and the build is not a DEBUG build (i.e. the preprocessor directive _DEBUG is defined)
+
+					@threadsafe
+
+				\param format fmt-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			template <typename... T>
+			void LogTraceWithStackTraceF(fmt::format_string<T...> format, T&&... args)
+			{
+				LogTraceWithStackTraceFV(format, fmt::make_format_args(args...));
+			}
+
+			/*! LogDebugWithStackTraceF only writes text to the error console if the console is set to log level:
+				DebugLog Log level DebugLog is the most verbose logging level in release builds.
+
+					@threadsafe
+
+				\param format fmt-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			template <typename... T>
+			void LogDebugWithStackTraceF(fmt::format_string<T...> format, T&&... args)
+			{
+				LogWithStackTraceFV(DebugLog, format, fmt::make_format_args(args...));
+			}
+
+			/*! LogInfoWithStackTraceF always writes text to the error console, and corresponds to the log level:
+				InfoLog. Log level InfoLog is the second most verbose logging level.
+
+					@threadsafe
+
+				\param format fmt-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			template <typename... T>
+			void LogInfoWithStackTraceF(fmt::format_string<T...> format, T&&... args)
+			{
+				LogWithStackTraceFV(InfoLog, format, fmt::make_format_args(args...));
+			}
+
+			/*! LogWarnWithStackTraceF writes text to the error console including a warning icon,
+				and also shows a warning icon in the bottom pane. LogWarn corresponds to the log level: WarningLog.
+
+					@threadsafe
+
+				\param format fmt-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			template <typename... T>
+			void LogWarnWithStackTraceF(fmt::format_string<T...> format, T&&... args)
+			{
+				LogWithStackTraceFV(WarningLog, format, fmt::make_format_args(args...));
+			}
+
+			/*! LogErrorWithStackTraceF writes text to the error console and pops up the error console. Additionally,
+				Errors in the console log include a error icon. LogError corresponds to the log level: ErrorLog.
+
+					@threadsafe
+
+				\param format fmt-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			template <typename... T>
+			void LogErrorWithStackTraceF(fmt::format_string<T...> format, T&&... args)
+			{
+				LogWithStackTraceFV(ErrorLog, format, fmt::make_format_args(args...));
+			}
+
+			/*! LogAlertWithStackTraceF pops up a message box displaying the alert message and logs to the error
+				console. LogAlert corresponds to the log level: AlertLog.
+
+					@threadsafe
+
+				\param format fmt-style format string.
+				\param ... Variable arguments corresponding to the format string.
+		    */
+			template <typename... T>
+			void LogAlertWithStackTraceF(fmt::format_string<T...> format, T&&... args)
+			{
+				LogWithStackTraceFV(AlertLog, format, fmt::make_format_args(args...));
 			}
 
 			/*! Get the name registered for this Logger
@@ -1057,9 +1871,23 @@ namespace BinaryNinja {
 			*/
 			size_t GetSessionId();
 
+			/*! Indent the logger's indentation level by one
+			 */
 			void Indent();
+
+			/*! Decrease the logger's indentation level by one
+			 */
 			void Dedent();
+
+			/*! Set the logger's indentation level to zero
+			 */
 			void ResetIndent();
+
+			/*! Get the string to prepend to log messages to indent them
+
+				\return Indentation string
+			 */
+			std::string GetIndent() const;
 	};
 
 	/*! A class allowing registering and retrieving Loggers
@@ -1120,10 +1948,50 @@ namespace BinaryNinja {
 		static std::vector<std::string> GetLoggerNames();
 	};
 
+	/*! RAII helper that indents/dedents a Logger inside a scope
+		\ingroup logging
+	 */
+	class LoggerIndentScope
+	{
+		Ref<Logger> m_logger;
+
+	public:
+		LoggerIndentScope(Ref<Logger> logger): m_logger(logger)
+		{
+			m_logger->Indent();
+		}
+		~LoggerIndentScope()
+		{
+			m_logger->Dedent();
+		}
+	};
+
 	/*!
 		@addtogroup coreapi
 	 	@{
 	*/
+	struct VersionInfo
+	{
+		uint32_t major {};
+		uint32_t minor {};
+		uint32_t build {};
+		std::string channel;
+
+		VersionInfo() = default;
+
+		bool operator<(const VersionInfo &other) const
+		{
+			char* smallerChan = BNAllocString(channel.c_str());
+			char* largerChan = BNAllocString(other.channel.c_str());
+			BNVersionInfo smaller = { major, minor, build, smallerChan };
+			BNVersionInfo larger = { other.major, other.minor, other.build, largerChan };
+			bool result = BNVersionLessThan(smaller, larger);
+			BNFreeString(smallerChan);
+			BNFreeString(largerChan);
+			return result;
+		}
+	};
+
 	std::string EscapeString(const std::string& s);
 	std::string UnescapeString(const std::string& s);
 
@@ -1147,6 +2015,12 @@ namespace BinaryNinja {
 	void SetBundledPluginDirectory(const std::string& path);
 	std::string GetUserDirectory();
 
+	/*! Get the Binary Ninja system cache directory
+	 *
+	 * @return std::string - Binary Ninja's cache directory on a given system
+	 */
+	std::string GetSystemCacheDirectory();
+
 	std::string GetSettingsFileName();
 	std::string GetRepositoriesDirectory();
 	std::string GetInstallDirectory();
@@ -1160,6 +2034,8 @@ namespace BinaryNinja {
 	    std::string& output, std::string& errors, bool stdoutIsText = false, bool stderrIsText = true);
 
 	std::string GetVersionString();
+	VersionInfo GetVersionInfo();
+	VersionInfo ParseVersionString(const std::string& version);
 	std::string GetLicensedUserEmail();
 	std::string GetProduct();
 	std::string GetProductType();
@@ -1460,6 +2336,9 @@ namespace BinaryNinja {
 		bool IsKeyValueStore() const;
 	};
 
+	typedef std::function<bool(size_t, size_t)> ProgressFunction;
+	bool DefaultProgressFunction(size_t, size_t);
+
 	class BinaryView;
 	class ProjectFile;
 
@@ -1497,12 +2376,12 @@ namespace BinaryNinja {
 	                    being loaded. If the function returns false, it will cancel Load.
 	    \return Constructed view, or a nullptr Ref<BinaryView>
 	*/
-	Ref<BinaryView> Load(const std::string& filename, bool updateAnalysis = true, const std::string& options = "{}", std::function<bool(size_t, size_t)> progress = {});
+	Ref<BinaryView> Load(const std::string& filename, bool updateAnalysis = true, const std::string& options = "{}", ProgressFunction progress = {});
 	/*! Open a BinaryView from a raw data buffer, initializing data views and loading settings.
 
 	    @threadmainonly
 
-	    \see BinaryNinja::Load(const std::string&, bool, std::function<bool(size_t, size_t)>, Json::Value)
+	    \see BinaryNinja::Load(const std::string&, bool, ProgressFunction, Json::Value)
 	    for discussion of this function.
 
 	    \param rawData Buffer with raw binary data to load (cannot load from bndb)
@@ -1513,14 +2392,14 @@ namespace BinaryNinja {
 	                    being loaded. If the function returns false, it will cancel Load.
 	    \return Constructed view, or a nullptr Ref<BinaryView>
 	*/
-	Ref<BinaryView> Load(const DataBuffer& rawData, bool updateAnalysis = true, const std::string& options = "{}", std::function<bool(size_t, size_t)> progress = {});
+	Ref<BinaryView> Load(const DataBuffer& rawData, bool updateAnalysis = true, const std::string& options = "{}", ProgressFunction progress = {});
 
 
 	/*! Open a BinaryView from a raw BinaryView, initializing data views and loading settings.
 
 	    @threadmainonly
 
-	    \see BinaryNinja::Load(const std::string&, bool, std::function<bool(size_t, size_t)>, Json::Value)
+	    \see BinaryNinja::Load(const std::string&, bool, ProgressFunction, Json::Value)
 	    for discussion of this function.
 
 	    \param rawData BinaryView with raw binary data to load
@@ -1531,13 +2410,13 @@ namespace BinaryNinja {
 	                    being loaded. If the function returns false, it will cancel Load.
 	    \return Constructed view, or a nullptr Ref<BinaryView>
 	*/
-	Ref<BinaryView> Load(Ref<BinaryView> rawData, bool updateAnalysis = true, const std::string& options = "{}", std::function<bool(size_t, size_t)> progress = {});
+	Ref<BinaryView> Load(Ref<BinaryView> rawData, bool updateAnalysis = true, const std::string& options = "{}", ProgressFunction progress = {});
 
 	/*! Open a BinaryView from a ProjectFile, initializing data views and loading settings.
 
 	    @threadmainonly
 
-	    \see BinaryNinja::Load(const std::string&, bool, std::function<bool(size_t, size_t)>, Json::Value)
+	    \see BinaryNinja::Load(const std::string&, bool, ProgressFunction, Json::Value)
 	    for discussion of this function.
 
 	    \param rawData BinaryView with raw binary data to load
@@ -1548,24 +2427,24 @@ namespace BinaryNinja {
 	                    being loaded. If the function returns false, it will cancel Load.
 	    \return Constructed view, or a nullptr Ref<BinaryView>
 	*/
-	Ref<BinaryView> Load(Ref<ProjectFile> rawData, bool updateAnalysis = true, const std::string& options = "{}", std::function<bool(size_t, size_t)> progress = {});
+	Ref<BinaryView> Load(Ref<ProjectFile> rawData, bool updateAnalysis = true, const std::string& options = "{}", ProgressFunction progress = {});
 
 	Ref<BinaryView> ParseTextFormat(const std::string& filename);
 
 	/*!
 		Deprecated. Use non-metadata version.
 	*/
-	Ref<BinaryView> Load(const std::string& filename, bool updateAnalysis, std::function<bool(size_t, size_t)> progress, Ref<Metadata> options = new Metadata(MetadataType::KeyValueDataType));
+	Ref<BinaryView> Load(const std::string& filename, bool updateAnalysis, ProgressFunction progress, Ref<Metadata> options = new Metadata(MetadataType::KeyValueDataType));
 
 	/*!
 		Deprecated. Use non-metadata version.
 	*/
-	Ref<BinaryView> Load(const DataBuffer& rawData, bool updateAnalysis, std::function<bool(size_t, size_t)> progress, Ref<Metadata> options = new Metadata(MetadataType::KeyValueDataType));
+	Ref<BinaryView> Load(const DataBuffer& rawData, bool updateAnalysis, ProgressFunction progress, Ref<Metadata> options = new Metadata(MetadataType::KeyValueDataType));
 
 	/*!
 		Deprecated. Use non-metadata version.
 	*/
-	Ref<BinaryView> Load(Ref<BinaryView> rawData, bool updateAnalysis, std::function<bool(size_t, size_t)> progress, Ref<Metadata> options = new Metadata(MetadataType::KeyValueDataType), bool isDatabase = false);
+	Ref<BinaryView> Load(Ref<BinaryView> rawData, bool updateAnalysis, ProgressFunction progress, Ref<Metadata> options = new Metadata(MetadataType::KeyValueDataType), bool isDatabase = false);
 
 	/*! Attempt to demangle a mangled name, trying all relevant demanglers and using whichever one accepts it
 
@@ -1950,6 +2829,22 @@ namespace BinaryNinja {
 	*/
 	bool GetDirectoryNameInput(std::string& result, const std::string& prompt, const std::string& defaultName = "");
 
+	/*! Prompts the user for a checkbox input
+		\ingroup interaction
+
+		\param[out] result Reference to the integer the result will be copied to
+		\param[in] prompt Prompt for the dialog
+		\param[in] title Title for the input popup when used in UI
+		\param[in] defaultChoice Default checkbox state (0 == unchecked, 1 == checked)
+		\return Whether a checkbox input was successfully received
+	*/
+	bool GetCheckboxInput(
+		int64_t& result,
+		const std::string& prompt,
+		const std::string& title,
+		const int64_t& defaultChoice
+	);
+
 	/*! Prompts the user for a set of inputs specified in `fields` with given title.
 		The fields parameter is a list containing FieldInputFields
 
@@ -1999,9 +2894,6 @@ namespace BinaryNinja {
 		\return Whether a URL was successfully opened.
 	*/
 	bool OpenUrl(const std::string& url);
-
-	typedef std::function<bool(size_t, size_t)> ProgressFunction;
-	bool DefaultProgressFunction(size_t, size_t);
 
 	/*! Run a given task in a background thread, and show an updating progress bar which the user can cancel
 
@@ -2060,7 +2952,7 @@ namespace BinaryNinja {
 
 	struct ProgressContext
 	{
-		std::function<bool(size_t, size_t)> callback;
+		ProgressFunction callback;
 	};
 
 	bool ProgressCallback(void* ctxt, size_t current, size_t total);
@@ -2404,6 +3296,9 @@ namespace BinaryNinja {
 		InstructionTextToken(const BNInstructionTextToken& token);
 
 		InstructionTextToken WithConfidence(uint8_t conf);
+		BNInstructionTextToken GetAPIObject() const;
+		static InstructionTextToken FromAPIObject(const BNInstructionTextToken* token);
+		static void FreeAPIObject(BNInstructionTextToken* token);
 		static void ConvertInstructionTextToken(const InstructionTextToken& token, BNInstructionTextToken* result);
 		static BNInstructionTextToken* CreateInstructionTextTokenList(const std::vector<InstructionTextToken>& tokens);
 		static void FreeInstructionTextToken(BNInstructionTextToken* token);
@@ -2485,10 +3380,10 @@ namespace BinaryNinja {
 		DataBuffer GetFileContentsHash();
 		DataBuffer GetUndoData();
 		std::vector<Ref<UndoEntry>> GetUndoEntries();
-		std::vector<Ref<UndoEntry>> GetUndoEntries(const std::function<bool(size_t, size_t)>& progress);
+		std::vector<Ref<UndoEntry>> GetUndoEntries(const ProgressFunction& progress);
 		Ref<KeyValueStore> ReadData();
-		Ref<KeyValueStore> ReadData(const std::function<bool(size_t, size_t)>& progress);
-		bool StoreData(const Ref<KeyValueStore>& data, const std::function<bool(size_t, size_t)>& progress);
+		Ref<KeyValueStore> ReadData(const ProgressFunction& progress);
+		bool StoreData(const Ref<KeyValueStore>& data, const ProgressFunction& progress);
 		bool HasAncestor(Ref<Snapshot> other);
 	};
 
@@ -2509,7 +3404,7 @@ namespace BinaryNinja {
 		void SetCurrentSnapshot(int64_t id);
 		Ref<Snapshot> GetCurrentSnapshot();
 		int64_t WriteSnapshotData(std::vector<int64_t> parents, Ref<BinaryView> file, const std::string& name,
-		    const Ref<KeyValueStore>& data, bool autoSave, const std::function<bool(size_t, size_t)>& progress);
+		    const Ref<KeyValueStore>& data, bool autoSave, const ProgressFunction& progress);
 		void TrimSnapshot(int64_t id);
 		void RemoveSnapshot(int64_t id);
 
@@ -2749,7 +3644,7 @@ namespace BinaryNinja {
 		void SetDescription(const std::string& description);
 		Ref<ProjectFolder> GetParent() const;
 		void SetParent(Ref<ProjectFolder> parent);
-		bool Export(const std::string& destination, const std::function<bool(size_t progress, size_t total)>& progressCallback = {}) const;
+		bool Export(const std::string& destination, const ProgressFunction& progressCallback = {}) const;
 	};
 
 	/*!
@@ -2763,6 +3658,7 @@ namespace BinaryNinja {
 
 		Ref<Project> GetProject() const;
 		std::string GetPathOnDisk() const;
+		std::string GetPathInProject() const;
 		bool ExistsOnDisk() const;
 		std::string GetName() const;
 		std::string GetDescription() const;
@@ -2798,6 +3694,7 @@ namespace BinaryNinja {
 		std::string GetId() const;
 		bool IsOpen() const;
 		std::string GetPath() const;
+		std::string GetFilePathInProject(const Ref<ProjectFile>& file) const;
 		std::string GetName() const;
 		void SetName(const std::string& name);
 		std::string GetDescription() const;
@@ -2808,21 +3705,22 @@ namespace BinaryNinja {
 		void RemoveMetadata(const std::string& key);
 
 		Ref<ProjectFolder> CreateFolderFromPath(const std::string& path, Ref<ProjectFolder> parent, const std::string& description,
-			const std::function<bool(size_t progress, size_t total)>& progressCallback = {});
+			const ProgressFunction& progressCallback = {});
 		Ref<ProjectFolder> CreateFolder(Ref<ProjectFolder> parent, const std::string& name, const std::string& description);
 		Ref<ProjectFolder> CreateFolderUnsafe(Ref<ProjectFolder> parent, const std::string& name, const std::string& description, const std::string& id);
 		std::vector<Ref<ProjectFolder>> GetFolders() const;
 		Ref<ProjectFolder> GetFolderById(const std::string& id) const;
 		void PushFolder(Ref<ProjectFolder> folder);
-		bool DeleteFolder(Ref<ProjectFolder> folder, const std::function<bool(size_t progress, size_t total)>& progressCallback = {});
+		bool DeleteFolder(Ref<ProjectFolder> folder, const ProgressFunction& progressCallback = {});
 
-		Ref<ProjectFile> CreateFileFromPath(const std::string& path, Ref<ProjectFolder> folder, const std::string& name, const std::string& description, const std::function<bool(size_t progress, size_t total)>& progressCallback = {});
-		Ref<ProjectFile> CreateFileFromPathUnsafe(const std::string& path, Ref<ProjectFolder> folder, const std::string& name, const std::string& description, const std::string& id, int64_t creationTimestamp, const std::function<bool(size_t progress, size_t total)>& progressCallback = {});
-		Ref<ProjectFile> CreateFile_(const std::vector<uint8_t>& contents, Ref<ProjectFolder> folder, const std::string& name, const std::string& description, const std::function<bool(size_t progress, size_t total)>& progressCallback = {});
-		Ref<ProjectFile> CreateFileUnsafe(const std::vector<uint8_t>& contents, Ref<ProjectFolder> folder, const std::string& name, const std::string& description, const std::string& id, int64_t creationTimestamp, const std::function<bool(size_t progress, size_t total)>& progressCallback = {});
+		Ref<ProjectFile> CreateFileFromPath(const std::string& path, Ref<ProjectFolder> folder, const std::string& name, const std::string& description, const ProgressFunction& progressCallback = {});
+		Ref<ProjectFile> CreateFileFromPathUnsafe(const std::string& path, Ref<ProjectFolder> folder, const std::string& name, const std::string& description, const std::string& id, int64_t creationTimestamp, const ProgressFunction& progressCallback = {});
+		Ref<ProjectFile> CreateFile_(const std::vector<uint8_t>& contents, Ref<ProjectFolder> folder, const std::string& name, const std::string& description, const ProgressFunction& progressCallback = {});
+		Ref<ProjectFile> CreateFileUnsafe(const std::vector<uint8_t>& contents, Ref<ProjectFolder> folder, const std::string& name, const std::string& description, const std::string& id, int64_t creationTimestamp, const ProgressFunction& progressCallback = {});
 		std::vector<Ref<ProjectFile>> GetFiles() const;
 		Ref<ProjectFile> GetFileById(const std::string& id) const;
-		Ref<ProjectFile> GetFileByPathOnDisk(const std::string& path);
+		Ref<ProjectFile> GetFileByPathOnDisk(const std::string& path) const;
+		std::vector<Ref<ProjectFile>> GetFilesByPathInProject(const std::string& path) const;
 		void PushFile(Ref<ProjectFile> file);
 		bool DeleteFile_(Ref<ProjectFile> file);
 
@@ -2918,6 +3816,18 @@ namespace BinaryNinja {
 		*/
 		void SetFilename(const std::string& name);
 
+		/*! Get the path to the container file if the current file is inside a container (e.g. ZIP, TAR, etc.)
+
+			\return The path to the container file if the current file is inside a container, otherwise an empty string
+		*/
+		std::string GetVirtualPath() const;
+
+		/*! Set the path to the container file if the current file is inside a container (e.g. ZIP, TAR, etc.)
+
+			\param path The path to the container file if the current file is inside a container
+		*/
+		void SetVirtualPath(const std::string& path);
+
 		/*! Whether the file has unsaved modifications
 
 			\return Whether the file has unsaved modifications
@@ -2966,7 +3876,7 @@ namespace BinaryNinja {
 		    \return Whether the save was successful
 		*/
 		bool CreateDatabase(const std::string& name, BinaryView* data,
-		    const std::function<bool(size_t progress, size_t total)>& progressCallback, Ref<SaveSettings> settings);
+		    const ProgressFunction& progressCallback, Ref<SaveSettings> settings);
 
 		/*! Open an existing database from a given path
 
@@ -2982,7 +3892,7 @@ namespace BinaryNinja {
 		    \return The resulting BinaryView, if the load was successful
 		*/
 		Ref<BinaryView> OpenExistingDatabase(
-		    const std::string& path, const std::function<bool(size_t progress, size_t total)>& progressCallback);
+		    const std::string& path, const ProgressFunction& progressCallback);
 		Ref<BinaryView> OpenDatabaseForConfiguration(const std::string& path);
 
 		/*! Save the current database to the already created file.
@@ -3005,11 +3915,11 @@ namespace BinaryNinja {
 		    \return Whether the save was successful
 		*/
 		bool SaveAutoSnapshot(BinaryView* data,
-		    const std::function<bool(size_t progress, size_t total)>& progressCallback, Ref<SaveSettings> settings);
+		    const ProgressFunction& progressCallback, Ref<SaveSettings> settings);
 		void GetSnapshotData(
-		    Ref<KeyValueStore> data, Ref<KeyValueStore> cache, const std::function<bool(size_t, size_t)>& progress);
+		    Ref<KeyValueStore> data, Ref<KeyValueStore> cache, const ProgressFunction& progress);
 		void ApplySnapshotData(BinaryView* file, Ref<KeyValueStore> data, Ref<KeyValueStore> cache,
-		    const std::function<bool(size_t, size_t)>& progress, bool openForConfiguration = false,
+		    const ProgressFunction& progress, bool openForConfiguration = false,
 		    bool restoreRawView = true);
 		Ref<Database> GetDatabase();
 
@@ -3029,10 +3939,10 @@ namespace BinaryNinja {
 		    \return Whether the rebase was successful
 		*/
 		bool Rebase(BinaryView* data, uint64_t address,
-		    const std::function<bool(size_t progress, size_t total)>& progressCallback);
+		    const ProgressFunction& progressCallback);
 		bool CreateSnapshotedView(BinaryView* data, const std::string& viewName);
 		bool CreateSnapshotedView(BinaryView* data, const std::string& viewName,
-								  const std::function<bool(size_t progress, size_t total)>& progressCallback);
+								  const ProgressFunction& progressCallback);
 
 		/*! Run a function in a context in which any changes made to analysis will be added to an undo state.
 			If the function returns false or throws an exception, any changes made within will be reverted.
@@ -3116,14 +4026,14 @@ namespace BinaryNinja {
 
 		/*! Get the BinaryView for a specific View type
 
-		    \param name View name. e.g. ``Linear:ELF``, ``Graph:PE``
+		    \param name View type. e.g. ``ELF``, ``PE``
 		    \return The BinaryView, if it exists
 		*/
 		BinaryNinja::Ref<BinaryNinja::BinaryView> GetViewOfType(const std::string& name);
 
-		/*! List of View names that exist within the current file
+		/*! List of View types that exist within the current file
 
-		    \return List of View Names
+		    \return List of View Types
 		*/
 		std::vector<std::string> GetExistingViews() const;
 
@@ -4216,7 +5126,7 @@ namespace BinaryNinja {
 	struct DataVariable
 	{
 		DataVariable() {}
-		DataVariable(uint64_t a, Type* t, bool d) : address(a), type(t), autoDiscovered(d) {}
+		DataVariable(uint64_t a, const Confidence<Ref<Type>>& t, bool d) : address(a), type(t), autoDiscovered(d) {}
 
 		uint64_t address;
 		Confidence<Ref<Type>> type;
@@ -4429,6 +5339,21 @@ namespace BinaryNinja {
 
 		static RegisterValue FromAPIObject(const BNRegisterValue& value);
 		BNRegisterValue ToAPIObject();
+	};
+
+	struct AllTypeReferences
+	{
+		std::vector<ReferenceSource> codeRefs;
+		std::vector<uint64_t> dataRefs;
+		std::vector<TypeReferenceSource> typeRefs;
+	};
+
+	struct AllTypeFieldReferences
+	{
+		std::vector<TypeFieldReference> codeRefs;
+		std::vector<uint64_t> dataRefsTo;
+		std::vector<uint64_t> dataRefsFrom;
+		std::vector<TypeReferenceSource> typeRefs;
 	};
 
 	struct QualifiedNameAndType;
@@ -4805,10 +5730,10 @@ namespace BinaryNinja {
 		    \return Whether the save was successful
 		*/
 		bool CreateDatabase(const std::string& path,
-		    const std::function<bool(size_t progress, size_t total)>& progressCallback,
+		    const ProgressFunction& progressCallback,
 		    Ref<SaveSettings> settings = new SaveSettings());
 		bool SaveAutoSnapshot(Ref<SaveSettings> settings = new SaveSettings());
-		bool SaveAutoSnapshot(const std::function<bool(size_t progress, size_t total)>& progressCallback,
+		bool SaveAutoSnapshot(const ProgressFunction& progressCallback,
 		    Ref<SaveSettings> settings = new SaveSettings());
 
 		/*! Run a function in a context in which any changes made to analysis will be added to an undo state.
@@ -5123,6 +6048,19 @@ namespace BinaryNinja {
 		*/
 		bool Save(const std::string& path);
 
+		/*! Performs "finalization" on segments added after initial Finalization (performed after an Init() has completed).
+
+		 	Finalizing a segment involves optimizing the relocation info stored in that segment, so if a segment is added
+		 		and relocations are defined for that segment by some automated process, this function should be called afterwards.
+
+		 	An example of this can be seen in the KernelCache plugin, in `KernelCache::LoadImageWithInstallName`.
+		 		After we load an image, map new segments, and define relocations for all of them, we call this function
+		 		to let core know it is now safe to finalize the new segments
+
+		    \return Whether finalization was successful.
+		*/
+		bool FinalizeNewSegments();
+
 		void DefineRelocation(Architecture* arch, BNRelocationInfo& info, uint64_t target, uint64_t reloc);
 		void DefineRelocation(Architecture* arch, BNRelocationInfo& info, Ref<Symbol> target, uint64_t reloc);
 		std::vector<std::pair<uint64_t, uint64_t>> GetRelocationRanges() const;
@@ -5224,11 +6162,18 @@ namespace BinaryNinja {
 		*/
 		void UpdateAnalysis();
 
-		/*! Abort the currently running analysis
+		/*! Abort analysis and suspend the workflow machine
 
-			This method should be considered non-recoverable and generally only used when shutdown is imminent after stopping.
+			Stops analysis and transitions the workflow machine to the Suspend state. This operation is recoverable, and the workflow machine can be re-enabled via the WorkflowMachine Enable API.
 		*/
 		void AbortAnalysis();
+
+
+		/*! Check whether analysis is currently running
+
+		    \return true if analysis is aborted, false otherwise
+		*/
+		bool AnalysisIsAborted() const;
 
 		/*! Define a DataVariable at a given address with a set type
 
@@ -5362,9 +6307,27 @@ namespace BinaryNinja {
 		*/
 		std::vector<ReferenceSource> GetCodeReferences(uint64_t addr, uint64_t len);
 
+		/*! Get a list of references made from code (instructions) to a virtual address
+
+		    \param addr Address to check
+		    \param maxItems Optional maximum number of items to fetch
+		    \return vector of ReferenceSources referencing the virtual address
+		*/
+		std::vector<ReferenceSource> GetCodeReferencesWithLimit(uint64_t addr, std::optional<size_t> maxItems = std::nullopt);
+
+		/*! Get a list of references from code (instructions) to a range of addresses
+
+		    \param addr Address to check
+		    \param len Length of query
+		    \param maxItems Optional maximum number of items to fetch
+		    \return vector of ReferenceSources referencing the virtual address range
+		*/
+		std::vector<ReferenceSource> GetCodeReferencesInRangeWithLimit(
+			uint64_t addr, uint64_t len, std::optional<size_t> maxItems = std::nullopt);
+
 		/*! Get code references made by a particular "ReferenceSource"
 
-			A ReferenceSource contains a given function, architecture of that function, and an address within it.
+		    A ReferenceSource contains a given function, architecture of that function, and an address within it.
 
 		    \param src reference source
 		    \return List of virtual addresses referenced by this source
@@ -5398,6 +6361,24 @@ namespace BinaryNinja {
 		*/
 		std::vector<uint64_t> GetDataReferences(uint64_t addr, uint64_t len);
 
+		/*! Get references made by data ('DataVariables') to a virtual address
+
+		    \param addr Address to check
+		    \param maxItems Optional maximum number of items to fetch
+		    \return vector of virtual addresses referencing the virtual address
+		*/
+		std::vector<uint64_t> GetDataReferencesWithLimit(uint64_t addr, std::optional<size_t> maxItems = std::nullopt);
+
+		/*! Get references made by data ('DataVariables') in a given range, to a virtual address
+
+		    \param addr Address to check
+		    \param len Length of query
+		    \param maxItems Optional maximum number of items to fetch
+		    \return vector of virtual addresses referencing the virtual address range
+		*/
+		std::vector<uint64_t> GetDataReferencesInRangeWithLimit(
+			uint64_t addr, uint64_t len, std::optional<size_t> maxItems = std::nullopt);
+
 		/*! Get references made by data ('DataVariables') located at a virtual address.
 
 		    \param src reference source
@@ -5412,6 +6393,21 @@ namespace BinaryNinja {
 		    \return List of virtual addresses referenced by this address
 		*/
 		std::vector<uint64_t> GetDataReferencesFrom(uint64_t addr, uint64_t len);
+
+
+		/*! Add an auto Data Reference from a virtual address to another virtual address
+
+			\param fromAddr Address referencing the toAddr value
+			\param toAddr virtual address being referenced
+		*/
+		void AddDataReference(uint64_t fromAddr, uint64_t toAddr);
+
+		/*! Remove an auto Data Reference from a virtual address to another virtual address
+
+			\param fromAddr Address referencing the toAddr value
+			\param toAddr virtual address being referenced
+		*/
+		void RemoveDataReference(uint64_t fromAddr, uint64_t toAddr);
 
 		/*! Add a user Data Reference from a virtual address to another virtual address
 
@@ -5432,43 +6428,53 @@ namespace BinaryNinja {
 		/*! Get code references to a Type
 
 		    \param type QualifiedName for a Type
+		    \param maxItems Optional maximum number of items to fetch
 		    \return vector of ReferenceSources
 		*/
-		std::vector<ReferenceSource> GetCodeReferencesForType(const QualifiedName& type);
+		std::vector<ReferenceSource> GetCodeReferencesForType(
+			const QualifiedName& type, std::optional<size_t> maxItems = std::nullopt);
 
 		/*! Get data references to a Type
 
 		    \param type QualifiedName for a Type
+		    \param maxItems Optional maximum number of items to fetch
 		    \return vector of virtual addresses referencing this Type
 		*/
-		std::vector<uint64_t> GetDataReferencesForType(const QualifiedName& type);
+		std::vector<uint64_t> GetDataReferencesForType(
+			const QualifiedName& type, std::optional<size_t> maxItems = std::nullopt);
 
 		/*! Get Type references to a Type
 
 		    \param type QualifiedName for a Type
+		    \param maxItems Optional maximum number of items to fetch
 		    \return vector of TypeReferenceSources to this Type
 		*/
-		std::vector<TypeReferenceSource> GetTypeReferencesForType(const QualifiedName& type);
+		std::vector<TypeReferenceSource> GetTypeReferencesForType(
+			const QualifiedName& type, std::optional<size_t> maxItems = std::nullopt);
 
 		/*! Returns a list of references to a specific type field
 
-			\param type QualifiedName of the type
-			\param offset Offset of the field, relative to the start of the type
-			\return vector of TypeFieldReferences
+		    \param type QualifiedName of the type
+		    \param offset Offset of the field, relative to the start of the type
+		    \param maxItems Optional maximum number of items to fetch
+		    \return vector of TypeFieldReferences
 		*/
-		std::vector<TypeFieldReference> GetCodeReferencesForTypeField(const QualifiedName& type, uint64_t offset);
+		std::vector<TypeFieldReference> GetCodeReferencesForTypeField(
+			const QualifiedName& type, uint64_t offset, std::optional<size_t> maxItems = std::nullopt);
 
 		/*! Returns a list of virtual addresses of data which references the type \c type .
 
-			Note, the returned addresses are the actual start of the queried type field. For example, suppose there is a
-			DataVariable at \c 0x1000 that has type \c A , and type \c A contains type \c B at offset \c 0x10 .
-			Then <tt>GetDataReferencesForTypeField(bQualifiedName, 0x8)</tt> will return \c 0x1018 for it.
+		    Note, the returned addresses are the actual start of the queried type field. For example, suppose there is a
+		    DataVariable at \c 0x1000 that has type \c A , and type \c A contains type \c B at offset \c 0x10 .
+		    Then <tt>GetDataReferencesForTypeField(bQualifiedName, 0x8)</tt> will return \c 0x1018 for it.
 
-			\param type QualifiedName of the type
-			\param offset Offset of the field, relative to the start of the type
-			\return List of DataVariable start addresses containing references to the type field
+		    \param type QualifiedName of the type
+		    \param offset Offset of the field, relative to the start of the type
+		    \param maxItems Optional maximum number of items to fetch
+		    \return List of DataVariable start addresses containing references to the type field
 		*/
-		std::vector<uint64_t> GetDataReferencesForTypeField(const QualifiedName& type, uint64_t offset);
+		std::vector<uint64_t> GetDataReferencesForTypeField(
+			const QualifiedName& type, uint64_t offset, std::optional<size_t> maxItems = std::nullopt);
 
 		/*! Returns a list of virtual addresses of data which are referenced from the type \c type .
 
@@ -5476,25 +6482,48 @@ namespace BinaryNinja {
 
 		    \param type QualifiedName of the type
 		    \param offset Offset of the field, relative to the start of the type
+		    \param maxItems Optional maximum number of items to fetch
 		    \return List of addresses referenced from the type field
 		*/
-		std::vector<uint64_t> GetDataReferencesFromForTypeField(const QualifiedName& type, uint64_t offset);
+		std::vector<uint64_t> GetDataReferencesFromForTypeField(
+			const QualifiedName& type, uint64_t offset, std::optional<size_t> maxItems = std::nullopt);
 
 		/*! Returns a list of type references to a specific type field
 
-			\param type QualifiedName of the type
-			\param offset Offset of the field, relative to the start of the type
-			\return vector of TypeReferenceSources
+		    \param type QualifiedName of the type
+		    \param offset Offset of the field, relative to the start of the type
+		    \param maxItems Optional maximum number of items to fetch
+		    \return vector of TypeReferenceSources
 		*/
-		std::vector<TypeReferenceSource> GetTypeReferencesForTypeField(const QualifiedName& type, uint64_t offset);
+		std::vector<TypeReferenceSource> GetTypeReferencesForTypeField(
+			const QualifiedName& type, uint64_t offset, std::optional<size_t> maxItems = std::nullopt);
+
+		/*! Returns a all references to a specific type. This includes code, data, and type references.
+
+		    \param type QualifiedName of the type
+		    \param maxItems Optional maximum number of items to fetch
+		    \return AllTypeReferences structure with all references
+		*/
+		AllTypeReferences GetAllReferencesForType(
+			const QualifiedName& type, std::optional<size_t> maxItems = std::nullopt);
+
+		/*! Returns a all references to a specific type field. This includes code, data, and type references.
+
+		    \param type QualifiedName of the type
+		    \param offset Offset of the field, relative to the start of the type
+		    \param maxItems Optional maximum number of items to fetch
+		    \return AllTypeFieldReferences structure with all references
+		*/
+		AllTypeFieldReferences GetAllReferencesForTypeField(
+			const QualifiedName& type, uint64_t offset, std::optional<size_t> maxItems = std::nullopt);
 
 		/*! Returns a list of types referenced by code at ReferenceSource \c src
 
-			If no function is specified, references from all functions and containing the address will be returned.
-		 	If no architecture is specified, the architecture of the function will be used.
+		    If no function is specified, references from all functions and containing the address will be returned.
+		    If no architecture is specified, the architecture of the function will be used.
 
-			\param src Source of the reference to check
-		 	\return vector of TypeReferenceSources
+		    \param src Source of the reference to check
+		    \return vector of TypeReferenceSources
 		*/
 		std::vector<TypeReferenceSource> GetCodeReferencesForTypeFrom(ReferenceSource src);
 
@@ -5672,7 +6701,8 @@ namespace BinaryNinja {
 
 		/*! Adds a symbol to the internal list of automatically discovered Symbol objects in a given namespace
 
-			\warning If multiple symbols for the same address are defined, only the most recent symbol will ever be used.
+			\warning If multiple symbols for the same address are defined, the symbol with the highest confidence
+			and lowest `BNSymbolType` value will be used. Ties are broken by symbol name.
 
 			\param sym Symbol to define
 		*/
@@ -5680,12 +6710,15 @@ namespace BinaryNinja {
 
 		/*! Defines an "Auto" symbol, and a Variable/Function alongside it
 
+			\warning If multiple symbols for the same address are defined, the symbol with the highest confidence
+			and lowest `BNSymbolType` value will be used. Ties are broken by symbol name.
+
 			\param platform Platform for the Type being defined
-			\param sym Symbol being definedd
+			\param sym Symbol being defined
 			\param type Type being defined
 			\return The defined symbol
 		*/
-		Ref<Symbol> DefineAutoSymbolAndVariableOrFunction(Ref<Platform> platform, Ref<Symbol> sym, Ref<Type> type);
+		Ref<Symbol> DefineAutoSymbolAndVariableOrFunction(Ref<Platform> platform, Ref<Symbol> sym, const Confidence<Ref<Type>>& type);
 
 		/*! Undefine an automatically defined symbol
 
@@ -5694,6 +6727,9 @@ namespace BinaryNinja {
 		void UndefineAutoSymbol(Ref<Symbol> sym);
 
 		/*! Define a user symbol
+
+			\warning If multiple symbols for the same address are defined, the symbol with the highest confidence
+			and lowest `BNSymbolType` value will be used. Ties are broken by symbol name.
 
 			\param sym Symbol to define
 		*/
@@ -6096,6 +7132,7 @@ namespace BinaryNinja {
 
 		AnalysisInfo GetAnalysisInfo();
 		BNAnalysisProgress GetAnalysisProgress();
+		BNAnalysisState GetAnalysisState();
 		Ref<BackgroundTask> GetBackgroundAnalysisTask();
 
 		/*! Returns the virtual address of the Function that occurs after the virtual address `addr`
@@ -6243,13 +7280,15 @@ namespace BinaryNinja {
 		QualifiedName GetTypeNameById(const std::string& id);
 		bool IsTypeAutoDefined(const QualifiedName& name);
 		QualifiedName DefineType(const std::string& id, const QualifiedName& defaultName, Ref<Type> type);
-		std::unordered_map<std::string, QualifiedName> DefineTypes(const std::vector<std::pair<std::string, QualifiedNameAndType>>& types, std::function<bool(size_t, size_t)> progress = {});
+		std::unordered_map<std::string, QualifiedName> DefineTypes(const std::vector<std::pair<std::string, QualifiedNameAndType>>& types, ProgressFunction progress = {});
 		void DefineUserType(const QualifiedName& name, Ref<Type> type);
-		void DefineUserTypes(const std::vector<QualifiedNameAndType>& types, std::function<bool(size_t, size_t)> progress = {});
-		void DefineUserTypes(const std::vector<ParsedType>& types, std::function<bool(size_t, size_t)> progress = {});
+		void DefineUserTypes(const std::vector<QualifiedNameAndType>& types, ProgressFunction progress = {});
+		void DefineUserTypes(const std::vector<ParsedType>& types, ProgressFunction progress = {});
 		void UndefineType(const std::string& id);
 		void UndefineUserType(const QualifiedName& name);
 		void RenameType(const QualifiedName& oldName, const QualifiedName& newName);
+		Ref<Type> GetSystemCallType(Platform* platform, uint32_t id);
+		std::string GetSystemCallName(Platform* platform, uint32_t id);
 
 		void RegisterPlatformTypes(Platform* platform);
 
@@ -6470,27 +7509,31 @@ namespace BinaryNinja {
 			const FunctionViewType& viewType = NormalFunctionGraph);
 
 		bool FindNextData(uint64_t start, uint64_t end, const DataBuffer& data, uint64_t& addr, BNFindFlag flags,
-		    const std::function<bool(size_t current, size_t total)>& progress);
+		    const ProgressFunction& progress);
 		bool FindNextText(uint64_t start, uint64_t end, const std::string& data, uint64_t& addr,
 			Ref<DisassemblySettings> settings, BNFindFlag flags, const FunctionViewType& viewType,
-		    const std::function<bool(size_t current, size_t total)>& progress);
+		    const ProgressFunction& progress);
 		bool FindNextConstant(uint64_t start, uint64_t end, uint64_t constant, uint64_t& addr,
 			Ref<DisassemblySettings> settings, const FunctionViewType& viewType,
-		    const std::function<bool(size_t current, size_t total)>& progress);
+		    const ProgressFunction& progress);
 
 		bool FindAllData(uint64_t start, uint64_t end, const DataBuffer& data, BNFindFlag flags,
-		    const std::function<bool(size_t current, size_t total)>& progress,
+		    const ProgressFunction& progress,
 		    const std::function<bool(uint64_t addr, const DataBuffer& match)>& matchCallback);
 		bool FindAllText(uint64_t start, uint64_t end, const std::string& data, Ref<DisassemblySettings> settings,
 			BNFindFlag flags, const FunctionViewType& viewType,
-		    const std::function<bool(size_t current, size_t total)>& progress,
+		    const ProgressFunction& progress,
 		    const std::function<bool(uint64_t addr, const std::string& match, const LinearDisassemblyLine& line)>&
 		        matchCallback);
 		bool FindAllConstant(uint64_t start, uint64_t end, uint64_t constant, Ref<DisassemblySettings> settings,
-			const FunctionViewType& viewType, const std::function<bool(size_t current, size_t total)>& progress,
+			const FunctionViewType& viewType, const ProgressFunction& progress,
 		    const std::function<bool(uint64_t addr, const LinearDisassemblyLine& line)>& matchCallback);
 
-		bool Search(const std::string& query, const std::function<bool(uint64_t offset, const DataBuffer& buffer)>& otherCallback);
+		std::string DetectSearchMode(const std::string& query);
+
+		bool Search(const std::string& query,
+			const ProgressFunction& progressCallback,
+			const std::function<bool(uint64_t addr, const DataBuffer& buffer)>& matchCallback);
 
 		void Reanalyze();
 
@@ -6821,6 +7864,17 @@ namespace BinaryNinja {
 		bool GetNewAutoFunctionAnalysisSuppressed();
 		void SetNewAutoFunctionAnalysisSuppressed(bool suppress);
 
+		/*! Determine whether the target analysis should be skipped for a given source function and target address
+
+			\param source Source function and address
+			\param sourceFunc Function at the source address
+			\param sourceEnd End address of the source function
+			\param target Target address to analyze
+			\return Whether the target analysis should be skipped
+		*/
+		bool ShouldSkipTargetAnalysis(const ArchAndAddr& source, Ref<Function> sourceFunc,
+			uint64_t sourceEnd, const ArchAndAddr& target);
+
 		/*! Returns a list of namespaces for the current BinaryView
 
 			\return A list of namespaces for the current BinaryView
@@ -6976,8 +8030,7 @@ namespace BinaryNinja {
 		void ClearUserGlobalPointerValue();
 		void SetUserGlobalPointerValue(const Confidence<RegisterValue>& value);
 
-		std::optional<std::pair<std::string, BNStringType>> StringifyUnicodeData(
-			Architecture* arch, const DataBuffer& buffer, bool allowShortStrings = false);
+		std::optional<std::pair<std::string, BNStringType>> StringifyUnicodeData(Architecture* arch, const DataBuffer& buffer, bool nullTerminates = true, bool allowShortStrings = false);
 	};
 
 	class MemoryMap
@@ -6993,6 +8046,11 @@ namespace BinaryNinja {
 			BNSetLogicalMemoryMapEnabled(m_object, enabled);
 		}
 
+		bool IsActivated()
+		{
+			return BNIsMemoryMapActivated(m_object);
+		}
+
 		bool AddBinaryMemoryRegion(const std::string& name, uint64_t start, Ref<BinaryView> source, uint32_t flags = 0)
 		{
 			return BNAddBinaryMemoryRegion(m_object, name.c_str(), start, source->GetObject(), flags);
@@ -7006,6 +8064,11 @@ namespace BinaryNinja {
 		bool AddRemoteMemoryRegion(const std::string& name, uint64_t start, FileAccessor* source, uint32_t flags = 0)
 		{
 			return BNAddRemoteMemoryRegion(m_object, name.c_str(), start, source->GetCallbacks(), flags);
+		}
+
+		bool AddUnbackedMemoryRegion(const std::string& name, uint64_t start, uint64_t length, uint32_t flags = 0, uint8_t fill = 0)
+		{
+			return BNAddUnbackedMemoryRegion(m_object, name.c_str(), start, length, flags, fill);
 		}
 
 		bool RemoveMemoryRegion(const std::string& name)
@@ -7059,6 +8122,11 @@ namespace BinaryNinja {
 		bool SetMemoryRegionFill(const std::string& name, uint8_t fill)
 		{
 			return BNSetMemoryRegionFill(m_object, name.c_str(), fill);
+		}
+
+		bool IsMemoryRegionLocal(const std::string& name)
+		{
+			return BNIsMemoryRegionLocal(m_object, name.c_str());
 		}
 
 		void Reset()
@@ -7200,6 +8268,14 @@ namespace BinaryNinja {
 		Ref<Architecture> GetArchitecture(uint32_t id, BNEndianness endian);
 
 		/*! Register a Platform for a specific view type
+
+			\param name Name of the BinaryViewType
+			\param id ID of the platform
+			\param platform The Platform to register
+		*/
+		static void RegisterPlatform(const std::string& name, uint32_t id, Platform* platform);
+
+		/*! Register a Platform for a specific view type (this form is deprecated as of 4.3, please use the form without architecture as an argument instead)
 
 			\param name Name of the BinaryViewType
 			\param id ID of the platform
@@ -7852,6 +8928,8 @@ namespace BinaryNinja {
 		size_t fixedLength;  // Variable length if zero
 	};
 
+	class TransformContext;
+
 	/*! Allows users to implement custom transformations.
 
 	    New transformations may be added at runtime, so an instance of a transform is created like
@@ -7883,6 +8961,7 @@ namespace BinaryNinja {
 	{
 	  protected:
 		BNTransformType m_typeForRegister;
+		BNTransformCapabilities m_capabilitiesForRegister;
 		std::string m_nameForRegister, m_longNameForRegister, m_groupForRegister;
 
 		Transform(BNTransform* xform);
@@ -7893,6 +8972,8 @@ namespace BinaryNinja {
 		    void* ctxt, BNDataBuffer* input, BNDataBuffer* output, BNTransformParameter* params, size_t paramCount);
 		static bool EncodeCallback(
 		    void* ctxt, BNDataBuffer* input, BNDataBuffer* output, BNTransformParameter* params, size_t paramCount);
+		static bool DecodeWithContextCallback(void* ctxt, BNTransformContext* context, BNTransformParameter* params, size_t paramCount);
+		static bool CanDecodeCallback(void* ctxt, BNBinaryView* input);
 
 		static std::vector<TransformParameter> EncryptionKeyParameters(size_t fixedKeyLength = 0);
 		static std::vector<TransformParameter> EncryptionKeyAndIVParameters(
@@ -7900,22 +8981,26 @@ namespace BinaryNinja {
 
 	  public:
 		Transform(BNTransformType type, const std::string& name, const std::string& longName, const std::string& group);
+		Transform(BNTransformType type, BNTransformCapabilities capabilities, const std::string& name, const std::string& longName, const std::string& group);
 
 		static void Register(Transform* xform);
 		static Ref<Transform> GetByName(const std::string& name);
 		static std::vector<Ref<Transform>> GetTransformTypes();
 
 		BNTransformType GetType() const;
+		BNTransformCapabilities GetCapabilities() const;
+		bool SupportsDetection() const;
+		bool SupportsContext() const;
 		std::string GetName() const;
 		std::string GetLongName() const;
 		std::string GetGroup() const;
 
 		virtual std::vector<TransformParameter> GetParameters() const;
 
-		virtual bool Decode(const DataBuffer& input, DataBuffer& output,
-		    const std::map<std::string, DataBuffer>& params = std::map<std::string, DataBuffer>());
-		virtual bool Encode(const DataBuffer& input, DataBuffer& output,
-		    const std::map<std::string, DataBuffer>& params = std::map<std::string, DataBuffer>());
+		virtual bool Decode(const DataBuffer& input, DataBuffer& output, const std::map<std::string, DataBuffer>& params = std::map<std::string, DataBuffer>());
+		virtual bool Encode(const DataBuffer& input, DataBuffer& output, const std::map<std::string, DataBuffer>& params = std::map<std::string, DataBuffer>());
+		virtual bool DecodeWithContext(Ref<TransformContext> context, const std::map<std::string, DataBuffer>& params = std::map<std::string, DataBuffer>());
+		virtual bool CanDecode(Ref<BinaryView> input) const;
 	};
 
 	/*!
@@ -7931,7 +9016,65 @@ namespace BinaryNinja {
 		    const std::map<std::string, DataBuffer>& params = std::map<std::string, DataBuffer>()) override;
 		virtual bool Encode(const DataBuffer& input, DataBuffer& output,
 		    const std::map<std::string, DataBuffer>& params = std::map<std::string, DataBuffer>()) override;
+		virtual bool DecodeWithContext(Ref<TransformContext> context,
+		    const std::map<std::string, DataBuffer>& params = std::map<std::string, DataBuffer>()) override;
+		virtual bool CanDecode(Ref<BinaryView> input) const override;
 	};
+
+	class TransformContext : public CoreRefCountObject<BNTransformContext, BNNewTransformContextReference, BNFreeTransformContext>
+	{
+	  public:
+		TransformContext(BNTransformContext* context);
+		virtual ~TransformContext();
+
+		std::string GetTransformName() const;
+		std::string GetFileName() const;
+		Ref<BinaryView> GetInput() const;
+		Ref<Metadata> GetMetadata() const;
+		Ref<TransformContext> GetParent() const;
+		size_t GetChildCount() const;
+		std::vector<Ref<TransformContext>> GetChildren() const;
+		Ref<TransformContext> GetChild(const std::string& filename) const;
+		Ref<TransformContext> CreateChild(const DataBuffer& data, const std::string& filename);
+		bool IsLeaf() const;
+		bool IsRoot() const;
+		std::vector<std::string> GetAvailableFiles() const;
+		void SetAvailableFiles(const std::vector<std::string>& files);
+		bool HasAvailableFiles() const;
+		std::vector<std::string> GetRequestedFiles() const;
+		void SetRequestedFiles(const std::vector<std::string>& files);
+		bool HasRequestedFiles() const;
+		bool IsDatabase() const;
+	};
+
+	class TransformSession : public CoreRefCountObject<BNTransformSession, BNNewTransformSessionReference, BNFreeTransformSession>
+	{
+	  public:
+		TransformSession(const std::string& filename);
+		TransformSession(const std::string& filename, BNTransformSessionMode mode);
+		TransformSession(Ref<BinaryView> initialView);
+		TransformSession(Ref<BinaryView> initialView, BNTransformSessionMode mode);
+		TransformSession(BNTransformSession* session);
+		virtual ~TransformSession();
+
+		Ref<BinaryView> GetCurrentView() const;
+		Ref<TransformContext> GetRootContext() const;
+		Ref<TransformContext> GetCurrentContext() const;
+		bool Process();
+		bool HasAnyStages() const;
+		bool HasSinglePath() const;
+
+		std::vector<Ref<TransformContext>> GetSelectedContexts() const;
+		void SetSelectedContexts(const std::vector<Ref<TransformContext>>& contexts);
+
+		// UI interaction support
+		bool RequiresUserInput() const;
+		bool HasMultipleFileChoices() const;
+		std::vector<std::string> GetAvailableFileChoices() const;
+		bool SelectFiles(const std::vector<std::string>& selectedFiles);
+		bool ProcessWithUserInput();
+	};
+
 
 	struct InstructionInfo : public BNInstructionInfo
 	{
@@ -7960,6 +9103,55 @@ namespace BinaryNinja {
 
 	typedef size_t ExprId;
 
+	class BasicBlockAnalysisContext
+	{
+	private:
+		// in
+		std::optional<std::map<ArchAndAddr, std::set<ArchAndAddr>>> m_indirectBranches;
+		std::optional<std::set<ArchAndAddr>> m_indirectNoReturnCalls;
+
+		// in/out
+		std::optional<std::map<ArchAndAddr, bool>> m_contextualReturns;
+
+		// out
+		std::optional<std::map<uint64_t, std::set<ArchAndAddr>>> m_directCodeReferences;
+		std::optional<std::set<ArchAndAddr>> m_directNoReturnCalls;
+		std::optional<std::set<ArchAndAddr>> m_haltedDisassemblyAddresses;
+		std::optional<std::map<ArchAndAddr, ArchAndAddr>> m_inlinedUnresolvedIndirectBranches;
+
+	public:
+		BNBasicBlockAnalysisContext* m_context;
+
+		BasicBlockAnalysisContext(BNBasicBlockAnalysisContext* context);
+
+		BNFunctionAnalysisSkipOverride GetAnalysisSkipOverride() const { return m_context->analysisSkipOverride; }
+		bool GetGuidedAnalysisMode() const { return m_context->guidedAnalysisMode; }
+		bool GetTriggerGuidedOnInvalidInstruction() const { return m_context->triggerGuidedOnInvalidInstruction; }
+		bool GetTranslateTailCalls() const { return m_context->translateTailCalls; }
+		bool GetDisallowBranchToString() const { return m_context->disallowBranchToString; }
+		uint64_t GetMaxFunctionSize() const { return m_context->maxFunctionSize; }
+
+		bool GetMaxSizeReached() const { return m_context->maxSizeReached; }
+		void SetMaxSizeReached(bool reached) { m_context->maxSizeReached = reached; }
+
+		const std::map<ArchAndAddr, std::set<ArchAndAddr>> GetIndirectBranches();
+		const std::set<ArchAndAddr>& GetIndirectNoReturnCalls();
+
+		std::map<ArchAndAddr, bool>& GetContextualReturns();
+
+		std::map<uint64_t, std::set<ArchAndAddr>>& GetDirectCodeReferences();
+		std::set<ArchAndAddr>& GetDirectNoReturnCalls();
+		std::set<ArchAndAddr>& GetHaltedDisassemblyAddresses();
+		std::map<ArchAndAddr, ArchAndAddr>& GetInlinedUnresolvedIndirectBranches();
+
+		void AddTempOutgoingReference(Function* targetFunc);
+
+		Ref<BasicBlock> CreateBasicBlock(Architecture* arch, uint64_t start);
+		void AddFunctionBasicBlock(BasicBlock* block);
+
+		void Finalize();
+	};
+
 	/*! The Architecture class is the base class for all CPU architectures. This provides disassembly, assembly,
 	    patching, and IL translation lifting for a given architecture.
 
@@ -7987,6 +9179,7 @@ namespace BinaryNinja {
 		static void FreeInstructionTextCallback(BNInstructionTextToken* tokens, size_t count);
 		static bool GetInstructionLowLevelILCallback(
 		    void* ctxt, const uint8_t* data, uint64_t addr, size_t* len, BNLowLevelILFunction* il);
+		static void AnalyzeBasicBlocksCallback(void *ctxt, BNFunction* function, BNBasicBlockAnalysisContext* context);
 		static char* GetRegisterNameCallback(void* ctxt, uint32_t reg);
 		static char* GetFlagNameCallback(void* ctxt, uint32_t flag);
 		static char* GetFlagWriteTypeNameCallback(void* ctxt, uint32_t flags);
@@ -8058,6 +9251,15 @@ namespace BinaryNinja {
 			\param arch Architecture to register
 		*/
 		static void Register(Architecture* arch);
+
+		static void DefaultAnalyzeBasicBlocksCallback(BNFunction* function, BNBasicBlockAnalysisContext* context);
+
+		/*! Default implementation of AnalyzeBasicBlocks
+
+			\param function Function to analyze
+			\param context Context for the analysis
+		*/
+		static void DefaultAnalyzeBasicBlocks(Function* function, BasicBlockAnalysisContext& context);
 
 		/*! Get an Architecture by name
 
@@ -8156,6 +9358,13 @@ namespace BinaryNinja {
 		    \param[in,out] il the LowLevelILFunction to appended to.
 		*/
 		virtual bool GetInstructionLowLevelIL(const uint8_t* data, uint64_t addr, size_t& len, LowLevelILFunction& il);
+
+		/*! Analyze the basic blocks of a function
+
+			\param function Function to analyze
+			\param context Context for the analysis
+		*/
+		virtual void AnalyzeBasicBlocks(Function* function, BasicBlockAnalysisContext& context);
 
 		/*! Gets a register name from a register index.
 
@@ -8435,7 +9644,6 @@ namespace BinaryNinja {
 		    \return Whether the conversion was successful
 		*/
 		virtual bool SkipAndReturnValue(uint8_t* data, uint64_t addr, size_t len, uint64_t value);
-
 		void RegisterFunctionRecognizer(FunctionRecognizer* recog);
 		void RegisterRelocationHandler(const std::string& viewName, RelocationHandler* handler);
 		Ref<RelocationHandler> GetRelocationHandler(const std::string& viewName);
@@ -8551,6 +9759,7 @@ namespace BinaryNinja {
 		    const uint8_t* data, uint64_t addr, size_t& len, std::vector<InstructionTextToken>& result) override;
 		virtual bool GetInstructionLowLevelIL(
 		    const uint8_t* data, uint64_t addr, size_t& len, LowLevelILFunction& il) override;
+		virtual void AnalyzeBasicBlocks(Function* function, BasicBlockAnalysisContext& context) override;
 		virtual std::string GetRegisterName(uint32_t reg) override;
 		virtual std::string GetFlagName(uint32_t flag) override;
 		virtual std::string GetFlagWriteTypeName(uint32_t flags) override;
@@ -8752,6 +9961,12 @@ namespace BinaryNinja {
 		    const Variable& location):
 		    name(name), type(type), defaultLocation(defaultLocation), location(location)
 		{}
+	};
+
+	class FieldResolutionInfo : public CoreRefCountObject<BNFieldResolutionInfo, BNNewFieldResolutionInfoReference, BNFreeFieldResolutionInfo>
+	{
+	  public:
+		FieldResolutionInfo(BNFieldResolutionInfo* info);
 	};
 
 	struct QualifiedNameAndType
@@ -9303,9 +10518,11 @@ namespace BinaryNinja {
 		Ref<Type> WithReplacedNamedTypeReference(NamedTypeReference* from, NamedTypeReference* to);
 
 		bool AddTypeMemberTokens(BinaryView* data, std::vector<InstructionTextToken>& tokens, int64_t offset,
-		    std::vector<std::string>& nameList, size_t size = 0, bool indirect = false);
+		    std::vector<std::string>& nameList, size_t size = 0, bool indirect = false, FieldResolutionInfo* info = nullptr);
+		bool EnumerateTypesForAccess(BinaryView* data, uint64_t offset, size_t size, uint8_t baseConfidence,
+			const std::function<void(const Confidence<Ref<Type>>& type, FieldResolutionInfo* path)>& terminal);
 		std::vector<TypeDefinitionLine> GetLines(const TypeContainer& types, const std::string& name,
-			int paddingCols = 64, bool collapsed = false, BNTokenEscapingType escaping = NoTokenEscapingType);
+			int paddingCols = 64, bool collapsed = false, BNTokenEscapingType escaping = NoTokenEscapingType) const;
 
 		static std::string GetSizeSuffix(size_t size);
 	};
@@ -9916,12 +11133,8 @@ namespace BinaryNinja {
 	/*!
 		\ingroup workflow
 	*/
-	class AnalysisContext :
-	    public CoreRefCountObject<BNAnalysisContext, BNNewAnalysisContextReference, BNFreeAnalysisContext>
+	class AnalysisContext : public CoreRefCountObject<BNAnalysisContext, BNNewAnalysisContextReference, BNFreeAnalysisContext>
 	{
-		std::unique_ptr<Json::CharReader> m_reader;
-		Json::StreamWriterBuilder m_builder;
-
 	  public:
 		AnalysisContext(BNAnalysisContext* analysisContext);
 		virtual ~AnalysisContext();
@@ -9937,6 +11150,12 @@ namespace BinaryNinja {
 			\return The function for the current context
 		*/
 		Ref<Function> GetFunction();
+
+		/*! Get the lifted IL function for the current AnalysisContext
+
+			\return The Lifted IL LowLevelILFunction for the current context
+		*/
+		Ref<LowLevelILFunction> GetLiftedILFunction();
 
 		/*! Get the low level IL function for the current AnalysisContext
 
@@ -9974,11 +11193,20 @@ namespace BinaryNinja {
 		*/
 		void SetLowLevelILFunction(Ref<LowLevelILFunction> lowLevelIL);
 
-		/*! Set the new Medium Level IL for the current analysis context
+		/*! Set the new Medium Level IL for the current analysis context.
+
+			If mapping parameters are left as default (empty), then they will be automatically
+			computed for you based on previous calls to AddExpr() and AddInstruction()
 
 			\param mediumLevelIL the new Medium Level IL
+			\param llilSsaToMlilInstrMap New mappings from LLIL SSA -> MLIL instruction indices
+			\param llilSsaToMlilExprMap New mappings from LLIL SSA -> MLIL expression indices
 		*/
-		void SetMediumLevelILFunction(Ref<MediumLevelILFunction> mediumLevelIL);
+		void SetMediumLevelILFunction(
+			Ref<MediumLevelILFunction> mediumLevelIL,
+			std::unordered_map<size_t /* llil ssa */, size_t /* mlil */> llilSsaToMlilInstrMap = {},
+			std::vector<BNExprMapInfo> llilSsaToMlilExprMap = {}
+		);
 
 		/*! Set the new High Level IL for the current analysis context
 
@@ -9986,27 +11214,34 @@ namespace BinaryNinja {
 		*/
 		void SetHighLevelILFunction(Ref<HighLevelILFunction> highLevelIL);
 
+		bool Inform(const char* request);
 		bool Inform(const std::string& request);
 
-#if ((__cplusplus >= 201403L) || (_MSVC_LANG >= 201703L))
 		template <typename... Args>
 		bool Inform(Args... args)
 		{
-			// using T = std::variant<Args...>; // FIXME: remove type duplicates
-			using T = std::variant<std::string, const char*, uint64_t, Ref<Architecture>>;
-			std::vector<T> unpackedArgs {args...};
-			Json::Value request(Json::arrayValue);
-			for (auto& arg : unpackedArgs)
-				std::visit(overload {[&](Ref<Architecture> arch) { request.append(Json::Value(arch->GetName())); },
-				               [&](uint64_t val) { request.append(Json::Value(val)); },
-				               [&](auto& val) {
-					               request.append(Json::Value(std::forward<decltype(val)>(val)));
-				               }},
-				    arg);
-
-			return Inform(Json::writeString(m_builder, request));
+			rapidjson::Document request(rapidjson::kArrayType);
+			rapidjson::Document::AllocatorType& allocator = request.GetAllocator();
+			request.Reserve(sizeof...(args), allocator);
+			([&] {
+				using T = std::decay_t<decltype(args)>;
+				if constexpr (std::is_same_v<T, Ref<Architecture>>)
+				{
+					auto archName = args->GetName();
+					request.PushBack(rapidjson::Value(archName.c_str(), archName.length(), allocator), allocator);
+				}
+				else if constexpr (std::is_same_v<T, std::string>)
+					request.PushBack(rapidjson::Value(args.c_str(), args.length(), allocator), allocator);
+				else if constexpr (std::is_same_v<T, const char*>)
+					request.PushBack(rapidjson::Value(args, allocator), allocator);
+				else
+					request.PushBack(rapidjson::Value(args), allocator);
+			}(), ...);
+			rapidjson::StringBuffer buffer;
+			rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+			request.Accept(writer);
+			return Inform(buffer.GetString());
 		}
-#endif
 	};
 
 	/*!
@@ -10044,9 +11279,88 @@ namespace BinaryNinja {
 		Ref<BinaryView> m_view;
 		Ref<Function> m_function;
 
+		bool PostRequest(const std::string& command);
+
 	public:
+
+		// TODO: Convert to BNWorkflowMachineStatus structure
+		struct Status
+		{
+			std::string state = "Invalid";
+			std::string activity;
+			bool localLogEnabled;
+			bool globalLogEnabled;
+		};
+
 		WorkflowMachine(Ref<BinaryView> view);
 		WorkflowMachine(Ref<Function> function);
+
+		bool PostJsonRequest(const std::string& request);
+
+		Ref<FlowGraph> GetGraph(const std::string& activity = "", bool sequential = false);
+
+		void ShowTopology();
+
+		WorkflowMachine::Status GetStatus();
+
+		/*! Resume the workflow machine
+
+			Resumes the workflow machine for the given BinaryView or Function.
+			\return true if the command is accepted, false otherwise.
+		*/
+		bool Resume();
+
+		/*! Start the workflow Machine
+			Starts the workflow machine for the given BinaryView or Function.
+			\return true if the command is accepted, false otherwise.
+		*/
+		bool Run();
+
+		/*! Configure the workflow machine
+
+			Configures the workflow machine.
+			\return true if the command is accepted, false otherwise.
+		*/
+		bool Configure();
+
+		/*! Halt the workflow machine
+
+			Halts analysis at a resumable point.
+			\return true if the command is accepted, false otherwise.
+		*/
+		bool Halt();
+
+		/*! Reset the workflow machine
+
+			Resets the workflow machine to its initial state.
+			\return true if the command is accepted, false otherwise.
+		*/
+		bool Reset();
+
+
+		/*! Enable the workflow machine
+
+			Re-enables the workflow machine if it is in the Suspend state.
+			\return true if the command is accepted, false otherwise.
+		*/
+		bool Enable();
+
+		/*! Disable the workflow machine
+
+			Disables analysis and suspends the workflow machine, equivalent to AbortAnalysis.
+			This operation is recoverable and the workflow machine can be re-enabled via the Enable API.
+			\return true if the command is accepted, false otherwise.
+		*/
+		bool Disable();
+
+		/*! Step the workflow machine
+
+			Steps the workflow machine through a single activity.
+			\return true if the command is accepted, false otherwise.
+		*/
+		bool Step();
+
+		bool SetLogEnabled(bool enable, bool global = false);
 
 		std::optional<bool> QueryOverride(const std::string& activity);
 		bool SetOverride(const std::string& activity, bool enable);
@@ -10079,13 +11393,43 @@ namespace BinaryNinja {
 		*/
 		static std::vector<Ref<Workflow>> GetList();
 
-		/*! Get an instance of a workflow by name. If it is already registered, this will return the registered Workflow.
-			If not, it will create and return a new Workflow.
+		/*! Get an instance of an existing registered workflow by name.
+			If no registered workflow exists, nullptr will be returned.
+
+			\note Be sure to handle the nullptr case if you're retrieving
+				anything other than a built-in workflow.
 
 			\param name Workflow name
-			\return The registered workflow.
+			\return The registered workflow, or nullptr if none exists.
 		*/
-		static Ref<Workflow> Instance(const std::string& name = "");
+		static Ref<Workflow> Get(const std::string& name);
+
+		/*! Get an instance of a workflow by name. If it is already registered,
+			this will return the registered Workflow. If not, a new Workflow will
+			be created and returned.
+
+			\note If a new workflow is returned it will have no activities. Attempting
+			to register new activities on it via `Insert` and `InsertAfter` will fail.
+
+			\param name Workflow name
+			\return The workflow.
+		*/
+		static Ref<Workflow> GetOrCreate(const std::string& name);
+
+		/*! Get an instance of a workflow by name. If it is already registered,
+			this will return the registered Workflow. If not, a new Workflow will
+			be created and returned.
+
+			\deprecated Use `Get` or `GetOrCreate` instead.
+
+			\note If a new workflow is returned it will have no activities. Attempting
+			to register new activities on it via `Insert` and `InsertAfter` will fail.
+
+			\param name Workflow name
+			\return The workflow.
+		*/
+		static Ref<Workflow> Instance(const std::string& name = "") { return GetOrCreate(name); }
+
 		/*! Register a workflow, making it immutable and available for use
 
 			\param workflow The workflow to register
@@ -10096,11 +11440,11 @@ namespace BinaryNinja {
 
 		/*! Clone a workflow, copying all Activities and the execution strategy
 
-			\param name Name for the new Workflow
+			\param name If specified, name the new Workflow, otherwise the name is copied from the original
 			\param activity If specified, perform the clone with `activity` as the root
 			\return A new Workflow
 		*/
-		Ref<Workflow> Clone(const std::string& name, const std::string& activity = "");
+		Ref<Workflow> Clone(const std::string& name = "", const std::string& activity = "");
 
 		/*! Register an Activity with this Workflow
 
@@ -10211,6 +11555,22 @@ namespace BinaryNinja {
 		*/
 		bool Insert(const std::string& activity, const std::vector<std::string>& activities);
 
+		/*! Insert an activity after the specified activity and at the same level.
+
+			\param activity Name of the activity to insert the new one after
+			\param newActivity Name of the new activity to be inserted
+			\return true on success, false otherwise
+		*/
+		bool InsertAfter(const std::string& activity, const std::string& newActivity);
+
+		/*! Insert a list of activities after the specified activity and at the same level.
+
+			\param activity Name of the activity to insert the new one after
+			\param newActivity Name of the new activities to be inserted
+			\return true on success, false otherwise
+		*/
+		bool InsertAfter(const std::string& activity, const std::vector<std::string>& activities);
+
 		/*! Remove an activity by name
 
 			\param activity Name of the activity to remove
@@ -10267,6 +11627,8 @@ namespace BinaryNinja {
 		void SetAddressBaseOffset(uint64_t addressBaseOffset);
 		BNDisassemblyCallParameterHints GetCallParameterHints() const;
 		void SetCallParameterHints(BNDisassemblyCallParameterHints hints);
+		BNDisassemblyBlockLabels GetBlockLabels() const;
+		void SetBlockLabels(BNDisassemblyBlockLabels labels);
 	};
 
 	/*!
@@ -10277,6 +11639,17 @@ namespace BinaryNinja {
 		BNBranchType type;
 		Ref<BasicBlock> target; //! The source or destination of the edge, depending on context
 		bool backEdge;
+		bool fallThrough;
+	};
+
+	/*!
+		\ingroup basicblocks
+	*/
+	struct PendingBasicBlockEdge
+	{
+		BNBranchType type;
+		Ref<Architecture> arch;
+		uint64_t target;
 		bool fallThrough;
 	};
 
@@ -10305,6 +11678,13 @@ namespace BinaryNinja {
 			\return Start address of the basic block
 		*/
 		uint64_t GetStart() const;
+
+
+		/*! Set the end of a basic block
+
+			\param end Ending address of the basic block
+		*/
+		void SetEnd(uint64_t end);
 
 		/*! Ending address of the basic block
 
@@ -10341,6 +11721,72 @@ namespace BinaryNinja {
 			\return Whether basic block has undetermined outgoing edges
 		*/
 		bool HasUndeterminedOutgoingEdges() const;
+
+
+		/*! Whether the basic block has invalid instructions
+
+			\return true if the basic block has invalid instructions, false otherwise
+		 */
+		bool HasInvalidInstructions() const;
+
+		/*! Set whether the basic block has invalid instructions
+
+			\param value true if the basic block has invalid instructions, false otherwise
+		*/
+		void SetHasInvalidInstructions(bool value);
+
+		/*! Add a pending outgoing edge to this basic block
+
+			\param type Type of the branch
+			\param addr Address of the target basic block
+			\param arch Optional architecture for the target basic block, default is nullptr
+			\param fallThrough Whether this is a fall-through edge, default false
+		*/
+		void AddPendingOutgoingEdge(BNBranchType type, uint64_t addr, Ref<Architecture> arch = nullptr,
+			bool fallThrough = false);
+
+		/*! Get a list of pending outgoing edges for this basic block
+
+			\return List of pending outgoing edges
+		*/
+		std::vector<PendingBasicBlockEdge> GetPendingOutgoingEdges() const;
+
+		/*! Clear the pending outgoing edges for this basic block
+		*/
+		void ClearPendingOutgoingEdges();
+
+		/*! Set whether basic block has undetermined outgoing edges
+
+			\param value Whether basic block has undetermined outgoing edges
+		*/
+		void SetUndeterminedOutgoingEdges(bool value);
+
+		/*! Get the instruction data for a specific address in this basic block
+
+			\param addr Address of the instruction
+			\param len Pointer to a size_t variable to store the length of the instruction data
+			\return Pointer to the instruction data
+		*/
+		const uint8_t* GetInstructionData(uint64_t addr, size_t* len) const;
+
+		/*! Add instruction data to the basic block
+
+			\param data Pointer to the instruction data
+			\param len Length of the instruction data
+		*/
+		void AddInstructionData(const void* data, size_t len);
+
+		/*! Set whether the basic blocks falls through to a function
+
+			\param value Whether the basic block falls through to a function
+		*/
+		void SetFallThroughToFunction(bool value);
+
+		/*! Determine whether the basic block falls through to a function
+
+			\return Whether basic block falls through to a function
+		*/
+		bool IsFallThroughToFunction() const;
 
 		/*! Whether basic block can return or is tagged as 'No Return'
 
@@ -10588,12 +12034,14 @@ namespace BinaryNinja {
 			address = a.address;
 			return *this;
 		}
-		bool operator==(const ArchAndAddr& a) const { return (arch == a.arch) && (address == a.address); }
+		bool operator==(const ArchAndAddr& a) const {
+			return (arch == a.arch) && (address == a.address);
+		}
 		bool operator<(const ArchAndAddr& a) const
 		{
 			if (arch < a.arch)
 				return true;
-			if (arch > a.arch)
+			if (a.arch < arch)
 				return false;
 			return address < a.address;
 		}
@@ -10869,16 +12317,6 @@ namespace BinaryNinja {
 		*/
 		Ref<LowLevelILFunction> GetLowLevelILIfAvailable() const;
 
-		/*! Get the Low Level IL Instruction start for an instruction at an address
-
-			\param arch Architecture for the instruction
-			\param addr Address of the instruction
-			\return Start address of the instruction
-		*/
-		size_t GetLowLevelILForInstruction(Architecture* arch, uint64_t addr);
-		std::set<size_t> GetLowLevelILInstructionsForAddress(Architecture* arch, uint64_t addr);
-		std::vector<size_t> GetLowLevelILExitsForInstruction(Architecture* arch, uint64_t addr);
-
 		std::pair<DataBuffer, BNBuiltinType> GetConstantData(
 			BNRegisterValueType state, uint64_t value, size_t size = 0);
 
@@ -11014,6 +12452,7 @@ namespace BinaryNinja {
 		void ApplyAutoDiscoveredType(Type* type);
 
 		Ref<FlowGraph> CreateFunctionGraph(const FunctionViewType& type, DisassemblySettings* settings = nullptr);
+		Ref<FlowGraph> CreateFunctionGraphImmediate(const FunctionViewType& type, DisassemblySettings* settings = nullptr);
 
 		std::map<int64_t, std::vector<VariableNameAndType>> GetStackLayout();
 		void CreateAutoStackVariable(int64_t offset, const Confidence<Ref<Type>>& type, const std::string& name);
@@ -11059,18 +12498,69 @@ namespace BinaryNinja {
 		void SetUserIndirectBranches(
 		    Architecture* sourceArch, uint64_t source, const std::vector<ArchAndAddr>& branches);
 
+		// Guided Analysis Support
+		void SetGuidedSourceBlocks(const std::vector<ArchAndAddr>& addresses);
+		void AddGuidedSourceBlocks(const std::vector<ArchAndAddr>& addresses);
+		void RemoveGuidedSourceBlocks(const std::vector<ArchAndAddr>& addresses);
+		bool IsGuidedSourceBlock(Architecture* arch, uint64_t addr) const;
+		std::vector<ArchAndAddr> GetGuidedSourceBlocks();
+		bool HasGuidedSourceBlocks() const;
+
 		std::vector<IndirectBranchInfo> GetIndirectBranches();
 		std::vector<IndirectBranchInfo> GetIndirectBranchesAt(Architecture* arch, uint64_t addr);
 
-		std::vector<uint64_t> GetUnresolvedIndirectBranches();
+		Ref<Function> GetCalleeForAnalysis(Ref<Platform> platform, uint64_t addr, bool exact);
+
+		std::vector<ArchAndAddr> GetUnresolvedIndirectBranches();
 		bool HasUnresolvedIndirectBranches();
 
+		/*! \brief Apply an automatic type adjustment to the call at `addr` in `arch`.
+
+			The adjustment will take effect if the new confidence level is higher than the confidence
+			level of any existing adjustment at the given address, whether automatic or user-defined.
+
+			\param arch Architecture for the call instruction
+			\param addr Address of the call instruction
+			\param adjust Type adjustment to apply
+		*/
 		void SetAutoCallTypeAdjustment(Architecture* arch, uint64_t addr, const Confidence<Ref<Type>>& adjust);
+
+		/*! \brief Apply an automatic stack adjustment to the call at `addr` in `arch`.
+
+			The adjustment will take effect if the new confidence level is higher than the confidence
+			level of any existing adjustment at the given address, whether automatic or user-defined.
+
+			\param arch Architecture for the call instruction
+			\param addr Address of the call instruction
+			\param adjust Stack adjustment to apply
+		*/
 		void SetAutoCallStackAdjustment(Architecture* arch, uint64_t addr, const Confidence<int64_t>& adjust);
+
+		/*! \brief Apply automatic register stack adjustments to the call at `addr` in `arch`.
+
+			\note This overwrites any existing register stack adjustments at the given address,
+			irrespective of their confidence level.
+
+			\param arch Architecture for the call instruction
+			\param addr Address of the call instruction
+			\param adjust Map of register stack adjustments to apply
+		*/
 		void SetAutoCallRegisterStackAdjustment(
 		    Architecture* arch, uint64_t addr, const std::map<uint32_t, Confidence<int32_t>>& adjust);
+
+		/*! \brief Apply an automatic register stack adjustment for a specific register stack to the call at `addr` in `arch`.
+
+			The adjustment will take effect if the new confidence level is higher than the confidence
+			level of any existing adjustment at the given address, whether automatic or user-defined.
+
+			\param arch Architecture for the call instruction
+			\param addr Address of the call instruction
+			\param regStack Register stack identifier
+			\param adjust Register stack adjustment to apply
+		*/
 		void SetAutoCallRegisterStackAdjustment(
 		    Architecture* arch, uint64_t addr, uint32_t regStack, const Confidence<int32_t>& adjust);
+
 		void SetUserCallTypeAdjustment(Architecture* arch, uint64_t addr, const Confidence<Ref<Type>>& adjust);
 		void SetUserCallStackAdjustment(Architecture* arch, uint64_t addr, const Confidence<int64_t>& adjust);
 		void SetUserCallRegisterStackAdjustment(
@@ -11162,6 +12652,7 @@ namespace BinaryNinja {
 		Ref<Tag> CreateAutoFunctionTag(Ref<TagType> tagType, const std::string& data, bool unique = false);
 		Ref<Tag> CreateUserFunctionTag(Ref<TagType> tagType, const std::string& data, bool unique = false);
 
+		void Analyze();
 		void Reanalyze(BNFunctionUpdateType type = UserFunctionUpdate);
 		void MarkUpdatesRequired(BNFunctionUpdateType type = UserFunctionUpdate);
 		void MarkCallerUpdatesRequired(BNFunctionUpdateType type = UserFunctionUpdate);
@@ -11205,7 +12696,13 @@ namespace BinaryNinja {
 		void CreateForcedVariableVersion(const Variable& var, const ArchAndAddr& location);
 		void ClearForcedVariableVersion(const Variable& var, const ArchAndAddr& location);
 
+		void SetFieldResolutionForVariableAt(const Variable& var, const ArchAndAddr& location, FieldResolutionInfo* info);
+		void ClearFieldResolutionForVariableAt(const Variable& var, const ArchAndAddr& location);
+		Ref<FieldResolutionInfo> GetFieldResolutionForVariableAt(const Variable& var, const ArchAndAddr& location);
+		std::map<Variable, std::map<ArchAndAddr, Ref<FieldResolutionInfo>>> GetAllFieldResolutions();
+
 		void RequestDebugReport(const std::string& name);
+		bool CheckForDebugReport(const std::string& name);
 
 		/*! Get the name for a given label ID
 
@@ -11223,6 +12720,18 @@ namespace BinaryNinja {
 
 		BNDeadStoreElimination GetVariableDeadStoreElimination(const Variable& var);
 		void SetVariableDeadStoreElimination(const Variable& var, BNDeadStoreElimination mode);
+
+		BNExprFolding GetExprFolding(uint64_t addr);
+		void SetExprFolding(uint64_t addr, BNExprFolding mode);
+
+		bool IsConditionInverted(uint64_t addr);
+		void SetConditionInverted(uint64_t addr, bool invert);
+
+		BNEarlyReturn GetEarlyReturn(uint64_t addr);
+		void SetEarlyReturn(uint64_t addr, BNEarlyReturn mode);
+
+		BNSwitchRecovery GetSwitchRecovery(uint64_t addr);
+		void SetSwitchRecovery(uint64_t addr, BNSwitchRecovery mode);
 
 		std::map<Variable, std::set<Variable>> GetMergedVariables();
 		void MergeVariables(const Variable& target, const std::set<Variable>& sources);
@@ -11252,6 +12761,15 @@ namespace BinaryNinja {
 		bool GetInstructionContainingAddress(Architecture* arch, uint64_t addr, uint64_t* start);
 
 		Confidence<bool> IsInlinedDuringAnalysis();
+		/*! Set whether the function should be inlined during analysis.
+
+		This will take effect if the new confidence level is higher than the confidence
+		level of the existing value of `IsInlinedDuringAnalysis`, whether automatic or
+		user-defined.
+
+		\param inlined Whether the function should be inlined.
+
+		*/
 		void SetAutoInlinedDuringAnalysis(Confidence<bool> inlined);
 		void SetUserInlinedDuringAnalysis(Confidence<bool> inlined);
 
@@ -11262,6 +12780,12 @@ namespace BinaryNinja {
 		void CollapseRegion(uint64_t hash);
 		void ExpandRegion(uint64_t hash);
 		void ExpandAll();
+
+		void StoreMetadata(const std::string& key, Ref<Metadata> value, bool isAuto = false);
+		Ref<Metadata> QueryMetadata(const std::string& key);
+		Ref<Metadata> GetMetadata();
+		Ref<Metadata> GetAutoMetadata();
+		void RemoveMetadata(const std::string& key);
 	};
 
 	/*!
@@ -11725,21 +13249,16 @@ namespace BinaryNinja {
 		uint32_t sourceOperand;
 		bool valid;
 
-		ILSourceLocation() : valid(false) {}
+		bool ilBased;
+		bool ilDirect;
+		size_t ilExprIndex;
 
-		ILSourceLocation(uint64_t addr, uint32_t operand) : address(addr), sourceOperand(operand), valid(true) {}
+		ILSourceLocation() : valid(false), ilBased(false) {}
 
-		ILSourceLocation(const BNLowLevelILInstruction& instr) :
-		    address(instr.address), sourceOperand(instr.sourceOperand), valid(true)
-		{}
-
-		ILSourceLocation(const BNMediumLevelILInstruction& instr) :
-		    address(instr.address), sourceOperand(instr.sourceOperand), valid(true)
-		{}
-
-		ILSourceLocation(const BNHighLevelILInstruction& instr) :
-		    address(instr.address), sourceOperand(instr.sourceOperand), valid(true)
-		{}
+		ILSourceLocation(uint64_t addr, uint32_t operand) : address(addr), sourceOperand(operand), valid(true), ilBased(false) {}
+		ILSourceLocation(const struct LowLevelILInstruction& instr);
+		ILSourceLocation(const struct MediumLevelILInstruction& instr);
+		ILSourceLocation(const struct HighLevelILInstruction& instr);
 	};
 
 	struct LowLevelILInstruction;
@@ -11778,6 +13297,9 @@ namespace BinaryNinja {
 		uint64_t GetCurrentAddress() const;
 		void SetCurrentAddress(Architecture* arch, uint64_t addr);
 		size_t GetInstructionStart(Architecture* arch, uint64_t addr);
+		std::set<size_t> GetInstructionsAt(Architecture* arch, uint64_t addr);
+
+		std::vector<size_t> GetExitsForInstruction(size_t i);
 
 		void ClearIndirectBranches();
 		void SetIndirectBranches(const std::vector<ArchAndAddr>& branches);
@@ -13166,6 +14688,7 @@ namespace BinaryNinja {
 		}
 
 		Ref<FlowGraph> CreateFunctionGraph(DisassemblySettings* settings = nullptr);
+		Ref<FlowGraph> CreateFunctionGraphImmediate(DisassemblySettings* settings = nullptr);
 	};
 
 	/*!
@@ -13185,8 +14708,24 @@ namespace BinaryNinja {
 	    public CoreRefCountObject<BNMediumLevelILFunction, BNNewMediumLevelILFunctionReference,
 	        BNFreeMediumLevelILFunction>
 	{
+		struct TranslationData
+		{
+			MediumLevelILFunction* copyingFunction = nullptr;
+			std::unordered_map<size_t /* old function expr index */, std::vector<std::tuple<size_t /* new function expr index */, bool /* direct */>>> mlilToMlilExprMap;
+			std::unordered_map<size_t /* old function instr index */, std::vector<std::tuple<size_t /* new function instr index */, bool /* direct */>>> mlilToMlilInstrMap;
+			// todo maybe: llil ssa -> mlil mappings
+		};
+		std::unique_ptr<TranslationData> m_translationData;
+
+		void RecordMLILToMLILExprMap(size_t newExprIndex, const ILSourceLocation& location);
+		void RecordMLILToMLILInstrMap(size_t newInstrIndex, const ILSourceLocation& location);
+		std::unordered_map<size_t /* llil ssa */, size_t /* mlil */> GetLLILSSAToMLILInstrMap(bool fromTranslation);
+		std::vector<BNExprMapInfo> GetLLILSSAToMLILExprMap(bool fromTranslation);
+
+		friend class AnalysisContext;
+
 	  public:
-		MediumLevelILFunction(Architecture* arch, Function* func = nullptr);
+		MediumLevelILFunction(Architecture* arch, Function* func = nullptr, LowLevelILFunction* lowLevelIL = nullptr);
 		MediumLevelILFunction(BNMediumLevelILFunction* func);
 
 		Ref<Function> GetFunction() const;
@@ -13424,7 +14963,7 @@ namespace BinaryNinja {
 		    const ILSourceLocation& loc = ILSourceLocation());
 		void MarkLabel(BNMediumLevelILLabel& label);
 
-		ExprId AddInstruction(ExprId expr);
+		ExprId AddInstruction(ExprId expr, const ILSourceLocation& loc = ILSourceLocation());
 
 		std::vector<uint64_t> GetOperandList(ExprId i, size_t listOperand);
 		ExprId AddLabelMap(const std::map<uint64_t, BNMediumLevelILLabel*>& labels);
@@ -13558,6 +15097,7 @@ namespace BinaryNinja {
 		}
 
 		Ref<FlowGraph> CreateFunctionGraph(DisassemblySettings* settings = nullptr);
+		Ref<FlowGraph> CreateFunctionGraphImmediate(DisassemblySettings* settings = nullptr);
 
 		std::set<size_t> GetLiveInstructionsForVariable(const Variable& var, bool includeLastUse = true);
 
@@ -13853,6 +15393,7 @@ namespace BinaryNinja {
 		void VisitAllExprs(const std::function<bool(const HighLevelILInstruction& expr)>& func);
 
 		Ref<FlowGraph> CreateFunctionGraph(DisassemblySettings* settings = nullptr);
+		Ref<FlowGraph> CreateFunctionGraphImmediate(DisassemblySettings* settings = nullptr);
 
 		size_t GetExprIndexForLabel(uint64_t label);
 		std::set<size_t> GetUsesForLabel(uint64_t label);
@@ -13868,6 +15409,8 @@ namespace BinaryNinja {
 		size_t desiredLineLength;
 		size_t minimumContentLength;
 		size_t tabWidth;
+		size_t maximumAnnotationLength;
+		size_t stringWrappingWidth;
 		std::string languageName;
 		std::string commentStartString;
 		std::string commentEndString;
@@ -14266,9 +15809,9 @@ namespace BinaryNinja {
 
 		BNUpdateResult UpdateToVersion(const std::string& version);
 		BNUpdateResult UpdateToVersion(
-		    const std::string& version, const std::function<bool(size_t progress, size_t total)>& progress);
+		    const std::string& version, const ProgressFunction& progress);
 		BNUpdateResult UpdateToLatestVersion();
-		BNUpdateResult UpdateToLatestVersion(const std::function<bool(size_t progress, size_t total)>& progress);
+		BNUpdateResult UpdateToLatestVersion(const ProgressFunction& progress);
 	};
 
 	/*! UpdateVersion documentation
@@ -14295,6 +15838,7 @@ namespace BinaryNinja {
 		Ref<LowLevelILFunction> lowLevelILFunction;
 		Ref<MediumLevelILFunction> mediumLevelILFunction;
 		Ref<HighLevelILFunction> highLevelILFunction;
+		Ref<Project> project;
 
 		PluginCommandContext();
 	};
@@ -14371,6 +15915,12 @@ namespace BinaryNinja {
 			std::function<bool(BinaryView*, const HighLevelILInstruction&)> isValid;
 		};
 
+		struct RegisteredProjectCommand
+		{
+			std::function<void(Project*)> action;
+			std::function<bool(Project*)> isValid;
+		};
+
 		static void DefaultPluginCommandActionCallback(void* ctxt, BNBinaryView* view);
 		static void AddressPluginCommandActionCallback(void* ctxt, BNBinaryView* view, uint64_t addr);
 		static void RangePluginCommandActionCallback(void* ctxt, BNBinaryView* view, uint64_t addr, uint64_t len);
@@ -14387,6 +15937,7 @@ namespace BinaryNinja {
 		    void* ctxt, BNBinaryView* view, BNHighLevelILFunction* func);
 		static void HighLevelILInstructionPluginCommandActionCallback(
 		    void* ctxt, BNBinaryView* view, BNHighLevelILFunction* func, size_t instr);
+		static void ProjectPluginCommandActionCallback(void* ctxt, BNProject* project);
 
 		static bool DefaultPluginCommandIsValidCallback(void* ctxt, BNBinaryView* view);
 		static bool AddressPluginCommandIsValidCallback(void* ctxt, BNBinaryView* view, uint64_t addr);
@@ -14404,6 +15955,7 @@ namespace BinaryNinja {
 		    void* ctxt, BNBinaryView* view, BNHighLevelILFunction* func);
 		static bool HighLevelILInstructionPluginCommandIsValidCallback(
 		    void* ctxt, BNBinaryView* view, BNHighLevelILFunction* func, size_t instr);
+		static bool ProjectPluginCommandIsValidCallback(void* ctxt, BNProject* project);
 
 	  public:
 		PluginCommand(const BNPluginCommand& cmd);
@@ -15230,6 +16782,13 @@ namespace BinaryNinja {
 		    const std::function<void(BinaryView* view, const HighLevelILInstruction& instr)>& action,
 		    const std::function<bool(BinaryView* view, const HighLevelILInstruction& instr)>& isValid);
 
+		static void RegisterForProject(const std::string& name, const std::string& description,
+		    const std::function<void(Project* project)>& action);
+
+		static void RegisterForProject(const std::string& name, const std::string& description,
+			const std::function<void(Project* project)>& action,
+			const std::function<bool(Project* project)>& isValid);
+
 		/*! Get the list of registered PluginCommands
 
 			\return The list of registered PluginCommands
@@ -15381,6 +16940,7 @@ namespace BinaryNinja {
 		static void InitViewCallback(void* ctxt, BNBinaryView* view);
 		static uint32_t* GetGlobalRegistersCallback(void* ctxt, size_t* count);
 		static void FreeRegisterListCallback(void* ctxt, uint32_t* regs, size_t count);
+		static size_t GetAddressSizeCallback(void* ctxt);
 		static BNType* GetGlobalRegisterTypeCallback(void* ctxt, uint32_t reg);
 		static void AdjustTypeParserInputCallback(
 			void* ctxt,
@@ -15565,6 +17125,12 @@ namespace BinaryNinja {
 		 */
 		virtual Ref<Type> GetGlobalRegisterType(uint32_t reg);
 
+		/*! Get the address size for this platform
+
+			\return The address size for this platform
+		*/
+		virtual size_t GetAddressSize() const;
+
 		/*! Modify the input passed to the Type Parser with Platform-specific features.
 
 			\param[in] parser Type Parser instance
@@ -15692,6 +17258,7 @@ namespace BinaryNinja {
 			std::vector<std::string>& arguments,
 			std::vector<std::pair<std::string, std::string>>& sourceFiles
 		) override;
+		virtual size_t GetAddressSize() const override;
 	};
 
 	/*!
@@ -16573,6 +18140,7 @@ namespace BinaryNinja {
 		static FormInputField SaveFileName(
 		    const std::string& prompt, const std::string& ext, const std::string& defaultName = "");
 		static FormInputField DirectoryName(const std::string& prompt, const std::string& defaultName = "");
+		static FormInputField Checkbox(const std::string& prompt, const bool& defaultChoice = false);
 	};
 
 	/*!
@@ -16632,12 +18200,19 @@ namespace BinaryNinja {
 		    const std::string& defaultName = "");
 		virtual bool GetDirectoryNameInput(
 		    std::string& result, const std::string& prompt, const std::string& defaultName = "");
+		virtual bool GetCheckboxInput(
+			int64_t& result,
+			const std::string& prompt,
+			const std::string& title,
+			const int64_t
+			& defaultChoice = 0
+		);
 		virtual bool GetFormInput(std::vector<FormInputField>& fields, const std::string& title) = 0;
 
 		virtual BNMessageBoxButtonResult ShowMessageBox(const std::string& title, const std::string& text,
 		    BNMessageBoxButtonSet buttons = OKButtonSet, BNMessageBoxIcon icon = InformationIcon) = 0;
 		virtual bool OpenUrl(const std::string& url) = 0;
-		virtual bool RunProgressDialog(const std::string& title, bool canCancel, std::function<void(std::function<bool(size_t, size_t)> progress)> task) = 0;
+		virtual bool RunProgressDialog(const std::string& title, bool canCancel, std::function<void(ProgressFunction progress)> task) = 0;
 	};
 
 	typedef BNPluginOrigin PluginOrigin;
@@ -16671,8 +18246,8 @@ namespace BinaryNinja {
 		std::string GetCommit() const;
 		std::string GetRepository() const;
 		std::string GetProjectData();
-		BNVersionInfo GetMinimumVersionInfo() const;
-		BNVersionInfo GetMaximumVersionInfo() const;
+		VersionInfo GetMinimumVersionInfo() const;
+		VersionInfo GetMaximumVersionInfo() const;
 		uint64_t GetLastUpdate();
 		bool IsViewOnly() const;
 		bool IsBeingDeleted() const;
@@ -16782,8 +18357,9 @@ namespace BinaryNinja {
 			"readOnly"           bool                                     None                 Yes        Only enforced by UI elements
 			"optional"           bool                                     None                 Yes        Indicates setting can be null
 			"hidden"             bool                                     "type" is "string"   Yes        Indicates the UI should conceal the content. The "ignore" property is required to specify the applicable storage scopes
-			"requiresRestart     bool                                     None                 Yes        Enable restart notification in the UI upon change
+			"requiresRestart"    bool                                     None                 Yes        Enable restart notification in the UI upon change
 			"uiSelectionAction"  string                                   "type" is "string"   Yes        {"file", "directory", <Registered UIAction Name>} Informs the UI to add a button to open a selection dialog or run a registered UIAction
+			"quickSettingsGroup" string                                   None                 Yes        Groups related items in the quick settings context menu using dividers to separate groups
 			==================   ======================================   ==================   ========   =======================================================================
 
 		\note In order to facilitate deterministic analysis results, settings from the <em><tt>default</tt></em> schema that impact analysis are serialized
@@ -16884,9 +18460,10 @@ namespace BinaryNinja {
 
 		/*! Determine if the active settings schema is empty
 
+			\param scope the settings scope to check, defaults to SettingsAutoScope
 			\return True if the active settings schema is empty, False otherwise
 		*/
-		bool IsEmpty();
+		bool IsEmpty(BNSettingsScope scope = SettingsAutoScope);
 
 		/*! Retrieve the list of setting identifiers in the active settings schema
 
@@ -16913,6 +18490,7 @@ namespace BinaryNinja {
 		    const std::string& contents, Ref<BinaryView> view = nullptr, BNSettingsScope scope = SettingsAutoScope);
 		std::string SerializeSettings(Ref<BinaryView> view = nullptr, BNSettingsScope scope = SettingsAutoScope);
 
+		bool IsEmpty(Ref<BinaryView> view, BNSettingsScope scope = SettingsAutoScope);
 		bool Reset(const std::string& key, Ref<BinaryView> view = nullptr, BNSettingsScope scope = SettingsAutoScope);
 		bool ResetAll(
 		    Ref<BinaryView> view = nullptr, BNSettingsScope scope = SettingsAutoScope, bool schemaOnly = true);
@@ -16969,6 +18547,7 @@ namespace BinaryNinja {
 		bool DeserializeSettings(const std::string& contents, Ref<Function> func, BNSettingsScope scope = SettingsAutoScope);
 		std::string SerializeSettings(Ref<Function> func, BNSettingsScope scope = SettingsAutoScope);
 
+		bool IsEmpty(Ref<Function> func, BNSettingsScope scope = SettingsAutoScope);
 		bool Reset(const std::string& key, Ref<Function> func, BNSettingsScope scope = SettingsAutoScope);
 		bool ResetAll(Ref<Function> func, BNSettingsScope scope = SettingsAutoScope, bool schemaOnly = true);
 
@@ -17414,7 +18993,7 @@ namespace BinaryNinja {
 		static std::vector<Ref<DebugInfoParser>> GetListForView(const Ref<BinaryView> data);
 
 		std::string GetName() const;
-		Ref<DebugInfo> Parse(Ref<BinaryView> view, Ref<BinaryView> debugView, Ref<DebugInfo> existingDebugInfo = nullptr, std::function<bool(size_t, size_t)> progress = {}) const;
+		Ref<DebugInfo> Parse(Ref<BinaryView> view, Ref<BinaryView> debugView, Ref<DebugInfo> existingDebugInfo = nullptr, ProgressFunction progress = {}) const;
 
 		bool IsValidForView(const Ref<BinaryView> view) const;
 	};
@@ -17434,7 +19013,7 @@ namespace BinaryNinja {
 
 		virtual bool IsValid(Ref<BinaryView>) = 0;
 		virtual bool ParseInfo(
-			Ref<DebugInfo>, Ref<BinaryView>, Ref<BinaryView>, std::function<bool(size_t, size_t)>) = 0;
+			Ref<DebugInfo>, Ref<BinaryView>, Ref<BinaryView>, ProgressFunction) = 0;
 	};
 
 	/*! Class for storing secrets (e.g. tokens) in a system-specific manner
@@ -18315,7 +19894,7 @@ namespace BinaryNinja {
 			const std::string& secondSnapshot,
 			const std::unordered_map<std::string, std::string>& mergeConflictsIn,
 			std::unordered_set<std::string>& mergeConflictsOut,
-			std::function<bool(size_t, size_t)> progress
+			ProgressFunction progress
 		);
 	};
 
@@ -18367,6 +19946,12 @@ namespace BinaryNinja {
 		bool operator!=(const TypeContainer& other) const { return !operator==(other); }
 
 		BNTypeContainer* GetObject() const { return m_object; }
+
+		/*! Get an empty type container which contains no types (immutable)
+
+			\return Empty type container
+		 */
+		static TypeContainer GetEmptyTypeContainer();
 
 		/*! Get an id string for the Type Container. This will be unique within a given
 			analysis session, but may not be globally unique.
@@ -18426,7 +20011,7 @@ namespace BinaryNinja {
 		 */
 		std::optional<std::unordered_map<QualifiedName, std::string>> AddTypes(
 			const std::vector<std::pair<QualifiedName, Ref<Type>>>& types,
-			std::function<bool(size_t, size_t)> progress = {});
+			ProgressFunction progress = {});
 
 		/*! Rename a type in the Type Container. All references to this type will be updated
 			(by id) to use the new name.
@@ -18573,14 +20158,14 @@ namespace BinaryNinja {
 	{
 		BNSymbolQueue* m_object;
 
-		static void ResolveCallback(void* ctxt, BNSymbol** symbol, BNType** type);
-		static void AddCallback(void* ctxt, BNSymbol* symbol, BNType* type);
+		static void ResolveCallback(void* ctxt, BNSymbol** symbol, BNTypeWithConfidence* type);
+		static void AddCallback(void* ctxt, BNSymbol* symbol, BNTypeWithConfidence* type);
 
 	public:
 		SymbolQueue();
 		~SymbolQueue();
-		void Append(const std::function<std::pair<Ref<Symbol>, Ref<Type>>()>& resolve,
-			const std::function<void(Symbol*, Type*)>& add);
+		void Append(const std::function<std::pair<Ref<Symbol>, Confidence<Ref<Type>>>()>& resolve,
+			const std::function<void(Symbol*, const Confidence<Ref<Type>>&)>& add);
 		void Process();
 	};
 
@@ -18732,7 +20317,6 @@ namespace BinaryNinja {
 	{
 	public:
 		FirmwareNinjaRelationship(Ref<BinaryView> view, BNFirmwareNinjaRelationship* relationship = nullptr);
-		~FirmwareNinjaRelationship();
 
 		/*! Set the primary relationship object to an address
 
@@ -19300,6 +20884,9 @@ namespace BinaryNinja {
 		/*! Returns the list of tokens on the current line */
 		std::vector<InstructionTextToken> GetCurrentTokens() const;
 
+		/*! Set the list of tokens on the current line */
+		void SetCurrentTokens(const std::vector<InstructionTextToken>& newTokens);
+
 		/*! Sets the requirement for insertion of braces around scopes in the output. */
 		void SetBraceRequirement(BNBraceRequirement required);
 
@@ -19318,6 +20905,10 @@ namespace BinaryNinja {
 		BNBraceRequirement GetBraceRequirement() const;
 		bool HasBracesAroundSwitchCases() const;
 		bool GetDefaultBracesOnSameLine() const;
+
+		/*! Gets the maximum number of tokens to emit as a ternary operation. */
+		size_t GetMaxTernarySimplificationTokens() const;
+
 		bool IsSimpleScopeAllowed() const;
 
 		/*! Gets the list of lines in the output. */
@@ -19825,7 +21416,7 @@ namespace BinaryNinja::Collaboration
 			\param progress Function to call on progress updates
 			\throws RemoteException If there is an error in any request or if the remote is not connected
 		*/
-		void PullProjects(std::function<bool(size_t, size_t)> progress = {});
+		void PullProjects(ProgressFunction progress = {});
 
 
 		/*!
@@ -19845,7 +21436,7 @@ namespace BinaryNinja::Collaboration
 			\return Reference to the created project
 			\throws RemoteException If there is an error in any request or if the remote is not connected
 		*/
-		Ref<RemoteProject> ImportLocalProject(Ref<Project> localProject, std::function<bool(size_t, size_t)> progress = {});
+		Ref<RemoteProject> ImportLocalProject(Ref<Project> localProject, ProgressFunction progress = {});
 
 
 		/*!
@@ -19903,7 +21494,7 @@ namespace BinaryNinja::Collaboration
 			\param progress Function to call on progress updates
 			\throws RemoteException If there is an error in any request or if the remote is not connected
 		*/
-		void PullGroups(std::function<bool(size_t, size_t)> progress = {});
+		void PullGroups(ProgressFunction progress = {});
 
 
 		/*!
@@ -19979,7 +21570,7 @@ namespace BinaryNinja::Collaboration
 			\param progress Function to call on progress updates
 			\throws RemoteException If there is an error in any request or if the remote is not connected
 		*/
-		void PullUsers(std::function<bool(size_t, size_t)> progress = {});
+		void PullUsers(ProgressFunction progress = {});
 
 
 		/*!
@@ -20116,7 +21707,7 @@ namespace BinaryNinja::Collaboration
 		    \param progress Function to call on progress updates
 		    \throws RemoteException If there is an error in any request or if the remote is not connected
 		 */
-		void PullUndoEntries(std::function<bool(size_t, size_t)> progress = {});
+		void PullUndoEntries(ProgressFunction progress = {});
 
 		/*!
 		    Create a new undo entry on the remote (and pull it)
@@ -20142,7 +21733,7 @@ namespace BinaryNinja::Collaboration
 		    \return Contents of the file at the point of the snapshot
 		    \throws RemoteException If there is an error in any request or if the remote is not connected
 		 */
-		std::vector<uint8_t> DownloadSnapshotFile(std::function<bool(size_t, size_t)> progress = {});
+		std::vector<uint8_t> DownloadSnapshotFile(ProgressFunction progress = {});
 
 		/*!
 		    Download the contents of the snapshot
@@ -20150,7 +21741,7 @@ namespace BinaryNinja::Collaboration
 		    \return Contents of the snapshot
 		    \throws RemoteException If there is an error in any request or if the remote is not connected
 		 */
-		std::vector<uint8_t> Download(std::function<bool(size_t, size_t)> progress = {});
+		std::vector<uint8_t> Download(ProgressFunction progress = {});
 
 		/*!
 		    Download the contents of the analysis cache for this snapshot, returns an empty vector if there is no cache (eg: old snapshots)
@@ -20158,7 +21749,7 @@ namespace BinaryNinja::Collaboration
 		    \return Contents of the analysis cache
 		    \throws RemoteException If there is an error in any request or if the remote is not connected
 		 */
-		std::vector<uint8_t> DownloadAnalysisCache(std::function<bool(size_t, size_t)> progress = {});
+		std::vector<uint8_t> DownloadAnalysisCache(ProgressFunction progress = {});
 	};
 
 	/*!
@@ -20216,7 +21807,7 @@ namespace BinaryNinja::Collaboration
 		    \param progress Function to call on progress updates
 		    \throws RemoteException If there is an error in any request or if the remote is not connected
 		 */
-		void PullSnapshots(std::function<bool(size_t, size_t)> progress = {});
+		void PullSnapshots(ProgressFunction progress = {});
 
 		/*!
 		    Create a new snapshot on the remote (and pull it)
@@ -20235,7 +21826,7 @@ namespace BinaryNinja::Collaboration
 			std::vector<uint8_t> analysisCacheContents,
 			std::optional<std::vector<uint8_t>> fileContents,
 			std::vector<std::string> parentIds,
-			std::function<bool(size_t, size_t)> progress = {}
+			ProgressFunction progress = {}
 		);
 
 		/*!
@@ -20251,7 +21842,7 @@ namespace BinaryNinja::Collaboration
 		    \return Contents of the file
 		    \throws RemoteException If there is an error in any request or if the remote is not connected
 		 */
-		std::vector<uint8_t> Download(std::function<bool(size_t, size_t)> progress = {});
+		std::vector<uint8_t> Download(ProgressFunction progress = {});
 
 		/*!
 		    Get the current user positions for this file
@@ -20301,7 +21892,7 @@ namespace BinaryNinja::Collaboration
 
 		Ref<Project> GetCoreProject();
 		bool IsOpen();
-		bool Open(std::function<bool(size_t, size_t)> progress = {});
+		bool Open(ProgressFunction progress = {});
 		void Close();
 
 		Ref<Remote> GetRemote();
@@ -20324,10 +21915,10 @@ namespace BinaryNinja::Collaboration
 		std::vector<Ref<RemoteFolder>> GetFolders();
 		Ref<RemoteFile> GetFileById(const std::string& id);
 		Ref<RemoteFile> GetFileByName(const std::string& name);
-		void PullFiles(std::function<bool(size_t, size_t)> progress = {});
-		void PullFolders(std::function<bool(size_t, size_t)> progress = {});
-		Ref<RemoteFile> CreateFile(const std::string& filename, std::vector<uint8_t>& contents, const std::string& name, const std::string& description, Ref<RemoteFolder> folder, BNRemoteFileType type, std::function<bool(size_t, size_t)> progress = {}, Ref<ProjectFile> coreFile = nullptr);
-		Ref<RemoteFolder> CreateFolder(const std::string& name, const std::string& description, Ref<RemoteFolder> parent, std::function<bool(size_t, size_t)> progress = {}, Ref<ProjectFolder> coreFolder = nullptr);
+		void PullFiles(ProgressFunction progress = {});
+		void PullFolders(ProgressFunction progress = {});
+		Ref<RemoteFile> CreateFile(const std::string& filename, std::vector<uint8_t>& contents, const std::string& name, const std::string& description, Ref<RemoteFolder> folder, BNRemoteFileType type, ProgressFunction progress = {}, Ref<ProjectFile> coreFile = nullptr);
+		Ref<RemoteFolder> CreateFolder(const std::string& name, const std::string& description, Ref<RemoteFolder> parent, ProgressFunction progress = {}, Ref<ProjectFolder> coreFolder = nullptr);
 		void PushFile(Ref<RemoteFile> file, const std::vector<std::pair<std::string, std::string>>& extraFields = {});
 		void PushFolder(Ref<RemoteFolder> folder, const std::vector<std::pair<std::string, std::string>>& extraFields = {});
 		void DeleteFolder(const Ref<RemoteFolder> folder);
@@ -20336,10 +21927,10 @@ namespace BinaryNinja::Collaboration
 		std::vector<Ref<CollabPermission>> GetGroupPermissions();
 		std::vector<Ref<CollabPermission>> GetUserPermissions();
 		Ref<CollabPermission> GetPermissionById(const std::string& id);
-		void PullGroupPermissions(std::function<bool(size_t, size_t)> progress = {});
-		void PullUserPermissions(std::function<bool(size_t, size_t)> progress = {});
-		Ref<CollabPermission> CreateGroupPermission(int groupId, BNCollaborationPermissionLevel level, std::function<bool(size_t, size_t)> progress = {});
-		Ref<CollabPermission> CreateUserPermission(const std::string& userId, BNCollaborationPermissionLevel level, std::function<bool(size_t, size_t)> progress = {});
+		void PullGroupPermissions(ProgressFunction progress = {});
+		void PullUserPermissions(ProgressFunction progress = {});
+		Ref<CollabPermission> CreateGroupPermission(int groupId, BNCollaborationPermissionLevel level, ProgressFunction progress = {});
+		Ref<CollabPermission> CreateUserPermission(const std::string& userId, BNCollaborationPermissionLevel level, ProgressFunction progress = {});
 		void PushPermission(Ref<CollabPermission> permission, const std::vector<std::pair<std::string, std::string>>& extraFields = {});
 		void DeletePermission(Ref<CollabPermission> permission);
 		bool CanUserView(const std::string& username);
@@ -20406,7 +21997,6 @@ namespace BinaryNinja::Collaboration
 	};
 
 	typedef std::function<bool(Ref<CollabChangeset>)> NameChangesetFunction;
-	typedef std::function<bool(size_t, size_t)> ProgressFunction;
 	typedef std::function<bool(const std::unordered_map<std::string, Ref<AnalysisMergeConflict>>& conflicts)> AnalysisConflictHandler;
 	typedef std::function<bool(const std::vector<Ref<TypeArchiveMergeConflict>>& conflicts)> TypeArchiveConflictHandler;
 
@@ -20434,7 +22024,7 @@ namespace BinaryNinja::Collaboration
 	    \param nameChangeset Function to call for naming a pushed changeset, if necessary
 	    \throws SyncException If there is an error syncing
 	 */
-	void SyncDatabase(Ref<Database> database, Ref<RemoteFile> file, AnalysisConflictHandler conflictHandler, std::function<bool(size_t, size_t)> progress = {}, NameChangesetFunction nameChangeset = [](Ref<CollabChangeset>){ return true; });
+	void SyncDatabase(Ref<Database> database, Ref<RemoteFile> file, AnalysisConflictHandler conflictHandler, ProgressFunction progress = {}, NameChangesetFunction nameChangeset = [](Ref<CollabChangeset>){ return true; });
 
 	/*!
 	    Completely sync a type archive, pushing/pulling/merging/applying changes
@@ -20760,20 +22350,27 @@ namespace std
 
 template<typename T> struct fmt::formatter<BinaryNinja::Ref<T>>
 {
+	fmt::formatter<T> inner;
 	format_context::iterator format(const BinaryNinja::Ref<T>& obj, format_context& ctx) const
 	{
-		return fmt::formatter<T>().format(*obj.GetPtr(), ctx);
+		if (obj.GetPtr() == nullptr)
+			return fmt::format_to(ctx.out(), "{}", "<null>");
+		return inner.format(*obj.GetPtr(), ctx);
 	}
-	constexpr auto parse(format_parse_context& ctx) -> format_parse_context::iterator { return ctx.begin(); }
+	constexpr auto parse(format_parse_context& ctx) -> format_parse_context::iterator { return inner.parse(ctx); }
 };
 
 template<typename T> struct fmt::formatter<BinaryNinja::Confidence<T>>
 {
+	fmt::formatter<T> inner;
 	format_context::iterator format(const BinaryNinja::Confidence<T>& obj, format_context& ctx) const
 	{
-		return fmt::format_to(ctx.out(), "{} ({} confidence)", obj.GetValue(), obj.GetConfidence());
+		auto out = ctx.out();
+		out = inner.format(obj.GetValue(), ctx);
+		ctx.advance_to(out);
+		return fmt::format_to(out, " ({} confidence)", obj.GetConfidence());
 	}
-	constexpr auto parse(format_parse_context& ctx) -> format_parse_context::iterator { return ctx.begin(); }
+	constexpr auto parse(format_parse_context& ctx) -> format_parse_context::iterator { return inner.parse(ctx); }
 };
 
 template<> struct fmt::formatter<BinaryNinja::Metadata>
@@ -20787,7 +22384,6 @@ template<> struct fmt::formatter<BinaryNinja::NameList>
 	format_context::iterator format(const BinaryNinja::NameList& obj, format_context& ctx) const;
 	constexpr auto parse(format_parse_context& ctx) -> format_parse_context::iterator { return ctx.begin(); }
 };
-
 
 template<> struct fmt::formatter<BinaryNinja::StringRef> : fmt::formatter<std::string_view>
 {
@@ -20838,3 +22434,18 @@ struct fmt::formatter<T, char, std::enable_if_t<std::is_enum_v<T>, void>>
 		return it;
 	}
 };
+
+template<> struct fmt::formatter<BinaryNinja::Type>
+{
+	// s -> short, ? -> full
+	char presentation = 's';
+	format_context::iterator format(const BinaryNinja::Type& obj, format_context& ctx) const;
+	constexpr auto parse(format_parse_context& ctx) -> format_parse_context::iterator
+	{
+		auto it = ctx.begin(), end = ctx.end();
+		if (it != end && *it == '?') presentation = *it++;
+		if (it != end && *it != '}') report_error("invalid format");
+		return it;
+	}
+};
+

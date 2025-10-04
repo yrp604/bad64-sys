@@ -40,24 +40,29 @@ public:
 				continue;
 			}
 
-			// Grab stack offset value from function
-			auto stackOffset = block->GetFunction()->GetRegisterValueAtInstruction(
-				block->GetArchitecture(),
-				line.addr,
-				block->GetArchitecture()->GetStackPointerRegister()
-			);
-			auto stackOffsetAfter = block->GetFunction()->GetRegisterValueAfterInstruction(
-				block->GetArchitecture(),
-				line.addr,
-				block->GetArchitecture()->GetStackPointerRegister()
-			);
+			RegisterValue stackOffset;
+			RegisterValue stackOffsetAfter;
+			if (block->GetFunction()->GetMediumLevelILIfAvailable())
+			{
+				// Grab stack offset value from function
+				stackOffset = block->GetFunction()->GetRegisterValueAtInstruction(
+					block->GetArchitecture(),
+					line.addr,
+					block->GetArchitecture()->GetStackPointerRegister()
+				);
+				stackOffsetAfter = block->GetFunction()->GetRegisterValueAfterInstruction(
+					block->GetArchitecture(),
+					line.addr,
+					block->GetArchitecture()->GetStackPointerRegister()
+				);
+			}
 			if (stackOffset.state == StackFrameOffset)
 			{
 				// Stack pointer is resolved to an offset: show the offset
 				// (but negative because that is how other tools do it)
 				line.tokens.emplace(
 					line.tokens.begin() + sep + 1,
-					IntegerToken,
+					AnnotationToken,
 					fmt::format("{:4x}", -stackOffset.value),
 					-stackOffset.value
 				);
@@ -67,7 +72,7 @@ public:
 				// Stack pointer is not resolved, show ??
 				line.tokens.emplace(
 					line.tokens.begin() + sep + 1,
-					IntegerToken,
+					AnnotationToken,
 					"  ??",
 					0
 				);
@@ -77,7 +82,7 @@ public:
 			{
 				line.tokens.emplace(
 					line.tokens.begin() + sep + 2,
-					TextToken,
+					AnnotationToken,
 					"* "
 				);
 			}
@@ -85,7 +90,7 @@ public:
 			{
 				line.tokens.emplace(
 					line.tokens.begin() + sep + 2,
-					TextToken,
+					AnnotationToken,
 					"  "
 				);
 			}
@@ -115,7 +120,11 @@ public:
 extern "C" {
 	BN_DECLARE_CORE_ABI_VERSION
 
+#ifdef DEMO_EDITION
+	bool StackRenderLayerPluginInit()
+#else
 	BINARYNINJAPLUGIN bool CorePluginInit()
+#endif
 	{
 		static StackRenderLayer* layer = new StackRenderLayer();
 		RenderLayer::Register(layer, DisabledByDefaultRenderLayerDefaultEnableState);

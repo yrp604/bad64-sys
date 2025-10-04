@@ -160,7 +160,7 @@ EntryTreeView::EntryTreeView(EntryWidget* parent, TriageView* view, BinaryViewRe
 
 	// Allow view-specific shortcuts when imports are focused
 	m_actionHandler.setupActionHandler(this);
-	m_actionHandler.setActionContext([=]() { return m_view->actionContext(); });
+	m_actionHandler.setActionContext([=, this]() { return m_view->actionContext(); });
 
 	m_model = new GenericEntryModel(this, m_data);
 	setModel(m_model);

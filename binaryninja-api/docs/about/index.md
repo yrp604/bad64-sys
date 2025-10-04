@@ -1,6 +1,6 @@
 # About
 
-Binary Ninja is a registered trademark of [Vector 35](https://vector35.com/) and is available under multiple licenses [licenses](license.md) depending on your purchase.
+Binary Ninja is a registered trademark of [Vector 35](https://vector35.com/) and is available under multiple [licenses](license.md) depending on your purchase.
 
 Vector 35 is proud to both [use](open-source.md) and contribute to a number of open source products as well as release many components of Binary Ninja as [open source](https://github.com/orgs/Vector35/repositories?q=&type=source&language=&sort=) as well.
 

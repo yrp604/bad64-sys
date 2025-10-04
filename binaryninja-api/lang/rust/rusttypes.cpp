@@ -13,8 +13,8 @@ RustTypePrinter::RustTypePrinter(): TypePrinter("RustTypePrinter")
 void RustTypePrinter::AppendCallingConventionTokens(Type* type, Platform* platform, uint8_t baseConfidence,
 	vector<InstructionTextToken>& tokens)
 {
-	if (type->GetCallingConvention() && platform &&
-		type->GetCallingConvention().GetValue() != platform->GetDefaultCallingConvention())
+	if (type->GetCallingConvention().GetValue() && platform
+		&& type->GetCallingConvention().GetValue() != platform->GetDefaultCallingConvention())
 	{
 		uint8_t ccConfidence = type->GetCallingConvention().GetCombinedConfidence(baseConfidence);
 		tokens.emplace_back(baseConfidence, KeywordToken, "extern");
@@ -83,7 +83,7 @@ void RustTypePrinter::GetStructureMemberTokens(Platform* platform, Type* type, u
 		}
 
 		vector<InstructionTextToken> after =
-			GetTypeTokensAfterName(members[i].type, platform, BN_FULL_CONFIDENCE, nullptr, escaping);
+			GetTypeTokensAfterName(members[i].type.GetValue(), platform, BN_FULL_CONFIDENCE, nullptr, escaping);
 
 		out.emplace_back(baseConfidence, FieldNameToken,
 			NameList::EscapeTypeName(members[i].name, escaping));
@@ -144,7 +144,7 @@ vector<InstructionTextToken> RustTypePrinter::GetTypeTokensAfterNameInternal(
 			if (i != 0)
 				tokens.emplace_back(baseConfidence, TextToken, ", ");
 
-			vector<InstructionTextToken> paramTokens = GetTypeTokensAfterName(params[i].type, platform,
+			vector<InstructionTextToken> paramTokens = GetTypeTokensAfterName(params[i].type.GetValue(), platform,
 				params[i].type.GetCombinedConfidence(baseConfidence), type, escaping);
 
 			if (functionHeader)
@@ -219,10 +219,10 @@ vector<InstructionTextToken> RustTypePrinter::GetTypeTokensAfterNameInternal(
 			tokens.emplace_back(baseConfidence, TextToken, " -> ");
 			tokens.emplace_back(type->CanReturn().GetCombinedConfidence(baseConfidence), TextToken, "!");
 		}
-		else if (type->GetChildType() && type->GetChildType()->GetClass() != VoidTypeClass)
+		else if (type->GetChildType().GetValue() && type->GetChildType()->GetClass() != VoidTypeClass)
 		{
 			tokens.emplace_back(baseConfidence, TextToken, " -> ");
-			vector<InstructionTextToken> retn = GetTypeTokensAfterName(type->GetChildType(), platform,
+			vector<InstructionTextToken> retn = GetTypeTokensAfterName(type->GetChildType().GetValue(), platform,
 				type->GetChildType().GetCombinedConfidence(baseConfidence), type, escaping);
 			if (functionHeader)
 			{
@@ -287,8 +287,8 @@ vector<InstructionTextToken> RustTypePrinter::GetTypeTokensAfterNameInternal(
 	{
 		if (type->GetChildType()->GetClass() == FunctionTypeClass)
 		{
-			vector<InstructionTextToken> inner = GetTypeTokensAfterName(
-			type->GetChildType(), platform, baseConfidence, type, escaping);
+			vector<InstructionTextToken> inner =
+				GetTypeTokensAfterName(type->GetChildType().GetValue(), platform, baseConfidence, type, escaping);
 			tokens.insert(tokens.end(), inner.begin(), inner.end());
 			return tokens;
 		}
@@ -299,7 +299,7 @@ vector<InstructionTextToken> RustTypePrinter::GetTypeTokensAfterNameInternal(
 		else
 			tokens.emplace_back(baseConfidence, KeywordToken, "mut");
 		tokens.emplace_back(baseConfidence, TextToken, " ");
-		vector<InstructionTextToken> inner = GetTypeTokensAfterName(type->GetChildType(), platform,
+		vector<InstructionTextToken> inner = GetTypeTokensAfterName(type->GetChildType().GetValue(), platform,
 			type->GetChildType().GetCombinedConfidence(baseConfidence), type, escaping);
 		tokens.insert(tokens.end(), inner.begin(), inner.end());
 		break;
@@ -307,7 +307,7 @@ vector<InstructionTextToken> RustTypePrinter::GetTypeTokensAfterNameInternal(
 	case ArrayTypeClass:
 	{
 		tokens.emplace_back(baseConfidence, BraceToken, "[");
-		vector<InstructionTextToken> inner = GetTypeTokensAfterName(type->GetChildType(), platform,
+		vector<InstructionTextToken> inner = GetTypeTokensAfterName(type->GetChildType().GetValue(), platform,
 			type->GetChildType().GetCombinedConfidence(baseConfidence), type, escaping);
 		tokens.insert(tokens.end(), inner.begin(), inner.end());
 		tokens.emplace_back(baseConfidence, TextToken, "; ");

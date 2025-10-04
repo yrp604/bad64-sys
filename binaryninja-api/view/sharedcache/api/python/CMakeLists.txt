@@ -1,10 +1,12 @@
-cmake_minimum_required(VERSION 3.9 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 
 project(sharedcache-python-api)
 
-file(GLOB PYTHON_SOURCES ${PROJECT_SOURCE_DIR}/*.py)
+include(${PROJECT_SOURCE_DIR}/../../../../cmake/PythonBindings.cmake)
+
+file(GLOB PYTHON_SOURCES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/*.py)
 list(REMOVE_ITEM PYTHON_SOURCES ${PROJECT_SOURCE_DIR}/_sharedcachecore.py)
-list(REMOVE_ITEM PYTHON_SOURCES ${PROJECT_SOURCE_DIR}/enums.py)
+list(REMOVE_ITEM PYTHON_SOURCES ${PROJECT_SOURCE_DIR}/sharedcache_enums.py)
 
 add_executable(sharedcache_generator
         ${PROJECT_SOURCE_DIR}/generator.cpp)
@@ -12,7 +14,7 @@ target_link_libraries(sharedcache_generator binaryninjaapi)
 target_include_directories(sharedcache_generator PUBLIC {PROJECT_SOURCE_DIR}/../../api)
 
 set_target_properties(sharedcache_generator PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
         BUILD_WITH_INSTALL_RPATH OFF
         RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR})
@@ -33,18 +35,14 @@ if(WIN32)
     endif()
 endif()
 
-add_custom_target(sharedcache_generator_copy ALL
-        BYPRODUCTS ${PROJECT_SOURCE_DIR}/_sharedcachecore.py ${PROJECT_SOURCE_DIR}/enums.py
-        DEPENDS ${PYTHON_SOURCES} ${PROJECT_SOURCE_DIR}/../sharedcachecore.h $<TARGET_FILE:sharedcache_generator>
-        COMMAND ${CMAKE_COMMAND} -E echo "Copying Shared Cache Python Sources"
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${PYTHON_OUTPUT_DIRECTORY}
-        COMMAND ${CMAKE_COMMAND} -E env ASAN_OPTIONS=detect_leaks=0 $<TARGET_FILE:sharedcache_generator>
-        ${PROJECT_SOURCE_DIR}/../sharedcachecore.h
-        ${PROJECT_SOURCE_DIR}/_sharedcachecore.py
-        ${PROJECT_SOURCE_DIR}/_sharedcachecore_template.py
-        ${PROJECT_SOURCE_DIR}/sharedcache_enums.py
-
-        COMMAND ${CMAKE_COMMAND} -E copy ${PYTHON_SOURCES} ${PYTHON_OUTPUT_DIRECTORY}
-        COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/_sharedcachecore.py ${PYTHON_OUTPUT_DIRECTORY}
-        COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/sharedcache_enums.py ${PYTHON_OUTPUT_DIRECTORY})
-
+generate_python_bindings(
+        TARGET_NAME sharedcache_generator_copy
+        DISPLAY_NAME "Shared Cache"
+        GENERATOR_TARGET sharedcache_generator
+        HEADER_FILE ${PROJECT_SOURCE_DIR}/../sharedcachecore.h
+        TEMPLATE_FILE ${PROJECT_SOURCE_DIR}/_sharedcachecore_template.py
+        OUTPUT_DIRECTORY ${PYTHON_OUTPUT_DIRECTORY}
+        CORE_OUTPUT_FILE _sharedcachecore.py
+        ENUMS_OUTPUT_FILE sharedcache_enums.py
+        PYTHON_SOURCES ${PYTHON_SOURCES}
+)

@@ -1,4 +1,4 @@
-# Copyright (c) 2019-2024 Vector 35 Inc
+# Copyright (c) 2019-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -19,10 +19,17 @@
 # IN THE SOFTWARE.
 
 from dataclasses import dataclass
+from typing import Union, Optional
 from .flowgraph import FlowGraph, FlowGraphNode
 from .enums import BranchType
 from .interaction import show_graph_report
 from .log import log_warn
+from . import lowlevelil
+from . import mediumlevelil
+from . import highlevelil
+
+
+invalid_il_index = 0xffffffffffffffff
 
 
 # This file contains a list of top level abstract classes for implementing BNIL instructions
@@ -204,3 +211,63 @@ class SSAVariableInstruction(SSA, VariableInstruction):
 @dataclass(frozen=True, repr=False, eq=False)
 class AliasedVariableInstruction(VariableInstruction):
 	pass
+
+
+class ILSourceLocation:
+	"""
+	ILSourceLocation is used to indicate where expressions were defined during the lifting process
+	and gets propagated through the lifting process as an instruction's address/source_operand properties.
+	These are used for, for example, integer display types and expression addresses.
+	"""
+	address: int
+	source_operand: int
+
+	source_llil_instruction: Optional['lowlevelil.LowLevelILInstruction'] = None
+	source_mlil_instruction: Optional['mediumlevelil.MediumLevelILInstruction'] = None
+	source_hlil_instruction: Optional['highlevelil.HighLevelILInstruction'] = None
+	il_direct: bool = True
+
+	def __init__(self, address: int, source_operand: int):
+		self.address = address
+		self.source_operand = source_operand
+
+	def __repr__(self):
+		instr = ""
+		if self.source_llil_instruction is not None:
+			instr = f" (from LLIL {self.source_llil_instruction})"
+		if self.source_mlil_instruction is not None:
+			instr = f" (from MLIL {self.source_mlil_instruction})"
+		if self.source_hlil_instruction is not None:
+			instr = f" (from HLIL {self.source_hlil_instruction})"
+		return f"<ILSourceLocation: {self.address:x}, {self.source_operand}{instr}>"
+
+	def __hash__(self):
+		return hash((self.address, self.source_operand))
+
+	def __eq__(self, other):
+		if not isinstance(other, ILSourceLocation):
+			return False
+		return self.address == other.address and self.source_operand == other.source_operand
+
+	@classmethod
+	def from_instruction(
+			cls,
+			instr: Union['lowlevelil.LowLevelILInstruction', 'mediumlevelil.MediumLevelILInstruction', 'highlevelil.HighLevelILInstruction'],
+			il_direct: bool = True
+	) -> 'ILSourceLocation':
+		"""
+		Get the source location of a given instruction
+		:param instr: Instruction, Low, Medium, or High level
+		:return: Its location
+		"""
+		loc = cls(instr.address, instr.source_operand)
+		if isinstance(instr, lowlevelil.LowLevelILInstruction):
+			loc.source_llil_instruction = instr
+		elif isinstance(instr, mediumlevelil.MediumLevelILInstruction):
+			loc.source_mlil_instruction = instr
+		elif isinstance(instr, highlevelil.HighLevelILInstruction):
+			loc.source_hlil_instruction = instr
+		else:
+			log_warn(f"Unknown instruction type {type(instr)}")
+		loc.il_direct = il_direct
+		return loc

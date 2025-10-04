@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2024 Vector 35 Inc
+// Copyright (c) 2015-2025 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -23,6 +23,12 @@
 
 using namespace BinaryNinja;
 using namespace std;
+
+
+ILSourceLocation::ILSourceLocation(const struct LowLevelILInstruction& instr):
+	address(instr.address), sourceOperand(instr.sourceOperand), valid(true),
+	ilBased(true), ilDirect(true), ilExprIndex(instr.exprIndex)
+{}
 
 
 LowLevelILLabel::LowLevelILLabel()
@@ -94,6 +100,29 @@ void LowLevelILFunction::SetCurrentAddress(Architecture* arch, uint64_t addr)
 size_t LowLevelILFunction::GetInstructionStart(Architecture* arch, uint64_t addr)
 {
 	return BNLowLevelILGetInstructionStart(m_object, arch ? arch->GetObject() : nullptr, addr);
+}
+
+std::set<size_t> LowLevelILFunction::GetInstructionsAt(Architecture *arch, uint64_t addr)
+{
+	size_t count;
+	size_t* instructions = BNLowLevelILGetInstructionsAt(m_object, arch ? arch->GetObject() : nullptr, addr, &count);
+	std::set<size_t> result;
+	for (size_t i = 0; i < count; i++)
+		result.insert(instructions[i]);
+	BNFreeILInstructionList(instructions);
+	return result;
+}
+
+std::vector<size_t> LowLevelILFunction::GetExitsForInstruction(size_t i)
+{
+	size_t count;
+	size_t* instructions = BNLowLevelILGetExitsForInstruction(m_object, i, &count);
+	std::vector<size_t> result;
+	result.reserve(count);
+	for (size_t j = 0; j < count; j++)
+		result.push_back(instructions[j]);
+	BNFreeILInstructionList(instructions);
+	return result;
 }
 
 
@@ -389,6 +418,7 @@ ExprId LowLevelILFunction::AddLabelMap(const map<uint64_t, BNLowLevelILLabel*>& 
 		i++;
 	}
 	ExprId result = (ExprId)BNLowLevelILAddLabelMap(m_object, valueList, labelList, labels.size());
+	delete[] valueList;
 	delete[] labelList;
 	return result;
 }
@@ -1035,5 +1065,12 @@ size_t LowLevelILFunction::GetMappedMediumLevelILExprIndex(size_t expr) const
 Ref<FlowGraph> LowLevelILFunction::CreateFunctionGraph(DisassemblySettings* settings)
 {
 	BNFlowGraph* graph = BNCreateLowLevelILFunctionGraph(m_object, settings ? settings->GetObject() : nullptr);
+	return new CoreFlowGraph(graph);
+}
+
+
+Ref<FlowGraph> LowLevelILFunction::CreateFunctionGraphImmediate(DisassemblySettings* settings)
+{
+	BNFlowGraph* graph = BNCreateLowLevelILImmediateFunctionGraph(m_object, settings ? settings->GetObject() : nullptr);
 	return new CoreFlowGraph(graph);
 }

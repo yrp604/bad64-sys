@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2024 Vector 35 Inc
+// Copyright (c) 2015-2025 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -138,21 +138,21 @@ void OutputType(FILE* out, Type* type, bool isReturnType = false, bool isCallbac
 		else if (type->GetChildType()->GetClass() == FunctionTypeClass)
 		{
 			fprintf(out, "ctypes.CFUNCTYPE(");
-			OutputType(out, type->GetChildType()->GetChildType(), true, true);
+			OutputType(out, type->GetChildType()->GetChildType().GetValue(), true, true);
 			for (auto& i : type->GetChildType()->GetParameters())
 			{
 				fprintf(out, ", ");
-				OutputType(out, i.type);
+				OutputType(out, i.type.GetValue());
 			}
 			fprintf(out, ")");
 			break;
 		}
 		fprintf(out, "ctypes.POINTER(");
-		OutputType(out, type->GetChildType());
+		OutputType(out, type->GetChildType().GetValue());
 		fprintf(out, ")");
 		break;
 	case ArrayTypeClass:
-		OutputType(out, type->GetChildType());
+		OutputType(out, type->GetChildType().GetValue());
 		fprintf(out, " * %" PRId64, type->GetElementCount());
 		break;
 	default:
@@ -203,21 +203,21 @@ void OutputSwizzledType(FILE* out, Type* type)
 		else if (type->GetChildType()->GetClass() == FunctionTypeClass)
 		{
 			fprintf(out, "ctypes.CFUNCTYPE(");
-			OutputType(out, type->GetChildType()->GetChildType(), true, true);
+			OutputType(out, type->GetChildType()->GetChildType().GetValue(), true, true);
 			for (auto& i : type->GetChildType()->GetParameters())
 			{
 				fprintf(out, ", ");
-				OutputType(out, i.type);
+				OutputType(out, i.type.GetValue());
 			}
 			fprintf(out, ")");
 			break;
 		}
 		fprintf(out, "ctypes.POINTER(");
-		OutputType(out, type->GetChildType());
+		OutputType(out, type->GetChildType().GetValue());
 		fprintf(out, ")");
 		break;
 	case ArrayTypeClass:
-		OutputType(out, type->GetChildType());
+		OutputType(out, type->GetChildType().GetValue());
 		fprintf(out, " * %" PRId64, type->GetElementCount());
 		break;
 	default:
@@ -287,7 +287,10 @@ int main(int argc, char* argv[])
 	fprintf(out, "	if isinstance(arg, str):\n");
 	fprintf(out, "		return arg\n");
 	fprintf(out, "	else:\n");
-	fprintf(out, "		return arg.decode('utf8')\n\n\n");
+	fprintf(out, "		try:\n");
+	fprintf(out, "			return arg.decode('utf8')\n");
+	fprintf(out, "		except UnicodeDecodeError:\n");
+	fprintf(out, "			return arg.decode('charmap')\n\n\n");
 
 	fprintf(out, "def free_string(value:ctypes.c_char_p) -> None:\n");
 	fprintf(out, "	BNFreeString(ctypes.cast(value, ctypes.POINTER(ctypes.c_byte)))\n\n");
@@ -394,7 +397,7 @@ int main(int argc, char* argv[])
 					}
 					else
 						fprintf(out, "\t\t(\"%s\", ", j.name.c_str());
-					OutputType(out, j.type);
+					OutputType(out, j.type.GetValue());
 					fprintf(out, "),\n");
 				}
 				fprintf(out, "\t]\n");
@@ -459,7 +462,7 @@ int main(int argc, char* argv[])
 		fprintf(out, "# %s\n\n", funcName.c_str());
 		fprintf(out, "%s = core.%s\n", funcName.c_str(), name.c_str());
 		fprintf(out, "%s.restype = ", funcName.c_str());
-		OutputType(out, i.second->GetChildType(), true, callbackConvention);
+		OutputType(out, i.second->GetChildType().GetValue(), true, callbackConvention);
 		fprintf(out, "\n");
 		if (!i.second->HasVariableArguments())
 		{
@@ -472,11 +475,11 @@ int main(int argc, char* argv[])
 					// BNFreeString expects a pointer to a string allocated by the core, so do not use
 					// a c_char_p here, as that would be allocated by the Python runtime.  This can
 					// be enforced by outputting like a return value.
-					OutputType(out, j.type, true);
+					OutputType(out, j.type.GetValue(), true);
 				}
 				else
 				{
-					OutputType(out, j.type);
+					OutputType(out, j.type.GetValue());
 				}
 				fprintf(out, ",\n");
 			}
@@ -521,16 +524,16 @@ int main(int argc, char* argv[])
 				fprintf(out, "\n\t\t");
 				fprintf(out, "%s: ", argName.c_str());
 				if (swizzleArgs)
-					OutputSwizzledType(out, arg.type);
+					OutputSwizzledType(out, arg.type.GetValue());
 				else
-					OutputType(out, arg.type);
+					OutputType(out, arg.type.GetValue());
 				argN++;
 			}
 		}
 		fprintf(out, "\n\t\t) -> ");
 		if (stringResult || pointerResult)
 			fprintf(out, "Optional[");
-		OutputSwizzledType(out, i.second->GetChildType());
+		OutputSwizzledType(out, i.second->GetChildType().GetValue());
 		if (stringResult || pointerResult)
 			fprintf(out, "]");
 		fprintf(out, ":\n");

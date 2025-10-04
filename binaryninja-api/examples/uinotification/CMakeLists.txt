@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 
 project(uinotification CXX C)
 
-file(GLOB SOURCES
+file(GLOB SOURCES CONFIGURE_DEPENDS
 	*.cpp
 	*.h)
 
@@ -22,7 +22,7 @@ endif()
 target_link_libraries(uinotification binaryninjaui)
 
 set_target_properties(uinotification PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 20
 	CXX_VISIBILITY_PRESET hidden
 	CXX_STANDARD_REQUIRED ON
     VISIBILITY_INLINES_HIDDEN ON

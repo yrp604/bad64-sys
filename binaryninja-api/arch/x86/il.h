@@ -24,9 +24,10 @@ struct DISASSEMBLY_OPTIONS
 
     bool lowerCase;
     std::string separator;
+    bool mpx;
 
-    DISASSEMBLY_OPTIONS(DISASSEMBLY_FLAVOR_ENUM df = DF_BN_INTEL, bool lowerCase = true, std::string separator = ", ")
-     : df(df), lowerCase(lowerCase), separator(separator) { };
+    DISASSEMBLY_OPTIONS(DISASSEMBLY_FLAVOR_ENUM df = DF_BN_INTEL, bool lowerCase = true, std::string separator = ", ", bool mpx = false)
+     : df(df), lowerCase(lowerCase), separator(separator), mpx(mpx) { };
 };
 
 #define IL_FLAG_C 0

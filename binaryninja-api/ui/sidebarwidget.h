@@ -29,6 +29,10 @@ struct BINARYNINJAUIAPI SidebarIcon
 	QImage original;
 	QImage active;
 	QImage inactive;
+	QImage hover;
+	QImage focused;
+
+	const QImage& iconForState(bool isActive, bool isHovered, bool isFocused) const;
 
 	static SidebarIcon generate(const QImage& src);
 };
@@ -51,8 +55,9 @@ protected:
 
 public:
 	SidebarWidget(const QString& title);
-	~SidebarWidget() { closing(); }
+	~SidebarWidget();
 	const QString& title() const { return m_title; }
+	void setTitle(const QString& title) { m_title = title; }
 
 	void enableRefreshTimer(int interval);
 	void setRefreshQuiesce(bool enable);
@@ -103,6 +108,7 @@ public:
 	~SidebarWidgetAndHeader() override;
 
 	SidebarWidget* widget() const { return m_widget; }
+	SidebarWidgetType* type() const { return m_type; }
 	QWidget* header() const;
 
 	void addWidget(SidebarWidget* widget, bool canClose = false);
@@ -110,6 +116,7 @@ public:
 	SidebarWidget* widgetWithTitle(const QString& title) const;
 	bool hasWidgetWithTitle(const QString& title) const;
 	bool activateWidgetWithTitle(const QString& title);
+	bool activateWidget(SidebarWidget* widget);
 	bool hasContent() const;
 
 	void updateTheme();
@@ -188,6 +195,51 @@ enum SidebarContextSensitivity
 /*!
     \ingroup sidebar
 */
+enum SidebarIconVisibility
+{
+	AlwaysShowSidebarIcon,
+	HideSidebarIconIfNoContent,
+	AlwaysHideSidebarIcon,
+	InvisibleIfNoContent
+};
+
+/*!
+    \ingroup sidebar
+*/
+enum SidebarContentClassification
+{
+	SidebarHasRelevantContent,
+	SidebarHasGeneralMessage,
+	SidebarHasNoContent,
+	SidebarIsWidgetContainer
+};
+
+class BINARYNINJAUIAPI SidebarContentClassifier : public QObject
+{
+	Q_OBJECT
+
+public:
+	virtual SidebarContentClassification contentClassification() = 0;
+	virtual void notifyViewChanged(ViewFrame*) {}
+
+Q_SIGNALS:
+	void contentClassificationChanged();
+};
+
+class BINARYNINJAUIAPI StaticSidebarContentClassifier : public SidebarContentClassifier
+{
+	Q_OBJECT
+
+	SidebarContentClassification m_classification;
+
+public:
+	StaticSidebarContentClassifier(SidebarContentClassification classification) : m_classification(classification) {}
+	SidebarContentClassification contentClassification() override { return m_classification; }
+};
+
+/*!
+    \ingroup sidebar
+*/
 class BINARYNINJAUIAPI SidebarWidgetType
 {
 	SidebarIcon m_icon;
@@ -213,7 +265,13 @@ public:
 	virtual SidebarWidgetLocation defaultLocation() const;
 	virtual SidebarContextSensitivity contextSensitivity() const;
 	virtual bool alwaysShowTabs() const { return false; }
+
+	/*!
+	    \deprecated Use `defaultIconVisibility()`
+	*/
 	virtual bool hideIfNoContent() const { return false; }
+
+	virtual SidebarIconVisibility defaultIconVisibility() const;
 
 	virtual SidebarWidget* createWidget(ViewFrame* /*frame*/, BinaryViewRef /*data*/) { return nullptr; }
 	virtual SidebarWidget* createInvalidContextWidget();
@@ -228,5 +286,20 @@ public:
 	virtual bool canUseAsPane(SplitPaneWidget* /*panes*/, BinaryViewRef /*data*/) const { return false; }
 	virtual Pane* createPane(SplitPaneWidget* /*panes*/, BinaryViewRef /*data*/) { return nullptr; }
 
+	virtual SidebarContentClassifier* contentClassifier(ViewFrame* /*frame*/, BinaryViewRef /*data*/)
+	{
+		return nullptr;
+	}
+
+	virtual bool deactivateOnLastTabClose() const { return false; }
+
 	void updateTheme();
+};
+
+class BINARYNINJAUIAPI MoreSidebarWidgetType : public SidebarWidgetType
+{
+public:
+	MoreSidebarWidgetType();
+
+	static MoreSidebarWidgetType* instance();
 };

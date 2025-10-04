@@ -8,8 +8,12 @@ using namespace BinaryNinja;
 
 PseudoCFunction::PseudoCFunction(LanguageRepresentationFunctionType* type, Architecture* arch, Function* owner,
 	HighLevelILFunction* highLevelILFunction) :
-	LanguageRepresentationFunction(type, arch, owner, highLevelILFunction), m_highLevelIL(highLevelILFunction)
+	LanguageRepresentationFunction(type, arch, owner, highLevelILFunction), m_highLevelIL(highLevelILFunction),
+	m_typePrinter(type->GetTypePrinter())
 {
+	if (!m_typePrinter) {
+		m_typePrinter = TypePrinter::GetDefault();
+	}
 }
 
 
@@ -33,8 +37,8 @@ void PseudoCFunction::BeginLines(const HighLevelILInstruction& instr, HighLevelI
 		// At top level, add braces around the entire function
 		tokens.PrependCollapseIndicator();
 		tokens.AppendOpenBrace();
-		tokens.NewLine();
 		tokens.IncreaseIndent();
+		tokens.NewLine();
 	}
 }
 
@@ -56,11 +60,11 @@ BNSymbolDisplayResult PseudoCFunction::AppendPointerTextToken(const HighLevelILI
 	vector<InstructionTextToken>& tokens, DisassemblySettings* settings, BNSymbolDisplayType symbolDisplay, BNOperatorPrecedence precedence)
 {
 	Confidence<Ref<Type>> type = instr.GetType();
-	if (type && (type->GetClass() == PointerTypeClass) && type->IsConst())
+	if (type.GetValue() && (type->GetClass() == PointerTypeClass) && type->IsConst())
 	{
 		string stringValue;
 		size_t childWidth = 0;
-		if (auto child = type->GetChildType(); child)
+		if (auto child = type->GetChildType(); child.GetValue())
 			childWidth = child->GetWidth();
 		if (auto strType = GetFunction()->GetView()->CheckForStringAnnotationType(val, stringValue, false, false, childWidth); strType.has_value())
 		{
@@ -83,8 +87,9 @@ BNSymbolDisplayResult PseudoCFunction::AppendPointerTextToken(const HighLevelILI
 	{
 		// If the pointer has a value of 0, check if it points to a valid address by
 		// 1. If the binary is relocatable, assign the pointer as nullptr
-		// 2. else, check if the constant zero which being referenced is a pointer(display as symbol) or not(display as nullptr)
-		if(val == 0x0 && type && (type->GetClass() == PointerTypeClass))
+		// 2. else, check if the constant zero which being referenced is a pointer(display as symbol) or not(display as
+		// nullptr)
+		if (val == 0x0 && type.GetValue() && (type->GetClass() == PointerTypeClass))
 		{
 			if (GetFunction()->GetView()->IsRelocatable())
 			{
@@ -177,11 +182,7 @@ BNSymbolDisplayResult PseudoCFunction::AppendPointerTextToken(const HighLevelILI
 
 string PseudoCFunction::GetSizeToken(size_t size, bool isSigned)
 {
-	return TypePrinter::GetDefault()->GetTypeString(
-		Type::IntegerType(size, isSigned),
-		nullptr,
-		QualifiedName()
-	);
+	return GetTypePrinter()->GetTypeString(Type::IntegerType(size, isSigned), nullptr, QualifiedName());
 }
 
 
@@ -235,9 +236,15 @@ void PseudoCFunction::AppendComparison(const string& comparison, const HighLevel
 	const auto leftExpr = instr.GetLeftExpr();
 	const auto rightExpr = instr.GetRightExpr();
 
-	GetExprTextInternal(leftExpr, emitter, settings, precedence, false, signedHint);
+	if (leftExpr.operation == HLIL_SPLIT)
+		AppendDefaultSplitExpr(leftExpr, emitter, settings, precedence);
+	else
+		GetExprTextInternal(leftExpr, emitter, settings, precedence, false, signedHint);
 	emitter.Append(OperationToken, comparison);
-	GetExprTextInternal(rightExpr, emitter, settings, precedence, false, signedHint);
+	if (rightExpr.operation == HLIL_SPLIT)
+		AppendDefaultSplitExpr(rightExpr, emitter, settings, precedence);
+	else
+		GetExprTextInternal(rightExpr, emitter, settings, precedence, false, signedHint);
 }
 
 
@@ -267,29 +274,15 @@ void PseudoCFunction::AppendTwoOperand(const string& operand, const HighLevelILI
 		break;
 	}
 
-	if (leftExpr.operation == HLIL_SPLIT)
-	{
-		const auto low = leftExpr.GetLowExpr();
-		const auto high = leftExpr.GetHighExpr();
-
-		emitter.Append(OperationToken, "COMBINE");
-		emitter.AppendOpenParen();
-		GetExprTextInternal(high, emitter, settings);
-		emitter.Append(TextToken, ", ");
-		GetExprTextInternal(low, emitter, settings);
-		emitter.AppendCloseParen();
-	}
-
-
 	if (!settings || settings->IsOptionSet(ShowTypeCasts))
 	{
 		if (leftExpr.operation == HLIL_VAR && (operand == " + " || operand == " - "))
 		{
 			const auto variableType = GetFunction()->GetVariableType(leftExpr.GetVariable());
-			if (variableType)
+			if (variableType.GetValue())
 			{
 				const auto childType = variableType->GetChildType();
-				if (variableType->IsPointer() && childType && childType->GetWidth() != 1)
+				if (variableType->IsPointer() && childType.GetValue() && childType->GetWidth() != 1)
 				{
 					emitter.AppendOpenParen();
 					emitter.Append(TypeNameToken, "char");
@@ -435,6 +428,122 @@ PseudoCFunction::FieldDisplayType PseudoCFunction::GetFieldDisplayType(
 		return FieldDisplayNone;
 }
 
+std::optional<PseudoCFunction::TernaryInfo> PseudoCFunction::CanSimplifyToTernary(const BinaryNinja::HighLevelILInstruction &instr) const
+{
+    // Only handle if-statements
+    if (instr.operation != HLIL_IF)
+        return std::nullopt;
+
+    auto conditionExpr = instr.GetConditionExpr<HLIL_IF>();
+    auto trueExpr = instr.GetTrueExpr<HLIL_IF>();
+    auto falseExpr = instr.GetFalseExpr<HLIL_IF>();
+
+	if (GetHighLevelILFunction()->HasSideEffects(conditionExpr))
+		return std::nullopt;
+    // Both branches must be assignment operations
+    if (trueExpr.operation != HLIL_ASSIGN || falseExpr.operation != HLIL_ASSIGN)
+        return std::nullopt;
+
+    // Get the destination expressions of the assignments
+    auto trueDestExpr = trueExpr.GetDestExpr<HLIL_ASSIGN>();
+    auto falseDestExpr = falseExpr.GetDestExpr<HLIL_ASSIGN>();
+
+    // Verify that the destination expressions are variable references
+    if (trueDestExpr.operation != HLIL_VAR || falseDestExpr.operation != HLIL_VAR)
+        return std::nullopt;
+
+	auto trueExprDestExpr = trueExpr.GetDestExpr<HLIL_ASSIGN>();
+	auto falseExprDestExpr = falseExpr.GetDestExpr<HLIL_ASSIGN>();
+	if (trueExprDestExpr.operation != HLIL_VAR || falseExprDestExpr.operation != HLIL_VAR)
+		return std::nullopt;
+
+	auto trueExprDestVar = trueExprDestExpr.GetVariable<HLIL_VAR>();
+	auto falseExprDestVar = falseExprDestExpr.GetVariable<HLIL_VAR>();
+	if (trueExprDestVar != falseExprDestVar)
+		return std::nullopt;
+
+	auto trueExprSourceExpr = trueExpr.GetSourceExpr<HLIL_ASSIGN>();
+	auto falseExprSourceExpr = falseExpr.GetSourceExpr<HLIL_ASSIGN>();
+	if (GetHighLevelILFunction()->HasSideEffects(trueExprSourceExpr) || GetHighLevelILFunction()->HasSideEffects(falseExprSourceExpr))
+		return std::nullopt;
+
+    // Avoid folding for "else if" cases
+    for (auto parent = instr; parent.HasParent(); parent = parent.GetParent())
+    {
+        if (parent.operation != HLIL_IF)
+            break;
+        auto parentFalse = parent.GetFalseExpr<HLIL_IF>();
+        if (parentFalse.operation == HLIL_IF)
+            return std::nullopt;
+    }
+
+    TernaryInfo info;
+    info.conditional = conditionExpr;
+    info.assignDest  = trueDestExpr;
+    info.trueAssign  = trueExprSourceExpr;
+    info.falseAssign = falseExprSourceExpr;
+    return info;
+}
+
+bool PseudoCFunction::TryEmitSimplifiedTernary(
+	const BinaryNinja::HighLevelILInstruction &instr,
+	DisassemblySettings* settings,
+	BinaryNinja::HighLevelILTokenEmitter &emitter
+)
+{
+	auto ternaryOpt = CanSimplifyToTernary(instr);
+	if (!ternaryOpt.has_value())
+		return false;
+
+	auto &[conditional, assignDest, trueAssign, falseAssign] = ternaryOpt.value();
+
+	std::vector<InstructionTextToken> tokens = emitter.GetCurrentTokens();
+	size_t originalTokenCount = tokens.size();
+
+	// Emit the destination expression
+	GetExprText(assignDest, emitter, settings, AssignmentOperatorPrecedence);
+	emitter.Append(OperationToken, " = ");
+
+	// Emit the condition expression
+	GetExprText(conditional, emitter, settings, TernaryOperatorPrecedence);
+	emitter.Append(OperationToken, " ? ");
+
+	// Emit the true-source expression
+	GetExprText(trueAssign, emitter, settings, TernaryOperatorPrecedence);
+	emitter.Append(OperationToken, " : ");
+
+	// Emit the false-source expression
+	GetExprText(falseAssign, emitter, settings, TernaryOperatorPrecedence);
+	emitter.Append(TextToken, ";");
+
+	// If the ternary expression is too complex (i.e. too many tokens), revert back.
+	if (tokens.size() - originalTokenCount > emitter.GetMaxTernarySimplificationTokens())
+	{
+		tokens.resize(originalTokenCount);
+		return false;
+	}
+	return true;
+}
+
+
+void PseudoCFunction::AppendDefaultSplitExpr(const BinaryNinja::HighLevelILInstruction& instr,
+	BinaryNinja::HighLevelILTokenEmitter& tokens, DisassemblySettings* settings, BNOperatorPrecedence precedence)
+{
+	const auto high = instr.GetHighExpr<HLIL_SPLIT>();
+	const auto low = instr.GetLowExpr<HLIL_SPLIT>();
+	if (precedence == EqualityOperatorPrecedence)
+		tokens.AppendOpenParen();
+	tokens.AppendOpenParen();
+	GetExprTextInternal(high, tokens, settings, precedence);
+	tokens.Append(OperationToken, " << ");
+	tokens.Append(IntegerToken, std::to_string(low.size * 8));
+	tokens.AppendCloseParen();
+	tokens.Append(OperationToken, " | ");
+	GetExprTextInternal(low, tokens, settings, precedence);
+	if (precedence == EqualityOperatorPrecedence)
+		tokens.AppendCloseParen();
+}
+
 
 void PseudoCFunction::AppendFieldTextTokens(const HighLevelILInstruction& var, uint64_t offset,
 	size_t memberIndex, size_t size, HighLevelILTokenEmitter& tokens, bool deref, bool displayDeref)
@@ -464,8 +573,8 @@ void PseudoCFunction::AppendFieldTextTokens(const HighLevelILInstruction& var, u
 
 						tokens.Append(FieldNameToken, member.name, structOffset + member.offset, 0, 0,
 							BN_FULL_CONFIDENCE, nameList);
-					}),
-				memberIndexHint)
+					},
+					memberIndexHint))
 				return;
 
 			// Part of structure but no defined field, use __offset syntax
@@ -517,15 +626,12 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 	// complex expression can cause the process to crash from a stack overflow.
 	auto exprGuard = tokens.SetCurrentExpr(instr);
 
-	if (settings && settings->IsOptionSet(ShowILTypes) && instr.GetType())
+	if (settings && settings->IsOptionSet(ShowILTypes) && instr.GetType().GetValue())
 	{
 		tokens.AppendOpenParen();
 		tokens.AppendOpenParen();
-		auto typeTokens = TypePrinter::GetDefault()->GetTypeTokens(
-			instr.GetType(),
-			GetArchitecture()->GetStandalonePlatform(),
-			QualifiedName()
-		);
+		auto typeTokens = GetTypePrinter()->GetTypeTokens(
+			instr.GetType().GetValue(), GetArchitecture()->GetStandalonePlatform(), QualifiedName());
 		for (auto& token: typeTokens)
 		{
 			tokens.Append(token);
@@ -593,8 +699,11 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 				needSeparator = hasBlocks;
 
 				// Emit the lines for the statement itself
-				GetExprTextInternal(*i, tokens, settings, TopLevelOperatorPrecedence, true);
-				tokens.NewLine();
+				if (!ShouldSkipStatement(*i))
+				{
+					GetExprTextInternal(*i, tokens, settings, TopLevelOperatorPrecedence, true);
+					tokens.NewLine();
+				}
 			}
 		}();
 		break;
@@ -646,6 +755,9 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 	case HLIL_IF:
 		[&]()
 		{
+			if (instr.ast && TryEmitSimplifiedTernary(instr, settings, tokens))
+				return;
+
 			const auto condExpr = instr.GetConditionExpr<HLIL_IF>();
 			const auto trueExpr = instr.GetTrueExpr<HLIL_IF>();
 			const auto falseExpr = instr.GetFalseExpr<HLIL_IF>();
@@ -951,73 +1063,11 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 		break;
 
 	case HLIL_CALL:
-		[&]() {
-			const auto destExpr = instr.GetDestExpr<HLIL_CALL>();
-			const auto parameterExprs = instr.GetParameterExprs<HLIL_CALL>();
-
-			GetExprTextInternal(destExpr, tokens, settings, MemberAndFunctionOperatorPrecedence);
-			tokens.AppendOpenParen();
-
-			vector<FunctionParameter> namedParams;
-			Ref<Type> functionType = instr.GetDestExpr<HLIL_CALL>().GetType();
-			if (functionType && (functionType->GetClass() == PointerTypeClass)
-				&& (functionType->GetChildType()->GetClass() == FunctionTypeClass))
-				namedParams = functionType->GetChildType()->GetParameters();
-
-			for (size_t index{}; index < parameterExprs.size(); index++)
-			{
-				const auto& parameterExpr = parameterExprs[index];
-				if (index != 0) tokens.Append(TextToken, ", ");
-
-				// If the type of the parameter is known to be a pointer to a string, then we directly render it as a
-				// string, regardless of its length
-				bool renderedAsString = false;
-				if (index < namedParams.size() && parameterExprs[index].operation == HLIL_CONST_PTR)
-				{
-					auto exprType = namedParams[index].type;
-					if (exprType && (exprType->GetClass() == PointerTypeClass))
-					{
-						if (auto child = exprType->GetChildType(); child)
-						{
-							if ((child->IsInteger() && child->IsSigned() && child->GetWidth() == 1)
-								|| child->IsWideChar())
-							{
-								tokens.AppendPointerTextToken(parameterExprs[index],
-									parameterExprs[index].GetConstant<HLIL_CONST_PTR>(), settings, AddressOfDataSymbols,
-									precedence, true);
-								renderedAsString = true;
-							}
-						}
-					}
-				}
-
-				if (!renderedAsString)
-					GetExprText(parameterExpr, tokens, settings);
-			}
-			tokens.AppendCloseParen();
-			if (statement)
-				tokens.AppendSemicolon();
-		}();
+		GetExpr_CALL_OR_TAILCALL(instr, tokens, settings, precedence, statement);
 		break;
 
 	case HLIL_IMPORT:
-		[&]() {
-			const auto constant = instr.GetConstant<HLIL_IMPORT>();
-			auto symbol = GetHighLevelILFunction()->GetFunction()->GetView()->GetSymbolByAddress(constant);
-			const auto symbolType = symbol->GetType();
-
-			if (symbol && (symbolType == ImportedDataSymbol || symbolType == ImportAddressSymbol))
-			{
-				symbol = Symbol::ImportedFunctionFromImportAddressSymbol(symbol, constant);
-				const auto symbolShortName = symbol->GetShortName();
-				tokens.Append(IndirectImportToken, NoTokenContext, symbolShortName, instr.address, constant, instr.size, instr.sourceOperand);
-				return;
-			}
-
-			tokens.AppendPointerTextToken(instr, constant, settings, DereferenceNonDataSymbols, precedence);
-			if (statement)
-				tokens.AppendSemicolon();
-		}();
+		GetExpr_IMPORT(instr, tokens, settings, precedence, statement);
 		break;
 
 	case HLIL_ARRAY_INDEX:
@@ -1041,14 +1091,14 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 
 			const auto variableType = GetHighLevelILFunction()->GetFunction()->GetVariableType(destExpr);
 			const auto platform = GetHighLevelILFunction()->GetFunction()->GetPlatform();
-			const auto prevTypeTokens =
-					variableType ?
-					TypePrinter::GetDefault()->GetTypeTokensBeforeName(variableType, platform, variableType.GetConfidence()) :
-					vector<InstructionTextToken>{};
-			const auto postTypeTokens =
-					variableType ?
-					TypePrinter::GetDefault()->GetTypeTokensAfterName(variableType, platform, variableType.GetConfidence()) :
-					vector<InstructionTextToken>{};
+			const auto prevTypeTokens = variableType.GetValue() ?
+				GetTypePrinter()->GetTypeTokensBeforeName(
+					variableType.GetValue(), platform, variableType.GetConfidence()) :
+				vector<InstructionTextToken> {};
+			const auto postTypeTokens = variableType.GetValue() ?
+				GetTypePrinter()->GetTypeTokensAfterName(
+					variableType.GetValue(), platform, variableType.GetConfidence()) :
+				vector<InstructionTextToken> {};
 
 			// Check to see if the variable appears live
 			bool appearsDead = false;
@@ -1062,7 +1112,7 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 			if (appearsDead)
 				tokens.BeginForceZeroConfidence();
 
-			if (variableType)
+			if (variableType.GetValue())
 			{
 				for (auto typeToken: prevTypeTokens)
 				{
@@ -1073,7 +1123,7 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 				tokens.Append(TextToken, " ");
 			}
 			tokens.AppendVarTextToken(destExpr, instr, instr.size);
-			if (variableType)
+			if (variableType.GetValue())
 			{
 				for (auto typeToken: postTypeTokens)
 				{
@@ -1107,16 +1157,16 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 
 			const auto variableType = GetHighLevelILFunction()->GetFunction()->GetVariableType(variable);
 			const auto platform = GetHighLevelILFunction()->GetFunction()->GetPlatform();
-			const auto prevTypeTokens =
-					variableType ?
-					TypePrinter::GetDefault()->GetTypeTokensBeforeName(variableType, platform, variableType.GetConfidence()) :
-					vector<InstructionTextToken>{};
-			const auto postTypeTokens =
-					variableType ?
-					TypePrinter::GetDefault()->GetTypeTokensAfterName(variableType, platform, variableType.GetConfidence()) :
-					vector<InstructionTextToken>{};
+			const auto prevTypeTokens = variableType.GetValue() ?
+				GetTypePrinter()->GetTypeTokensBeforeName(
+					variableType.GetValue(), platform, variableType.GetConfidence()) :
+				vector<InstructionTextToken> {};
+			const auto postTypeTokens = variableType.GetValue() ?
+				GetTypePrinter()->GetTypeTokensAfterName(
+					variableType.GetValue(), platform, variableType.GetConfidence()) :
+				vector<InstructionTextToken> {};
 
-			if (variableType)
+			if (variableType.GetValue())
 			{
 				for (auto typeToken: prevTypeTokens)
 				{
@@ -1127,7 +1177,7 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 				tokens.Append(TextToken, " ");
 			}
 			tokens.AppendVarTextToken(variable, instr, instr.size);
-			if (variableType)
+			if (variableType.GetValue())
 			{
 				for (auto typeToken: postTypeTokens)
 				{
@@ -1196,6 +1246,7 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 			const ConstantData& data = instr.GetConstantData<HLIL_CONST_DATA>();
 			if (auto [db, builtin] = data.ToDataBuffer(); db.GetLength())
 			{
+				bool nullTerminates = true;
 				switch (builtin)
 				{
 					case BuiltinStrcpy:
@@ -1220,9 +1271,12 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 						tokens.Append(BraceToken, "}");
 						break;
 					}
+					case BuiltinWmemcpy:
+						nullTerminates = false;
+						// FALL_THROUGH
 					default:
 					{
-						if (auto unicode = GetFunction()->GetView()->StringifyUnicodeData(instr.function->GetArchitecture(), db); unicode.has_value())
+						if (auto unicode = GetFunction()->GetView()->StringifyUnicodeData(instr.function->GetArchitecture(), db, nullTerminates); unicode.has_value())
 						{
 							auto wideStringPrefix = (builtin == BuiltinWcscpy) ? "L" : "";
 							auto tokenContext = (builtin == BuiltinWcscpy) ? ConstStringDataTokenContext : ConstDataTokenContext;
@@ -1263,12 +1317,7 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 		break;
 
 	case HLIL_CONST_PTR:
-		[&]() {
-			tokens.AppendPointerTextToken(
-				instr, instr.GetConstant<HLIL_CONST_PTR>(), settings, AddressOfDataSymbols, precedence);
-			if (statement)
-				tokens.AppendSemicolon();
-		}();
+		GetExpr_CONST_PTR(instr, tokens, settings, precedence, statement);
 		break;
 
 	case HLIL_VAR:
@@ -1310,9 +1359,9 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 			std::optional<string> assignUpdateOperator;
 			std::optional<HighLevelILInstruction> assignUpdateSource;
 			bool assignUpdateNegate = false;
-			const auto isSplit = destExpr.operation == HLIL_SPLIT;
+			const auto destIsSplit = destExpr.operation == HLIL_SPLIT;
 			std::optional<bool> assignSignedHint;
-			if (isSplit)
+			if (destIsSplit)
 			{
 				const auto high = destExpr.GetHighExpr<HLIL_SPLIT>();
 				const auto low = destExpr.GetLowExpr<HLIL_SPLIT>();
@@ -1327,6 +1376,14 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 				tokens.AppendSemicolon();
 				tokens.NewLine();
 				GetExprTextInternal(low, tokens, settings, precedence);
+			}
+			else if (srcExpr.operation == HLIL_SPLIT)
+			{
+				GetExprTextInternal(destExpr, tokens, settings, precedence);
+				tokens.Append(OperationToken, " = ");
+				AppendDefaultSplitExpr(srcExpr, tokens, settings, precedence);
+				tokens.AppendSemicolon();
+				return;
 			}
 			else
 			{
@@ -1440,7 +1497,8 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 				}
 			}
 
-			GetExprTextInternal(destExpr, tokens, settings, precedence);
+			if (!destIsSplit)
+				GetExprTextInternal(destExpr, tokens, settings, precedence);
 			if (assignUpdateOperator.has_value() && assignUpdateSource.has_value())
 				tokens.Append(OperationToken, assignUpdateOperator.value());
 			else
@@ -1454,7 +1512,7 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 				appearsDead = false;
 			}
 
-			if (isSplit)
+			if (destIsSplit)
 			{
 //				const auto high = destExpr.GetHighExpr<HLIL_SPLIT>();
 				const auto low = destExpr.GetLowExpr<HLIL_SPLIT>();
@@ -1484,7 +1542,7 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 				GetExprTextInternal(srcExpr, tokens, settings, AssignmentOperatorPrecedence, false, assignSignedHint);
 			}
 
-			if (isSplit)
+			if (destIsSplit)
 				tokens.AppendCloseParen();
 
 			if (appearsDead)
@@ -1571,6 +1629,31 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 			}
 			else
 			{
+				if ((!settings || settings->IsOptionSet(ShowTypeCasts)) && srcExpr.operation == HLIL_ARRAY_INDEX)
+				{
+					auto arrayIndexExpr = srcExpr.GetSourceExpr<HLIL_ARRAY_INDEX>();
+					if (arrayIndexExpr.operation == HLIL_VAR &&
+						arrayIndexExpr.GetType()->GetChildType()->GetWidth() < instr.size)
+					{
+						tokens.Append(TextToken, "*");
+						tokens.AppendOpenParen();
+						AppendSizeToken(instr.size, false, tokens);
+						tokens.Append(TextToken, "*");
+						tokens.AppendCloseParen();
+						tokens.Append(OperationToken, "&");
+					}
+				}
+				else if ((!settings || settings->IsOptionSet(ShowTypeCasts)) && srcExpr.operation == HLIL_VAR)
+				{
+					if (srcExpr.GetType().GetValue() && srcExpr.GetType()->GetClass() != StructureTypeClass
+						&& srcExpr.size > instr.size)
+					{
+						tokens.AppendOpenParen();
+						AppendSizeToken(instr.size, false, tokens);
+						tokens.AppendCloseParen();
+					}
+				}
+
 				GetExprTextInternal(srcExpr, tokens, settings, MemberAndFunctionOperatorPrecedence);
 			}
 
@@ -1614,10 +1697,11 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 				const auto constant = srcExpr.GetConstant<HLIL_CONST_PTR>();
 
 				vector<InstructionTextToken> pointerTokens{};
-				if (AppendPointerTextToken(srcExpr, constant, pointerTokens, settings, DereferenceNonDataSymbols, precedence) == DataSymbolResult)
+				if (AppendPointerTextToken(instr, constant, pointerTokens, settings, DereferenceNonDataSymbols, precedence) == DataSymbolResult)
 				{
 					const auto type = srcExpr.GetType();
-					if (type && type->GetClass() == PointerTypeClass && instr.size != type->GetChildType()->GetWidth())
+					if (type.GetValue() && type->GetClass() == PointerTypeClass
+						&& instr.size != type->GetChildType()->GetWidth())
 					{
 						if (!settings || settings->IsOptionSet(ShowTypeCasts))
 						{
@@ -1709,17 +1793,8 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 			tokens.Append(AnnotationToken, "/* tailcall */");
 			tokens.NewLine();
 			tokens.Append(KeywordToken, "return ");
-			GetExprTextInternal(destExpr, tokens, settings, MemberAndFunctionOperatorPrecedence);
-			tokens.AppendOpenParen();
-			for (size_t index{}; index < parameterExprs.size(); index++)
-			{
-				const auto& parameterExpr = parameterExprs[index];
-				if (index != 0) tokens.Append(TextToken, ", ");
-				GetExprTextInternal(parameterExpr, tokens, settings);
-			}
-			tokens.AppendCloseParen();
-			if (statement)
-				tokens.AppendSemicolon();
+
+			GetExpr_CALL_OR_TAILCALL(instr, tokens, settings, precedence, statement);
 		}();
 		break;
 
@@ -1971,9 +2046,7 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 				auto var = left.GetVariable<HLIL_VAR>();
 				auto srcOffset = right.GetConstant<HLIL_CONST>();
 				auto varType = GetFunction()->GetVariableType(var);
-				if (varType
-					&& varType->GetClass() == PointerTypeClass
-					&& varType->GetNamedTypeReference()
+				if (varType.GetValue() && varType->GetClass() == PointerTypeClass && varType->GetNamedTypeReference()
 					&& varType->GetOffset() == srcOffset)
 				{
 					// Yes
@@ -2240,7 +2313,20 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 
 	case HLIL_ROUND_TO_INT:
 		[&]() {
-			AppendTwoOperandFunction("round", instr, tokens, settings, false);
+			auto src = instr.GetSourceExpr<HLIL_ROUND_TO_INT>();
+			string round;
+			if (src.size == 4)
+				round = "roundf";
+			else if (src.size == 8)
+				round = "round";
+			else if (src.size == 10)
+				round = "roundl";
+			else
+				round = "round" + std::to_string(src.size) + "f";
+			tokens.Append(OperationToken, round);
+			tokens.AppendOpenParen();
+			GetExprTextInternal(src, tokens, settings);
+			tokens.AppendCloseParen();
 			if (statement)
 				tokens.AppendSemicolon();
 		}();
@@ -2483,7 +2569,7 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 			if (type && (type->GetClass() == NamedTypeReferenceClass))
 				type = GetFunction()->GetView()->GetTypeByRef(type->GetNamedTypeReference());
 
-			bool derefOffset = false;
+			// Handle structure member access
 			if (type && (type->GetClass() == StructureTypeClass))
 			{
 				std::optional<size_t> memberIndexHint;
@@ -2524,50 +2610,61 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 					memberIndexHint)
 					return;
 			}
-			else if (type && (type->GetClass() == StructureTypeClass))
+
+			// For non-struct types or when struct member resolution fails,
+			// render as pointer arithmetic: *[(type*)]([(char*)]expr[ + offset])
+			bool hasOffset = offset != 0;
+			bool needsOuterParens = precedence > UnaryOperatorPrecedence;
+			bool showTypeCasts = !settings || settings->IsOptionSet(ShowTypeCasts);
+
+			if (needsOuterParens)
+				tokens.AppendOpenParen();
+
+			tokens.Append(OperationToken, "*");
+
+			// Skip the outer cast if we're dereferencing a single byte and are
+			// already casting to char* for the pointer arithmetic
+			bool skipOuterCast = hasOffset && instr.size == 1;
+			if (showTypeCasts && !skipOuterCast)
 			{
-				derefOffset = true;
+				tokens.AppendOpenParen();
+				AppendSizeToken(hasOffset && type ? srcExpr.size : instr.size, true, tokens);
+				tokens.Append(TextToken, "*");
+				tokens.AppendCloseParen();
 			}
 
-			if (derefOffset || offset != 0)
+			if (hasOffset)
 			{
-				bool parens = precedence > UnaryOperatorPrecedence;
-				if (parens)
-					tokens.AppendOpenParen();
-
-				tokens.Append(OperationToken, "*");
-				if (!settings || settings->IsOptionSet(ShowTypeCasts))
-				{
-					tokens.AppendOpenParen();
-					AppendSizeToken(!derefOffset ? srcExpr.size : instr.size, true, tokens);
-					tokens.Append(TextToken, "*");
-					tokens.AppendCloseParen();
-				}
 				tokens.AppendOpenParen();
-				if (!settings || settings->IsOptionSet(ShowTypeCasts))
+				if (showTypeCasts)
 				{
 					tokens.AppendOpenParen();
 					tokens.Append(TypeNameToken, "char");
 					tokens.Append(TextToken, "*");
 					tokens.AppendCloseParen();
 				}
+			}
 
-				if (srcExpr.operation == HLIL_CONST_PTR)
-				{
-					const auto constant = srcExpr.GetConstant<HLIL_CONST_PTR>();
-					tokens.AppendPointerTextToken(srcExpr, constant, settings, DisplaySymbolOnly, precedence);
-				}
-				else
-				{
-					GetExprTextInternal(srcExpr, tokens, settings, AddOperatorPrecedence);
-				}
+			if (srcExpr.operation == HLIL_CONST_PTR)
+			{
+				const auto constant = srcExpr.GetConstant<HLIL_CONST_PTR>();
+				tokens.AppendPointerTextToken(srcExpr, constant, settings, DisplaySymbolOnly, precedence);
+			}
+			else
+			{
+				GetExprTextInternal(srcExpr, tokens, settings,
+					hasOffset ? AddOperatorPrecedence : UnaryOperatorPrecedence);
+			}
 
+			if (hasOffset)
+			{
 				tokens.Append(OperationToken, " + ");
 				tokens.AppendIntegerTextToken(instr, offset, instr.size);
 				tokens.AppendCloseParen();
-				if (parens)
-					tokens.AppendCloseParen();
 			}
+
+			if (needsOuterParens)
+				tokens.AppendCloseParen();
 
 			if (statement)
 				tokens.AppendSemicolon();
@@ -2619,13 +2716,14 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 			if (GetFunction() && (operandList.size() > 0) && (operandList[0].operation == HLIL_CONST))
 			{
 				const auto platform = GetFunction()->GetPlatform();
+				const auto view = GetFunction()->GetView();
 				if (platform)
 				{
 					const auto syscall = (uint32_t)operandList[0].GetConstant<HLIL_CONST>();
-					const auto syscallName = platform->GetSystemCallName(syscall);
+					const auto syscallName = view->GetSystemCallName(platform, syscall);
 					if (settings && settings->GetCallParameterHints() != NeverShowParameterHints)
 					{
-						const auto functionType = platform->GetSystemCallType(syscall);
+						const auto functionType = view->GetSystemCallType(platform, syscall);
 						if (functionType && (functionType->GetClass() == FunctionTypeClass))
 							namedParams = functionType->GetParameters();
 					}
@@ -2698,10 +2796,39 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 	case HLIL_LABEL:
 		[&]() {
 			const auto target = instr.GetTarget<HLIL_LABEL>();
-			tokens.DecreaseIndent();
+			// NB: Not using DecreaseIndent() here because it will mess up the indentation guides
+			// that rely on matched calls to IncreaseIndent()/DecreaseIndent() to properly set
+			// indentation groupings. Instead, we manually remove the last indent in the tokens
+			tokens.InitLine();
+			auto newTokens = tokens.GetCurrentTokens();
+			bool foundIndent = false;
+			bool erasedIndent = false;
+			for (size_t i = 0; i < newTokens.size(); i++)
+			{
+				auto& token = newTokens[i];
+				if (token.type == IndentationToken)
+				{
+					foundIndent = true;
+				}
+				else if (foundIndent)
+				{
+					// We have indents and this is the first non-indent token after all the indents,
+					// so remove the previous token. It must exist because we will have to have gone through
+					// the condition above and looped at least once.
+					newTokens.erase(newTokens.begin() + (i - 1));
+					erasedIndent = true;
+					break;
+				}
+			}
+			if (foundIndent && !erasedIndent)
+			{
+				// Found an indent, but it was the last token, so erase the last token
+				newTokens.erase(newTokens.begin() + (newTokens.size() - 1));
+			}
+			tokens.SetCurrentTokens(newTokens);
+
 			tokens.Append(GotoLabelToken, GetFunction()->GetGotoLabelName(target), target);
 			tokens.Append(TextToken, ":");
-			tokens.IncreaseIndent();
 		}();
 		break;
 
@@ -2727,7 +2854,21 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 		}();
 		break;
 
-	case HLIL_SPLIT: break;
+	case HLIL_SPLIT:
+		[&]() {
+			const auto low = instr.GetLowExpr();
+			const auto high = instr.GetHighExpr();
+
+			tokens.Append(OperationToken, "COMBINE");
+			tokens.AppendOpenParen();
+			GetExprTextInternal(high, tokens, settings);
+			tokens.Append(TextToken, ", ");
+			GetExprTextInternal(low, tokens, settings);
+			tokens.AppendCloseParen();
+			if (statement)
+				tokens.AppendSemicolon();
+		}();
+		break;
 	default:
 		[&]() {
 			char buf[64]{};
@@ -2737,12 +2878,93 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 		break;
 	}
 
-	if (settings && settings->IsOptionSet(ShowILTypes) && instr.GetType())
+	if (settings && settings->IsOptionSet(ShowILTypes) && instr.GetType().GetValue())
 	{
 		tokens.AppendCloseParen();
 	}
 }
 
+void PseudoCFunction::GetExpr_CALL_OR_TAILCALL(const BinaryNinja::HighLevelILInstruction& instr,
+	BinaryNinja::HighLevelILTokenEmitter& tokens, BinaryNinja::DisassemblySettings* settings,
+	BNOperatorPrecedence precedence, bool statement)
+{
+	const auto destExpr = instr.GetDestExpr();
+	const auto parameterExprs = instr.GetParameterExprs();
+
+	vector<FunctionParameter> namedParams;
+	Ref<Type> functionType = destExpr.GetType().GetValue();
+	if (functionType && (functionType->GetClass() == PointerTypeClass)
+		&& (functionType->GetChildType()->GetClass() == FunctionTypeClass))
+		namedParams = functionType->GetChildType()->GetParameters();
+
+	GetExprTextInternal(destExpr, tokens, settings, MemberAndFunctionOperatorPrecedence);
+	tokens.AppendOpenParen();
+
+	for (size_t index {}; index < parameterExprs.size(); index++)
+	{
+		const auto& parameterExpr = parameterExprs[index];
+		if (index != 0)
+			tokens.Append(TextToken, ", ");
+
+		// If the type of the parameter is known to be a pointer to a string, then we directly render it as a
+		// string, regardless of its length
+		bool renderedAsString = false;
+		if (index < namedParams.size() && parameterExprs[index].operation == HLIL_CONST_PTR)
+		{
+			auto exprType = namedParams[index].type;
+			if (exprType.GetValue() && (exprType->GetClass() == PointerTypeClass))
+			{
+				if (auto child = exprType->GetChildType(); child.GetValue())
+				{
+					if ((child->IsInteger() && child->IsSigned() && child->GetWidth() == 1) || child->IsWideChar())
+					{
+						tokens.AppendPointerTextToken(parameterExprs[index],
+							parameterExprs[index].GetConstant<HLIL_CONST_PTR>(), settings, AddressOfDataSymbols,
+							precedence, true);
+						renderedAsString = true;
+					}
+				}
+			}
+		}
+
+		if (!renderedAsString)
+			GetExprText(parameterExpr, tokens, settings);
+	}
+	tokens.AppendCloseParen();
+	if (statement)
+		tokens.AppendSemicolon();
+}
+
+void PseudoCFunction::GetExpr_CONST_PTR(const BinaryNinja::HighLevelILInstruction& instr,
+	BinaryNinja::HighLevelILTokenEmitter& tokens, BinaryNinja::DisassemblySettings* settings,
+	BNOperatorPrecedence precedence, bool statement)
+{
+	tokens.AppendPointerTextToken(
+		instr, instr.GetConstant<HLIL_CONST_PTR>(), settings, AddressOfDataSymbols, precedence);
+	if (statement)
+		tokens.AppendSemicolon();
+}
+
+void PseudoCFunction::GetExpr_IMPORT(const BinaryNinja::HighLevelILInstruction& instr,
+	BinaryNinja::HighLevelILTokenEmitter& tokens, BinaryNinja::DisassemblySettings* settings,
+	BNOperatorPrecedence precedence, bool statement)
+{
+	const auto constant = instr.GetConstant<HLIL_IMPORT>();
+	auto symbol = GetHighLevelILFunction()->GetFunction()->GetView()->GetSymbolByAddress(constant);
+	const auto symbolType = symbol->GetType();
+
+	if (symbol && (symbolType == ImportedDataSymbol || symbolType == ImportAddressSymbol))
+	{
+		symbol = Symbol::ImportedFunctionFromImportAddressSymbol(symbol, constant);
+		const auto symbolShortName = symbol->GetShortName();
+		tokens.Append(IndirectImportToken, NoTokenContext, symbolShortName, instr.address, constant, instr.size, instr.sourceOperand);
+		return;
+	}
+
+	tokens.AppendPointerTextToken(instr, constant, settings, DereferenceNonDataSymbols, precedence);
+	if (statement)
+		tokens.AppendSemicolon();
+}
 
 string PseudoCFunction::GetAnnotationStartString() const
 {
@@ -2757,37 +2979,24 @@ string PseudoCFunction::GetAnnotationEndString() const
 	return " */";
 }
 
+TypePrinter* PseudoCFunction::GetTypePrinter() const
+{
+	return m_typePrinter;
+}
+
+bool PseudoCFunction::ShouldSkipStatement(const BinaryNinja::HighLevelILInstruction& instr)
+{
+	return false;
+}
 
 PseudoCFunctionType::PseudoCFunctionType(): LanguageRepresentationFunctionType("Pseudo C")
 {
 }
 
+PseudoCFunctionType::PseudoCFunctionType(const string& name) : LanguageRepresentationFunctionType(name) {}
 
 Ref<LanguageRepresentationFunction> PseudoCFunctionType::Create(Architecture* arch, Function* owner,
 	HighLevelILFunction* highLevelILFunction)
 {
 	return new PseudoCFunction(this, arch, owner, highLevelILFunction);
-}
-
-
-extern "C"
-{
-	BN_DECLARE_CORE_ABI_VERSION
-
-#ifndef DEMO_EDITION
-	BINARYNINJAPLUGIN void CorePluginDependencies()
-	{
-	}
-#endif
-
-#ifdef DEMO_EDITION
-	bool PseudoCPluginInit()
-#else
-	BINARYNINJAPLUGIN bool CorePluginInit()
-#endif
-	{
-		LanguageRepresentationFunctionType* type = new PseudoCFunctionType();
-		LanguageRepresentationFunctionType::Register(type);
-		return true;
-	}
 }

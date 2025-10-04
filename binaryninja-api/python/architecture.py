@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -20,7 +20,7 @@
 
 import traceback
 import ctypes
-from typing import Generator, Union, List, Optional, Mapping, Tuple, NewType, Dict
+from typing import Generator, Union, List, Optional, Mapping, Tuple, NewType, Dict, Set
 from dataclasses import dataclass, field
 
 # Binary Ninja components
@@ -30,7 +30,7 @@ from .enums import (
     Endianness, ImplicitRegisterExtend, BranchType, LowLevelILFlagCondition, FlagRole, LowLevelILOperation,
     InstructionTextTokenType, InstructionTextTokenContext, IntrinsicClass
 )
-from .log import log_error
+from .log import log_error_for_exception, log_debug_for_exception
 from . import lowlevelil
 from . import types
 from . import databuffer
@@ -39,7 +39,8 @@ from . import callingconvention
 from . import typelibrary
 from . import function
 from . import binaryview
-from . import deprecation
+from . import variable
+from . import basicblock
 
 RegisterIndex = NewType('RegisterIndex', int)
 RegisterStackIndex = NewType('RegisterStackIndex', int)
@@ -63,6 +64,340 @@ RegisterStackType = Union[RegisterStackName, 'lowlevelil.ILRegisterStack', Regis
 SemanticClassType = Union[SemanticClassName, 'lowlevelil.ILSemanticFlagClass', SemanticClassIndex]
 SemanticGroupType = Union[SemanticGroupName, 'lowlevelil.ILSemanticFlagGroup', SemanticGroupIndex]
 IntrinsicType = Union[IntrinsicName, 'lowlevelil.ILIntrinsic', IntrinsicIndex]
+
+
+@dataclass
+class BasicBlockAnalysisContext:
+    """Used by ``analyze_basic_blocks`` and contains analysis settings and other contextual information.
+
+    .. note:: This class is meant to be used by Architecture plugins only
+    """
+
+    _handle: core.BNBasicBlockAnalysisContext
+    _function: "function.Function"
+    _contextual_returns_dirty: bool
+
+    # In
+    _indirect_branches: List["variable.IndirectBranchInfo"]
+    _indirect_no_return_calls: Set["function.ArchAndAddr"]
+    _analysis_skip_override: core.FunctionAnalysisSkipOverride
+    _guided_analysis_mode: bool
+    _trigger_guided_on_invalid_instruction: bool
+    _translate_tail_calls: bool
+    _disallow_branch_to_string: bool
+    _max_function_size: int
+    _max_size_reached: bool
+
+    # In/Out
+    _contextual_returns: Dict["function.ArchAndAddr", bool]
+
+    # Out
+    _direct_code_references: Dict[int, "function.ArchAndAddr"]
+    _direct_no_return_calls: Set["function.ArchAndAddr"]
+    _halted_disassembly_addresses: Set["function.ArchAndAddr"]
+
+    @staticmethod
+    def from_core_struct(bn_bb_context: core.BNBasicBlockAnalysisContext) -> "BasicBlockAnalysisContext":
+        """Create a BasicBlockAnalysisContext from a core.BNBasicBlockAnalysisContext structure."""
+
+        indirect_branches = []
+        for i in range(0, bn_bb_context.indirectBranchesCount):
+            ibi = variable.IndirectBranchInfo(
+                source_arch=CoreArchitecture._from_cache(bn_bb_context.indirectBranches[i].sourceArch),
+                source_addr=bn_bb_context.indirectBranches[i].sourceAddr,
+                dest_arch=CoreArchitecture._from_cache(bn_bb_context.indirectBranches[i].destArch),
+                dest_addr=bn_bb_context.indirectBranches[i].destAddr,
+                auto_defined=bn_bb_context.indirectBranches[i].autoDefined,
+            )
+            indirect_branches.append(ibi)
+
+        indirect_no_return_calls = set()
+        for i in range(0, bn_bb_context.indirectNoReturnCallsCount):
+            loc = function.ArchAndAddr(
+                CoreArchitecture._from_cache(bn_bb_context.indirectNoReturnCalls[i].arch),
+                bn_bb_context.indirectNoReturnCalls[i].address,
+            )
+            indirect_no_return_calls.add(loc)
+
+        contextual_returns = {}
+        for i in range(0, bn_bb_context.contextualFunctionReturnCount):
+            loc = function.ArchAndAddr(
+                CoreArchitecture._from_cache(bn_bb_context.contextualFunctionReturnLocations[i].arch),
+                bn_bb_context.contextualFunctionReturnLocations[i].address,
+            )
+            contextual_returns[loc] = bn_bb_context._contextualFunctionReturnValues[i]
+
+        direct_code_references = {}
+        for i in range(0, bn_bb_context.directRefCount):
+            src = function.ArchAndAddr(
+                CoreArchitecture._from_cache(bn_bb_context.directRefSources[i].arch),
+                bn_bb_context.directRefSources[i].address,
+            )
+            direct_code_references[bn_bb_context.directRefTargets[i]] = src
+
+        direct_no_return_calls = set()
+        for i in range(0, bn_bb_context.directNoReturnCallsCount):
+            loc = function.ArchAndAddr(
+                CoreArchitecture._from_cache(bn_bb_context.directNoReturnCallLocations[i].arch),
+                bn_bb_context.directNoReturnCallLocations[i].address,
+            )
+            direct_no_return_calls.add(loc)
+
+        halted_disassembly_addresses = set()
+        for i in range(0, bn_bb_context.haltedDisassemblyAddressesCount):
+            addr = function.ArchAndAddr(
+                CoreArchitecture._from_cache(bn_bb_context.haltedDisassemblyAddresses[i].arch),
+                bn_bb_context.haltedDisassemblyAddresses[i].address,
+            )
+            halted_disassembly_addresses.add(addr)
+
+        view = binaryview.BinaryView(handle=core.BNGetFunctionData(bn_bb_context.function))
+        return BasicBlockAnalysisContext(
+            _handle=bn_bb_context,
+            _function=function.Function(view, core.BNNewFunctionReference(bn_bb_context.function)),
+            _indirect_branches=indirect_branches,
+            _indirect_no_return_calls=indirect_no_return_calls,
+            _analysis_skip_override=bn_bb_context.analysisSkipOverride,
+            _guided_analysis_mode=bn_bb_context.guidedAnalysisMode,
+            _trigger_guided_on_invalid_instruction=bn_bb_context.triggerGuidedOnInvalidInstruction,
+            _translate_tail_calls=bn_bb_context.translateTailCalls,
+            _disallow_branch_to_string=bn_bb_context.disallowBranchToString,
+            _max_function_size=bn_bb_context.maxFunctionSize,
+            _max_size_reached=bn_bb_context.maxSizeReached,
+            _contextual_returns=contextual_returns,
+            _contextual_returns_dirty=False,
+            _direct_code_references=direct_code_references,
+            _direct_no_return_calls=direct_no_return_calls,
+            _halted_disassembly_addresses=halted_disassembly_addresses,
+        )
+
+    @property
+    def indirect_branches(self) -> List["variable.IndirectBranchInfo"]:
+        """Get the list of indirect branches in this context."""
+
+        return self._indirect_branches
+
+    @property
+    def indirect_no_return_calls(self) -> Set["function.ArchAndAddr"]:
+        """Get the set of indirect no-return calls in this context."""
+
+        return self._indirect_no_return_calls
+
+    @property
+    def analysis_skip_override(self) -> core.FunctionAnalysisSkipOverride:
+        """Get the analysis skip override setting for this context."""
+
+        return self._analysis_skip_override
+
+    @property
+    def guided_analysis_mode(self) -> bool:
+        """Get the setting that determines if functions start in guided analysis mode."""
+
+        return self._guided_analysis_mode
+
+    @property
+    def trigger_guided_on_invalid_instruction(self) -> bool:
+        """Get the setting that determines if guided mode should be triggered on invalid instructions."""
+
+        return self._trigger_guided_on_invalid_instruction
+
+    @property
+    def translate_tail_calls(self) -> bool:
+        """Get setting from context that determines if tail calls should be translated."""
+
+        return self._translate_tail_calls
+
+    @property
+    def disallow_branch_to_string(self) -> bool:
+        """Get setting from context that determines if branches to string addresses should be disallowed."""
+
+        return self._disallow_branch_to_string
+
+    @property
+    def max_function_size(self) -> int:
+        """Get the maximum function size setting for this context."""
+
+        return self._max_function_size
+
+    @property
+    def halt_on_invalid_instruction(self) -> bool:
+        """Get the setting from context that determines if analysis should halt on invalid instructions."""
+
+        return self._halt_on_invalid_instruction
+
+    @property
+    def max_size_reached(self) -> bool:
+        """Get boolean that indicates if the maximum function size has been reached."""
+
+        return self._max_size_reached
+
+    @property
+    def contextual_returns(self) -> Dict["function.ArchAndAddr", bool]:
+        """Get the mapping of contextual function return locations to their values."""
+
+        return self._contextual_returns
+
+    def add_contextual_return(self, loc: "function.ArchAndAddr", value: bool) -> None:
+        """
+        ``add_contextual_return`` adds a contextual function return location and its value to the current function.
+
+        :param function.ArchAndAddr loc: The location of the contextual function return
+        :param bool value: The value of the contextual function return
+        """
+        if not isinstance(value, bool):
+            raise TypeError("value must be a boolean")
+
+        if not isinstance(loc, function.ArchAndAddr):
+            raise TypeError("loc must be an instance of function.ArchAndAddr")
+
+        # Update existing value if it exists
+        if loc in self._contextual_returns:
+            if self._contextual_returns[loc] == value:
+                return
+
+        self._contextual_returns[loc] = value
+        self._contextual_returns_dirty = True
+
+    @property
+    def direct_code_references(self) -> Dict[int, "function.ArchAndAddr"]:
+        """Get the mapping of direct code reference targets to their source locations."""
+
+        return self._direct_code_references
+
+    def add_direct_code_reference(self, target: int, source: "function.ArchAndAddr") -> None:
+        """
+        ``add_direct_code_reference`` adds a direct code reference to the current function.
+
+        :param int target: The target address of the direct code reference
+        :param function.ArchAndAddr source: The source location of the direct code reference
+        """
+
+        if not isinstance(target, int):
+            raise TypeError("target must be an integer")
+
+        if not isinstance(source, function.ArchAndAddr):
+            raise TypeError("source must be an instance of function.ArchAndAddr")
+
+        self._direct_code_references[target] = source
+
+    @property
+    def direct_no_return_calls(self) -> Set["function.ArchAndAddr"]:
+        """Get the set of direct no-return call locations in this context."""
+
+        return self._direct_no_return_calls
+
+    def add_direct_no_return_call(self, loc: "function.ArchAndAddr") -> None:
+        """
+        ``add_direct_no_return_call`` adds a direct no-return call location to the current function.
+
+        :param function.ArchAndAddr loc: The location of the direct no-return call
+        """
+        if not isinstance(loc, function.ArchAndAddr):
+            raise TypeError("loc must be an instance of function.ArchAndAddr")
+
+        self._direct_no_return_calls.add(loc)
+
+    @property
+    def halted_disassembly_addresses(self) -> Set["function.ArchAndAddr"]:
+        """Get the set of addresses where disassembly has been halted."""
+
+        return self._halted_disassembly_addresses
+
+    def add_halted_disassembly_address(self, loc: "function.ArchAndAddr") -> None:
+        """
+        ``add_halted_disassembly_address`` adds an address to the set of halted disassembly addresses.
+
+        :param function.ArchAndAddr loc: The location of the halted disassembly address
+        """
+        if not isinstance(loc, function.ArchAndAddr):
+            raise TypeError("loc must be an instance of function.ArchAndAddr")
+
+        self._halted_disassembly_addresses.add(loc)
+
+    def create_basic_block(self, arch: "Architecture", start: int) -> Optional["basicblock.BasicBlock"]:
+        """
+        ``create_basic_block`` creates a new BasicBlock at the specified address for the given Architecture.
+
+        :param Architecture arch: Architecture of the BasicBlock to create
+        :param int start: Address of the BasicBlock to create
+        """
+
+        if not isinstance(arch, Architecture):
+            raise TypeError("arch must be an instance of architecture.Architecture")
+
+        bnblock = core.BNAnalyzeBasicBlocksContextCreateBasicBlock(self._handle, arch.handle, start)
+        if not bnblock:
+            return None
+
+        view = binaryview.BinaryView(handle=core.BNGetFunctionData(self._function.handle))
+        return basicblock.BasicBlock(bnblock, view)
+
+    def add_basic_block(self, block: "basicblock.BasicBlock") -> None:
+        """
+        ``add_basic_block`` adds a BasicBlock to the current function.
+
+        :param basicblock.BasicBlock block: The BasicBlock to add
+        """
+        if not isinstance(block, basicblock.BasicBlock):
+            raise TypeError("block must be an instance of basicblock.BasicBlock")
+
+        core.BNAnalyzeBasicBlocksContextAddBasicBlockToFunction(self._handle, block.handle)
+
+    def add_temp_outgoing_reference(self, target: "function.Function") -> None:
+        """
+        ``add_temp_outgoing_reference`` adds a temporary outgoing reference to the specified function.
+
+        :param function.Function target: The target function to add a temporary outgoing reference to
+        """
+        if not isinstance(target, function.Function):
+            raise TypeError("target must be an instance of function.Function")
+
+        core.BNAnalyzeBasicBlocksContextAddTempReference(self._handle, target.handle)
+
+    def finalize(self) -> None:
+        """
+        ``finalize`` finalizes the function's basic block analysis
+        """
+
+        if self._direct_code_references:
+            total = len(self._direct_code_references)
+            sources = (core.BNArchitectureAndAddress * total)()
+            targets = (ctypes.c_ulonglong * total)()
+            for i, (target, src) in enumerate(self._direct_code_references.items()):
+                sources[i].arch = src.arch.handle
+                sources[i].address = src.addr
+                targets[i] = target
+
+            core.BNAnalyzeBasicBlocksContextSetDirectCodeReferences(self._handle, sources, targets, total)
+
+        if self._direct_no_return_calls:
+            total = len(self._direct_no_return_calls)
+            direct_no_return_calls = (core.BNArchitectureAndAddress * total)()
+            for i, loc in enumerate(self._direct_no_return_calls):
+                direct_no_return_calls[i].arch = loc.arch.handle
+                direct_no_return_calls[i].address = loc.addr
+            core.BNAnalyzeBasicBlocksContextSetDirectNoReturnCalls(self._handle, direct_no_return_calls, total)
+
+        self._halted_disassembly_addresses.add(function.ArchAndAddr(self._function.arch, 0))
+        if self._halted_disassembly_addresses:
+            total = len(self._halted_disassembly_addresses)
+            halted_addresses = (core.BNArchitectureAndAddress * total)()
+            for i, loc in enumerate(self._halted_disassembly_addresses):
+                halted_addresses[i].arch = loc.arch.handle
+                halted_addresses[i].address = loc.addr
+            core.BNAnalyzeBasicBlocksContextSetHaltedDisassemblyAddresses(self._handle, halted_addresses, total)
+
+        if self._contextual_returns_dirty:
+            total = len(self._contextual_returns)
+            values = (ctypes.c_bool * total)()
+            returns = (core.BNArchitectureAndAddress * total)()
+            for i, (loc, value) in enumerate(self._contextual_returns.items()):
+                returns[i].arch = loc.arch.handle
+                returns[i].address = loc.addr
+                values[i] = value
+            core.BNAnalyzeBasicBlocksContextSetContextualFunctionReturns(self._handle, returns, values, total)
+
+        core.BNAnalyzeBasicBlocksContextFinalize(self._handle)
 
 
 @dataclass(frozen=True)
@@ -246,6 +581,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 		self._cb.getInstructionLowLevelIL = self._cb.getInstructionLowLevelIL.__class__(
 		    self._get_instruction_low_level_il
 		)
+		self._cb.analyzeBasicBlocks = self._cb.analyzeBasicBlocks.__class__(self._analyze_basic_blocks)
 		self._cb.getRegisterName = self._cb.getRegisterName.__class__(self._get_register_name)
 		self._cb.getFlagName = self._cb.getFlagName.__class__(self._get_flag_name)
 		self._cb.getFlagWriteTypeName = self._cb.getFlagWriteTypeName.__class__(self._get_flag_write_type_name)
@@ -498,6 +834,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				self._intrinsics[intrinsic] = intrinsic_index
 				self._intrinsics_by_index[intrinsic_index] = (intrinsic, info)
 				intrinsic_index = IntrinsicIndex(intrinsic_index + 1)
+				self.intrinsics[intrinsic] = info
 
 		self._pending_reg_lists = {}
 		self._pending_token_lists = {}
@@ -593,42 +930,42 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 		try:
 			return self.endianness
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_endianness")
 			return Endianness.LittleEndian
 
 	def _get_address_size(self, ctxt):
 		try:
 			return self.address_size
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_address_size")
 			return 8
 
 	def _get_default_integer_size(self, ctxt):
 		try:
 			return self.default_int_size
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_default_integer_size")
 			return 4
 
 	def _get_instruction_alignment(self, ctxt):
 		try:
 			return self.instr_alignment
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_instruction_alignment")
 			return 1
 
 	def _get_max_instruction_length(self, ctxt):
 		try:
 			return self.max_instr_length
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_max_instruction_length")
 			return 16
 
 	def _get_opcode_display_length(self, ctxt):
 		try:
 			return self.opcode_display_length
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_opcode_display_length")
 			return 8
 
 	def _get_associated_arch_by_address(self, ctxt, addr):
@@ -637,7 +974,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			addr[0] = new_addr
 			return ctypes.cast(result.handle, ctypes.c_void_p).value
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_associated_arch_by_address")
 			return ctypes.cast(self.handle, ctypes.c_void_p).value
 
 	def _get_instruction_info(self, ctxt, data, addr, max_len, result):
@@ -664,7 +1001,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 					result[0].branchArch[i] = arch.handle
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_instruction_info")
 			return False
 
 	def _get_instruction_text(self, ctxt, data, addr, length, result, count):
@@ -683,7 +1020,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			self._pending_token_lists[ptr.value] = (ptr.value, token_buf)
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_instruction_text")
 			return False
 
 	def _free_instruction_text(self, tokens, count):
@@ -693,7 +1030,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				raise ValueError("freeing token list that wasn't allocated")
 			del self._pending_token_lists[buf.value]
 		except KeyError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._free_instruction_text")
 
 	def _get_instruction_low_level_il(self, ctxt, data, addr, length, il):
 		try:
@@ -707,8 +1044,16 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			length[0] = result
 			return True
 		except OSError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_instruction_low_level_il")
 			return False
+
+	def _analyze_basic_blocks(self, ctx, func, ptr_bn_bb_context):
+		try:
+			bn_bb_context = ptr_bn_bb_context.contents
+			context = BasicBlockAnalysisContext.from_core_struct(bn_bb_context)
+			self.analyze_basic_blocks(function.Function(handle=core.BNNewFunctionReference(func)), context)
+		except:
+			log_error_for_exception("Unhandled Python exception in Architecture._analyze_basic_blocks")
 
 	def _get_register_name(self, ctxt, reg):
 		try:
@@ -716,7 +1061,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				return core.BNAllocString(self._regs_by_index[reg])
 			return core.BNAllocString("")
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_register_name")
 			return core.BNAllocString("")
 
 	def _get_flag_name(self, ctxt, flag):
@@ -725,7 +1070,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				return core.BNAllocString(self._flags_by_index[flag])
 			return core.BNAllocString("")
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_flag_name")
 			return core.BNAllocString("")
 
 	def _get_flag_write_type_name(self, ctxt, write_type: FlagWriteTypeIndex):
@@ -734,7 +1079,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				return core.BNAllocString(self._flag_write_types_by_index[write_type])
 			return core.BNAllocString("")
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_flag_write_type_name")
 			return core.BNAllocString("")
 
 	def _get_semantic_flag_class_name(self, ctxt, sem_class):
@@ -743,7 +1088,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				return core.BNAllocString(self._semantic_flag_classes_by_index[sem_class])
 			return core.BNAllocString("")
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_semantic_flag_class_name")
 			return core.BNAllocString("")
 
 	def _get_semantic_flag_group_name(self, ctxt, sem_group):
@@ -752,7 +1097,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				return core.BNAllocString(self._semantic_flag_groups_by_index[sem_group])
 			return core.BNAllocString("")
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_semantic_flag_group_name")
 			return core.BNAllocString("")
 
 	def _get_full_width_registers(self, ctxt, count):
@@ -766,7 +1111,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			self._pending_reg_lists[result.value] = (result, reg_buf)
 			return result.value
 		except KeyError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_full_width_registers")
 			count[0] = 0
 			return None
 
@@ -781,7 +1126,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			self._pending_reg_lists[result.value] = (result, reg_buf)
 			return result.value
 		except KeyError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_all_registers")
 			count[0] = 0
 			return None
 
@@ -796,7 +1141,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			self._pending_reg_lists[result.value] = (result, flag_buf)
 			return result.value
 		except KeyError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_all_flags")
 			count[0] = 0
 			return None
 
@@ -811,7 +1156,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			self._pending_reg_lists[result.value] = (result, type_buf)
 			return result.value
 		except KeyError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_all_flag_write_types")
 			count[0] = 0
 			return None
 
@@ -826,7 +1171,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			self._pending_reg_lists[result.value] = (result, class_buf)
 			return result.value
 		except KeyError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_all_semantic_flag_classes")
 			count[0] = 0
 			return None
 
@@ -841,7 +1186,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			self._pending_reg_lists[result.value] = (result, group_buf)
 			return result.value
 		except KeyError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_all_semantic_flag_groups")
 			count[0] = 0
 			return None
 
@@ -871,7 +1216,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			self._pending_reg_lists[result.value] = (result, flag_buf)
 			return result.value
 		except KeyError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_flags_required_for_flag_condition")
 			count[0] = 0
 			return None
 
@@ -889,7 +1234,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			self._pending_reg_lists[result.value] = (result, flag_buf)
 			return result.value
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_flags_required_for_semantic_flag_group")
 			count[0] = 0
 			return None
 
@@ -910,7 +1255,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			self._pending_condition_lists[result.value] = (result, cond_buf)
 			return result.value
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_flag_conditions_for_semantic_flag_group")
 			count[0] = 0
 			return None
 
@@ -921,7 +1266,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				raise ValueError("freeing condition list that wasn't allocated")
 			del self._pending_condition_lists[buf.value]
 		except (ValueError, KeyError):
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._free_flag_conditions_for_semantic_flag_group")
 
 	def _get_flags_written_by_flag_write_type(self, ctxt, write_type, count):
 		try:
@@ -937,7 +1282,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			self._pending_reg_lists[result.value] = (result, flag_buf)
 			return result.value
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_flags_written_by_flag_write_type")
 			count[0] = 0
 			return None
 
@@ -948,7 +1293,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			else:
 				return 0
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_semantic_class_for_flag_write_type")
 			return 0
 
 	def _get_flag_write_low_level_il(self, ctxt, op, size, write_type, flag, operands, operand_count, il):
@@ -970,7 +1315,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			    lowlevelil.LowLevelILFunction(self, core.BNNewLowLevelILFunctionReference(il))
 			)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_flag_write_low_level_il")
 			return False
 
 	def _get_flag_condition_low_level_il(self, ctxt, cond, sem_class, il):
@@ -983,7 +1328,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			    cond, sem_class_name, lowlevelil.LowLevelILFunction(self, core.BNNewLowLevelILFunctionReference(il))
 			)
 		except OSError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_flag_condition_low_level_il")
 			return 0
 
 	def _get_semantic_flag_group_low_level_il(self, ctxt, sem_group, il):
@@ -996,7 +1341,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			    sem_group_name, lowlevelil.LowLevelILFunction(self, core.BNNewLowLevelILFunctionReference(il))
 			)
 		except OSError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_semantic_flag_group_low_level_il")
 			return 0
 
 	def _free_register_list(self, ctxt, regs, count):
@@ -1006,7 +1351,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				raise ValueError("freeing register list that wasn't allocated")
 			del self._pending_reg_lists[buf.value]
 		except (ValueError, KeyError):
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._free_register_list")
 
 	def _get_register_info(self, ctxt, reg, result):
 		try:
@@ -1025,7 +1370,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			else:
 				result[0].extend = info.extend
 		except KeyError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_register_info")
 			result[0].fullWidthRegister = 0
 			result[0].offset = 0
 			result[0].size = 0
@@ -1037,7 +1382,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 		try:
 			return self._all_regs[self.stack_pointer]
 		except KeyError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_stack_pointer_register")
 			return 0
 
 	def _get_link_register(self, ctxt):
@@ -1046,7 +1391,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				return 0xffffffff
 			return self._all_regs[self.link_reg]
 		except KeyError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_link_register")
 			return 0
 
 	def _get_global_registers(self, ctxt, count):
@@ -1059,7 +1404,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			self._pending_reg_lists[result.value] = (result, reg_buf)
 			return result.value
 		except KeyError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_global_registers")
 			count[0] = 0
 			return None
 
@@ -1073,7 +1418,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			self._pending_reg_lists[result.value] = (result, reg_buf)
 			return result.value
 		except KeyError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_system_registers")
 			count[0] = 0
 			return None
 
@@ -1083,7 +1428,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				return core.BNAllocString(self._reg_stacks_by_index[reg_stack])
 			return core.BNAllocString("")
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_register_stack_name")
 			return core.BNAllocString("")
 
 	def _get_all_register_stacks(self, ctxt, count):
@@ -1097,7 +1442,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			self._pending_reg_lists[result.value] = (result, reg_buf)
 			return result.value
 		except KeyError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_all_register_stacks")
 			count[0] = 0
 			return None
 
@@ -1121,7 +1466,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				result[0].topRelativeCount = 0
 			result[0].stackTopReg = self._all_regs[info.stack_top_reg]
 		except KeyError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_register_stack_info")
 			result[0].firstStorageReg = 0
 			result[0].firstTopRelativeReg = 0
 			result[0].storageCount = 0
@@ -1139,7 +1484,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				return core.BNAllocString(self._intrinsics_by_index[intrinsic][0])
 			return core.BNAllocString("")
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_intrinsic_name")
 			return core.BNAllocString("")
 
 	def _get_all_intrinsics(self, ctxt, count):
@@ -1153,7 +1498,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			self._pending_reg_lists[result.value] = (result, reg_buf)
 			return result.value
 		except KeyError:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_all_intrinsics")
 			count[0] = 0
 			return None
 
@@ -1173,7 +1518,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			count[0] = 0
 			return None
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_intrinsic_inputs")
 			count[0] = 0
 			return None
 
@@ -1188,7 +1533,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				core.BNFreeType(name_and_types[i].type)
 			del self._pending_name_and_type_lists[buf.value]
 		except (ValueError, KeyError):
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._free_name_and_type_list")
 
 	def _get_intrinsic_outputs(self, ctxt, intrinsic, count):
 		try:
@@ -1205,7 +1550,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			count[0] = 0
 			return None
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._get_intrinsic_outputs")
 			count[0] = 0
 			return None
 
@@ -1220,7 +1565,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				core.BNFreeType(_types[i].type)
 			del self._pending_type_lists[buf.value]
 		except (ValueError, KeyError):
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._free_type_list")
 
 	def _assemble(self, ctxt, code, addr, result, errors):
 		"""
@@ -1237,11 +1582,11 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			core.BNSetDataBufferContents(result, buf, len(data))
 			return True
 		except ValueError as e:  # Overridden `assemble` functions should raise a ValueError if the input was invalid (with a reasonable error message)
-			log_error(traceback.format_exc())
+			log_debug_for_exception("Assemble failed")
 			errors[0] = core.BNAllocString(str(e))
 			return False
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._assemble")
 			errors[0] = core.BNAllocString("Unhandled exception during assembly.\n")
 			return False
 
@@ -1251,7 +1596,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			ctypes.memmove(buf, data, length)
 			return self.is_never_branch_patch_available(buf.raw, addr)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._is_never_branch_patch_available")
 			return False
 
 	def _is_always_branch_patch_available(self, ctxt, data, addr, length):
@@ -1260,7 +1605,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			ctypes.memmove(buf, data, length)
 			return self.is_always_branch_patch_available(buf.raw, addr)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._is_always_branch_patch_available")
 			return False
 
 	def _is_invert_branch_patch_available(self, ctxt, data, addr, length):
@@ -1269,7 +1614,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			ctypes.memmove(buf, data, length)
 			return self.is_invert_branch_patch_available(buf.raw, addr)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._is_invert_branch_patch_available")
 			return False
 
 	def _is_skip_and_return_zero_patch_available(self, ctxt, data, addr, length):
@@ -1278,7 +1623,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			ctypes.memmove(buf, data, length)
 			return self.is_skip_and_return_zero_patch_available(buf.raw, addr)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._is_skip_and_return_zero_patch_available")
 			return False
 
 	def _is_skip_and_return_value_patch_available(self, ctxt, data, addr, length):
@@ -1287,7 +1632,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			ctypes.memmove(buf, data, length)
 			return self.is_skip_and_return_value_patch_available(buf.raw, addr)
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._is_skip_and_return_value_patch_available")
 			return False
 
 	def _convert_to_nop(self, ctxt, data, addr, length):
@@ -1302,7 +1647,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			ctypes.memmove(data, result, len(result))
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._convert_to_nop")
 			return False
 
 	def _always_branch(self, ctxt, data, addr, length):
@@ -1317,7 +1662,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			ctypes.memmove(data, result, len(result))
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._always_branch")
 			return False
 
 	def _invert_branch(self, ctxt, data, addr, length):
@@ -1332,7 +1677,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			ctypes.memmove(data, result, len(result))
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._invert_branch")
 			return False
 
 	def _skip_and_return_value(self, ctxt, data, addr, length, value):
@@ -1347,7 +1692,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			ctypes.memmove(data, result, len(result))
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Architecture._skip_and_return_value")
 			return False
 
 	def get_associated_arch_by_address(self, addr: int) -> Tuple['Architecture', int]:
@@ -1425,6 +1770,21 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 		"""
 		raise NotImplementedError
 
+	def analyze_basic_blocks(self, func: 'function.Function', context: BasicBlockAnalysisContext) -> None:
+		"""
+		``analyze_basic_blocks`` performs basic block recovery and commits the results to the function analysis
+
+		.. note:: Architecture subclasses should only implement this method if function-level analysis is required
+
+		:param Function func: the function to analyze
+		:param BasicBlockAnalysisContext context: the analysis context
+		"""
+
+		try:
+			core.BNArchitectureDefaultAnalyzeBasicBlocks(func.handle, context._handle)
+		except:
+			log_error_for_exception("Unhandled Python exception in Architecture.analyze_basic_blocks")
+
 	def get_low_level_il_from_bytes(self, data: bytes, addr: int) -> 'lowlevelil.LowLevelILInstruction':
 		"""
 		``get_low_level_il_from_bytes`` converts the instruction in bytes to ``il`` at the given virtual address
@@ -1487,8 +1847,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				assert index is not None
 				return index
 			except KeyError:
-				log_error(f"Failed to map string {reg} to register index: ")
-				log_error(traceback.format_exc())
+				log_error_for_exception(f"Failed to map string {reg} to register index")
 		elif isinstance(reg, lowlevelil.ILRegister):
 			return reg.index
 		elif isinstance(reg, int):
@@ -1621,6 +1980,8 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 		:return: flag write type
 		:rtype: int
 		"""
+		if write_type == '':
+			return FlagWriteTypeIndex(0)
 		return self._flag_write_types[write_type]
 
 	def get_semantic_flag_class_by_name(self, sem_class: SemanticClassName) -> SemanticClassIndex:
@@ -2334,6 +2695,7 @@ class CoreArchitecture(Architecture):
 			self._intrinsics_info[name] = IntrinsicInfo(input_list, output_list)
 			self._intrinsics[name] = intrinsics[i]
 			self._intrinsics_by_index[intrinsics[i]] = (name, self._intrinsics_info[name])
+			self.intrinsics[name] = self._intrinsics_info[name]
 		core.BNFreeRegisterList(intrinsics)
 		if type(self) is CoreArchitecture:
 			global _architecture_cache
@@ -2834,6 +3196,7 @@ class InstructionTextToken:
 		CommentToken               Comments
 		TypeNameToken              **Not emitted by architectures**
 		AddressSeparatorToken      **Not emitted by architectures**
+		NewLineToken               New lines
 		========================== ============================================
 
 	"""
@@ -2861,7 +3224,10 @@ class InstructionTextToken:
 			token_type = InstructionTextTokenType(tokens[j].type)
 			text = tokens[j].text
 			if not isinstance(text, str):
-				text = text.decode("utf-8")
+				try:
+					text = text.decode("utf-8")
+				except UnicodeDecodeError:
+					text = text.decode("charmap")
 			width = tokens[j].width
 			value = tokens[j].value
 			size = tokens[j].size

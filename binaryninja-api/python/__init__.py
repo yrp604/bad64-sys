@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -151,7 +151,6 @@ class CoreVersionInfo:
 			self.build = core_version_info.build
 			if core_version_info.channel is not None:
 				self.channel = core_version_info.channel
-			core.BNFreeString(core_version_info.channel)
 		else:
 			self.major = major
 			if minor is not None:
@@ -203,8 +202,6 @@ def get_unique_identifier():
 def get_install_directory():
 	"""
 	``get_install_directory`` returns a string pointing to the installed binary currently running
-
-	.. warning:: ONLY for use within the Binary Ninja UI, behavior is undefined and unreliable if run headlessly
 	"""
 	return core.BNGetInstallDirectory()
 
@@ -409,7 +406,7 @@ def load(*args, **kwargs) -> BinaryView:
 
 	.. note:: The progress_func callback **must** return True to continue the load operation, False will abort the load operation.
 
-	.. warning:: The progress_func will **only** be called for BNDB files, not for any other file format due to a `design limitation <https://docs.binary.ninja/guide/debugger/index.html#navigating-the-binary>`_.
+	.. warning:: The progress_func will **only** be called for BNDB files, not for any other file format due to a `design limitation <https://github.com/Vector35/binaryninja-api/issues/4116#issuecomment-1479496712>`_.
 
 	:Example:
 		>>> from binaryninja import *
@@ -433,7 +430,7 @@ def connect_pycharm_debugger(port=5678):
 	"""
 	Connect to PyCharm (Professional Edition) for debugging.
 
-	.. note:: See the `user documentation <https://docs.binary.ninja/dev/plugins.html#remote-debugging-with-intellij-pycharm>`_ for step-by-step instructions on how to set up Python debugging.
+	.. note:: See the user documentation `pycharm note <https://docs.binary.ninja/dev/plugins.html#remote-debugging-with-intellij-pycharm>`_ for step-by-step instructions on how to set up Python debugging.
 
 	:param port: Port number for connecting to the debugger.
 	"""
@@ -449,7 +446,7 @@ def connect_vscode_debugger(port=5678):
 	Connect to Visual Studio Code for debugging. This function blocks until the debugger
 	is connected! Not recommended for use in startup.py
 
-	.. note:: See the `user documentation <https://docs.binary.ninja/dev/plugins.html#remote-debugging-with-vscode>`_ for step-by-step instructions on how to set up Python debugging.
+	.. note:: See the user documentation `vscode note <https://docs.binary.ninja/dev/plugins.html#remote-debugging-with-vscode>`_ for step-by-step instructions on how to set up Python debugging.
 
 	:param port: Port number for connecting to the debugger.
 	"""
@@ -464,6 +461,19 @@ def connect_vscode_debugger(port=5678):
 	debugpy.wait_for_client()
 	execute_on_main_thread(lambda: debugpy.debug_this_thread())
 
+def get_system_cache_directory() -> Optional[str]:
+	"""
+	Returns Binary Ninja's system cache directory on the system.
+
+	Supported default locations:
+
+	- macOS: ~/Library/Caches/Binary Ninja
+	- Linux: $XDG_CACHE_HOME/Binary Ninja or ~/.cache/Binary Ninja
+	- Windows: %LOCALAPPDATA%/Binary Ninja/cache
+
+	:return: Returns a string containing the system cache directory, or None on failure.
+	"""
+	return core.BNGetSystemCacheDirectory()
 
 class UIPluginInHeadlessError(Exception):
 	"""

@@ -135,34 +135,97 @@ Full Class List
 		modules.extend(modulelist(binaryninja.collaboration, basename="collaboration"))
 	modules = sorted(modules, key=lambda pair: pair[0])
 
+	# Separate top-level and nested modules for proper TOC structure
+	nested_modules = {"debugger": [], "collaboration": []}
+	
+	for modulename, module in modules:
+		filename = f"{module.__name__}-module.rst"
+		if modulename.count(".") == 0:
+			# Top-level module - always include in main TOC
+			pythonrst.write(f"   {modulename} <{filename}>\n")
+		else:
+			# This is a nested module - collect them for parent modules
+			parent = modulename.split(".")[0]
+			if parent in nested_modules:
+				nested_modules[parent].append((modulename, filename))
+
 	for modulename, module in modules:
 		# Since we put debugger python files in a folder, binaryninja.{modulename} is no longer the
 		# correct name of the module
 		filename = f"{module.__name__}-module.rst"
-		spaces = "   " * modulename.count(".")
-		# Dirty hack to skip polutting the main toc with nested modules
-		if modulename.count(".") == 0:
-			pythonrst.write(f"   {spaces}{modulename} <{filename}>\n")
 		modulefile = open(filename, "w")
 		underline = "="*len(f"{modulename} module")
 		modulefile.write(f'''{modulename} module
 {underline}
 
-.. autosummary::
-   :toctree:
-
 ''')
+		
+		# Add sub-toctree for parent modules that have nested modules
+		if modulename.count(".") == 0 and modulename in nested_modules and nested_modules[modulename]:
+			modulefile.write(".. toctree::\n")
+			modulefile.write("   :maxdepth: 1\n")
+			modulefile.write("   :hidden:\n\n")
+			for nested_name, nested_filename in nested_modules[modulename]:
+				modulefile.write(f"   {nested_name} <{nested_filename}>\n")
+			modulefile.write("\n")
+		
+		# Generate custom summary table
+		classes = list(classlist(module))
+		if classes:
+			modulefile.write(".. list-table::\n")
+			modulefile.write("   :header-rows: 1\n")
+			modulefile.write("   :widths: 30 70\n\n")
+			modulefile.write("   * - Class\n")
+			modulefile.write("     - Description\n")
+			
+			for (classname, classref) in classes:
+				if inspect.isclass(classref):
+					role = 'py:class'
+				else:
+					role = 'py:func'
+				
+				# Get docstring summary (first line)
+				doc = inspect.getdoc(classref)
+				summary = ""
+				if doc and doc.strip():
+					first_line = doc.split('\n')[0].strip()
+					# Only use the description if it's actual documentation (not just prototype/signature)
+					if first_line and not first_line.startswith(classname + "("):
+						summary = first_line
+						if len(summary) > 100:
+							# Find a good break point to avoid cutting off Sphinx directives
+							truncate_at = 97
+							# Look for space before truncation to avoid breaking words
+							if ' ' in summary[80:97]:
+								space_pos = summary.rfind(' ', 80, 97)
+								if space_pos > 80:
+									truncate_at = space_pos
+							# Check if we're in the middle of a Sphinx directive
+							if ':py:' in summary[truncate_at-10:truncate_at+10]:
+								directive_start = summary.rfind(':py:', 0, truncate_at)
+								if directive_start != -1:
+									truncate_at = directive_start
+							summary = summary[:truncate_at] + "..."
+				
+				modulefile.write(f"   * - :{role}:`{inspect.getmodule(classref).__name__}.{classname}`\n")
+				modulefile.write(f"     - {summary}\n")
 
-		for (classname, classref) in classlist(module):
-			modulefile.write(f"   {inspect.getmodule(classref).__name__}.{classname}\n")
 
-		modulefile.write('''\n.. toctree::
-   :maxdepth: 2\n''')
+		modulefile.write(f'''\n\n''')
+   
+		# Generate individual class sections with proper headers
+		for (classname, classref) in classes:
+			# Only include classes that actually belong to this module
+			if inspect.getmodule(classref).__name__ == module.__name__:
+				modulefile.write(f'''{classname}
+{"-" * len(classname)}
 
-		modulefile.write(f'''\n\n.. automodule:: {module.__name__}
+.. autoclass:: {module.__name__}.{classname}
    :members:
    :undoc-members:
-   :show-inheritance:''')
+   :show-inheritance:
+
+''')
 		modulefile.write(stats)
 		modulefile.close()
 
@@ -186,20 +249,23 @@ generaterst()
 
 extensions = [
 	'sphinx.ext.autodoc',
-	'sphinx.ext.autosummary',
 	'sphinx.ext.intersphinx',
 	'sphinxcontrib.jquery',
 	#'sphinx_tabs.tabs',
-	'sphinx.ext.viewcode'
+	'sphinx.ext.viewcode',
+	'sphinx.ext.autosectionlabel'
 ]
 
 simplify_optional_unions = True
 autodoc_typehints = 'both'
-autosummary_generate = False
 autodoc_member_order = 'groupwise'
+autodoc_class_signature = 'separated'
 autodoc_type_aliases = {
 	'int': 'ExpressionIndex'
 }
+
+# Auto section label configuration
+autosectionlabel_prefix_document = True
 
 python_use_unqualified_type_names=True
 # Add any paths that contain templates here, relative to this directory.
@@ -220,7 +286,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'Binary Ninja Python API'
-copyright = u'2015-2024, Vector 35 Inc'
+copyright = u'2015-2025, Vector 35 Inc'
 author = u'Vector 35 Inc'
 
 # The version info for the project you're documenting, acts as replacement for

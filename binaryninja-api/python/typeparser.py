@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -37,7 +37,7 @@ from . import platform
 from . import typecontainer
 from . import types
 from . import deprecation
-from .log import log_error
+from .log import log_error_for_exception
 from .enums import TypeParserErrorSeverity, TypeParserOption
 
 
@@ -255,7 +255,7 @@ class TypeParser(metaclass=_TypeParserMetaclass):
 			result[0] = TypeParser._cached_string
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in TypeParser._get_option_text")
 			return False
 
 	def _preprocess_source(
@@ -299,7 +299,7 @@ class TypeParser(metaclass=_TypeParserMetaclass):
 			return output_py is not None
 		except:
 			errorCount[0] = 0
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in TypeParser._preprocess_source")
 			return False
 
 	def _parse_types_from_source(
@@ -350,7 +350,7 @@ class TypeParser(metaclass=_TypeParserMetaclass):
 			result[0].variableCount = 0
 			result[0].functionCount = 0
 			errorCount[0] = 0
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in TypeParser._parse_types_from_source")
 			return False
 
 	def _parse_type_string(
@@ -384,7 +384,7 @@ class TypeParser(metaclass=_TypeParserMetaclass):
 			return result_py is not None
 		except:
 			errorCount[0] = 0
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in TypeParser._parse_type_string")
 			return False
 
 	def _free_string(
@@ -394,7 +394,7 @@ class TypeParser(metaclass=_TypeParserMetaclass):
 			TypeParser._cached_string = None
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in TypeParser._free_string")
 			return False
 
 	def _free_result(
@@ -411,7 +411,7 @@ class TypeParser(metaclass=_TypeParserMetaclass):
 			TypeParser._cached_result = None
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in TypeParser._free_result")
 			return False
 
 	def _free_error_list(
@@ -421,7 +421,7 @@ class TypeParser(metaclass=_TypeParserMetaclass):
 			TypeParser._cached_error = None
 			return True
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in TypeParser._free_error_list")
 			return False
 
 	def get_option_text(self, option: TypeParserOption, value: str) -> Optional[str]:

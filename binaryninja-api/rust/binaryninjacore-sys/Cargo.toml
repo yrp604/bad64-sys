@@ -7,8 +7,15 @@ edition = "2021"
 links = "binaryninjacore"
 license = "Apache-2.0"
 
+[features]
+default = ["core"]
+# If disabled, a stub binaryninjacore library will be generated and linked.
+# This feature should only be disabled for shared libraries that will later be loaded in the same process as the real binaryninjacore.
+core = []
+
 [build-dependencies]
 bindgen = "0.71.1"
 # TODO: Remove this once bindgen correctly pins the version.
 # proc-macro2 v1.0.79 does not have https://docs.rs/proc-macro2/1.0.80/proc_macro2/struct.Literal.html#method.c_string
 proc-macro2 = ">=1.0.80"
+cmake = "0.1"

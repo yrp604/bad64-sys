@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.9 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 
 project(view_macho)
 
@@ -6,9 +6,7 @@ if(NOT BN_INTERNAL_BUILD)
 	add_subdirectory(${PROJECT_SOURCE_DIR}/../.. ${PROJECT_BINARY_DIR}/api)
 endif()
 
-file(GLOB SOURCES
-	*.cpp
-	*.h)
+file(GLOB SOURCES CONFIGURE_DEPENDS *.cpp *.h ../../objectivec/*)
 
 if(DEMO)
 	add_library(view_macho STATIC ${SOURCES})
@@ -19,7 +17,7 @@ endif()
 target_link_libraries(view_macho binaryninjaapi)
 
 set_target_properties(view_macho PROPERTIES
-    CXX_STANDARD 17
+    CXX_STANDARD 20
 	CXX_VISIBILITY_PRESET hidden
 	CXX_STANDARD_REQUIRED ON
     VISIBILITY_INLINES_HIDDEN ON

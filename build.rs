@@ -16,6 +16,7 @@ fn main() {
     // Compile the library
     cc::Build::new()
         .files(dotc_files)
+        .std("c11")
         .include("disassembler")
         .compile("arm64decode");
 

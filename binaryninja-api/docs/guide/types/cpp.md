@@ -398,13 +398,13 @@ Now, go to the data section and apply the virtual function table structures to t
 virtual function tables themselves:
 
 ``` C
-00004020  struct vtable_for_Animal _vtable_for_Animal = 
+00004020  struct vtable_for_Animal _vtable_for_Animal =
 00004020  {
 00004020      void (* make_sound)(struct Animal* this) = nullptr
 00004028      void (* approach)(struct Animal* this) = Animal::approach()
 00004030  }
 
-00004050  struct vtable_for_Flying _vtable_for_Flying = 
+00004050  struct vtable_for_Flying _vtable_for_Flying =
 00004050  {
 00004050      void (* fly)(struct Flying* this) = Flying::fly
 00004058  }
@@ -473,20 +473,20 @@ Apply the new virtual function table structures to the virtual function tables i
 the data section:
 
 ``` C
-00004078  struct vtable_for_Dog _vtable_for_Dog = 
+00004078  struct vtable_for_Dog _vtable_for_Dog =
 00004078  {
 00004078      void (* make_sound)(struct Animal* this) = Dog::make_sound()
 00004080      void (* approach)(struct Animal* this) = Animal::approach()
 00004088  }
 
-000040b0  struct vtable_for_Cat _vtable_for_Cat = 
+000040b0  struct vtable_for_Cat _vtable_for_Cat =
 000040b0  {
 000040b0      void (* make_sound)(struct Animal* this) = Cat::make_sound
 000040b8      void (* approach)(struct Animal* this) = Cat::approach()
 000040c0      void (* nap)(struct Cat* this) = Cat::nap()
 000040c8  }
 
-000040f0  struct vtable_for_Lion _vtable_for_Lion = 
+000040f0  struct vtable_for_Lion _vtable_for_Lion =
 000040f0  {
 000040f0      void (* make_sound)(struct Animal* this) = Lion::make_sound
 000040f8      void (* approach)(struct Animal* this) = Cat::approach()
@@ -543,13 +543,13 @@ Apply the virtual function table structures to the corresponding virtual functio
 data section:
 
 ``` C
-00004130  struct vtable_for_Bird_as_Animal _vtable_for_Bird_as_Animal = 
+00004130  struct vtable_for_Bird_as_Animal _vtable_for_Bird_as_Animal =
 00004130  {
 00004130      void (* make_sound)(struct Animal* this) = Bird::make_sound()
 00004138      void (* approach)(struct Animal* this) = Bird::approach()
 00004140  }
 
-00004150  struct vtable_for_Bird_as_Flying _vtable_for_Bird_as_Flying = 
+00004150  struct vtable_for_Bird_as_Flying _vtable_for_Bird_as_Flying =
 00004150  {
 00004150      void (* fly)(struct Flying* this) = Flying::fly
 00004158  }

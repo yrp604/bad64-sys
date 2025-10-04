@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2024 Vector 35 Inc
+// Copyright (c) 2015-2025 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -434,6 +434,7 @@ uint64_t MediumLevelILIntegerList::operator[](size_t i) const
 MediumLevelILIntegerList::operator vector<uint64_t>() const
 {
 	vector<uint64_t> result;
+	result.reserve(size());
 	for (auto i : *this)
 		result.push_back(i);
 	return result;
@@ -488,6 +489,7 @@ size_t MediumLevelILIndexList::operator[](size_t i) const
 MediumLevelILIndexList::operator vector<size_t>() const
 {
 	vector<size_t> result;
+	result.reserve(size());
 	for (auto i : *this)
 		result.push_back(i);
 	return result;
@@ -600,6 +602,7 @@ const Variable MediumLevelILVariableList::operator[](size_t i) const
 MediumLevelILVariableList::operator vector<Variable>() const
 {
 	vector<Variable> result;
+	result.reserve(size());
 	for (auto i : *this)
 		result.push_back(i);
 	return result;
@@ -658,6 +661,7 @@ const SSAVariable MediumLevelILSSAVariableList::operator[](size_t i) const
 MediumLevelILSSAVariableList::operator vector<SSAVariable>() const
 {
 	vector<SSAVariable> result;
+	result.reserve(size());
 	for (auto i : *this)
 		result.push_back(i);
 	return result;
@@ -716,6 +720,7 @@ const MediumLevelILInstruction MediumLevelILInstructionList::operator[](size_t i
 MediumLevelILInstructionList::operator vector<MediumLevelILInstruction>() const
 {
 	vector<MediumLevelILInstruction> result;
+	result.reserve(size());
 	for (auto i : *this)
 		result.push_back(i);
 	return result;
@@ -898,6 +903,7 @@ const MediumLevelILOperand MediumLevelILOperandList::operator[](size_t i) const
 MediumLevelILOperandList::operator vector<MediumLevelILOperand>() const
 {
 	vector<MediumLevelILOperand> result;
+	result.reserve(size());
 	for (auto i : *this)
 		result.push_back(i);
 	return result;
@@ -1116,7 +1122,7 @@ char* MediumLevelILInstructionBase::Dump() const
 		{
 			text += "[instr " + to_string(instructionIndex) + "] ";
 		}
-		Ref<Type> type = GetType();
+		Ref<Type> type = GetType().GetValue();
 		if (type)
 		{
 			text += "[type: " + type->GetString() + "] ";
@@ -3196,7 +3202,7 @@ fmt::format_context::iterator fmt::formatter<MediumLevelILInstruction>::format(c
 			{
 				fmt::format_to(ctx.out(), "[instr {}] ", obj.instructionIndex);
 			}
-			Ref<Type> type = obj.GetType();
+			Ref<Type> type = obj.GetType().GetValue();
 			if (type)
 			{
 				fmt::format_to(ctx.out(), "[type: {}] ", type->GetString());
@@ -3205,7 +3211,7 @@ fmt::format_context::iterator fmt::formatter<MediumLevelILInstruction>::format(c
 
 		for (auto& token: tokens)
 		{
-			fmt::format_to(ctx.out(), token.text);
+			fmt::format_to(ctx.out(), "{}", token.text);
 		}
 	}
 	else

@@ -1,4 +1,4 @@
-// Copyright 2021-2024 Vector 35 Inc.
+// Copyright 2021-2025 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,12 +26,12 @@ use std::slice;
 
 use crate::architecture::Architecture;
 use crate::binary_view::{BinaryView, BinaryViewBase, BinaryViewExt, Result};
+use crate::metadata::Metadata;
 use crate::platform::Platform;
-use crate::settings::Settings;
-use crate::Endianness;
-
 use crate::rc::*;
+use crate::settings::Settings;
 use crate::string::*;
+use crate::Endianness;
 
 /// Registers a custom `BinaryViewType` with the core.
 ///
@@ -39,9 +39,8 @@ use crate::string::*;
 /// the core. The `BinaryViewType` argument passed to `constructor` is the object that the
 /// `AsRef<BinaryViewType>`
 /// implementation of the `CustomBinaryViewType` must return.
-pub fn register_view_type<S, T, F>(name: S, long_name: S, constructor: F) -> &'static T
+pub fn register_view_type<T, F>(name: &str, long_name: &str, constructor: F) -> &'static T
 where
-    S: BnStrCompatible,
     T: CustomBinaryViewType,
     F: FnOnce(BinaryViewType) -> T,
 {
@@ -148,11 +147,11 @@ where
         })
     }
 
-    let name = name.into_bytes_with_nul();
-    let name_ptr = name.as_ref().as_ptr() as *mut _;
+    let name = name.to_cstr();
+    let name_ptr = name.as_ptr();
 
-    let long_name = long_name.into_bytes_with_nul();
-    let long_name_ptr = long_name.as_ref().as_ptr() as *mut _;
+    let long_name = long_name.to_cstr();
+    let long_name_ptr = long_name.as_ptr();
 
     let ctxt = Box::leak(Box::new(MaybeUninit::zeroed()));
 
@@ -201,7 +200,7 @@ pub trait BinaryViewTypeBase: AsRef<BinaryViewType> {
         if settings_handle.is_null() {
             None
         } else {
-            unsafe { Some(Settings::from_raw(settings_handle)) }
+            unsafe { Some(Settings::ref_from_raw(settings_handle)) }
         }
     }
 
@@ -211,12 +210,12 @@ pub trait BinaryViewTypeBase: AsRef<BinaryViewType> {
 }
 
 pub trait BinaryViewTypeExt: BinaryViewTypeBase {
-    fn name(&self) -> BnString {
-        unsafe { BnString::from_raw(BNGetBinaryViewTypeName(self.as_ref().handle)) }
+    fn name(&self) -> String {
+        unsafe { BnString::into_string(BNGetBinaryViewTypeName(self.as_ref().handle)) }
     }
 
-    fn long_name(&self) -> BnString {
-        unsafe { BnString::from_raw(BNGetBinaryViewTypeLongName(self.as_ref().handle)) }
+    fn long_name(&self) -> String {
+        unsafe { BnString::into_string(BNGetBinaryViewTypeLongName(self.as_ref().handle)) }
     }
 
     fn register_arch<A: Architecture>(&self, id: u32, endianness: Endianness, arch: &A) {
@@ -235,6 +234,68 @@ pub trait BinaryViewTypeExt: BinaryViewTypeBase {
 
         unsafe {
             BNRegisterPlatformForViewType(self.as_ref().handle, id, arch.handle, plat.handle);
+        }
+    }
+
+    /// Expanded identification of [`Platform`] for [`BinaryViewType`]'s. Supersedes [`BinaryViewTypeExt::register_arch`]
+    /// and [`BinaryViewTypeExt::register_platform`], as these have certain edge cases (overloaded elf families, for example)
+    /// that can't be represented.
+    ///
+    /// The callback returns a [`Platform`] object or `None` (failure), and most recently added callbacks are called first
+    /// to allow plugins to override any default behaviors. When a callback returns a platform, architecture will be
+    /// derived from the identified platform.
+    ///
+    /// The [`BinaryView`] is the *parent* view (usually 'Raw') that the [`BinaryView`] is being created for. This
+    /// means that generally speaking the callbacks need to be aware of the underlying file format, however the
+    /// [`BinaryView`] implementation may have created datavars in the 'Raw' view by the time the callback is invoked.
+    /// Behavior regarding when this callback is invoked and what has been made available in the [`BinaryView`] passed as an
+    /// argument to the callback is up to the discretion of the [`BinaryView`] implementation.
+    ///
+    /// The `id` ind `endian` arguments are used as a filter to determine which registered [`Platform`] recognizer callbacks
+    /// are invoked.
+    ///
+    /// Support for this API tentatively requires explicit support in the [`BinaryView`] implementation.
+    fn register_platform_recognizer<R>(&self, id: u32, endian: Endianness, recognizer: R)
+    where
+        R: 'static + Fn(&BinaryView, &Metadata) -> Option<Ref<Platform>> + Send + Sync,
+    {
+        #[repr(C)]
+        struct PlatformRecognizerHandlerContext<R>
+        where
+            R: 'static + Fn(&BinaryView, &Metadata) -> Option<Ref<Platform>> + Send + Sync,
+        {
+            recognizer: R,
+        }
+
+        extern "C" fn cb_recognize_low_level_il<R>(
+            ctxt: *mut c_void,
+            bv: *mut BNBinaryView,
+            metadata: *mut BNMetadata,
+        ) -> *mut BNPlatform
+        where
+            R: 'static + Fn(&BinaryView, &Metadata) -> Option<Ref<Platform>> + Send + Sync,
+        {
+            let context = unsafe { &*(ctxt as *mut PlatformRecognizerHandlerContext<R>) };
+            let bv = unsafe { BinaryView::from_raw(bv).to_owned() };
+            let metadata = unsafe { Metadata::from_raw(metadata).to_owned() };
+            match (context.recognizer)(&bv, &metadata) {
+                Some(plat) => unsafe { Ref::into_raw(plat).handle },
+                None => std::ptr::null_mut(),
+            }
+        }
+
+        let recognizer = PlatformRecognizerHandlerContext { recognizer };
+        // TODO: Currently we leak `recognizer`.
+        let raw = Box::into_raw(Box::new(recognizer));
+
+        unsafe {
+            BNRegisterPlatformRecognizerForViewType(
+                self.as_ref().handle,
+                id as u64,
+                endian,
+                Some(cb_recognize_low_level_il::<R>),
+                raw as *mut c_void,
+            )
         }
     }
 
@@ -297,8 +358,8 @@ impl BinaryViewType {
     }
 
     /// Looks up a BinaryViewType by its short name
-    pub fn by_name<N: BnStrCompatible>(name: N) -> Result<Self> {
-        let bytes = name.into_bytes_with_nul();
+    pub fn by_name(name: &str) -> Result<Self> {
+        let bytes = name.to_cstr();
         let handle = unsafe { BNGetBinaryViewTypeByName(bytes.as_ref().as_ptr() as *const _) };
         match handle.is_null() {
             false => Ok(unsafe { BinaryViewType::from_raw(handle) }),
@@ -327,7 +388,7 @@ impl BinaryViewTypeBase for BinaryViewType {
         if settings_handle.is_null() {
             None
         } else {
-            unsafe { Some(Settings::from_raw(settings_handle)) }
+            unsafe { Some(Settings::ref_from_raw(settings_handle)) }
         }
     }
 }
@@ -440,7 +501,7 @@ impl<'a, T: CustomBinaryViewType> CustomViewBuilder<'a, T> {
 
         let view_name = view_type.name();
 
-        if let Some(bv) = file.view_of_type(view_name.as_str()) {
+        if let Some(bv) = file.view_of_type(&view_name) {
             // while it seems to work most of the time, you can get really unlucky
             // if the a free of the existing view of the same type kicks off while
             // BNCreateBinaryViewOfType is still running. the freeObject callback
@@ -452,7 +513,7 @@ impl<'a, T: CustomBinaryViewType> CustomViewBuilder<'a, T> {
             // going to try and stop this from happening in the first place.
             log::error!(
                 "attempt to create duplicate view of type '{}' (existing: {:?})",
-                view_name.as_str(),
+                view_name,
                 bv.handle
             );
 
@@ -815,6 +876,7 @@ impl<'a, T: CustomBinaryViewType> CustomViewBuilder<'a, T> {
             save: Some(cb_save::<V>),
         };
 
+        let view_name = view_name.to_cstr();
         unsafe {
             let res = BNCreateCustomBinaryView(
                 view_name.as_ptr(),

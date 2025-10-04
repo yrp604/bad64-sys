@@ -253,6 +253,22 @@ class BINARYNINJAUIAPI UIContextNotification
 	}
 
 	/*!
+	    Callback when the ui changes IL view type
+	    \param context Context changing address
+	    \param frame ViewFrame which changed address
+	    \param view Currently open View
+	    \param viewType New view type
+	 */
+	virtual void OnILViewTypeChange(
+		UIContext* context, ViewFrame* frame, View* view, const BinaryNinja::FunctionViewType& viewType)
+	{
+		(void)context;
+		(void)frame;
+		(void)view;
+		(void)viewType;
+	}
+
+	/*!
 	    Callback to modify the displayed file name for a FileContext (eg in the window title or tab title)
 	    Note: Due to the out param &name, this is not usable from Python with PySide
 	    \param context Context which will display this name
@@ -322,6 +338,24 @@ class BINARYNINJAUIAPI UIContextNotification
 		(void)name;
 		(void)ctx;
 		(void)action;
+	}
+
+
+	/*!
+	 * Callback when an action is executed. Unlike OnActionExecuted, plugins cannot
+	 * modify the behavior of the action.
+	 *
+	 * \param context
+	 * \param handler
+	 * \param name
+	 * \param ctx
+	 */
+	virtual void OnActionExecutedImmutable(UIContext* context, UIActionHandler* handler, const QString& name, const UIActionContext& ctx)
+	{
+		(void)context;
+		(void)handler;
+		(void)name;
+		(void)ctx;
 	}
 
 	/*!
@@ -415,17 +449,26 @@ public:
 	    Get the currently visible View for the currently visible ViewFrame (if it exists)
 	    \return Current View or nullptr if the current ViewFrame is null or does not have a View
 	 */
+
 	virtual View* getCurrentView() = 0;
 	/*!
 	    Get the currently visible ViewFrame (if it exists)
 	    \return Current ViewFrame or nullptr if the current widget does not have a ViewFrame
 	 */
+
 	virtual ViewFrame* getCurrentViewFrame() = 0;
 	/*!
 	    Get the current Action Handler for the focused widget
 	    \return Current Action Handler if the focused widget (or one of its parents) has one, else nullptr
 	 */
 	virtual UIActionHandler* getCurrentActionHandler() = 0;
+
+	/*!
+	    Rebase the current BinaryView to a new address, updating the UI appropriately.
+	    \param address New address for rebasing the current BinaryView
+	    \return True if the rebase was successful, false otherwise
+	*/
+	virtual bool rebaseCurrentView(uint64_t address) = 0;
 
 	/*!
 	    Open a tab containing the given widget with the given name
@@ -524,6 +567,7 @@ public:
 	virtual bool openProjectFile(ProjectFileRef file, ExternalLocationRef loc = nullptr, bool openWithOptions = false);
 	virtual bool openUrl(const QUrl& url, bool openWithOptions = false);
 	virtual void recreateViewFrames(FileContext* file) = 0;
+	virtual void refreshCurrentViewContents();
 
 	UIActionHandler* globalActions() { return &m_globalActions; }
 	virtual UIActionHandler* contentActionHandler() = 0;
@@ -550,11 +594,17 @@ public:
 
 	void NotifyOnViewChange(ViewFrame* frame, const QString& type);
 	void NotifyOnAddressChange(ViewFrame* frame, View* view, const ViewLocation& location);
-	void updateCrossReferences(ViewFrame* frame, View* view, const SelectionInfoForXref& selection);
+	void NotifyOnILViewTypeChange(ViewFrame* frame, View* view, const BinaryNinja::FunctionViewType& viewType);
+	virtual void updateCrossReferences(ViewFrame* frame, View* view, const SelectionInfoForXref& selection);
 	void NotifyOnActionExecuted(UIActionHandler* handler, const QString& name, const UIActionContext& ctx, std::function<void(const UIActionContext&)>& action);
+	void NotifyOnActionExecutedImmutable(UIActionHandler* handler, const QString& name, const UIActionContext& ctx);
 	void NotifyOnContextMenuCreated(View* view, Menu& menu);
 
 	virtual void findAll(const BinaryNinja::FindParameters& params);
+
+	virtual void beginNavigationForCrossReference(ViewFrame* frame, const SelectionInfoForXref& selection) = 0;
+	virtual void endNavigationForCrossReference() = 0;
+	virtual bool isNavigatingForCrossReference() = 0;
 
 	/*!
 	    Register an object to receive notifications of UIContext events

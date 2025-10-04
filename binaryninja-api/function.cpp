@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2024 Vector 35 Inc
+// Copyright (c) 2015-2025 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -460,39 +460,6 @@ Ref<LowLevelILFunction> Function::GetLowLevelILIfAvailable() const
 }
 
 
-size_t Function::GetLowLevelILForInstruction(Architecture* arch, uint64_t addr)
-{
-	return BNGetLowLevelILForInstruction(m_object, arch->GetObject(), addr);
-}
-
-
-set<size_t> Function::GetLowLevelILInstructionsForAddress(Architecture* arch, uint64_t addr)
-{
-	size_t count;
-	size_t* instrs = BNGetLowLevelILInstructionsForAddress(m_object, arch->GetObject(), addr, &count);
-
-	set<size_t> result;
-	for (size_t i = 0; i < count; i++)
-		result.insert(instrs[i]);
-
-	BNFreeILInstructionList(instrs);
-	return result;
-}
-
-
-vector<size_t> Function::GetLowLevelILExitsForInstruction(Architecture* arch, uint64_t addr)
-{
-	size_t count;
-	size_t* exits = BNGetLowLevelILExitsForInstruction(m_object, arch->GetObject(), addr, &count);
-
-	vector<size_t> result;
-	result.insert(result.end(), exits, &exits[count]);
-
-	BNFreeILInstructionList(exits);
-	return result;
-}
-
-
 RegisterValue RegisterValue::FromAPIObject(const BNRegisterValue& value)
 {
 	RegisterValue result;
@@ -795,26 +762,6 @@ Ref<LowLevelILFunction> Function::GetLiftedILIfAvailable() const
 }
 
 
-size_t Function::GetLiftedILForInstruction(Architecture* arch, uint64_t addr)
-{
-	return BNGetLiftedILForInstruction(m_object, arch->GetObject(), addr);
-}
-
-
-set<size_t> Function::GetLiftedILInstructionsForAddress(Architecture* arch, uint64_t addr)
-{
-	size_t count;
-	size_t* instrs = BNGetLiftedILInstructionsForAddress(m_object, arch->GetObject(), addr, &count);
-
-	set<size_t> result;
-	for (size_t i = 0; i < count; i++)
-		result.insert(instrs[i]);
-
-	BNFreeILInstructionList(instrs);
-	return result;
-}
-
-
 set<size_t> Function::GetLiftedILFlagUsesForDefinition(size_t i, uint32_t flag)
 {
 	size_t count;
@@ -1031,7 +978,7 @@ void Function::SetAutoType(Type* type)
 void Function::SetAutoReturnType(const Confidence<Ref<Type>>& type)
 {
 	BNTypeWithConfidence tc;
-	tc.type = type ? type->GetObject() : nullptr;
+	tc.type = type.GetValue() ? type->GetObject() : nullptr;
 	tc.confidence = type.GetConfidence();
 	BNSetAutoFunctionReturnType(m_object, &tc);
 }
@@ -1053,7 +1000,7 @@ void Function::SetAutoReturnRegisters(const Confidence<std::vector<uint32_t>>& r
 void Function::SetAutoCallingConvention(const Confidence<Ref<CallingConvention>>& convention)
 {
 	BNCallingConventionWithConfidence cc;
-	cc.convention = convention ? convention->GetObject() : nullptr;
+	cc.convention = convention.GetValue() ? convention->GetObject() : nullptr;
 	cc.confidence = convention.GetConfidence();
 	BNSetAutoFunctionCallingConvention(m_object, &cc);
 }
@@ -1160,7 +1107,7 @@ bool Function::HasUserType() const
 void Function::SetReturnType(const Confidence<Ref<Type>>& type)
 {
 	BNTypeWithConfidence tc;
-	tc.type = type ? type->GetObject() : nullptr;
+	tc.type = type.GetValue() ? type->GetObject() : nullptr;
 	tc.confidence = type.GetConfidence();
 	BNSetUserFunctionReturnType(m_object, &tc);
 }
@@ -1182,7 +1129,7 @@ void Function::SetReturnRegisters(const Confidence<std::vector<uint32_t>>& retur
 void Function::SetCallingConvention(const Confidence<Ref<CallingConvention>>& convention)
 {
 	BNCallingConventionWithConfidence cc;
-	cc.convention = convention ? convention->GetObject() : nullptr;
+	cc.convention = convention.GetValue() ? convention->GetObject() : nullptr;
 	cc.confidence = convention.GetConfidence();
 	BNSetUserFunctionCallingConvention(m_object, &cc);
 }
@@ -1288,6 +1235,13 @@ void Function::ApplyAutoDiscoveredType(Type* type)
 Ref<FlowGraph> Function::CreateFunctionGraph(const FunctionViewType& type, DisassemblySettings* settings)
 {
 	BNFlowGraph* graph = BNCreateFunctionGraph(m_object, type.ToAPIObject(), settings ? settings->GetObject() : nullptr);
+	return new CoreFlowGraph(graph);
+}
+
+
+Ref<FlowGraph> Function::CreateFunctionGraphImmediate(const FunctionViewType& type, DisassemblySettings* settings)
+{
+	BNFlowGraph* graph = BNCreateImmediateFunctionGraph(m_object, type.ToAPIObject(), settings ? settings->GetObject() : nullptr);
 	return new CoreFlowGraph(graph);
 }
 
@@ -1734,6 +1688,74 @@ void Function::SetUserIndirectBranches(
 }
 
 
+void Function::SetGuidedSourceBlocks(const std::vector<ArchAndAddr>& addresses)
+{
+	BNArchitectureAndAddress* addressList = new BNArchitectureAndAddress[addresses.size()];
+	for (size_t i = 0; i < addresses.size(); i++)
+	{
+		addressList[i].arch = addresses[i].arch->GetObject();
+		addressList[i].address = addresses[i].address;
+	}
+	BNSetGuidedSourceBlocks(m_object, addressList, addresses.size());
+	delete[] addressList;
+}
+
+
+void Function::AddGuidedSourceBlocks(const std::vector<ArchAndAddr>& addresses)
+{
+	BNArchitectureAndAddress* addressList = new BNArchitectureAndAddress[addresses.size()];
+	for (size_t i = 0; i < addresses.size(); i++)
+	{
+		addressList[i].arch = addresses[i].arch->GetObject();
+		addressList[i].address = addresses[i].address;
+	}
+	BNAddGuidedSourceBlocks(m_object, addressList, addresses.size());
+	delete[] addressList;
+}
+
+
+void Function::RemoveGuidedSourceBlocks(const std::vector<ArchAndAddr>& addresses)
+{
+	BNArchitectureAndAddress* addressList = new BNArchitectureAndAddress[addresses.size()];
+	for (size_t i = 0; i < addresses.size(); i++)
+	{
+		addressList[i].arch = addresses[i].arch->GetObject();
+		addressList[i].address = addresses[i].address;
+	}
+	BNRemoveGuidedSourceBlocks(m_object, addressList, addresses.size());
+	delete[] addressList;
+}
+
+
+bool Function::IsGuidedSourceBlock(Architecture* arch, uint64_t addr) const
+{
+	return BNIsGuidedSourceBlock(m_object, arch->GetObject(), addr);
+}
+
+
+std::vector<ArchAndAddr> Function::GetGuidedSourceBlocks()
+{
+	size_t count;
+	BNArchitectureAndAddress* addresses = BNGetGuidedSourceBlocks(m_object, &count);
+
+	std::vector<ArchAndAddr> result;
+	result.reserve(count);
+	for (size_t i = 0; i < count; i++)
+	{
+		result.push_back({new CoreArchitecture(addresses[i].arch), addresses[i].address});
+	}
+
+	BNFreeArchitectureAndAddressList(addresses);
+	return result;
+}
+
+
+bool Function::HasGuidedSourceBlocks() const
+{
+	return BNHasGuidedSourceBlocks(m_object);
+}
+
+
 vector<IndirectBranchInfo> Function::GetIndirectBranches()
 {
 	size_t count;
@@ -1780,13 +1802,24 @@ vector<IndirectBranchInfo> Function::GetIndirectBranchesAt(Architecture* arch, u
 }
 
 
-vector<uint64_t> Function::GetUnresolvedIndirectBranches()
+Ref<Function> Function::GetCalleeForAnalysis(Ref<Platform> platform, uint64_t addr, bool exact)
+{
+	BNFunction* func = BNGetCalleeForAnalysis(m_object, platform->GetObject(), addr, exact);
+	if (!func)
+		return nullptr;
+	return new Function(func);
+}
+
+
+vector<ArchAndAddr> Function::GetUnresolvedIndirectBranches()
 {
 	size_t count;
-	uint64_t* addrs = BNGetUnresolvedIndirectBranches(m_object, &count);
-	vector<uint64_t> result;
-	result.insert(result.end(), addrs, &addrs[count]);
-	BNFreeAddressList(addrs);
+	BNArchitectureAndAddress* addresses = BNGetUnresolvedIndirectBranches(m_object, &count);
+	vector<ArchAndAddr> result;
+	result.reserve(count);
+	for (size_t i = 0; i < count; i++)
+		result.push_back({new CoreArchitecture(addresses[i].arch), addresses[i].address});
+	BNFreeArchitectureAndAddressList(addresses);
 	return result;
 }
 
@@ -1800,9 +1833,9 @@ bool Function::HasUnresolvedIndirectBranches()
 void Function::SetAutoCallTypeAdjustment(Architecture* arch, uint64_t addr, const Confidence<Ref<Type>>& adjust)
 {
 	BNTypeWithConfidence apiObject;
-	apiObject.type = adjust ? adjust->GetObject() : nullptr;
+	apiObject.type = adjust.GetValue() ? adjust->GetObject() : nullptr;
 	apiObject.confidence = adjust.GetConfidence();
-	BNSetAutoCallTypeAdjustment(m_object, arch->GetObject(), addr, adjust ? &apiObject : nullptr);
+	BNSetAutoCallTypeAdjustment(m_object, arch->GetObject(), addr, adjust.GetValue() ? &apiObject : nullptr);
 }
 
 
@@ -1840,9 +1873,9 @@ void Function::SetAutoCallRegisterStackAdjustment(
 void Function::SetUserCallTypeAdjustment(Architecture* arch, uint64_t addr, const Confidence<Ref<Type>>& adjust)
 {
 	BNTypeWithConfidence apiObject;
-	apiObject.type = adjust ? adjust->GetObject() : nullptr;
+	apiObject.type = adjust.GetValue() ? adjust->GetObject() : nullptr;
 	apiObject.confidence = adjust.GetConfidence();
-	BNSetUserCallTypeAdjustment(m_object, arch->GetObject(), addr, adjust ? &apiObject : nullptr);
+	BNSetUserCallTypeAdjustment(m_object, arch->GetObject(), addr, adjust.GetValue() ? &apiObject : nullptr);
 }
 
 
@@ -2488,6 +2521,12 @@ Confidence<RegisterValue> Function::GetRegisterValueAtExit(uint32_t reg) const
 }
 
 
+void Function::Analyze()
+{
+	BNAnalyzeFunction(m_object);
+}
+
+
 void Function::Reanalyze(BNFunctionUpdateType type)
 {
 	BNReanalyzeFunction(m_object, type);
@@ -2699,9 +2738,82 @@ void Function::ClearForcedVariableVersion(const Variable& var, const ArchAndAddr
 }
 
 
+void Function::SetFieldResolutionForVariableAt(const Variable& var, const ArchAndAddr& location, FieldResolutionInfo* info)
+{
+	auto defSite = BNArchitectureAndAddress();
+	defSite.arch = location.arch->m_object;
+	defSite.address = location.address;
+
+	auto var_data = BNVariable();
+	var_data.type = var.type;
+	var_data.index = var.index;
+	var_data.storage = var.storage;
+
+	BNSetFieldResolutionForVariableAt(m_object, &var_data, &defSite, info->m_object);
+}
+
+
+void Function::ClearFieldResolutionForVariableAt(const Variable& var, const ArchAndAddr& location)
+{
+	auto defSite = BNArchitectureAndAddress();
+	defSite.arch = location.arch->m_object;
+	defSite.address = location.address;
+
+	auto var_data = BNVariable();
+	var_data.type = var.type;
+	var_data.index = var.index;
+	var_data.storage = var.storage;
+
+	BNClearFieldResolutionForVariableAt(m_object, &var_data, &defSite);
+}
+
+
+Ref<FieldResolutionInfo> Function::GetFieldResolutionForVariableAt(const Variable& var, const ArchAndAddr& location)
+{
+	auto defSite = BNArchitectureAndAddress();
+	defSite.arch = location.arch->m_object;
+	defSite.address = location.address;
+
+	auto var_data = BNVariable();
+	var_data.type = var.type;
+	var_data.index = var.index;
+	var_data.storage = var.storage;
+
+	BNFieldResolutionInfo* result = BNGetFieldResolutionForVariableAt(m_object, &var_data, &defSite);
+	return result ? new FieldResolutionInfo(result) : nullptr;
+}
+
+
+std::map<Variable, std::map<ArchAndAddr, Ref<FieldResolutionInfo>>> Function::GetAllFieldResolutions()
+{
+	map<Variable, map<ArchAndAddr, Ref<FieldResolutionInfo>>> result;
+
+	size_t count;
+	BNVariableFieldResolutionInfo* info = BNGetAllVariableFieldResolutions(m_object, &count);
+
+	for (size_t i = 0; i < count; i++)
+	{
+		Variable var(info[i].var.type, info[i].var.index, info[i].var.storage);
+		ArchAndAddr location(new CoreArchitecture(info[i].location.arch), info[i].location.address);
+		Ref<FieldResolutionInfo> fieldInfo(new FieldResolutionInfo(BNNewFieldResolutionInfoReference(info[i].info)));
+
+		result[var][location] = fieldInfo;
+	}
+
+	BNFreeVariableFieldResolutions(info, count);
+	return result;
+}
+
+
 void Function::RequestDebugReport(const string& name)
 {
 	BNRequestFunctionDebugReport(m_object, name.c_str());
+}
+
+
+bool Function::CheckForDebugReport(const string& name)
+{
+	return BNFunctionCheckForDebugReport(m_object, name.c_str());
 }
 
 
@@ -2737,6 +2849,54 @@ void Function::SetVariableDeadStoreElimination(const Variable& var, BNDeadStoreE
 	varData.index = var.index;
 	varData.storage = var.storage;
 	BNSetFunctionVariableDeadStoreElimination(m_object, &varData, mode);
+}
+
+
+BNExprFolding Function::GetExprFolding(uint64_t addr)
+{
+	return BNGetExprFolding(m_object, addr);
+}
+
+
+void Function::SetExprFolding(uint64_t addr, BNExprFolding mode)
+{
+	BNSetExprFolding(m_object, addr, mode);
+}
+
+
+bool Function::IsConditionInverted(uint64_t addr)
+{
+	return BNIsConditionInverted(m_object, addr);
+}
+
+
+void Function::SetConditionInverted(uint64_t addr, bool invert)
+{
+	BNSetConditionInverted(m_object, addr, invert);
+}
+
+
+BNEarlyReturn Function::GetEarlyReturn(uint64_t addr)
+{
+	return BNGetEarlyReturn(m_object, addr);
+}
+
+
+void Function::SetEarlyReturn(uint64_t addr, BNEarlyReturn mode)
+{
+	BNSetEarlyReturn(m_object, addr, mode);
+}
+
+
+BNSwitchRecovery Function::GetSwitchRecovery(uint64_t addr)
+{
+	return BNGetSwitchRecovery(m_object, addr);
+}
+
+
+void Function::SetSwitchRecovery(uint64_t addr, BNSwitchRecovery mode)
+{
+	BNSetSwitchRecovery(m_object, addr, mode);
 }
 
 
@@ -3296,6 +3456,42 @@ void Function::ExpandAll()
 	BNFunctionExpandAll(m_object);
 }
 
+
+void Function::StoreMetadata(const std::string& key, Ref<Metadata> value, bool isAuto)
+{
+	if (!value)
+		return;
+	BNFunctionStoreMetadata(m_object, key.c_str(), value->GetObject(), isAuto);
+}
+
+
+Ref<Metadata> Function::QueryMetadata(const std::string& key)
+{
+	BNMetadata* value = BNFunctionQueryMetadata(m_object, key.c_str());
+	if (!value)
+		return nullptr;
+	return new Metadata(value);
+}
+
+
+Ref<Metadata> Function::GetMetadata()
+{
+	return new Metadata(BNFunctionGetMetadata(m_object));
+}
+
+
+Ref<Metadata> Function::GetAutoMetadata()
+{
+	return new Metadata(BNFunctionGetAutoMetadata(m_object));
+}
+
+
+void Function::RemoveMetadata(const std::string& key)
+{
+	BNFunctionRemoveMetadata(m_object, key.c_str());
+}
+
+
 AdvancedFunctionAnalysisDataRequestor::AdvancedFunctionAnalysisDataRequestor(Function* func) : m_func(func)
 {
 	if (m_func)
@@ -3329,6 +3525,9 @@ AdvancedFunctionAnalysisDataRequestor& AdvancedFunctionAnalysisDataRequestor::op
 
 void AdvancedFunctionAnalysisDataRequestor::SetFunction(Function* func)
 {
+	if (m_func.GetPtr() == func)
+		return;
+
 	if (m_func)
 		m_func->ReleaseAdvancedAnalysisData();
 

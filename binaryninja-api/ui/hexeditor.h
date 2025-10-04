@@ -196,29 +196,35 @@ class BINARYNINJAUIAPI HexEditor :
 	ViewFrame* m_view;
 
 	std::vector<HexEditorLine> m_lines;
-	size_t m_topLine;
-	uint64_t m_topAddr, m_bottomAddr;
+	size_t m_topLine = 0;
+	uint64_t m_topAddr = 0;
+	uint64_t m_bottomAddr = 0;
 
 	std::vector<BNAddressRange> m_ranges;
-	uint64_t m_allocatedLength;
-	uint64_t m_scrollBarMultiplier;
-	int m_wheelDelta;
-	bool m_updatingScrollBar;
-	bool m_updatesRequired;
+	uint64_t m_allocatedLength = 0;
+	uint64_t m_scrollBarMultiplier = 0;
+	int m_wheelDelta = 0;
+	bool m_updatingScrollBar = false;
+	bool m_updatesRequired = false;
 
-	uint64_t m_minAddr;
-	uint64_t m_cursorAddr, m_prevCursorAddr;
-	int m_cursorOffset;
-	uint64_t m_selectionStartAddr;
-	int m_cols, m_visibleRows;
-	int m_lastMouseX, m_lastMouseY;
-	bool m_selectionVisible;
-	bool m_cursorAscii;
-	bool m_caretVisible, m_caretBlink;
-	bool m_insertMode;
+	uint64_t m_minAddr = 0;
+	uint64_t m_cursorAddr = 0;
+	uint64_t m_prevCursorAddr = 0;
+	int m_cursorOffset = 0;
+	uint64_t m_selectionStartAddr = 0;
+	int m_cols = 0;
+	int m_visibleRows = 1;
+	int m_lastMouseX = 0;
+	int m_lastMouseY = 0;
+	bool m_selectionVisible = false;
+	bool m_cursorAscii = false;
+	bool m_caretVisible = false;
+	bool m_caretBlink = true;
+	bool m_insertMode = false;
 	QString m_status;
-	QTimer* m_cursorTimer;
-	Qt::KeyboardModifiers m_ctrl, m_command;
+	QTimer* m_cursorTimer = nullptr;
+	Qt::KeyboardModifiers m_ctrl = Qt::ControlModifier;
+	Qt::KeyboardModifiers m_command = Qt::MetaModifier;
 
 	RenderContext m_render;
 	HexEditorHighlightState m_highlightState;

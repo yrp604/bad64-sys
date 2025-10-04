@@ -143,6 +143,10 @@ public:
 			RegisterFastcallCallingConvention(cc);
 			RegisterStdcallCallingConvention(cc);
 		}
+
+		cc = arch->GetCallingConventionByName("apple-syscall");
+		if (cc)
+			SetSystemCallConvention(cc);
 	}
 
 	virtual bool GetFallbackEnabled() override
@@ -232,6 +236,11 @@ public:
 			RegisterFastcallCallingConvention(cc);
 			RegisterStdcallCallingConvention(cc);
 		}
+
+		cc = arch->GetCallingConventionByName("apple-syscall");
+		if (cc)
+			SetSystemCallConvention(cc);
+
 	}
 
 	virtual bool GetFallbackEnabled() override

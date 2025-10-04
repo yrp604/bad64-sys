@@ -21,7 +21,7 @@ This feature enables a number of workflows:
 
 ### Porting Analysis Between Target Versions
 
-If you're working with version 1 of a file which has symbols and you now want to port your work over to version 2 (as long as they both have symbols). This isn't going to be perfect as this feature isn't interactive and doesn't take into account changes in parameter counts or ordering, so *use this with caution*.
+If you're working with version 1 of a file which has symbols, and you now want to port your work over to version 2 (as long as they both have symbols). This isn't going to be perfect as this feature isn't interactive and doesn't take into account changes in parameter counts or ordering, so *use this with caution*.
 
 ### Quickly Defining Externs
 
@@ -35,17 +35,17 @@ If you already have a collection of headers containing types you want to use, yo
 - `-I<path>` for various user header paths
 - `-D<macro>=<value>` for macro definitions
 - `-x c -std=c99` to specify C99 mode
-- Other Clang-compatible command-line flags are accepted (eg `-fms-extensions`, `-fms-compatibility`, etc)
+- Other Clang-compatible command-line flags are accepted (e.g. `-fms-extensions`, `-fms-compatibility`, etc.)
 
 You can specify that types from system headers, accessed via `#include <header.h>`, will be in the results. Otherwise, only files from user headers, accessed via `#include "header.h"` will be used.
 
-You can also specify Define Binary Ninja Macros, which makes the type parser include the various parser extensions that Binary Ninja allows in the Type View editors, eg `__packed`, `__padding`, `__syscall`, etc. You probably only want to use this option when importing a header file exported using [Export Header File](#export-header-file). 
+You can also specify Define Binary Ninja Macros, which makes the type parser include the various parser extensions that Binary Ninja allows in the Type View editors, e.g. `__packed`, `__padding`, `__syscall`, etc. You probably only want to use this option when importing a header file exported using [Export Header File](#export-header-file).
 
 After specifying the file(s) and flag(s), pressing Preview will give a list of all the types and functions defined in the file(s). You may check or uncheck the box next to any of the types/functions to control whether they will be imported to your analysis.
 
 If there were any parse errors, those will be shown instead of a list of types. Generally speaking, what this means is you're missing either header search paths or compile definitions. See the section below on [finding system headers](#finding-system-headers).
 
-After pressing Import, all the checked types/functions will be added to your analysis. Imported types will override any existing types you had defined so they are disabled by default as indicated via the `Exists Already` column. Imported functions will replace signatures of any functions in your analysis whose name matches signatures found in the header. 
+After pressing Import, all the checked types/functions will be added to your analysis. Imported types will override any existing types you had defined, so they are disabled by default as indicated via the `Exists Already` column. Imported functions will replace signatures of any functions in your analysis whose name matches signatures found in the header.
 
 ![Importing a header file](../../img/import-header.png "Importing a header file")
 
@@ -105,7 +105,7 @@ From this example, the flags would be:
 
 ##### For Windows
 
-For windows, there's no easy command to list all the include paths so you have to piece them together from the `Include Directory` property in a Visual Studio project. You also want to include `-x c -std=c99` since Windows headers include lots of C++ types that the type importer currently does not support.
+For windows, there's no easy command to list all the include paths, so you have to piece them together from the `Include Directory` property in a Visual Studio project. You also want to include `-x c -std=c99` since Windows headers include lots of C++ types that the type importer currently does not support.
 
 You will end up with something like the following for user mode:
 
@@ -136,7 +136,7 @@ Note that some header files might require manually including a specific `windows
 
 ##### Cross-Platform Targets
 
-If you are analyzing a target that is for a different operating system, you need to both find the header include paths for that system, and copy (or mount) them to a location accessible by the computer running Binary Ninja.   
+If you are analyzing a target that is for a different operating system, you need to both find the header include paths for that system, and copy (or mount) them to a location accessible by the computer running Binary Ninja.
 
 ### Export Header File
 
@@ -147,9 +147,9 @@ If you want to compile code using the structures you defined during your analysi
 Binary Ninja pulls type information from a variety of sources. The highest-level source are the platform types loaded for the given platform (which includes operating system and architecture). There are two sources of platform types. The first are shipped with the product in a [binary path](../index.md#directories). The second location is in your [user folder](../index.md#user-folder) and is intended for you to put custom platform types.
 
 ???+ Danger "Warning"
-    Do NOT make changes to platform types in the binary path as they will be overwritten any time Binary Ninja updates. 
+    Do NOT make changes to platform types in the binary path as they will be overwritten any time Binary Ninja updates.
 
-Platform types are used to define types that should be available to all programs available on that particular platform. They are only for global common types. Consider, for example, that you might want to add the following on windows:
+Platform types are used to define types that should be available to all programs available on that particular platform. They are only for global common types. Consider, for example, that you might want to add the following on Windows:
 
 ```
 typedef uint8_t u8;
@@ -161,7 +161,7 @@ You could write this type into:
 /home/user/.binaryninja/types/platform/windows-x86.c
 ```
 
-And any time you opened a 32bit windows binary, that type would be available to use. However, please note that these are not substitutes for [Type Libraries](../../dev/annotation.md#type-libraries).  Type Libraries are used to provide a collection of types for a given library such as a libc, or common DLL. 
+And any time you opened a 32bit Windows binary, that type would be available to use. However, please note that these are not substitutes for [Type Libraries](../../dev/annotation.md#type-libraries).  Type Libraries are used to provide a collection of types for a given library such as a libc, or common DLL.
 
 ???+ Warning "Tip"
     If you don't know the specific platform (and thus filename) you need to create for a given file, just enter `bv.platform` in the scripting console.

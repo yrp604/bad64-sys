@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.9 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 
 project(view_md1rom)
 
@@ -6,7 +6,7 @@ if(NOT BN_INTERNAL_BUILD)
     add_subdirectory(${PROJECT_SOURCE_DIR}/../.. ${PROJECT_BINARY_DIR}/api)
 endif()
 
-file(GLOB SOURCES
+file(GLOB SOURCES CONFIGURE_DEPENDS
         *.cpp
         *.h)
 
@@ -19,7 +19,7 @@ endif()
 target_link_libraries(view_md1rom binaryninjaapi)
 
 set_target_properties(view_md1rom PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 20
         CXX_VISIBILITY_PRESET hidden
         CXX_STANDARD_REQUIRED ON
         VISIBILITY_INLINES_HIDDEN ON

@@ -1,4 +1,4 @@
-// Copyright 2021-2024 Vector 35 Inc.
+// Copyright 2021-2025 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,14 +23,13 @@ use crate::{
     calling_convention::CoreCallingConvention,
     data_buffer::DataBuffer,
     disassembly::InstructionTextToken,
-    low_level_il::{MutableLiftedILExpr, MutableLiftedILFunction},
+    function::{ArchAndAddr, Function, NativeBlock},
     platform::Platform,
     rc::*,
     relocation::CoreRelocationHandler,
-    string::BnStrCompatible,
-    string::*,
+    string::{IntoCStr, *},
     types::{NameAndType, Type},
-    Endianness,
+    BranchType, Endianness,
 };
 use std::ops::Deref;
 use std::{
@@ -42,17 +41,21 @@ use std::{
     mem::MaybeUninit,
 };
 
+use crate::basic_block::BasicBlock;
 use crate::function_recognizer::FunctionRecognizer;
 use crate::relocation::{CustomRelocationHandlerHandle, RelocationHandler};
+use crate::variable::IndirectBranchInfo;
 
 use crate::confidence::Conf;
 use crate::low_level_il::expression::ValueExpr;
 use crate::low_level_il::lifting::{
     get_default_flag_cond_llil, get_default_flag_write_llil, LowLevelILFlagWriteOp,
 };
+use crate::low_level_il::{LowLevelILMutableExpression, LowLevelILMutableFunction};
 pub use binaryninjacore_sys::BNFlagRole as FlagRole;
 pub use binaryninjacore_sys::BNImplicitRegisterExtend as ImplicitRegisterExtend;
 pub use binaryninjacore_sys::BNLowLevelILFlagCondition as FlagCondition;
+use std::collections::HashSet;
 
 macro_rules! newtype {
     ($name:ident, $inner_type:ty) => {
@@ -80,6 +83,13 @@ macro_rules! newtype {
 }
 
 newtype!(RegisterId, u32);
+
+impl RegisterId {
+    pub fn is_temporary(&self) -> bool {
+        self.0 & 0x8000_0000 != 0
+    }
+}
+
 newtype!(RegisterStackId, u32);
 newtype!(FlagId, u32);
 // TODO: Make this NonZero<u32>?
@@ -159,6 +169,23 @@ impl From<BranchKind> for BranchInfo {
         Self {
             arch: None,
             kind: value,
+        }
+    }
+}
+
+impl From<BranchKind> for BranchType {
+    fn from(value: BranchKind) -> Self {
+        match value {
+            BranchKind::Unresolved => BranchType::UnresolvedBranch,
+            BranchKind::Unconditional(_) => BranchType::UnconditionalBranch,
+            BranchKind::True(_) => BranchType::TrueBranch,
+            BranchKind::False(_) => BranchType::FalseBranch,
+            BranchKind::Call(_) => BranchType::CallDestination,
+            BranchKind::FunctionReturn => BranchType::FunctionReturn,
+            BranchKind::SystemCall => BranchType::SystemCall,
+            BranchKind::Indirect => BranchType::IndirectBranch,
+            BranchKind::Exception => BranchType::ExceptionBranch,
+            BranchKind::UserDefined => BranchType::UserDefinedBranch,
         }
     }
 }
@@ -286,7 +313,7 @@ pub trait RegisterInfo: Sized {
 pub trait Register: Debug + Sized + Clone + Copy + Hash + Eq {
     type InfoType: RegisterInfo<RegType = Self>;
 
-    fn name(&self) -> Cow<str>;
+    fn name(&self) -> Cow<'_, str>;
     fn info(&self) -> Self::InfoType;
 
     /// Unique identifier for this `Register`.
@@ -314,7 +341,7 @@ pub trait RegisterStack: Debug + Sized + Clone + Copy {
     type RegType: Register<InfoType = Self::RegInfoType>;
     type RegInfoType: RegisterInfo<RegType = Self::RegType>;
 
-    fn name(&self) -> Cow<str>;
+    fn name(&self) -> Cow<'_, str>;
     fn info(&self) -> Self::InfoType;
 
     /// Unique identifier for this `RegisterStack`.
@@ -326,7 +353,7 @@ pub trait RegisterStack: Debug + Sized + Clone + Copy {
 pub trait Flag: Debug + Sized + Clone + Copy + Hash + Eq {
     type FlagClass: FlagClass;
 
-    fn name(&self) -> Cow<str>;
+    fn name(&self) -> Cow<'_, str>;
     fn role(&self, class: Option<Self::FlagClass>) -> FlagRole;
 
     /// Unique identifier for this `Flag`.
@@ -339,7 +366,7 @@ pub trait FlagWrite: Sized + Clone + Copy {
     type FlagType: Flag;
     type FlagClass: FlagClass;
 
-    fn name(&self) -> Cow<str>;
+    fn name(&self) -> Cow<'_, str>;
     fn class(&self) -> Option<Self::FlagClass>;
 
     /// Unique identifier for this `FlagWrite`.
@@ -352,7 +379,7 @@ pub trait FlagWrite: Sized + Clone + Copy {
 }
 
 pub trait FlagClass: Sized + Clone + Copy + Hash + Eq {
-    fn name(&self) -> Cow<str>;
+    fn name(&self) -> Cow<'_, str>;
 
     /// Unique identifier for this `FlagClass`.
     ///
@@ -365,7 +392,7 @@ pub trait FlagGroup: Debug + Sized + Clone + Copy {
     type FlagType: Flag;
     type FlagClass: FlagClass;
 
-    fn name(&self) -> Cow<str>;
+    fn name(&self) -> Cow<'_, str>;
 
     /// Unique identifier for this `FlagGroup`.
     ///
@@ -400,7 +427,7 @@ pub trait FlagGroup: Debug + Sized + Clone + Copy {
 }
 
 pub trait Intrinsic: Debug + Sized + Clone + Copy {
-    fn name(&self) -> Cow<str>;
+    fn name(&self) -> Cow<'_, str>;
 
     /// Unique identifier for this `Intrinsic`.
     fn id(&self) -> IntrinsicId;
@@ -460,8 +487,18 @@ pub trait Architecture: 'static + Sized + AsRef<CoreArchitecture> {
         &self,
         data: &[u8],
         addr: u64,
-        il: &mut MutableLiftedILFunction<Self>,
+        il: &LowLevelILMutableFunction,
     ) -> Option<(usize, bool)>;
+
+    fn analyze_basic_blocks(
+        &self,
+        function: &mut Function,
+        context: &mut BasicBlockAnalysisContext,
+    ) {
+        unsafe {
+            BNArchitectureDefaultAnalyzeBasicBlocks(function.handle, context.handle);
+        }
+    }
 
     /// Fallback flag value calculation path. This method is invoked when the core is unable to
     /// recover flag use semantics, and resorts to emitting instructions that explicitly set each
@@ -477,8 +514,8 @@ pub trait Architecture: 'static + Sized + AsRef<CoreArchitecture> {
         flag: Self::Flag,
         flag_write_type: Self::FlagWrite,
         op: LowLevelILFlagWriteOp<Self::Register>,
-        il: &'a mut MutableLiftedILFunction<Self>,
-    ) -> Option<MutableLiftedILExpr<'a, Self, ValueExpr>> {
+        il: &'a LowLevelILMutableFunction,
+    ) -> Option<LowLevelILMutableExpression<'a, ValueExpr>> {
         let role = flag.role(flag_write_type.class());
         Some(get_default_flag_write_llil(self, role, op, il))
     }
@@ -506,8 +543,8 @@ pub trait Architecture: 'static + Sized + AsRef<CoreArchitecture> {
         &self,
         cond: FlagCondition,
         class: Option<Self::FlagClass>,
-        il: &'a mut MutableLiftedILFunction<Self>,
-    ) -> Option<MutableLiftedILExpr<'a, Self, ValueExpr>> {
+        il: &'a LowLevelILMutableFunction,
+    ) -> Option<LowLevelILMutableExpression<'a, ValueExpr>> {
         Some(get_default_flag_cond_llil(self, cond, class, il))
     }
 
@@ -528,8 +565,8 @@ pub trait Architecture: 'static + Sized + AsRef<CoreArchitecture> {
     fn flag_group_llil<'a>(
         &self,
         _group: Self::FlagGroup,
-        _il: &'a mut MutableLiftedILFunction<Self>,
-    ) -> Option<MutableLiftedILExpr<'a, Self, ValueExpr>> {
+        _il: &'a LowLevelILMutableFunction,
+    ) -> Option<LowLevelILMutableExpression<'a, ValueExpr>> {
         None
     }
 
@@ -667,7 +704,7 @@ impl<R: Register> RegisterStack for UnusedRegisterStack<R> {
     type RegType = R;
     type RegInfoType = R::InfoType;
 
-    fn name(&self) -> Cow<str> {
+    fn name(&self) -> Cow<'_, str> {
         unreachable!()
     }
     fn id(&self) -> RegisterStackId {
@@ -684,7 +721,7 @@ pub struct UnusedFlag;
 
 impl Flag for UnusedFlag {
     type FlagClass = Self;
-    fn name(&self) -> Cow<str> {
+    fn name(&self) -> Cow<'_, str> {
         unreachable!()
     }
     fn role(&self, _class: Option<Self::FlagClass>) -> FlagRole {
@@ -698,7 +735,7 @@ impl Flag for UnusedFlag {
 impl FlagWrite for UnusedFlag {
     type FlagType = Self;
     type FlagClass = Self;
-    fn name(&self) -> Cow<str> {
+    fn name(&self) -> Cow<'_, str> {
         unreachable!()
     }
     fn class(&self) -> Option<Self> {
@@ -713,7 +750,7 @@ impl FlagWrite for UnusedFlag {
 }
 
 impl FlagClass for UnusedFlag {
-    fn name(&self) -> Cow<str> {
+    fn name(&self) -> Cow<'_, str> {
         unreachable!()
     }
     fn id(&self) -> FlagClassId {
@@ -724,7 +761,7 @@ impl FlagClass for UnusedFlag {
 impl FlagGroup for UnusedFlag {
     type FlagType = Self;
     type FlagClass = Self;
-    fn name(&self) -> Cow<str> {
+    fn name(&self) -> Cow<'_, str> {
         unreachable!()
     }
     fn id(&self) -> FlagGroupId {
@@ -743,7 +780,7 @@ impl FlagGroup for UnusedFlag {
 pub struct UnusedIntrinsic;
 
 impl Intrinsic for UnusedIntrinsic {
-    fn name(&self) -> Cow<str> {
+    fn name(&self) -> Cow<'_, str> {
         unreachable!()
     }
     fn id(&self) -> IntrinsicId {
@@ -825,7 +862,7 @@ impl CoreRegister {
 impl Register for CoreRegister {
     type InfoType = CoreRegisterInfo;
 
-    fn name(&self) -> Cow<str> {
+    fn name(&self) -> Cow<'_, str> {
         unsafe {
             let name = BNGetArchitectureRegisterName(self.arch.handle, self.id.into());
 
@@ -856,6 +893,7 @@ impl Debug for CoreRegister {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CoreRegister")
             .field("id", &self.id)
+            .field("name", &self.name())
             .finish()
     }
 }
@@ -950,7 +988,7 @@ impl RegisterStack for CoreRegisterStack {
     type RegType = CoreRegister;
     type RegInfoType = CoreRegisterInfo;
 
-    fn name(&self) -> Cow<str> {
+    fn name(&self) -> Cow<'_, str> {
         unsafe {
             let name = BNGetArchitectureRegisterStackName(self.arch.handle, self.id.into());
 
@@ -1005,7 +1043,7 @@ impl CoreFlag {
 impl Flag for CoreFlag {
     type FlagClass = CoreFlagClass;
 
-    fn name(&self) -> Cow<str> {
+    fn name(&self) -> Cow<'_, str> {
         unsafe {
             let name = BNGetArchitectureFlagName(self.arch.handle, self.id.into());
 
@@ -1065,7 +1103,7 @@ impl FlagWrite for CoreFlagWrite {
     type FlagType = CoreFlag;
     type FlagClass = CoreFlagClass;
 
-    fn name(&self) -> Cow<str> {
+    fn name(&self) -> Cow<'_, str> {
         unsafe {
             let name = BNGetArchitectureFlagWriteTypeName(self.arch.handle, self.id.into());
 
@@ -1149,7 +1187,7 @@ impl CoreFlagClass {
 }
 
 impl FlagClass for CoreFlagClass {
-    fn name(&self) -> Cow<str> {
+    fn name(&self) -> Cow<'_, str> {
         unsafe {
             let name = BNGetArchitectureSemanticFlagClassName(self.arch.handle, self.id.into());
 
@@ -1200,7 +1238,7 @@ impl FlagGroup for CoreFlagGroup {
     type FlagType = CoreFlag;
     type FlagClass = CoreFlagClass;
 
-    fn name(&self) -> Cow<str> {
+    fn name(&self) -> Cow<'_, str> {
         unsafe {
             let name = BNGetArchitectureSemanticFlagGroupName(self.arch.handle, self.id.into());
 
@@ -1272,7 +1310,7 @@ impl FlagGroup for CoreFlagGroup {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub struct CoreIntrinsic {
     pub arch: CoreArchitecture,
     pub id: IntrinsicId,
@@ -1298,7 +1336,7 @@ impl CoreIntrinsic {
 }
 
 impl Intrinsic for CoreIntrinsic {
-    fn name(&self) -> Cow<str> {
+    fn name(&self) -> Cow<'_, str> {
         unsafe {
             let name = BNGetArchitectureIntrinsicName(self.arch.handle, self.id.into());
 
@@ -1358,6 +1396,18 @@ impl Intrinsic for CoreIntrinsic {
     }
 }
 
+impl Debug for CoreIntrinsic {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CoreIntrinsic")
+            .field("id", &self.id)
+            .field("name", &self.name())
+            .field("class", &self.class())
+            .field("inputs", &self.inputs())
+            .field("outputs", &self.outputs())
+            .finish()
+    }
+}
+
 // TODO: WTF?!?!?!?
 pub struct CoreArchitectureList(*mut *mut BNArchitecture, usize);
 
@@ -1384,7 +1434,7 @@ pub struct CoreArchitecture {
 
 impl CoreArchitecture {
     // TODO: Leave a note on architecture lifetimes. Specifically that they are never freed.
-    pub(crate) unsafe fn from_raw(handle: *mut BNArchitecture) -> Self {
+    pub unsafe fn from_raw(handle: *mut BNArchitecture) -> Self {
         debug_assert!(!handle.is_null());
         CoreArchitecture { handle }
     }
@@ -1397,16 +1447,16 @@ impl CoreArchitecture {
     }
 
     pub fn by_name(name: &str) -> Option<Self> {
-        let handle =
-            unsafe { BNGetArchitectureByName(name.into_bytes_with_nul().as_ptr() as *mut _) };
+        let name = name.to_cstr();
+        let handle = unsafe { BNGetArchitectureByName(name.as_ptr()) };
         match handle.is_null() {
             false => Some(CoreArchitecture { handle }),
             true => None,
         }
     }
 
-    pub fn name(&self) -> BnString {
-        unsafe { BnString::from_raw(BNGetArchitectureName(self.handle)) }
+    pub fn name(&self) -> String {
+        unsafe { BnString::into_string(BNGetArchitectureName(self.handle)) }
     }
 }
 
@@ -1505,7 +1555,7 @@ impl Architecture for CoreArchitecture {
         &self,
         data: &[u8],
         addr: u64,
-        il: &mut MutableLiftedILFunction<Self>,
+        il: &LowLevelILMutableFunction,
     ) -> Option<(usize, bool)> {
         let mut size = data.len();
         let success = unsafe {
@@ -1525,13 +1575,23 @@ impl Architecture for CoreArchitecture {
         }
     }
 
+    fn analyze_basic_blocks(
+        &self,
+        function: &mut Function,
+        context: &mut BasicBlockAnalysisContext,
+    ) {
+        unsafe {
+            BNArchitectureAnalyzeBasicBlocks(self.handle, function.handle, context.handle);
+        }
+    }
+
     fn flag_write_llil<'a>(
         &self,
         _flag: Self::Flag,
         _flag_write: Self::FlagWrite,
         _op: LowLevelILFlagWriteOp<Self::Register>,
-        _il: &'a mut MutableLiftedILFunction<Self>,
-    ) -> Option<MutableLiftedILExpr<'a, Self, ValueExpr>> {
+        _il: &'a LowLevelILMutableFunction,
+    ) -> Option<LowLevelILMutableExpression<'a, ValueExpr>> {
         None
     }
 
@@ -1567,16 +1627,16 @@ impl Architecture for CoreArchitecture {
         &self,
         _cond: FlagCondition,
         _class: Option<Self::FlagClass>,
-        _il: &'a mut MutableLiftedILFunction<Self>,
-    ) -> Option<MutableLiftedILExpr<'a, Self, ValueExpr>> {
+        _il: &'a LowLevelILMutableFunction,
+    ) -> Option<LowLevelILMutableExpression<'a, ValueExpr>> {
         None
     }
 
     fn flag_group_llil<'a>(
         &self,
         _group: Self::FlagGroup,
-        _il: &'a mut MutableLiftedILFunction<Self>,
-    ) -> Option<MutableLiftedILExpr<'a, Self, ValueExpr>> {
+        _il: &'a LowLevelILMutableFunction,
+    ) -> Option<LowLevelILMutableExpression<'a, ValueExpr>> {
         None
     }
 
@@ -1799,10 +1859,8 @@ impl Architecture for CoreArchitecture {
     fn assemble(&self, code: &str, addr: u64) -> Result<Vec<u8>, String> {
         let code = CString::new(code).map_err(|_| "Invalid encoding in code string".to_string())?;
 
-        let result = match DataBuffer::new(&[]) {
-            Ok(result) => result,
-            Err(_) => return Err("Result buffer allocation failed".to_string()),
-        };
+        let result = DataBuffer::new(&[]);
+        // TODO: This is actually a list of errors.
         let mut error_raw: *mut c_char = std::ptr::null_mut();
         let res = unsafe {
             BNAssemble(
@@ -1895,6 +1953,254 @@ impl Architecture for CoreArchitecture {
     }
 }
 
+pub struct BasicBlockAnalysisContext {
+    pub(crate) handle: *mut BNBasicBlockAnalysisContext,
+    contextual_returns_dirty: bool,
+
+    // In
+    pub indirect_branches: Vec<IndirectBranchInfo>,
+    pub indirect_no_return_calls: HashSet<ArchAndAddr>,
+    pub analysis_skip_override: BNFunctionAnalysisSkipOverride,
+    pub guided_analysis_mode: bool,
+    pub trigger_guided_on_invalid_instruction: bool,
+    pub translate_tail_calls: bool,
+    pub disallow_branch_to_string: bool,
+    pub max_function_size: u64,
+    pub max_size_reached: bool,
+
+    // In/Out
+    contextual_returns: HashMap<ArchAndAddr, bool>,
+
+    // Out
+    direct_code_references: HashMap<u64, ArchAndAddr>,
+    direct_no_return_calls: HashSet<ArchAndAddr>,
+    halted_disassembly_addresses: HashSet<ArchAndAddr>,
+    inlined_unresolved_indirect_branches: HashSet<ArchAndAddr>,
+}
+
+impl BasicBlockAnalysisContext {
+    pub unsafe fn from_raw(handle: *mut BNBasicBlockAnalysisContext) -> Self {
+        debug_assert!(!handle.is_null());
+
+        let ctx_ref = &*handle;
+
+        let indirect_branches = (0..ctx_ref.indirectBranchesCount)
+            .map(|i| {
+                let raw: BNIndirectBranchInfo =
+                    unsafe { std::ptr::read(ctx_ref.indirectBranches.add(i)) };
+                IndirectBranchInfo::from(raw)
+            })
+            .collect::<Vec<_>>();
+
+        let indirect_no_return_calls = (0..ctx_ref.indirectNoReturnCallsCount)
+            .map(|i| {
+                let raw = unsafe { std::ptr::read(ctx_ref.indirectNoReturnCalls.add(i)) };
+                ArchAndAddr::from(raw)
+            })
+            .collect::<HashSet<_>>();
+
+        let contextual_returns = (0..ctx_ref.contextualFunctionReturnCount)
+            .map(|i| {
+                let loc = unsafe {
+                    let raw = std::ptr::read(ctx_ref.contextualFunctionReturnLocations.add(i));
+                    ArchAndAddr::from(raw)
+                };
+                let val = unsafe { *ctx_ref.contextualFunctionReturnValues.add(i) };
+                (loc, val)
+            })
+            .collect::<HashMap<_, _>>();
+
+        let direct_code_references = (0..ctx_ref.directRefCount)
+            .map(|i| {
+                let src = unsafe {
+                    let raw = std::ptr::read(ctx_ref.directRefSources.add(i));
+                    ArchAndAddr::from(raw)
+                };
+                let tgt = unsafe { *ctx_ref.directRefTargets.add(i) };
+                (tgt, src)
+            })
+            .collect::<HashMap<_, _>>();
+
+        let direct_no_return_calls = (0..ctx_ref.directNoReturnCallsCount)
+            .map(|i| {
+                let raw = unsafe { std::ptr::read(ctx_ref.directNoReturnCalls.add(i)) };
+                ArchAndAddr::from(raw)
+            })
+            .collect::<HashSet<_>>();
+
+        let halted_disassembly_addresses = (0..ctx_ref.haltedDisassemblyAddressesCount)
+            .map(|i| {
+                let raw = unsafe { std::ptr::read(ctx_ref.haltedDisassemblyAddresses.add(i)) };
+                ArchAndAddr::from(raw)
+            })
+            .collect::<HashSet<_>>();
+
+        let inlined_unresolved_indirect_branches = (0..ctx_ref
+            .inlinedUnresolvedIndirectBranchCount)
+            .map(|i| {
+                let raw =
+                    unsafe { std::ptr::read(ctx_ref.inlinedUnresolvedIndirectBranches.add(i)) };
+                ArchAndAddr::from(raw)
+            })
+            .collect::<HashSet<_>>();
+
+        BasicBlockAnalysisContext {
+            handle,
+            contextual_returns_dirty: false,
+            indirect_branches,
+            indirect_no_return_calls,
+            analysis_skip_override: ctx_ref.analysisSkipOverride,
+            guided_analysis_mode: ctx_ref.guidedAnalysisMode,
+            trigger_guided_on_invalid_instruction: ctx_ref.triggerGuidedOnInvalidInstruction,
+            translate_tail_calls: ctx_ref.translateTailCalls,
+            disallow_branch_to_string: ctx_ref.disallowBranchToString,
+            max_function_size: ctx_ref.maxFunctionSize,
+            max_size_reached: ctx_ref.maxSizeReached,
+            contextual_returns,
+            direct_code_references,
+            direct_no_return_calls,
+            halted_disassembly_addresses,
+            inlined_unresolved_indirect_branches,
+        }
+    }
+
+    pub fn add_contextual_return(&mut self, loc: ArchAndAddr, value: bool) {
+        if !self.contextual_returns.contains_key(&loc) {
+            self.contextual_returns_dirty = true;
+        }
+
+        self.contextual_returns.insert(loc, value);
+    }
+
+    pub fn add_direct_code_reference(&mut self, target: u64, src: ArchAndAddr) {
+        self.direct_code_references.entry(target).or_insert(src);
+    }
+
+    pub fn add_direct_no_return_call(&mut self, loc: ArchAndAddr) {
+        self.direct_no_return_calls.insert(loc);
+    }
+
+    pub fn add_halted_disassembly_address(&mut self, loc: ArchAndAddr) {
+        self.halted_disassembly_addresses.insert(loc);
+    }
+
+    pub fn add_inlined_unresolved_indirect_branch(&mut self, loc: ArchAndAddr) {
+        self.inlined_unresolved_indirect_branches.insert(loc);
+    }
+
+    pub fn create_basic_block(
+        &self,
+        arch: CoreArchitecture,
+        start: u64,
+    ) -> Option<Ref<BasicBlock<NativeBlock>>> {
+        let raw_block =
+            unsafe { BNAnalyzeBasicBlocksContextCreateBasicBlock(self.handle, arch.handle, start) };
+
+        if raw_block.is_null() {
+            return None;
+        }
+
+        unsafe { Some(BasicBlock::ref_from_raw(raw_block, NativeBlock::new())) }
+    }
+
+    pub fn add_basic_block(&self, block: Ref<BasicBlock<NativeBlock>>) {
+        unsafe {
+            BNAnalyzeBasicBlocksContextAddBasicBlockToFunction(self.handle, block.handle);
+        }
+    }
+
+    pub fn add_temp_outgoing_reference(&self, target: &Function) {
+        unsafe {
+            BNAnalyzeBasicBlocksContextAddTempReference(self.handle, target.handle);
+        }
+    }
+
+    pub fn finalize(&mut self) {
+        if !self.direct_code_references.is_empty() {
+            let total = self.direct_code_references.len();
+            let mut sources: Vec<BNArchitectureAndAddress> = Vec::with_capacity(total);
+            let mut targets: Vec<u64> = Vec::with_capacity(total);
+            for (target, src) in &self.direct_code_references {
+                sources.push(src.into_raw());
+                targets.push(*target);
+            }
+            unsafe {
+                BNAnalyzeBasicBlocksContextSetDirectCodeReferences(
+                    self.handle,
+                    sources.as_mut_ptr(),
+                    targets.as_mut_ptr(),
+                    total,
+                );
+            }
+        }
+
+        if !self.direct_no_return_calls.is_empty() {
+            let total = self.direct_no_return_calls.len();
+            let mut locations: Vec<BNArchitectureAndAddress> = Vec::with_capacity(total);
+            for loc in &self.direct_no_return_calls {
+                locations.push(loc.into_raw());
+            }
+            unsafe {
+                BNAnalyzeBasicBlocksContextSetDirectNoReturnCalls(
+                    self.handle,
+                    locations.as_mut_ptr(),
+                    total,
+                );
+            }
+        }
+
+        if !self.halted_disassembly_addresses.is_empty() {
+            let total = self.halted_disassembly_addresses.len();
+            let mut locations: Vec<BNArchitectureAndAddress> = Vec::with_capacity(total);
+            for loc in &self.halted_disassembly_addresses {
+                locations.push(loc.into_raw());
+            }
+            unsafe {
+                BNAnalyzeBasicBlocksContextSetHaltedDisassemblyAddresses(
+                    self.handle,
+                    locations.as_mut_ptr(),
+                    total,
+                );
+            }
+        }
+
+        if !self.inlined_unresolved_indirect_branches.is_empty() {
+            let total = self.inlined_unresolved_indirect_branches.len();
+            let mut locations: Vec<BNArchitectureAndAddress> = Vec::with_capacity(total);
+            for loc in &self.inlined_unresolved_indirect_branches {
+                locations.push(loc.into_raw());
+            }
+            unsafe {
+                BNAnalyzeBasicBlocksContextSetInlinedUnresolvedIndirectBranches(
+                    self.handle,
+                    locations.as_mut_ptr(),
+                    total,
+                );
+            }
+        }
+
+        if self.contextual_returns_dirty {
+            let total = self.contextual_returns.len();
+            let mut locations: Vec<BNArchitectureAndAddress> = Vec::with_capacity(total);
+            let mut values: Vec<bool> = Vec::with_capacity(total);
+            for (loc, value) in &self.contextual_returns {
+                locations.push(loc.into_raw());
+                values.push(*value);
+            }
+            unsafe {
+                BNAnalyzeBasicBlocksContextSetContextualFunctionReturns(
+                    self.handle,
+                    locations.as_mut_ptr(),
+                    values.as_mut_ptr(),
+                    total,
+                );
+            }
+        }
+
+        unsafe { BNAnalyzeBasicBlocksContextFinalize(self.handle) };
+    }
+}
+
 impl Debug for CoreArchitecture {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CoreArchitecture")
@@ -1945,12 +2251,10 @@ macro_rules! cc_func {
 
 /// Contains helper methods for all types implementing 'Architecture'
 pub trait ArchitectureExt: Architecture {
-    fn register_by_name<S: BnStrCompatible>(&self, name: S) -> Option<Self::Register> {
-        let name = name.into_bytes_with_nul();
+    fn register_by_name(&self, name: &str) -> Option<Self::Register> {
+        let name = name.to_cstr();
 
-        match unsafe {
-            BNGetArchitectureRegisterByName(self.as_ref().handle, name.as_ref().as_ptr() as *mut _)
-        } {
+        match unsafe { BNGetArchitectureRegisterByName(self.as_ref().handle, name.as_ptr()) } {
             0xffff_ffff => None,
             reg => self.register_from_id(reg.into()),
         }
@@ -2023,9 +2327,8 @@ pub trait ArchitectureExt: Architecture {
         }
     }
 
-    fn register_relocation_handler<S, R, F>(&self, name: S, func: F)
+    fn register_relocation_handler<R, F>(&self, name: &str, func: F)
     where
-        S: BnStrCompatible,
         R: 'static
             + RelocationHandler<Handle = CustomRelocationHandlerHandle<R>>
             + Send
@@ -2046,9 +2349,8 @@ pub trait ArchitectureExt: Architecture {
 
 impl<T: Architecture> ArchitectureExt for T {}
 
-pub fn register_architecture<S, A, F>(name: S, func: F) -> &'static A
+pub fn register_architecture<A, F>(name: &str, func: F) -> &'static A
 where
-    S: BnStrCompatible,
     A: 'static + Architecture<Handle = CustomArchitectureHandle<A>> + Send + Sync + Sized,
     F: FnOnce(CustomArchitectureHandle<A>, CoreArchitecture) -> A,
 {
@@ -2218,20 +2520,32 @@ where
         A: 'static + Architecture<Handle = CustomArchitectureHandle<A>> + Send + Sync,
     {
         let custom_arch = unsafe { &*(ctxt as *mut A) };
-        let custom_arch_handle = CustomArchitectureHandle {
-            handle: ctxt as *mut A,
+        let data = unsafe { std::slice::from_raw_parts(data, *len) };
+        let lifter = unsafe {
+            LowLevelILMutableFunction::from_raw_with_arch(il, Some(*custom_arch.as_ref()))
         };
 
-        let data = unsafe { std::slice::from_raw_parts(data, *len) };
-        let mut lifter = unsafe { MutableLiftedILFunction::from_raw(custom_arch_handle, il) };
-
-        match custom_arch.instruction_llil(data, addr, &mut lifter) {
+        match custom_arch.instruction_llil(data, addr, &lifter) {
             Some((res_len, res_value)) => {
                 unsafe { *len = res_len };
                 res_value
             }
             None => false,
         }
+    }
+
+    extern "C" fn cb_analyze_basic_blocks<A>(
+        ctxt: *mut c_void,
+        function: *mut BNFunction,
+        context: *mut BNBasicBlockAnalysisContext,
+    ) where
+        A: 'static + Architecture<Handle = CustomArchitectureHandle<A>> + Send + Sync,
+    {
+        let custom_arch = unsafe { &*(ctxt as *mut A) };
+        let mut function = unsafe { Function::from_raw(function) };
+        let mut context: BasicBlockAnalysisContext =
+            unsafe { BasicBlockAnalysisContext::from_raw(context) };
+        custom_arch.analyze_basic_blocks(&mut function, &mut context);
     }
 
     extern "C" fn cb_reg_name<A>(ctxt: *mut c_void, reg: u32) -> *mut c_char
@@ -2606,18 +2920,16 @@ where
         A: 'static + Architecture<Handle = CustomArchitectureHandle<A>> + Send + Sync,
     {
         let custom_arch = unsafe { &*(ctxt as *mut A) };
-        let custom_arch_handle = CustomArchitectureHandle {
-            handle: ctxt as *mut A,
-        };
-
         let flag_write = custom_arch.flag_write_from_id(FlagWriteId(flag_write));
         let flag = custom_arch.flag_from_id(FlagId(flag));
         let operands = unsafe { std::slice::from_raw_parts(operands_raw, operand_count) };
-        let mut lifter = unsafe { MutableLiftedILFunction::from_raw(custom_arch_handle, il) };
+        let lifter = unsafe {
+            LowLevelILMutableFunction::from_raw_with_arch(il, Some(*custom_arch.as_ref()))
+        };
 
         if let (Some(flag_write), Some(flag)) = (flag_write, flag) {
             if let Some(op) = LowLevelILFlagWriteOp::from_op(custom_arch, size, op, operands) {
-                if let Some(expr) = custom_arch.flag_write_llil(flag, flag_write, op, &mut lifter) {
+                if let Some(expr) = custom_arch.flag_write_llil(flag, flag_write, op, &lifter) {
                     // TODO verify that returned expr is a bool value
                     return expr.index.0;
                 }
@@ -2659,14 +2971,12 @@ where
         A: 'static + Architecture<Handle = CustomArchitectureHandle<A>> + Send + Sync,
     {
         let custom_arch = unsafe { &*(ctxt as *mut A) };
-        let custom_arch_handle = CustomArchitectureHandle {
-            handle: ctxt as *mut A,
-        };
-
         let class = custom_arch.flag_class_from_id(FlagClassId(class));
 
-        let mut lifter = unsafe { MutableLiftedILFunction::from_raw(custom_arch_handle, il) };
-        if let Some(expr) = custom_arch.flag_cond_llil(cond, class, &mut lifter) {
+        let lifter = unsafe {
+            LowLevelILMutableFunction::from_raw_with_arch(il, Some(*custom_arch.as_ref()))
+        };
+        if let Some(expr) = custom_arch.flag_cond_llil(cond, class, &lifter) {
             // TODO verify that returned expr is a bool value
             return expr.index.0;
         }
@@ -2683,14 +2993,12 @@ where
         A: 'static + Architecture<Handle = CustomArchitectureHandle<A>> + Send + Sync,
     {
         let custom_arch = unsafe { &*(ctxt as *mut A) };
-        let custom_arch_handle = CustomArchitectureHandle {
-            handle: ctxt as *mut A,
+        let lifter = unsafe {
+            LowLevelILMutableFunction::from_raw_with_arch(il, Some(*custom_arch.as_ref()))
         };
 
-        let mut lifter = unsafe { MutableLiftedILFunction::from_raw(custom_arch_handle, il) };
-
         if let Some(group) = custom_arch.flag_group_from_id(FlagGroupId(group)) {
-            if let Some(expr) = custom_arch.flag_group_llil(group, &mut lifter) {
+            if let Some(expr) = custom_arch.flag_group_llil(group, &lifter) {
                 // TODO verify that returned expr is a bool value
                 return expr.index.0;
             }
@@ -2954,9 +3262,12 @@ where
         A: 'static + Architecture<Handle = CustomArchitectureHandle<A>> + Send + Sync,
     {
         let _custom_arch = unsafe { &*(ctxt as *mut A) };
-        let boxed_types = unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(tl, count)) };
-        for ty in boxed_types {
-            Conf::<Ref<Type>>::free_raw(ty);
+        if !tl.is_null() {
+            let boxed_types =
+                unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(tl, count)) };
+            for ty in boxed_types {
+                Conf::<Ref<Type>>::free_raw(ty);
+            }
         }
     }
 
@@ -3131,7 +3442,7 @@ where
         custom_arch.skip_and_return_value(data, addr, val)
     }
 
-    let name = name.into_bytes_with_nul();
+    let name = name.to_cstr();
 
     let uninit_arch = ArchitectureBuilder {
         arch: MaybeUninit::zeroed(),
@@ -3155,6 +3466,7 @@ where
         getInstructionText: Some(cb_get_instruction_text::<A>),
         freeInstructionText: Some(cb_free_instruction_text),
         getInstructionLowLevelIL: Some(cb_instruction_llil::<A>),
+        analyzeBasicBlocks: Some(cb_analyze_basic_blocks::<A>),
 
         getRegisterName: Some(cb_reg_name::<A>),
         getFlagName: Some(cb_flag_name::<A>),
@@ -3222,8 +3534,7 @@ where
     };
 
     unsafe {
-        let res =
-            BNRegisterArchitecture(name.as_ref().as_ptr() as *mut _, &mut custom_arch as *mut _);
+        let res = BNRegisterArchitecture(name.as_ptr(), &mut custom_arch as *mut _);
 
         assert!(!res.is_null());
 
@@ -3231,6 +3542,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub struct CustomArchitectureHandle<A>
 where
     A: 'static + Architecture<Handle = CustomArchitectureHandle<A>> + Send + Sync,

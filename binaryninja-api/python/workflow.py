@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -27,7 +27,7 @@ from typing import List, Union, Callable, Optional, Any
 
 # Binary Ninja components
 import binaryninja
-from .log import log_error
+from .log import log_error_for_exception
 from . import _binaryninjacore as core
 from .flowgraph import FlowGraph, CoreFlowGraph
 
@@ -53,7 +53,7 @@ class AnalysisContext:
 		self.handle = handle
 
 	@property
-	def view(self) -> 'binaryview.BinaryView':
+	def view(self) -> Optional['binaryview.BinaryView']:
 		"""
 		BinaryView for the current AnalysisContext (writable)
 		"""
@@ -63,7 +63,7 @@ class AnalysisContext:
 		return binaryview.BinaryView(handle=result)
 
 	@property
-	def function(self) -> '_function.Function':
+	def function(self) -> Optional['_function.Function']:
 		"""
 		Function for the current AnalysisContext (read-only)
 		"""
@@ -73,18 +73,21 @@ class AnalysisContext:
 		return _function.Function(handle=result)
 
 	@property
-	def lifted_il(self) -> lowlevelil.LowLevelILFunction:
+	def lifted_il(self) -> Optional[lowlevelil.LowLevelILFunction]:
 		"""
 		LowLevelILFunction used to represent lifted IL (writable)
 		"""
-		return self.function.lifted_il
+		result = core.BNAnalysisContextGetLiftedILFunction(self.handle)
+		if not result:
+			return None
+		return lowlevelil.LowLevelILFunction(handle=result)
 
 	@lifted_il.setter
 	def lifted_il(self, lifted_il: lowlevelil.LowLevelILFunction) -> None:
 		core.BNSetLiftedILFunction(self.handle, lifted_il.handle)
 
 	@property
-	def llil(self) -> lowlevelil.LowLevelILFunction:
+	def llil(self) -> Optional[lowlevelil.LowLevelILFunction]:
 		"""
 		LowLevelILFunction used to represent Low Level IL (writable)
 		"""
@@ -98,7 +101,7 @@ class AnalysisContext:
 		core.BNSetLowLevelILFunction(self.handle, value.handle)
 
 	@property
-	def mlil(self) -> mediumlevelil.MediumLevelILFunction:
+	def mlil(self) -> Optional[mediumlevelil.MediumLevelILFunction]:
 		"""
 		MediumLevelILFunction used to represent Medium Level IL (writable)
 		"""
@@ -109,10 +112,56 @@ class AnalysisContext:
 
 	@mlil.setter
 	def mlil(self, value: mediumlevelil.MediumLevelILFunction) -> None:
-		core.BNSetMediumLevelILFunction(self.handle, value.handle)
+		self.set_mlil_function(value)
+
+	def set_mlil_function(
+		self,
+		new_func: mediumlevelil.MediumLevelILFunction,
+		llil_ssa_to_mlil_instr_map: Optional['mediumlevelil.LLILSSAToMLILInstructionMapping'] = None,
+		llil_ssa_to_mlil_expr_map: Optional['mediumlevelil.LLILSSAToMLILExpressionMapping'] = None,
+	) -> None:
+		"""
+		Set the Medium Level IL function in the current analysis, giving updated
+		Low Level IL (SSA) to Medium Level IL instruction and expression mappings.
+		:param new_func: New MLIL function
+		:param llil_ssa_to_mlil_instr_map: Mapping from every LLIL SSA instruction to \
+		                                   every MLIL instruction
+		:param llil_ssa_to_mlil_expr_map: Mapping from every LLIL SSA expression to \
+		                                  one or more MLIL expressions (first expression \
+		                                  will be the primary)
+		"""
+		if llil_ssa_to_mlil_instr_map is None or llil_ssa_to_mlil_expr_map is None:
+			# Build up maps from existing data in the function
+			llil_ssa_to_mlil_instr_map = new_func._get_llil_ssa_to_mlil_instr_map(True)
+			llil_ssa_to_mlil_expr_map = new_func._get_llil_ssa_to_mlil_expr_map(True)
+
+		# Number of instructions
+		instr_count = 0
+		if len(llil_ssa_to_mlil_instr_map) > 0:
+			instr_count = max(llil_ssa_to_mlil_instr_map.keys()) + 1
+		ffi_instr_map = (ctypes.c_size_t * instr_count)()
+		for i in range(instr_count):
+			ffi_instr_map[i] = 0xffffffffffffffff
+		for (key, value) in llil_ssa_to_mlil_instr_map.items():
+			ffi_instr_map[key] = value
+
+		# Number of map entries, not highest index
+		expr_count = len(llil_ssa_to_mlil_expr_map)
+		ffi_expr_map = (core.BNExprMapInfo * expr_count)()
+		for i, map in enumerate(llil_ssa_to_mlil_expr_map):
+			ffi_expr_map[i] = map._to_core_struct()
+
+		core.BNSetMediumLevelILFunction(
+			self.handle,
+			new_func.handle,
+			ffi_instr_map,
+			instr_count,
+			ffi_expr_map,
+			expr_count
+		)
 
 	@property
-	def hlil(self) -> highlevelil.HighLevelILFunction:
+	def hlil(self) -> Optional[highlevelil.HighLevelILFunction]:
 		"""
 		HighLevelILFunction used to represent High Level IL (writable)
 		"""
@@ -175,7 +224,7 @@ class Activity(object):
 			if self.action is not None:
 				self.action(AnalysisContext(ac))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Activity._action")
 
 	def __del__(self):
 		if core is not None:
@@ -239,7 +288,7 @@ class _WorkflowMetaclass(type):
 
 	def __getitem__(self, value):
 		binaryninja._init_plugins()
-		workflow = core.BNWorkflowInstance(str(value))
+		workflow = core.BNWorkflowGetOrCreate(str(value))
 		return Workflow(handle=workflow)
 
 
@@ -295,7 +344,7 @@ class Workflow(metaclass=_WorkflowMetaclass):
 	def __init__(self, name: str = "", handle: core.BNWorkflowHandle = None, query_registry: bool = True, object_handle: Union[core.BNFunctionHandle, core.BNBinaryViewHandle] = None):
 		if handle is None:
 			if query_registry:
-				_handle = core.BNWorkflowInstance(str(name))
+				_handle = core.BNWorkflowGetOrCreate(str(name))
 			else:
 				_handle = core.BNCreateWorkflow(name)
 		else:
@@ -354,7 +403,7 @@ class Workflow(metaclass=_WorkflowMetaclass):
 		"""
 		``clone`` Clone a new Workflow, copying all Activities and the execution strategy.
 
-		:param str name: the name for the new Workflow
+		:param str name: if specified, name the new Workflow, otherwise the name is copied from the original
 		:param str activity: if specified, perform the clone operation using ``activity`` as the root
 		:return: a new Workflow
 		:rtype: Workflow
@@ -464,7 +513,7 @@ class Workflow(metaclass=_WorkflowMetaclass):
 		finally:
 			core.BNFreeStringList(result, length.value)
 
-	def assign_subactivities(self, activity: Activity, activities: List[str]) -> bool:
+	def assign_subactivities(self, activity: Activity, activities: Union[List[str], str]) -> bool:
 		"""
 		``assign_subactivities`` Assign the list of ``activities`` as the new set of children for the specified ``activity``.
 
@@ -473,6 +522,8 @@ class Workflow(metaclass=_WorkflowMetaclass):
 		:return: True on success, False otherwise
 		:rtype: bool
 		"""
+		if isinstance(activities, str):
+			activities = [activities]
 		input_list = (ctypes.c_char_p * len(activities))()
 		for i in range(0, len(activities)):
 			input_list[i] = str(activities[i]).encode('charmap')
@@ -487,7 +538,7 @@ class Workflow(metaclass=_WorkflowMetaclass):
 		"""
 		return core.BNWorkflowClear(self.handle)
 
-	def insert(self, activity: ActivityType, activities: List[str]) -> bool:
+	def insert(self, activity: ActivityType, activities: Union[List[str], str]) -> bool:
 		"""
 		``insert`` Insert the list of ``activities`` before the specified ``activity`` and at the same level.
 
@@ -496,10 +547,28 @@ class Workflow(metaclass=_WorkflowMetaclass):
 		:return: True on success, False otherwise
 		:rtype: bool
 		"""
+		if isinstance(activities, str):
+			activities = [activities]
 		input_list = (ctypes.c_char_p * len(activities))()
 		for i in range(0, len(activities)):
 			input_list[i] = str(activities[i]).encode('charmap')
 		return core.BNWorkflowInsert(self.handle, str(activity), input_list, len(activities))
+
+	def insert_after(self, activity: ActivityType, activities: Union[List[str], str]) -> bool:
+		"""
+		``insert_after`` Insert the list of ``activities`` after the specified ``activity`` and at the same level.
+
+		:param str activity: the Activity node for which to insert ``activities`` after
+		:param list[str] activities: the list of Activities to insert
+		:return: True on success, False otherwise
+		:rtype: bool
+		"""
+		if isinstance(activities, str):
+			activities = [activities]
+		input_list = (ctypes.c_char_p * len(activities))()
+		for i in range(0, len(activities)):
+			input_list[i] = str(activities[i]).encode('charmap')
+		return core.BNWorkflowInsertAfter(self.handle, str(activity), input_list, len(activities))
 
 	def remove(self, activity: ActivityType) -> bool:
 		"""
@@ -511,12 +580,12 @@ class Workflow(metaclass=_WorkflowMetaclass):
 		"""
 		return core.BNWorkflowRemove(self.handle, str(activity))
 
-	def replace(self, activity: ActivityType, new_activity: List[str]) -> bool:
+	def replace(self, activity: ActivityType, new_activity: str) -> bool:
 		"""
 		``replace`` Replace the specified ``activity``.
 
 		:param str activity: the Activity to replace
-		:param list[str] new_activity: the replacement Activity
+		:param str new_activity: the replacement Activity
 		:return: True on success, False otherwise
 		:rtype: bool
 		"""
@@ -623,38 +692,27 @@ class WorkflowMachine:
 			return json.loads(core.BNPostWorkflowRequestForBinaryView(self.handle, request))
 
 	def configure(self, advanced: bool = True, incremental: bool = False):
-		request = json.dumps({"command": "configure", "advanced": advanced, "incremental": incremental})
 		if self.is_function_machine:
+			request = json.dumps({"command": "configure", "advanced": advanced, "incremental": incremental})
 			return json.loads(core.BNPostWorkflowRequestForFunction(self.handle, request))
 		else:
+			request = json.dumps({"command": "configure"})
 			return json.loads(core.BNPostWorkflowRequestForBinaryView(self.handle, request))
 
-	def resume(self):
-		request = json.dumps({"command": "run"})
+	def resume(self, advanced: bool = True, incremental: bool = False):
 		if self.is_function_machine:
+			request = json.dumps({"command": "resume", "advanced": advanced, "incremental": incremental})
 			return json.loads(core.BNPostWorkflowRequestForFunction(self.handle, request))
 		else:
+			request = json.dumps({"command": "resume"})
 			return json.loads(core.BNPostWorkflowRequestForBinaryView(self.handle, request))
 
-	def run(self):
-		status = self.status()
-		if 'machineState' in status and 'state' in status['machineState']:
-			if status['machineState']['state'] == 'Idle':
-				self.configure()
-		else:
-			raise AttributeError("Unknown status response!")
-
-		request = json.dumps({"command": "run"})
+	def run(self, advanced: bool = True, incremental: bool = False):
 		if self.is_function_machine:
+			request = json.dumps({"command": "run", "advanced": advanced, "incremental": incremental})
 			return json.loads(core.BNPostWorkflowRequestForFunction(self.handle, request))
 		else:
-			return json.loads(core.BNPostWorkflowRequestForBinaryView(self.handle, request))
-
-	def abort(self):
-		request = json.dumps({"command": "abort"})
-		if self.is_function_machine:
-			return json.loads(core.BNPostWorkflowRequestForFunction(self.handle, request))
-		else:
+			request = json.dumps({"command": "run"})
 			return json.loads(core.BNPostWorkflowRequestForBinaryView(self.handle, request))
 
 	def halt(self):
@@ -693,6 +751,8 @@ class WorkflowMachine:
 			return json.loads(core.BNPostWorkflowRequestForBinaryView(self.handle, request))
 
 	def breakpoint_delete(self, activities):
+		if isinstance(activities, str):
+			activities = [activities]
 		request = json.dumps({"command": "breakpoint", "action": "delete", "activities": activities})
 		if self.is_function_machine:
 			return json.loads(core.BNPostWorkflowRequestForFunction(self.handle, request))
@@ -707,6 +767,8 @@ class WorkflowMachine:
 			return json.loads(core.BNPostWorkflowRequestForBinaryView(self.handle, request))
 
 	def breakpoint_set(self, activities):
+		if isinstance(activities, str):
+			activities = [activities]
 		request = json.dumps({"command": "breakpoint", "action": "set", "activities": activities})
 		if self.is_function_machine:
 			return json.loads(core.BNPostWorkflowRequestForFunction(self.handle, request))
@@ -766,9 +828,8 @@ class WorkflowMachineCLI(cmd.Cmd):
 		"l": "log",
 		"m": "metrics",
 		"d": "dump",
-		"c": "resume",
 		"r": "run",
-		"a": "abort",
+		"c": "resume",
 		"h": "halt",
 		"s": "step",
 		"b": "breakpoint",
@@ -852,11 +913,6 @@ class WorkflowMachineCLI(cmd.Cmd):
 	def do_run(self, line):
 		"""Run the workflow machine and generate a default configuration if the workflow is not configured."""
 		status = self.machine.run()
-		print(json.dumps(status, indent=4))
-
-	def do_abort(self, line):
-		"""Abort the workflow machine."""
-		status = self.machine.abort()
 		print(json.dumps(status, indent=4))
 
 	def do_halt(self, line):

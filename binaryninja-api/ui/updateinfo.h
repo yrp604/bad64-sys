@@ -5,9 +5,10 @@
 #include <QObject>
 #include <QVersionNumber>
 #include <QDateTime>
+#include <memory>
 #include "binaryninjaapi.h"
 
-class BINARYNINJAUIAPI UpdateInfoFetcher : public QObject
+class BINARYNINJAUIAPI UpdateInfoFetcher : public QObject, public std::enable_shared_from_this<UpdateInfoFetcher>
 {
 	Q_OBJECT
 
@@ -60,8 +61,17 @@ private:
 	std::mutex m_infoMutex;
 	std::atomic<bool> m_done = false;
 
+	struct UseCreate {};
+
 public:
-	UpdateInfoFetcher() {};
+	// Instances must be created via `create()`.
+	UpdateInfoFetcher(UseCreate) {}
+
+	static std::shared_ptr<UpdateInfoFetcher> create();
+
+	UpdateInfoFetcher(const UpdateInfoFetcher&) = delete;
+	UpdateInfoFetcher& operator=(const UpdateInfoFetcher&) = delete;
+
 	bool done() { return m_done; }
 	void startFetch();
 	const std::vector<Channel>& getChannels();

@@ -4,7 +4,7 @@ There are a number of custom attributes and annotations you can add to types in 
 
 ## Structure Packing
 
-Use the attribute `__packed` in a structure definition to indicate that structure fields should be packed without padding. This is similar to `#pragma pack(1)` in MSVC and `__attribute__((packed))` in GCC/Clang. 
+Use the attribute `__packed` in a structure definition to indicate that structure fields should be packed without padding. This is similar to `#pragma pack(1)` in MSVC and `__attribute__((packed))` in GCC/Clang.
 
 ### Examples
 
@@ -26,8 +26,8 @@ struct PackedHeader __packed
     uint32_t version;     /* Offset: 0xA */
     void (* callback)();  /* Offset: 0xE */
 };
-  
-/* These also work, thanks to Clang's broad feature support across targets */ 
+
+/* These also work, thanks to Clang's broad feature support across targets */
 struct __attribute__((packed)) Header
 {
     uint16_t size;        /* Offset: 0x0 */
@@ -78,7 +78,7 @@ See [Working with C++ Types and Virtual Function Tables](cpp.md).
 
 ## Functions That Don't Return
 
-If you know that a function does not return (either via infinite loop, or terminating the process), you can annotate their definition with `__noreturn` to inform the analysis of this. Any calls to these functions will cause disassembly in the caller to stop, assuming execution does not continue. 
+If you know that a function does not return (either via infinite loop, or terminating the process), you can annotate their definition with `__noreturn` to inform the analysis of this. Any calls to these functions will cause disassembly in the caller to stop, assuming execution does not continue.
 
 ### Examples
 
@@ -110,7 +110,7 @@ __convention("convention_name")
 
 Due to the nature of parsing with Clang, most dedicated convention keywords are only available on their relevant targets. For example, `__stdcall` and `__fastcall` only apply to X86-based targets.
 
-If you have a custom calling convention, or one with no dedicated keyword, you can specify the convention name with the `__convention("name")` attribute. 
+If you have a custom calling convention, or one with no dedicated keyword, you can specify the convention name with the `__convention("name")` attribute.
 
 ### Examples
 
@@ -164,14 +164,14 @@ int get_twice(int arg) __pure
 }
 int main()
 {
-    (void)get_twice(1); /* result is unused, this will be dead code eliminated */ 
+    (void)get_twice(1); /* result is unused, this will be dead code eliminated */
 }
 ```
 
 ## Offset Pointers
 
 Offset pointers, often called shifted pointers, relative pointers, or adjusted pointers, represent a pointer to a structure that has been offset by a certain number of bytes.
-Annotating these offset pointers allows Binary Ninja to deduce types for dereferences through them, find the structure's start, and render proper member names. 
+Annotating these offset pointers allows Binary Ninja to deduce types for dereferences through them, find the structure's start, and render proper member names.
 
 These are often seen in intrusive linked lists, where structures have a pointer to the next item in the list, but the pointer is offset from the base of the structure and
 instead points to the member containing the pointer to the next item. Iterating through the items in the list involves following the pointer, then shifting the result by the offset
@@ -180,7 +180,7 @@ in any dereferences, and saving a couple instructions.
 
 ### Examples
 
-You will see uses of the offset pointers annotated with `(var - offset)` in IL views and `ADJ(var)` in Pseudo-C.  
+You will see uses of the offset pointers annotated with `(var - offset)` in IL views and `ADJ(var)` in Pseudo-C.
 
 ``` C
 /* High Level IL */
@@ -284,7 +284,7 @@ struct BaseClassDescriptor
 };
 
 /* ...results in the following presentation in Linear View */
-struct BaseClassDescriptor type_info::`RTTI Base Class Descriptor at (0,32,4,82)' = 
+struct BaseClassDescriptor type_info::`RTTI Base Class Descriptor at (0,32,4,82)' =
 {
     struct TypeDescriptor* __ptr32 __based(start) pTypeDescriptor = class type_info `RTTI Type Descriptor'  { 0x180000000 + 0x11180 }
     uint32_t numContainedBases = 0x0
@@ -296,7 +296,7 @@ struct BaseClassDescriptor type_info::`RTTI Base Class Descriptor at (0,32,4,82)
 }
 ```
 
-You can define structures who reference other structures relative to their variable address in memory. Address references are _relative to the pointer, not the base of the structure._ 
+You can define structures who reference other structures relative to their variable address in memory. Address references are _relative to the pointer, not the base of the structure._
 
 ``` C
 /* This structure definition... */
@@ -314,7 +314,7 @@ struct Texture tile_red
 {
     uint32_t width = 128
     uint32_t height = 128
-    char* __based(var, 0x10) texNameOffset = string_tile_red  { &tile_red->texNameOffset + 0x10 } 
+    char* __based(var, 0x10) texNameOffset = string_tile_red  { &tile_red->texNameOffset + 0x10 }
     uint32_t mask = 0
     uint32_t flags = 0
 }
@@ -323,9 +323,9 @@ char string_tile_red[9] = "tile_red", 0;
 
 ## Pointers with Custom Sizes
 
-Some structures store pointers with a size different than the platform's address width. For example, a 32-bit image base-relative pointer used on an 64-bit architecture. These sized pointers can be annotated with the `__ptr8`, `__ptr16`, `__ptr32`, `__ptr64`, or `__ptr_width()` attributes.
+Some structures store pointers with a size different from the platform's address width. For example, a 32-bit image base-relative pointer used on an 64-bit architecture. These sized pointers can be annotated with the `__ptr8`, `__ptr16`, `__ptr32`, `__ptr64`, or `__ptr_width()` attributes.
 
-These are often combined with [Based Pointers](#based-pointers), since pointers smaller than the address width cannot point to parts of memory without being shifted first. 
+These are often combined with [Based Pointers](#based-pointers), since pointers smaller than the address width cannot point to parts of memory without being shifted first.
 
 ### Examples
 

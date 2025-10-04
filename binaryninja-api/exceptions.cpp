@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2024 Vector 35 Inc
+// Copyright (c) 2015-2025 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -26,14 +26,12 @@ BinaryNinja::ExceptionWithStackTrace::ExceptionWithStackTrace(const std::string&
 {
 	m_originalMessage = message;
 	m_message = message;
-	if (getenv("BN_DEBUG_EXCEPTION_TRACES"))
+	if (auto var = getenv("BN_DEBUG_EXCEPTION_TRACES"); !var || var[0] != '0')
 	{
 		char* stackTrace = BNGetCurrentStackTraceString();
 		if (stackTrace)
 		{
 			m_stackTrace = stackTrace;
-			m_message += "\n";
-			m_message += stackTrace;
 			BNFreeString(stackTrace);
 		}
 	}
@@ -88,14 +86,12 @@ BinaryNinja::ExceptionWithStackTrace::ExceptionWithStackTrace(std::exception_ptr
 			m_message = "Some unknown exception";
 		}
 	}
-	if (getenv("BN_DEBUG_EXCEPTION_TRACES"))
+	if (auto var = getenv("BN_DEBUG_EXCEPTION_TRACES"); !var || var[0] != '0')
 	{
 		char* stackTrace = BNGetCurrentStackTraceString();
 		if (stackTrace)
 		{
 			m_stackTrace = stackTrace;
-			m_message += "\n";
-			m_message += stackTrace;
 			BNFreeString(stackTrace);
 		}
 	}

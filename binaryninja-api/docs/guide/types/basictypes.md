@@ -79,7 +79,7 @@ Types in the list have their class indicated by icons:
 
 #### Type Containers
 
-All of the type containers described in the [type introduction](index.md) are available in the Types View along with `User Types` in a section of its own.
+All the type containers described in the [type introduction](index.md) are available in the Types View along with `User Types` in a section of its own.
 
 * **User Types**: In your analysis: Types created by you, either manually or through actions/plugins
 * **System Types**: In your analysis: Types created by analysis or imported during analysis, such as from Libraries or Debug Info
@@ -129,4 +129,4 @@ the name of a type will take you to its definition.
 
 ### Structure Offset Annotations
 
-The Types view annotates code references to structure offsets if a structure member is not present. These annotations use the same convention as in the graph/linear view, showing the offset position and width. For example, the `__offset(0x8).q` token means the code references the offset 0x8 bytes into this structure, and the size of the access is a qword (8 bytes). You can press S on an offset annotation and a structure member of the appropriate type will be created there. Additionally, if you right click the structure name, you can choose to create all of these references.
+The Types view annotates code references to structure offsets if a structure member is not present. These annotations use the same convention as in the graph/linear view, showing the offset position and width. For example, the `__offset(0x8).q` token means the code references the offset 0x8 bytes into this structure, and the size of the access is a qword (8 bytes). You can press S on an offset annotation and a structure member of the appropriate type will be created there. Additionally, if you right-click the structure name, you can choose to create all of these references.

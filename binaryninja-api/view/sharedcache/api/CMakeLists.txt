@@ -1,7 +1,7 @@
-cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 
 project(sharedcacheapi)
-file(GLOB BN_MACHO_API_SOURCES *.cpp *.h)
+file(GLOB BN_MACHO_API_SOURCES CONFIGURE_DEPENDS *.cpp *.h)
 add_library(sharedcacheapi OBJECT ${BN_MACHO_API_SOURCES})
 
 
@@ -67,7 +67,7 @@ target_include_directories(sharedcacheapi
         PUBLIC ${PROJECT_SOURCE_DIR} ${INCLUDES})
 
 set_target_properties(sharedcacheapi PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 20
         CXX_VISIBILITY_PRESET hidden
         CXX_STANDARD_REQUIRED ON
         VISIBILITY_INLINES_HIDDEN ON

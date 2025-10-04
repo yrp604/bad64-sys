@@ -13,16 +13,25 @@ class GenericExportsModel : public QAbstractItemModel, public BinaryNinja::Binar
 	BinaryViewRef m_data;
 	std::vector<SymbolRef> m_allEntries, m_entries;
 	std::string m_filter;
+	QTimer* m_updateTimer;
 	Qt::SortOrder m_sortOrder;
 	int m_sortCol;
 	bool m_hasOrdinals;
-	QTimer* m_updateTimer;
+
+	// Read from arbitrary threads while processing notifications.
+	std::atomic<bool> m_updatesPaused = false;
+	// Read/written from arbitrary threads while processing notifications.
+	std::atomic<bool> m_needsUpdate = true;
 
 	void performSort(int col, Qt::SortOrder order);
 	void updateModel();
 
-  signals:
-	void modelUpdate();
+	void updateTimer(bool);
+	void setNeedsUpdate(bool);
+	void onBinaryViewNotification();
+
+signals:
+	void updateTimerOnUIThread();
 
   public:
 	GenericExportsModel(QWidget* parent, BinaryViewRef data);
@@ -37,11 +46,11 @@ class GenericExportsModel : public QAbstractItemModel, public BinaryNinja::Binar
 	virtual void sort(int col, Qt::SortOrder order) override;
 	void setFilter(const std::string& filterText);
 
+	void pauseUpdates();
+	void resumeUpdates();
+
 	SymbolRef getSymbol(const QModelIndex& index);
 
-	virtual void OnAnalysisFunctionAdded(BinaryNinja::BinaryView* view, BinaryNinja::Function* func) override;
-	virtual void OnAnalysisFunctionRemoved(BinaryNinja::BinaryView* view, BinaryNinja::Function* func) override;
-	virtual void OnAnalysisFunctionUpdated(BinaryNinja::BinaryView* view, BinaryNinja::Function* func) override;
 	virtual void OnSymbolAdded(BinaryNinja::BinaryView* view, BinaryNinja::Symbol* sym) override;
 	virtual void OnSymbolUpdated(BinaryNinja::BinaryView* view, BinaryNinja::Symbol* sym) override;
 	virtual void OnSymbolRemoved(BinaryNinja::BinaryView* view, BinaryNinja::Symbol* sym) override;
@@ -75,6 +84,8 @@ class ExportsTreeView : public QTreeView, public FilterTarget
 
   protected:
 	virtual void keyPressEvent(QKeyEvent* event) override;
+	virtual void showEvent(QShowEvent* event) override;
+	virtual void hideEvent(QHideEvent* event) override;
 
   private Q_SLOTS:
 	void exportSelected(const QModelIndex& cur, const QModelIndex& prev);

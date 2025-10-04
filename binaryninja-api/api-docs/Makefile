@@ -2,7 +2,7 @@
 #
 
 # You can set these variables from the command line.
-SPHINXOPTS    ?= -j 1
+SPHINXOPTS    ?= -j 1 -W
 # XXX: Line above is a workaround for parallel builds failing on ARM hosts
 # See this issue for more details: https://github.com/sphinx-doc/sphinx/issues/11449
 # When that issue is resolved, put the following line back:

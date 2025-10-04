@@ -167,11 +167,71 @@ static ExprId GetShiftedOffset(LowLevelILFunction& il, InstructionOperand& op)
 }
 
 
-static ExprId GetShiftedRegister(LowLevelILFunction& il, InstructionOperand& op)
+static ExprId GetRegisterShiftedRegister(LowLevelILFunction& il, Register reg, Register shiftReg, Shift shiftType)
 {
-	return GetShifted(il, op.reg, op.imm, op.shift);
+	if (shiftType == SHIFT_NONE)
+		return il.Register(get_register_size(reg), reg);
+
+	uint32_t regSize = get_register_size(reg);
+	uint32_t shiftRegSize = get_register_size(shiftReg);
+	switch (shiftType)
+	{
+		case SHIFT_ASR:
+			return il.ArithShiftRight(
+				regSize,
+				il.Register(regSize, reg),
+				il.And(
+					shiftRegSize,
+					il.Register(shiftRegSize, shiftReg),
+					il.Const(shiftRegSize, 0xff)
+				));
+		case SHIFT_LSL:
+			return il.ShiftLeft(
+				regSize,
+				il.Register(regSize, reg),
+				il.And(
+					shiftRegSize,
+					il.Register(shiftRegSize, shiftReg),
+					il.Const(shiftRegSize, 0xff)
+				));
+		case SHIFT_LSR:
+			return il.LogicalShiftRight(
+				regSize,
+				il.Register(regSize, reg),
+				il.And(
+					shiftRegSize,
+					il.Register(shiftRegSize, shiftReg),
+					il.Const(shiftRegSize, 0xff)
+				));
+		case SHIFT_ROR:
+			return il.RotateRight(
+				regSize,
+				il.Register(regSize, reg),
+				il.And(
+					shiftRegSize,
+					il.Register(shiftRegSize, shiftReg),
+					il.Const(shiftRegSize, 0xff)
+				));
+		case SHIFT_RRX:
+			//RRX can only shift 1 at a time
+			return il.RotateRightCarry(
+				regSize,
+				il.Register(regSize, reg),
+				il.Const(1, 1),
+				il.Flag(IL_FLAG_C)
+			);
+		default:
+			return 0;
+	}
 }
 
+
+static ExprId GetShiftedRegister(LowLevelILFunction& il, InstructionOperand& op)
+{
+	if (op.flags.offsetRegUsed == 1)
+		return GetRegisterShiftedRegister(il, op.reg, op.offset, op.shift);
+	return GetShifted(il, op.reg, op.imm, op.shift);
+}
 
 
 static ExprId ReadAddress(LowLevelILFunction& il, InstructionOperand& op, size_t addr)
@@ -227,7 +287,7 @@ static ExprId ReadILOperand(LowLevelILFunction& il, InstructionOperand& op, size
 		case REG:
 			if (op.shift == SHIFT_NONE)
 				return ReadRegisterOrPointer(il, op, addr);
-			else if (op.flags.offsetRegUsed == 1)
+			else if (op.flags.offsetRegUsed == 1 && op.imm != 0)
 			{
 				return GetShiftedOffset(il, op);
 			}
@@ -4872,6 +4932,63 @@ bool GetLowLevelILForArmInstruction(Architecture* arch, uint64_t addr, LowLevelI
 			else
 				ConditionExecute(il, instr.cond, SetRegisterOrBranch(il, op1.reg,
 					il.DivUnsigned(get_register_size(op2.reg), ReadRegisterOrPointer(il, op2, addr), ReadRegisterOrPointer(il, op3, addr))));
+			break;
+		case ARMV7_VCVT:
+			switch (instr.dataType)
+			{
+			// To integer cases
+			case DT_S32:
+				switch (instr.dataType2)
+				{
+				case DT_F32:
+				case DT_F64:
+					ConditionExecute(il, instr.cond, il.SetRegister(get_register_size(op1.reg), op1.reg,
+						il.SignExtend(get_register_size(op1.reg),
+							il.FloatToInt(get_register_size(op1.reg), il.RoundToInt(get_register_size(op2.reg),
+								il.Register(get_register_size(op2.reg), op2.reg))))));
+					break;
+				default:
+					break;
+				}
+				break;
+			case DT_U32:
+				switch (instr.dataType2)
+				{
+				case DT_F32:
+				case DT_F64:
+					ConditionExecute(il, instr.cond, il.SetRegister(get_register_size(op1.reg), op1.reg,
+						il.ZeroExtend(get_register_size(op1.reg),
+							il.FloatToInt(get_register_size(op1.reg), il.RoundToInt(get_register_size(op2.reg),
+								il.Register(get_register_size(op2.reg), op2.reg))))));
+					break;
+				default:
+					break;
+				}
+				break;
+			// To float from integer cases
+			case DT_F32:
+			case DT_F64:
+				switch (instr.dataType2)
+				{
+				case DT_S32:
+					ConditionExecute(il, instr.cond, il.SetRegister(get_register_size(op1.reg), op1.reg,
+						il.IntToFloat(get_register_size(op1.reg),
+							il.SignExtend(get_register_size(op1.reg),
+								il.Register(get_register_size(op2.reg), op2.reg)))));
+					break;
+				case DT_U32:
+					ConditionExecute(il, instr.cond, il.SetRegister(get_register_size(op1.reg), op1.reg,
+						il.IntToFloat(get_register_size(op1.reg),
+							il.ZeroExtend(get_register_size(op1.reg),
+								il.Register(get_register_size(op2.reg), op2.reg)))));
+					break;
+				default:
+					break;
+				}
+				break;
+			default:
+				break;
+			}
 			break;
 		case ARMV7_VADD:
 			if((instr.dataType != DT_F32) && (instr.dataType != DT_F64))

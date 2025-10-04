@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2024 Vector 35 Inc
+# Copyright (c) 2015-2025 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -98,6 +98,8 @@ class UINotification(UIContextNotification):
 		# This function only works in C++: Name is an out param (cpp: &name), and not modifiable by python.
 		print(f"py OnContextMenuCreated {context} {view} {menu}")
 
+	def OnActionExecutedImmutable(self, context, handler, name, ctx):
+		print(f"py OnActionExecutedImmutable {context} {handler} {name} {ctx}")
 
 # Register as a global so it doesn't get destructed
 notif = UINotification()

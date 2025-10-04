@@ -9,6 +9,7 @@
 #include <QtWidgets/QComboBox>
 #include "binaryninjaapi.h"
 #include "uicontext.h"
+#include "expandablegroup.h"
 
 /*!
 
@@ -50,7 +51,6 @@ class BINARYNINJAUIAPI BaseStructuresTableWidget : public QTableWidget
 
 public:
 	BaseStructuresTableWidget();
-	virtual QSize sizeHint() const override;
 
 protected:
 	virtual void contextMenuEvent(QContextMenuEvent* event) override;
@@ -78,6 +78,7 @@ class BINARYNINJAUIAPI CreateStructDialog : public QDialog
 	QPushButton* m_addBase;
 	QCheckBox* m_propagateDataVarRefs;
 	QCheckBox* m_pointer;
+	ExpandableGroup* m_baseStructGroup;
 
 	std::optional<BinaryNinja::TypeContainer> m_typeContainer;
 	BinaryNinja::QualifiedName m_resultName;
@@ -92,6 +93,7 @@ class BINARYNINJAUIAPI CreateStructDialog : public QDialog
 
 	std::vector<BinaryNinja::BaseStructure> m_bases;
 
+	void saveSettings();
 	virtual void customEvent(QEvent* event) override;
 
 public:
