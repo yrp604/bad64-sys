@@ -7,6 +7,9 @@ license = "BSD-3-Clause"
 [lib]
 crate-type = ["staticlib", "cdylib"]
 
+[features]
+demo = []
+
 [dependencies]
 binaryninja = { workspace = true }
 binaryninjacore-sys.workspace = true

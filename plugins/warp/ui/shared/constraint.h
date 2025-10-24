@@ -9,70 +9,62 @@
 
 class WarpConstraintItem : public QStandardItem
 {
-    Warp::Constraint m_constraint;
+	Warp::Constraint m_constraint;
 
 public:
-    WarpConstraintItem(const Warp::Constraint &constraint);
+	WarpConstraintItem(const Warp::Constraint& constraint);
 
-    Warp::Constraint GetConstraint() { return m_constraint; }
+	Warp::Constraint GetConstraint() { return m_constraint; }
 };
 
 class WarpConstraintItemModel : public QStandardItemModel
 {
-    Q_OBJECT
+	Q_OBJECT
 
-    // The current analysis constraints used to highlight matching constraints.
-    std::vector<Warp::Constraint> m_matchedConstraints;
+	// The current analysis constraints used to highlight matching constraints.
+	std::vector<Warp::Constraint> m_matchedConstraints;
 
 public:
-    WarpConstraintItemModel(const QStringList &labels, QObject *parent);
+	WarpConstraintItemModel(const QStringList& labels, QObject* parent);
 
-    static constexpr int COL_CONSTRAINT_ITEM = 0;
+	static constexpr int COL_CONSTRAINT_ITEM = 0;
 
-    void AddItem(WarpConstraintItem *item);
+	void AddItem(WarpConstraintItem* item);
 
-    WarpConstraintItem *GetItem(const QModelIndex &index) const;
+	WarpConstraintItem* GetItem(const QModelIndex& index) const;
 
-    QVariant data(const QModelIndex &index, int role) const override;
+	QVariant data(const QModelIndex& index, int role) const override;
 
-    void SetMatchedConstraints(const std::vector<Warp::Constraint> &analysisConstraints)
-    {
-        m_matchedConstraints = analysisConstraints;
-    }
+	void SetMatchedConstraints(const std::vector<Warp::Constraint>& analysisConstraints)
+	{
+		m_matchedConstraints = analysisConstraints;
+	}
 };
 
 class WarpConstraintTableWidget : public QWidget, public FilterTarget
 {
-    Q_OBJECT
+	Q_OBJECT
 
-    QTableView *m_table;
-    WarpConstraintItemModel *m_model;
-    GenericTextFilterModel *m_proxyModel;
-    FilterEdit *m_filterEdit;
-    FilteredView *m_filterView;
+	QTableView* m_table;
+	WarpConstraintItemModel* m_model;
+	GenericTextFilterModel* m_proxyModel;
+	FilterEdit* m_filterEdit;
+	FilteredView* m_filterView;
 
 public:
-    explicit WarpConstraintTableWidget(QWidget *parent = nullptr);
+	explicit WarpConstraintTableWidget(QWidget* parent = nullptr);
 
-    void SetConstraints(QVector<WarpConstraintItem *> constraints);
+	void SetConstraints(QVector<WarpConstraintItem*> constraints);
 
-    void SetMatchedConstraints(const std::vector<Warp::Constraint> &analysisConstraints);
+	void SetMatchedConstraints(const std::vector<Warp::Constraint>& analysisConstraints);
 
-    void setFilter(const std::string &) override;
+	void setFilter(const std::string&) override;
 
-    void scrollToFirstItem() override
-    {
-    }
+	void scrollToFirstItem() override {}
 
-    void scrollToCurrentItem() override
-    {
-    }
+	void scrollToCurrentItem() override {}
 
-    void selectFirstItem() override
-    {
-    }
+	void selectFirstItem() override {}
 
-    void activateFirstItem() override
-    {
-    }
+	void activateFirstItem() override {}
 };

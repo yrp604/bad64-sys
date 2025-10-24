@@ -365,11 +365,19 @@ class PossibleValueSet:
 		return NotImplemented
 
 	def __eq__(self, other):
+		# Allow comparing some value types to an int
 		if self.type in [RegisterValueType.ConstantValue, RegisterValueType.ConstantPointerValue
 		                 ] and isinstance(other, int):
 			return self.value == other
+
+		# Otherwise just allow comparing to other PossibleValueSet instances
 		if not isinstance(other, self.__class__):
 			return NotImplemented
+
+		# If the PVS type isn't the same, they're not equal
+		if self.type != other.type:
+			return False
+
 		if self.type in [RegisterValueType.ConstantValue, RegisterValueType.ConstantPointerValue]:
 			return self.value == other.value
 		elif self.type == RegisterValueType.StackFrameOffset:
@@ -380,10 +388,9 @@ class PossibleValueSet:
 			return self.ranges == other.ranges
 		elif self.type in [RegisterValueType.InSetOfValues, RegisterValueType.NotInSetOfValues]:
 			return self.values == other.values
-		elif self.type == RegisterValueType.UndeterminedValue and hasattr(other, '_type'):
-			return self.type == other.type
-		else:
-			return self == other
+		elif self.type == RegisterValueType.UndeterminedValue:
+			return True # UndeterminedValue is always equal to itself
+		return NotImplemented
 
 	def __ne__(self, other):
 		if not isinstance(other, self.__class__):

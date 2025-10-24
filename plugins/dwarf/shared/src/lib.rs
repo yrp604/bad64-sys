@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use gimli::{EndianRcSlice, Endianity, RunTimeEndian, SectionId};
+use object::{Object, ObjectSection};
 
 use binaryninja::{
     binary_view::{BinaryView, BinaryViewBase, BinaryViewExt},
@@ -35,6 +36,9 @@ pub enum Error {
 
     #[error("{0}")]
     IoError(#[from] std::io::Error),
+
+    #[error("{0}")]
+    ObjectError(#[from] object::Error),
 }
 
 pub fn is_non_dwo_dwarf(view: &BinaryView) -> bool {
@@ -89,105 +93,75 @@ pub fn get_endian(view: &BinaryView) -> RunTimeEndian {
     }
 }
 
-pub fn create_section_reader<'a, Endian: 'a + Endianity>(
+pub fn create_section_reader<Endian: Endianity>(
     section_id: SectionId,
-    view: &'a BinaryView,
+    view: &BinaryView,
     endian: Endian,
-    dwo_file: bool,
-) -> Result<EndianRcSlice<Endian>, Error> {
-    let section_name = if dwo_file && section_id.dwo_name().is_some() {
-        section_id.dwo_name().unwrap()
+    is_dwo: bool,
+) -> Result<RelocateOwned<gimli::EndianRcSlice<Endian>>, Error> {
+    let raw_view = view.raw_view().unwrap();
+    let view_data = raw_view.read_vec(0, raw_view.len() as usize);
+    let file = object::File::parse(&*view_data)?;
+    create_section_reader_object(section_id, &file, endian, is_dwo)
+}
+
+#[derive(Debug, Clone)]
+pub struct RelocationMap(Rc<object::read::RelocationMap>);
+
+impl Default for RelocationMap {
+    fn default() -> Self {
+        Self(Rc::new(object::read::RelocationMap::default()))
+    }
+}
+
+impl RelocationMap {
+    fn add(&mut self, file: &object::File, section: &object::Section) -> Result<(), Error> {
+        let map =
+            Rc::get_mut(&mut self.0).expect("Failed to get mutable reference to RelocationMap");
+        for (offset, relocation) in section.relocations() {
+            map.add(file, offset, relocation)?
+        }
+        Ok(())
+    }
+}
+
+impl gimli::read::Relocate for RelocationMap {
+    fn relocate_address(&self, offset: usize, value: u64) -> gimli::Result<u64> {
+        Ok(self.0.relocate(offset as u64, value))
+    }
+
+    fn relocate_offset(&self, offset: usize, value: usize) -> gimli::Result<usize> {
+        <usize as gimli::ReaderOffset>::from_u64(self.0.relocate(offset as u64, value as u64))
+    }
+}
+
+type RelocateOwned<R> = gimli::RelocateReader<R, RelocationMap>;
+
+pub fn create_section_reader_object<Endian: gimli::Endianity>(
+    id: gimli::SectionId,
+    file: &object::File,
+    endian: Endian,
+    is_dwo: bool,
+) -> Result<RelocateOwned<gimli::EndianRcSlice<Endian>>, Error> {
+    let mut relocations = RelocationMap::default();
+    let name = if is_dwo {
+        id.dwo_name()
+    } else if file.format() == object::BinaryFormat::Xcoff {
+        id.xcoff_name()
     } else {
-        section_id.name()
+        Some(id.name())
     };
-
-    if let Some(section) = view.section_by_name(section_name) {
-        // TODO : This is kinda broke....should add rust wrappers for some of this
-        if let Some(symbol) = view
-            .symbols()
-            .iter()
-            .find(|symbol| symbol.full_name().to_string_lossy() == "__elf_section_headers")
-        {
-            if let Some(data_var) = view
-                .data_variables()
-                .iter()
-                .find(|var| var.address == symbol.address())
-            {
-                // TODO : This should eventually be wrapped by some DataView sorta thingy thing, like how python does it
-                let data_type = &data_var.ty.contents;
-                let data = view.read_vec(data_var.address, data_type.width() as usize);
-                let element_type = data_type.element_type().unwrap().contents;
-
-                if let Some(current_section_header) = data
-                    .chunks(element_type.width() as usize)
-                    .find(|section_header| {
-                        if view.address_size() == 4 {
-                            endian.read_u32(&section_header[16..20]) as u64 == section.start()
-                        } else {
-                            endian.read_u64(&section_header[24..32]) == section.start()
-                        }
-                    })
-                {
-                    let section_flags = if view.address_size() == 4 {
-                        endian.read_u32(&current_section_header[8..12]) as u64
-                    } else {
-                        endian.read_u64(&current_section_header[8..16])
-                    };
-                    // If the section has the compressed bit set
-                    if (section_flags & 2048) != 0 {
-                        // Get section, trim header, decompress, return
-                        let compressed_header_size = view.address_size() * 3;
-
-                        let offset = section.start() + compressed_header_size as u64;
-                        let len = section.len() - compressed_header_size;
-
-                        let ch_type_vec = view.read_vec(section.start(), 4);
-                        let ch_type = endian.read_u32(&ch_type_vec);
-
-                        if let Ok(buffer) = view.read_buffer(offset, len) {
-                            match ch_type {
-                                1 => {
-                                    return Ok(EndianRcSlice::new(
-                                        buffer.zlib_decompress().get_data().into(),
-                                        endian,
-                                    ));
-                                }
-                                2 => {
-                                    return Ok(EndianRcSlice::new(
-                                        zstd::decode_all(buffer.get_data())?.as_slice().into(),
-                                        endian,
-                                    ));
-                                }
-                                x => {
-                                    return Err(Error::UnknownCompressionMethod(x));
-                                }
-                            }
-                        }
-                    }
-                }
+    let data = match name.and_then(|name| file.section_by_name(name)) {
+        Some(ref section) => {
+            // DWO sections never have relocations, so don't bother.
+            if !is_dwo {
+                relocations.add(file, section)?;
             }
+            section.uncompressed_data()?.into_owned()
         }
-        let offset = section.start();
-        let len = section.len();
-        if len == 0 {
-            Ok(EndianRcSlice::new(Rc::from([]), endian))
-        } else {
-            Ok(EndianRcSlice::new(
-                Rc::from(view.read_vec(offset, len).as_slice()),
-                endian,
-            ))
-        }
-    }
-    // Truncate Mach-O section names to 16 bytes
-    else if let Some(section) = view.section_by_name(&format!(
-        "__{}",
-        &section_name[1..section_name.len().min(15)]
-    )) {
-        Ok(EndianRcSlice::new(
-            Rc::from(view.read_vec(section.start(), section.len()).as_slice()),
-            endian,
-        ))
-    } else {
-        Ok(EndianRcSlice::new(Rc::from([]), endian))
-    }
+        // Use a non-zero capacity so that `ReaderOffsetId`s are unique.
+        None => Vec::with_capacity(1),
+    };
+    let section = EndianRcSlice::new(Rc::from(data.into_boxed_slice()), endian);
+    Ok(gimli::RelocateReader::new(section, relocations))
 }

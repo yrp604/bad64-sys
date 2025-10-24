@@ -380,6 +380,7 @@ typedef struct context_
 	uint64_t pac;
 	bool pacia1716;
 	bool pacib1716;
+	uint64_t pacinst;
 	uint64_t page;
 	uint64_t pair;
 	uint64_t pairs;
@@ -397,6 +398,7 @@ typedef struct context_
 	uint64_t postindex;
 	uint64_t pref_hint;
 	uint64_t prfop;
+	bool priority;
 	uint64_t ptype;
 	uint64_t r;
 	uint64_t rd;
@@ -422,6 +424,7 @@ typedef struct context_
 	uint64_t sel_a;
 	uint64_t sel_b;
 	uint64_t selem;
+	uint64_t select;
 	uint64_t setflags;
 	uint64_t sf;
 	uint64_t sh;

@@ -167,13 +167,15 @@ enum SystemHintOp
 	SystemHintOp_PSB,
 	SystemHintOp_TSB,
 	SystemHintOp_BTI,
-	SystemHintOp_CSDB,
 	SystemHintOp_WFET,
 	SystemHintOp_WFIT,
-	SystemHintOp_CHKFEAT,
 	SystemHintOp_CLRBHB,
 	SystemHintOp_GCSB,
+	SystemHintOp_CHKFEAT,
 	SystemHintOp_STSHH,
+	SystemHintOp_SHUH,
+	SystemHintOp_STCPH,
+	SystemHintOp_CSDB,
 };
 
 enum ImmediateOp
@@ -427,6 +429,11 @@ enum Unpredictable
 	Unpredictable_LSE128OVERLAP,
 };
 
+enum PACInstType {
+	PACIxSP,
+	PACIxSPPC,
+};
+
 typedef struct DecodeBitMasks_ReturnType_
 {
 	uint64_t wmask;
@@ -462,6 +469,7 @@ uint64_t AdvSIMDExpandImm(uint8_t op, uint8_t cmode, uint64_t imm8);
 
 bool BTypeCompatible_BTI(uint8_t hintcode, uint8_t pstate_btype);
 bool BTypeCompatible_PACIXSP(void);
+bool BTypeCompatible_PAC(enum PACInstType pacinst);
 
 enum FPRounding FPDecodeRounding(uint8_t RMode);
 enum FPRounding FPRoundingMode(uint64_t fpcr);

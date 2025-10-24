@@ -90,7 +90,7 @@ impl FileFilterField {
         }
     }
 
-    pub fn from_form(form: &Form) -> Option<Regex> {
+    pub fn from_form(form: &Form) -> Option<Result<Regex, regex::Error>> {
         let field = form.get_field_with_name("File Filter")?;
         let field_value = field.try_value_string()?;
 
@@ -103,7 +103,7 @@ impl FileFilterField {
             format!(".*{}.*", regex::escape(&field_value))
         };
 
-        Regex::new(&pattern).ok()
+        Some(Regex::new(&pattern))
     }
 }
 
@@ -206,6 +206,32 @@ impl SaveReportToDiskField {
 
     pub fn from_form(form: &Form) -> Option<Self> {
         let field = form.get_field_with_name("Save Report to Disk")?;
+        let field_value = field.try_value_int()?;
+        match field_value {
+            1 => Some(Self::Yes),
+            _ => Some(Self::No),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum RequestAnalysisField {
+    No,
+    #[default]
+    Yes,
+}
+
+impl RequestAnalysisField {
+    pub fn to_field(&self) -> FormInputField {
+        FormInputField::Checkbox {
+            prompt: "Request Analysis for BNDB's".to_string(),
+            default: Some(true),
+            value: false,
+        }
+    }
+
+    pub fn from_form(form: &Form) -> Option<Self> {
+        let field = form.get_field_with_name("Request Analysis for BNDB's")?;
         let field_value = field.try_value_int()?;
         match field_value {
             1 => Some(Self::Yes),
@@ -511,6 +537,10 @@ impl WarpFileProcessor {
             .filter_map(|res| match res {
                 Ok(result) => Some(Ok(result)),
                 Err(ProcessingError::Cancelled) => Some(Err(ProcessingError::Cancelled)),
+                Err(ProcessingError::NoPathToProjectFile(path)) => {
+                    log::debug!("Skipping non-pulled project file: {:?}", path);
+                    None
+                }
                 Err(ProcessingError::SkippedFile(path)) => {
                     log::debug!("Skipping project file: {:?}", path);
                     None
@@ -586,15 +616,19 @@ impl WarpFileProcessor {
                 if file_cache_path.exists() {
                     // TODO: Update analysis and wait option
                     log::debug!("Analysis database found in cache: {:?}", file_cache_path);
-                    binaryninja::load_with_options(&file_cache_path, true, Some(settings_str))
+                    binaryninja::load_with_options(
+                        &file_cache_path,
+                        self.request_analysis,
+                        Some(settings_str),
+                    )
                 } else {
                     log::debug!("No database found in cache: {:?}", file_cache_path);
-                    binaryninja::load_with_options(&path, true, Some(settings_str))
+                    binaryninja::load_with_options(&path, self.request_analysis, Some(settings_str))
                 }
             }
             None => {
                 // Processor is not caching analysis
-                binaryninja::load_with_options(&path, true, Some(settings_str))
+                binaryninja::load_with_options(&path, self.request_analysis, Some(settings_str))
             }
         }
         .ok_or(ProcessingError::BinaryViewLoad(path.clone()))?;
@@ -904,6 +938,7 @@ impl Debug for WarpFileProcessor {
             .field("state", &self.state)
             .field("cache_path", &self.cache_path)
             .field("analysis_settings", &self.analysis_settings)
+            .field("request_analysis", &self.request_analysis)
             .finish()
     }
 }

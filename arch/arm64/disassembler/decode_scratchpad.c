@@ -1607,7 +1607,6 @@ int decode_scratchpad(context* ctx, Instruction* instr)
 	// case ENC_SSBB_ONLY_BARRIERS:
 	// case ENC_PSSBB_ONLY_BARRIERS:
 	case ENC_SB_ONLY_BARRIERS:
-	case ENC_TCOMMIT_ONLY_BARRIERS:
 	case ENC_PSSBB_DSB_BO_BARRIERS:
 	case ENC_SSBB_DSB_BO_BARRIERS:
 		break;
@@ -8107,18 +8106,6 @@ int decode_scratchpad(context* ctx, Instruction* instr)
 	{
 		// (<systemreg>|S<op0>_<op1>_<Cn>_<Cm>_<op2>),<Xt>
 		ADD_OPERAND_SYSTEMREG_SENSE;
-		ADD_OPERAND_XT;
-		break;
-	}
-	case ENC_TCANCEL_EX_EXCEPTION:
-	{
-		unsigned imm = ctx->imm16;
-		ADD_OPERAND_IMM32(imm, 0);
-		break;
-	}
-	case ENC_TSTART_BR_SYSTEMRESULT:
-	case ENC_TTEST_BR_SYSTEMRESULT:
-	{
 		ADD_OPERAND_XT;
 		break;
 	}

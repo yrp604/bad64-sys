@@ -199,6 +199,12 @@ class BINARYNINJAUIAPI StackView : public QAbstractScrollArea, public View, publ
 	bool m_needFirstFocus;
 	bool m_positionAware;
 
+	// Selection state
+	size_t m_selectionStartLine;
+	size_t m_selectionStartToken;
+	bool m_hasSelection;
+	bool m_isDragging;
+
 	//! Bind and register all stack view actions.
 	void setupActions();
 
@@ -213,9 +219,14 @@ class BINARYNINJAUIAPI StackView : public QAbstractScrollArea, public View, publ
 	//! Find the end of a stack void given a start offset.
 	int64_t findVoidEnd(int64_t start) const;
 
+	//! Get the beginning of the current selection (min position)
+	void getSelectionRange(size_t& startLine, size_t& startToken, size_t& endLine, size_t& endToken) const;
+
   protected:
 	void paintEvent(QPaintEvent* event) override;
 	void mousePressEvent(QMouseEvent* event) override;
+	void mouseMoveEvent(QMouseEvent* event) override;
+	void mouseReleaseEvent(QMouseEvent* event) override;
 	void mouseDoubleClickEvent(QMouseEvent* event) override;
 
   public:
@@ -298,8 +309,10 @@ class BINARYNINJAUIAPI StackView : public QAbstractScrollArea, public View, publ
 
 	BinaryViewRef getData() override;
 	uint64_t getCurrentOffset() override;
+	bool canCopy() override { return selectedLine() != nullptr; }
 	bool canCopyAddress() override { return false; };
 	bool canPaste() override { return false; };
+	void copy(TransformRef xform = nullptr) override;
 	void setSelectionOffsets(BNAddressRange range) override;
 	bool navigate(uint64_t offset) override;
 	QFont getFont() override;

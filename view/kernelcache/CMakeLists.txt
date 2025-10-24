@@ -100,14 +100,3 @@ target_compile_definitions(kernelcache PRIVATE ${COMPILE_DEFS})
 if(NOT HEADLESS)
     add_subdirectory(ui)
 endif()
-
-message("
-Apple KernelCache Extraction Plugin
-
-Metadata Version: ${METADATA_VERSION}
-CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}
-Qt Version: ${QT_VERSION}
-Crash on Failure: ${HARD_FAIL_MODE}
-Slideinfo Debug Tags: ${SLIDEINFO_DEBUG_TAGS}
-REFCOUNT_DEBUG: ${BN_REF_COUNT_DEBUG}
-")

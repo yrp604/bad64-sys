@@ -37,7 +37,6 @@ impl SaveFileField {
             prompt: "File Path".to_string(),
             // TODO: This is called extension but is really a filter.
             extension: Some("*.warp".to_string()),
-            default_name: Some(default_name),
             default: Some(default_file_path.to_string_lossy().to_string()),
             value: None,
         }

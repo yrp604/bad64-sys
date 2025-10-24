@@ -1,5 +1,8 @@
 #include <cstring>
 #include <algorithm>
+#include <QtGui/QClipboard>
+#include <QtGui/QGuiApplication>
+#include <QtCore/QStringList>
 #include "imports.h"
 #include "view.h"
 #include "fontsettings.h"
@@ -239,6 +242,9 @@ ImportsTreeView::ImportsTreeView(ImportsWidget* parent, TriageView* view, Binary
 	setRootIsDecorated(false);
 	setUniformRowHeights(true);
 	setSortingEnabled(true);
+	setSelectionMode(QAbstractItemView::ExtendedSelection);
+	setSelectionBehavior(QAbstractItemView::SelectRows);
+	setAllColumnsShowFocus(true);
 	sortByColumn(0, Qt::AscendingOrder);
 	if (m_model->HasOrdinalCol())
 		setColumnWidth(m_model->GetOrdinalCol(), 55);
@@ -247,6 +253,44 @@ ImportsTreeView::ImportsTreeView(ImportsWidget* parent, TriageView* view, Binary
 
 	connect(selectionModel(), &QItemSelectionModel::currentChanged, this, &ImportsTreeView::importSelected);
 	connect(this, &QTreeView::doubleClicked, this, &ImportsTreeView::importDoubleClicked);
+
+	m_actionHandler.bindAction("Copy", UIAction([this]() { copySelection(); }, [this]() { return canCopySelection(); }));
+}
+
+void ImportsTreeView::copySelection()
+{
+	if (!model() || !selectionModel())
+		return;
+
+	QModelIndexList rows = selectionModel()->selectedRows();
+	if (rows.isEmpty())
+		return;
+
+	std::sort(rows.begin(), rows.end(), [](const QModelIndex& a, const QModelIndex& b) { return a.row() < b.row(); });
+
+	QStringList lines;
+	for (const QModelIndex& rowIndex : rows)
+	{
+		QStringList cells;
+		for (int column = 0; column < m_model->columnCount(QModelIndex()); column++)
+		{
+			if (isColumnHidden(column))
+				continue;
+
+			QModelIndex idx = m_model->index(rowIndex.row(), column, QModelIndex());
+			cells << m_model->data(idx, Qt::DisplayRole).toString();
+		}
+		lines << cells.join("\t");
+	}
+
+	if (QClipboard* clipboard = QGuiApplication::clipboard())
+		clipboard->setText(lines.join("\n"));
+}
+
+
+bool ImportsTreeView::canCopySelection() const
+{
+	return !selectionModel()->selectedRows().isEmpty();
 }
 
 
@@ -329,6 +373,12 @@ void ImportsTreeView::keyPressEvent(QKeyEvent* event)
 		QList<QModelIndex> sel = selectionModel()->selectedIndexes();
 		if (sel.size() != 0)
 			importDoubleClicked(sel[0]);
+	}
+	else if (event->matches(QKeySequence::Copy))
+	{
+		copySelection();
+		event->accept();
+		return;
 	}
 	QTreeView::keyPressEvent(event);
 }

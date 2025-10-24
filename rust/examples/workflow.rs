@@ -52,13 +52,14 @@ pub fn main() {
         binaryninja::headless::Session::new().expect("Failed to initialize session");
 
     println!("Registering workflow...");
-    let old_meta_workflow = Workflow::get("core.function.metaAnalysis");
-    let meta_workflow = old_meta_workflow.clone_to("core.function.metaAnalysis");
     let activity = Activity::new_with_action(RUST_ACTIVITY_CONFIG, example_activity);
-    meta_workflow.register_activity(&activity).unwrap();
-    meta_workflow.insert("core.function.runFunctionRecognizers", [RUST_ACTIVITY_NAME]);
-    // Re-register the meta workflow with our changes.
-    meta_workflow.register().unwrap();
+    // Update the meta-workflow with our new activity.
+    Workflow::cloned("core.function.metaAnalysis")
+        .expect("Couldn't find meta workflow")
+        .activity_after(&activity, "core.function.runFunctionRecognizers")
+        .expect("Couldn't find runFunctionRecognizers")
+        .register()
+        .expect("Couldn't register activity");
 
     println!("Loading binary...");
     let bv = headless_session

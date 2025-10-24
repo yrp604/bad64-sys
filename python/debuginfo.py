@@ -21,7 +21,7 @@
 import ctypes
 from typing import Optional, List, Iterator, Callable, Tuple
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # Binary Ninja components
 import binaryninja
@@ -32,6 +32,7 @@ from .log import log_error_for_exception
 from . import binaryview
 from . import filemetadata
 from . import typecontainer
+from .variable import VariableNameAndType
 
 _debug_info_parsers = {}
 ProgressFuncType = Callable[[int, int], bool]
@@ -222,7 +223,7 @@ class DebugInfoParser(object, metaclass=_DebugInfoParserMetaClass):
 		"""Returns whether this debug-info parser is valid for the provided binary view"""
 		return core.BNIsDebugInfoParserValidForView(self.handle, view.handle)
 
-	def parse_debug_info(self, view: 'binaryview.BinaryView', debug_view: 'binaryview.BinaryView', debug_info: Optional["DebugInfo"] = None, progress: ProgressFuncType = None) -> Optional["DebugInfo"]:
+	def parse_debug_info(self, view: 'binaryview.BinaryView', debug_view: 'binaryview.BinaryView', debug_info: Optional["DebugInfo"] = None, progress: Optional[ProgressFuncType] = None) -> Optional["DebugInfo"]:
 		"""
 		Returns a ``DebugInfo`` object populated with debug info by this debug-info parser. Only provide a ``DebugInfo`` object if you wish to append to the existing debug info.
 
@@ -263,7 +264,8 @@ class DebugFunctionInfo(object):
 	raw_name: Optional[str] = None
 	function_type: Optional[_types.Type] = None
 	platform: Optional['_platform.Platform'] = None
-	components: Optional[List[str]] = None
+	components: List[str] = field(default_factory=list)
+	local_variables: List[VariableNameAndType] = field(default_factory=list)
 
 	def __repr__(self) -> str:
 		suffix = f"@{self.address:#x}>" if self.address != 0 else ">"
@@ -359,9 +361,19 @@ class DebugInfo(object):
 				for c in range(0, function.componentN):
 					components.append(function.components[c])
 
+				local_variables = []
+				for c in range(0, function.localVariableN):
+					local_var = function.localVariables[c]
+					local_var_type = _types.Type.create(core.BNNewTypeReference(local_var.type), confidence=local_var.typeConfidence)
+					local_variables.append(VariableNameAndType.from_core_variable(
+						local_var.var,
+						local_var.name,
+						local_var_type,
+					))
+
 				yield DebugFunctionInfo(
 				    function.address, function.shortName, function.fullName, function.rawName,
-				    function_type, func_platform, components
+				    function_type, func_platform, components, local_variables
 				)
 		finally:
 			core.BNFreeDebugFunctions(functions, count.value)
@@ -524,6 +536,26 @@ class DebugInfo(object):
 			component_list[c] = str(components[c]).encode('charmap')
 		func_info.components = component_list
 		func_info.componentN = len(components)
+
+		if new_func.local_variables is None:
+			local_variables = []
+		elif isinstance(new_func.local_variables, list):
+			local_variables = new_func.local_variables
+		else:
+			return NotImplemented
+
+		local_variables_list = (core.BNVariableNameAndType * len(local_variables))()
+		for (i,v) in enumerate(local_variables):
+			core_var = core.BNVariableNameAndType()
+			core_var.name = v.name
+			core_var.type = v.type.handle
+			core_var.var = v.to_BNVariable()
+			core_var.autoDefined = False # TODO
+			core_var.typeConfidence = v.type.confidence
+
+			local_variables_list[i] = core_var
+		func_info.localVariables = local_variables_list
+		func_info.localVariableN = len(local_variables)
 
 		func_info.shortName = new_func.short_name
 		func_info.fullName = new_func.full_name

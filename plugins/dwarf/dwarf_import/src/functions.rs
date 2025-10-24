@@ -42,13 +42,25 @@ fn get_parameters<R: ReaderType>(
     }
 
     // We make a new tree from the current entry to iterate over its children
-    let mut sub_die_tree = unit.entries_tree(Some(entry.offset())).unwrap();
-    let root = sub_die_tree.root().unwrap();
+    let mut sub_die_tree = match unit.entries_tree(Some(entry.offset())) {
+        Ok(x) => x,
+        Err(e) => {
+            log::error!("Failed to get function parameter entry tree: {}", e);
+            return (vec![], false);
+        }
+    };
+    let root = match sub_die_tree.root() {
+        Ok(x) => x,
+        Err(e) => {
+            log::error!("Failed to get function parameter entry tree root: {}", e);
+            return (vec![], false);
+        }
+    };
 
     let mut variable_arguments = false;
     let mut result = vec![];
     let mut children = root.children();
-    while let Some(child) = children.next().unwrap() {
+    while let Ok(Some(child)) = children.next() {
         match child.entry().tag() {
             constants::DW_TAG_formal_parameter => {
                 //TODO: if the param type is a typedef to an anonymous struct (typedef struct {...} foo) then this is reoslved to an anonymous struct instead of foo
@@ -118,7 +130,8 @@ pub(crate) fn parse_function_entry<R: ReaderType>(
             });
 
             static ABI_REGEX_MEM: OnceLock<Regex> = OnceLock::new();
-            let abi_regex = ABI_REGEX_MEM.get_or_init(|| Regex::new(r"\[abi:v\d+\]").unwrap());
+            let abi_regex = ABI_REGEX_MEM
+                .get_or_init(|| Regex::new(r"\[abi:v\d+\]").expect("Failed to generate ABI regex"));
             if let Ok(sym) = cpp_demangle::Symbol::new(possibly_mangled_name) {
                 if let Ok(demangled) = sym.demangle(demangle_options) {
                     let cleaned = abi_regex.replace_all(&demangled, "");
@@ -187,8 +200,15 @@ pub(crate) fn parse_lexical_block<R: ReaderType>(
             }
         }
     } else if let Ok(Some(low_pc_value)) = entry.attr_value(constants::DW_AT_low_pc) {
+        let unit_base = match unit.header.offset().as_debug_info_offset() {
+            Some(x) => x.0,
+            None => {
+                log::warn!("Unable to get unit offset in debug info: {:?}. This may be an indicator of parsing issues.", unit.header.offset());
+                0
+            }
+        };
+
         let Ok(Some(low_pc)) = dwarf.attr_address(unit, low_pc_value.clone()) else {
-            let unit_base: usize = unit.header.offset().as_debug_info_offset().unwrap().0;
             error!(
                 "Failed to read lexical block low_pc for entry {:#x}, please report this bug.",
                 unit_base + entry.offset().0
@@ -197,7 +217,6 @@ pub(crate) fn parse_lexical_block<R: ReaderType>(
         };
 
         let Ok(Some(high_pc_value)) = entry.attr_value(constants::DW_AT_high_pc) else {
-            let unit_base: usize = unit.header.offset().as_debug_info_offset().unwrap().0;
             error!("Failed to read lexical block high_pc attribute for entry {:#x}, please report this bug.", unit_base + entry.offset().0);
             return None;
         };
@@ -207,7 +226,6 @@ pub(crate) fn parse_lexical_block<R: ReaderType>(
             .and_then(|x| Some(low_pc + x))
             .or_else(|| dwarf.attr_address(unit, high_pc_value).unwrap_or(None))
         else {
-            let unit_base: usize = unit.header.offset().as_debug_info_offset().unwrap().0;
             error!(
                 "Failed to read lexical block high_pc for entry {:#x}, please report this bug.",
                 unit_base + entry.offset().0

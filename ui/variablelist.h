@@ -251,6 +251,9 @@ class BINARYNINJAUIAPI VariableList : public SidebarWidget, public FilterTarget
 	//! Remove UIDF for the selected variable
 	void resetSelectedVariableValue();
 
+	//! Copy selected variables to clipboard
+	void copy();
+
 	virtual void setFilter(const std::string& filter) override;
 	virtual void scrollToFirstItem() override;
 	virtual void scrollToCurrentItem() override;

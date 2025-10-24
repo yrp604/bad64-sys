@@ -8,7 +8,7 @@
 	#endif  // SHAREDCACHE_LIBRARY
 #else       // __GNUC__
 	#ifdef _MSC_VER
-		#ifndef DEMO_VERSION
+		#ifndef DEMO_EDITION
 			#ifdef SHAREDCACHE_LIBRARY
 				#define SHAREDCACHE_FFI_API __declspec(dllexport)
 			#else  // SHAREDCACHE_LIBRARY
@@ -119,7 +119,7 @@ extern "C"
 
 	SHAREDCACHE_FFI_API bool BNSharedCacheControllerIsImageLoaded(BNSharedCacheController* controller, BNSharedCacheImage* image);
 	SHAREDCACHE_FFI_API bool BNSharedCacheControllerIsRegionLoaded(BNSharedCacheController* controller, BNSharedCacheRegion* region);
-	
+
 	SHAREDCACHE_FFI_API bool BNSharedCacheControllerGetRegionAt(BNSharedCacheController* controller, uint64_t address, BNSharedCacheRegion* outRegion);
 	SHAREDCACHE_FFI_API bool BNSharedCacheControllerGetRegionContaining(BNSharedCacheController* controller, uint64_t address, BNSharedCacheRegion* region);
 

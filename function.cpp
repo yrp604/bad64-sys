@@ -29,69 +29,6 @@ using namespace BinaryNinja;
 using namespace std;
 
 
-Variable::Variable()
-{
-	type = RegisterVariableSourceType;
-	index = 0;
-	storage = 0;
-}
-
-
-Variable::Variable(BNVariableSourceType t, uint32_t i, uint64_t s)
-{
-	type = t;
-	index = i;
-	storage = s;
-}
-
-
-Variable::Variable(const BNVariable& var)
-{
-	type = var.type;
-	index = var.index;
-	storage = var.storage;
-}
-
-
-Variable::Variable(const Variable& var)
-{
-	type = var.type;
-	index = var.index;
-	storage = var.storage;
-}
-
-
-Variable& Variable::operator=(const Variable& var)
-{
-	type = var.type;
-	index = var.index;
-	storage = var.storage;
-	return *this;
-}
-
-
-bool Variable::operator==(const Variable& var) const
-{
-	if (type != var.type)
-		return false;
-	if (index != var.index)
-		return false;
-	return storage == var.storage;
-}
-
-
-bool Variable::operator!=(const Variable& var) const
-{
-	return !((*this) == var);
-}
-
-
-bool Variable::operator<(const Variable& var) const
-{
-	return ToIdentifier() < var.ToIdentifier();
-}
-
-
 uint64_t Variable::ToIdentifier() const
 {
 	return BNToVariableIdentifier(this);

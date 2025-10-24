@@ -41,6 +41,7 @@ from . import highlight
 from . import flowgraph
 from . import variable
 from . import databuffer
+from . import stringrecognizer
 from . import types as _types
 from .interaction import show_graph_report
 from .commonil import (
@@ -972,6 +973,13 @@ class HighLevelILInstruction(BaseILInstruction):
 		hash ^= rotl(self.address, 23)
 		hash ^= rotl(discriminator, 47)
 		return hash
+
+	@property
+	def derived_string_reference(self) -> Optional['binaryview.DerivedString']:
+		str = core.BNDerivedString()
+		if not core.BNGetHighLevelILDerivedStringReferenceForExpr(self.function.handle, self.expr_index, str):
+			return None
+		return binaryview.DerivedString._from_core_struct(str, True)
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -3002,6 +3010,22 @@ class HighLevelILFunction:
 		for flag in value:
 			result |= flag.value
 		core.BNSetHighLevelILExprAttributes(self.handle, expr, result)
+
+	def set_derived_string_reference_for_expr(self, expr: InstructionOrExpression, str: 'binaryview.DerivedString'):
+		if isinstance(expr, HighLevelILInstruction):
+			expr = expr.expr_index
+		elif isinstance(expr, int):
+			expr = ExpressionIndex(expr)
+
+		str_obj = str._to_core_struct(False)
+		core.BNSetHighLevelILDerivedStringReferenceForExpr(self.handle, expr, str_obj)
+
+	def remove_derived_string_reference_for_expr(self, expr: InstructionOrExpression):
+		if isinstance(expr, HighLevelILInstruction):
+			expr = expr.expr_index
+		elif isinstance(expr, int):
+			expr = ExpressionIndex(expr)
+		core.BNRemoveHighLevelILDerivedStringReferenceForExpr(self.handle, expr)
 
 	def nop(self, loc: Optional['ILSourceLocation'] = None) -> ExpressionIndex:
 		"""

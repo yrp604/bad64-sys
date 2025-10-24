@@ -222,6 +222,22 @@ void BinaryDataNotification::StringRemovedCallback(
 }
 
 
+void BinaryDataNotification::DerivedStringFoundCallback(void* ctxt, BNBinaryView* data, BNDerivedString* str)
+{
+	BinaryDataNotification* notify = (BinaryDataNotification*)ctxt;
+	Ref<BinaryView> view = new BinaryView(BNNewViewReference(data));
+	notify->OnDerivedStringFound(view, DerivedString::FromAPIObject(str, false));
+}
+
+
+void BinaryDataNotification::DerivedStringRemovedCallback(void* ctxt, BNBinaryView* data, BNDerivedString* str)
+{
+	BinaryDataNotification* notify = (BinaryDataNotification*)ctxt;
+	Ref<BinaryView> view = new BinaryView(BNNewViewReference(data));
+	notify->OnDerivedStringRemoved(view, DerivedString::FromAPIObject(str, false));
+}
+
+
 void BinaryDataNotification::TypeDefinedCallback(void* ctxt, BNBinaryView* data, BNQualifiedName* name, BNType* type)
 {
 	BinaryDataNotification* notify = (BinaryDataNotification*)ctxt;
@@ -556,6 +572,8 @@ BinaryDataNotification::BinaryDataNotification()
 	m_callbacks.symbolRemoved = SymbolRemovedCallback;
 	m_callbacks.stringFound = StringFoundCallback;
 	m_callbacks.stringRemoved = StringRemovedCallback;
+	m_callbacks.derivedStringFound = DerivedStringFoundCallback;
+	m_callbacks.derivedStringRemoved = DerivedStringRemovedCallback;
 	m_callbacks.typeDefined = TypeDefinedCallback;
 	m_callbacks.typeUndefined = TypeUndefinedCallback;
 	m_callbacks.typeReferenceChanged = TypeReferenceChangedCallback;
@@ -615,6 +633,8 @@ BinaryDataNotification::BinaryDataNotification(NotificationTypes notifications)
 	m_callbacks.symbolRemoved = (notifications & NotificationType::SymbolRemoved) ? SymbolRemovedCallback : nullptr;
 	m_callbacks.stringFound = (notifications & NotificationType::StringFound) ? StringFoundCallback : nullptr;
 	m_callbacks.stringRemoved = (notifications & NotificationType::StringRemoved) ? StringRemovedCallback : nullptr;
+	m_callbacks.derivedStringFound = (notifications & NotificationType::DerivedStringFound) ? DerivedStringFoundCallback : nullptr;
+	m_callbacks.derivedStringRemoved = (notifications & NotificationType::DerivedStringRemoved) ? DerivedStringRemovedCallback : nullptr;
 	m_callbacks.typeDefined = (notifications & NotificationType::TypeDefined) ? TypeDefinedCallback : nullptr;
 	m_callbacks.typeUndefined = (notifications & NotificationType::TypeUndefined) ? TypeUndefinedCallback : nullptr;
 	m_callbacks.typeReferenceChanged = (notifications & NotificationType::TypeReferenceChanged) ? TypeReferenceChangedCallback : nullptr;
@@ -662,9 +682,15 @@ StringRef::StringRef(BNStringRef* ref)
 }
 
 
+StringRef::StringRef(const std::string& str)
+{
+	m_ref = BNCreateStringRefOfLength(str.c_str(), str.size());
+}
+
+
 StringRef::StringRef(const StringRef& other)
 {
-	m_ref = BNDuplicateStringRef(other.m_ref);
+	m_ref = other.m_ref ? BNDuplicateStringRef(other.m_ref) : nullptr;
 }
 
 
@@ -1744,6 +1770,18 @@ DataBuffer BinaryView::ReadBuffer(uint64_t offset, size_t len)
 {
 	BNDataBuffer* result = BNReadViewBuffer(m_object, offset, len);
 	return DataBuffer(result);
+}
+
+
+const uint8_t* BinaryView::GetDataPointer() const
+{
+	return BNGetViewDataPointer(m_object);
+}
+
+
+size_t BinaryView::GetDataLength() const
+{
+	return BNGetViewDataLength(m_object);
 }
 
 
@@ -3991,6 +4029,42 @@ vector<BNStringReference> BinaryView::GetStrings(uint64_t start, uint64_t len)
 	vector<BNStringReference> result;
 	result.insert(result.end(), strings, strings + count);
 	BNFreeStringReferenceList(strings);
+	return result;
+}
+
+
+vector<DerivedString> BinaryView::GetDerivedStrings()
+{
+	size_t count;
+	BNDerivedString* strings = BNGetDerivedStrings(m_object, &count);
+	vector<DerivedString> result;
+	for (size_t i = 0; i < count; i++)
+		result.push_back(DerivedString::FromAPIObject(&strings[i], false));
+	BNFreeDerivedStringList(strings, count);
+	return result;
+}
+
+
+vector<ReferenceSource> BinaryView::GetDerivedStringCodeReferences(
+	const DerivedString& str, std::optional<size_t> maxItems)
+{
+	BNDerivedString derivedStr = str.ToAPIObject(false);
+
+	size_t count;
+	BNReferenceSource* refs = BNGetDerivedStringCodeReferences(
+		m_object, &derivedStr, &count, maxItems.has_value(), maxItems.value_or(0));
+	vector<ReferenceSource> result;
+	result.reserve(count);
+	for (size_t i = 0; i < count; i++)
+	{
+		ReferenceSource src;
+		src.func = new Function(BNNewFunctionReference(refs[i].func));
+		src.arch = new CoreArchitecture(refs[i].arch);
+		src.addr = refs[i].addr;
+		result.push_back(src);
+	}
+
+	BNFreeCodeReferences(refs, count);
 	return result;
 }
 

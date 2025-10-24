@@ -44,6 +44,8 @@ class StringsTreeView : public QTreeView, public FilterTarget
 
   public:
 	StringsTreeView(StringsWidget* parent, TriageView* view, BinaryViewRef data);
+	void copySelection();
+	bool canCopySelection() const;
 
 	virtual void setFilter(const std::string& filterText) override;
 	virtual void scrollToFirstItem() override;

@@ -10,12 +10,13 @@ using namespace BinaryNinja;
 #include "libDER/libDER.h"
 #include "libimg4/img4.h"
 #include "liblzfse/lzfse.h"
+#include <algorithm>
 
 class IMG4PayloadTransform : public Transform
 {
 
 public:
-    IMG4PayloadTransform(): Transform(DecodeTransform, TransformSupportsDetection, "IMG4", "IMG4", "Container")
+    IMG4PayloadTransform(): Transform(DecodeTransform, TransformCapabilities(TransformSupportsDetection | TransformSupportsContext), "IMG4", "IMG4", "Container")
     {
     }
 
@@ -23,8 +24,7 @@ public:
     {
         DERItem item = {};
         item.data = (DERByte *)input.GetData();
-        item.length = input.GetLength();
-
+        item.length = static_cast<DERSize>(std::min(input.GetLength(), (size_t)std::numeric_limits<DERSize>::max()));
         Img4Payload payload = {};
         if (auto result = DERImg4DecodePayload(&item, &payload); (result != DR_Success) && (result != DR_DecodeError))
             return false;
@@ -32,6 +32,46 @@ public:
             return false;
 
         output = DataBuffer(payload.payload.data, payload.payload.length);
+
+        return true;
+    }
+
+    virtual bool DecodeWithContext(Ref<TransformContext> context, const std::map<std::string, DataBuffer>& params) override
+    {
+        if (!context || !context->GetInput())
+            return false;
+
+        const uint8_t* dataPtr = context->GetInput()->GetDataPointer();
+        size_t dataLength = context->GetInput()->GetDataLength();
+        if (!dataPtr || !dataLength)
+            return false;
+
+        DERItem item = {};
+        item.data = (DERByte *)dataPtr;
+        item.length = static_cast<DERSize>(std::min(dataLength, (size_t)std::numeric_limits<DERSize>::max()));
+        Img4Payload payload = {};
+        if (auto result = DERImg4DecodePayload(&item, &payload); (result != DR_Success) && (result != DR_DecodeError))
+            return false;
+        if (!payload.payload.data || !payload.payload.length)
+            return false;
+
+        // Synthesize name: <type>[.<version>]
+        std::string filename = "";
+        if (payload.type.data && payload.type.length)
+            filename = std::string((const char*)payload.type.data, payload.type.length);
+        if (payload.version.data && payload.version.length)
+        {
+            if (!filename.empty())
+                filename += ".";
+            filename += std::string((const char*)payload.version.data, payload.version.length);
+        }
+
+        if (payload.keybag.data && payload.keybag.length)
+        {
+           LogWarn("IMG4 payload contains keybag, which is not currently supported.");
+        }
+
+        context->SetChild(DataBuffer(payload.payload.data, payload.payload.length), filename);
 
         return true;
     }
@@ -207,6 +247,40 @@ public:
 
         return false;
     }
+
+
+    virtual bool DecodeWithContext(Ref<TransformContext> context, const std::map<std::string, DataBuffer>& params) override
+    {
+        if (!context || !context->GetInput())
+            return false;
+
+        const uint8_t* dataPtr = context->GetInput()->GetDataPointer();
+        size_t dataLength = context->GetInput()->GetDataLength();
+        if (!dataPtr || !dataLength)
+            return false;
+
+        size_t outputBufferSize = dataLength * 6;
+        std::unique_ptr<uint8_t[]> scratchBuffer(new uint8_t[lzfse_decode_scratch_size()]);
+        while (true)
+        {
+            DataBuffer output(outputBufferSize);
+            size_t outSize = lzfse_decode_buffer((uint8_t *)output.GetData(), outputBufferSize, (uint8_t *)dataPtr, dataLength, scratchBuffer.get());
+            if (!outSize)
+                return false;
+            if ((outSize > 0) && (outSize < outputBufferSize))
+            {
+                output.SetSize(outSize);
+                context->SetChild(output, "");
+                return true;
+            }
+            if (output.GetLength() > (size_t(1) << 33)) // 8GB max
+                return false;
+            outputBufferSize *= 2;
+        }
+
+        return false;
+    }
+
 
     virtual bool Encode(const DataBuffer& input, DataBuffer& output, const std::map<std::string, DataBuffer>&) override
     {

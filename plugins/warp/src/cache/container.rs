@@ -15,6 +15,15 @@ pub fn for_cached_containers(f: impl Fn(&dyn Container)) {
     }
 }
 
+pub fn for_cached_containers_mut(f: impl Fn(&mut dyn Container)) {
+    let containers_cache = CONTAINER_CACHE.get_or_init(Default::default);
+    for container in containers_cache.iter() {
+        if let Ok(mut guarded_container) = container.write() {
+            f(guarded_container.as_mut());
+        }
+    }
+}
+
 // TODO: The static lifetime here is a little wierd... (we need it to Box)
 pub fn add_cached_container(container: impl Container + 'static) {
     let containers_cache = CONTAINER_CACHE.get_or_init(Default::default);

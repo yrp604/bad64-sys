@@ -3201,9 +3201,6 @@ int CPYFP(context *ctx, Instruction *instr)
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
 		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
-		}
 		if(ctx->op1==0) OK(ENC_CPYFP_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYFM_CPY_MEMCMS);
 		if(ctx->op1==2) OK(ENC_CPYFE_CPY_MEMCMS);
@@ -3236,9 +3233,6 @@ int CPYFPN(context *ctx, Instruction *instr)
 		}
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
-		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
 		}
 		if(ctx->op1==0) OK(ENC_CPYFPN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYFMN_CPY_MEMCMS);
@@ -3273,9 +3267,6 @@ int CPYFPRN(context *ctx, Instruction *instr)
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
 		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
-		}
 		if(ctx->op1==0) OK(ENC_CPYFPRN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYFMRN_CPY_MEMCMS);
 		if(ctx->op1==2) OK(ENC_CPYFERN_CPY_MEMCMS);
@@ -3308,9 +3299,6 @@ int CPYFPRT(context *ctx, Instruction *instr)
 		}
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
-		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
 		}
 		if(ctx->op1==0) OK(ENC_CPYFPRT_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYFMRT_CPY_MEMCMS);
@@ -3345,9 +3333,6 @@ int CPYFPRTN(context *ctx, Instruction *instr)
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
 		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
-		}
 		if(ctx->op1==0) OK(ENC_CPYFPRTN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYFMRTN_CPY_MEMCMS);
 		if(ctx->op1==2) OK(ENC_CPYFERTN_CPY_MEMCMS);
@@ -3380,9 +3365,6 @@ int CPYFPRTRN(context *ctx, Instruction *instr)
 		}
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
-		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
 		}
 		if(ctx->op1==0) OK(ENC_CPYFPRTRN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYFMRTRN_CPY_MEMCMS);
@@ -3417,9 +3399,6 @@ int CPYFPRTWN(context *ctx, Instruction *instr)
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
 		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
-		}
 		if(ctx->op1==0) OK(ENC_CPYFPRTWN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYFMRTWN_CPY_MEMCMS);
 		if(ctx->op1==2) OK(ENC_CPYFERTWN_CPY_MEMCMS);
@@ -3452,9 +3431,6 @@ int CPYFPT(context *ctx, Instruction *instr)
 		}
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
-		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
 		}
 		if(ctx->op1==0) OK(ENC_CPYFPT_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYFMT_CPY_MEMCMS);
@@ -3489,9 +3465,6 @@ int CPYFPTN(context *ctx, Instruction *instr)
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
 		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
-		}
 		if(ctx->op1==0) OK(ENC_CPYFPTN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYFMTN_CPY_MEMCMS);
 		if(ctx->op1==2) OK(ENC_CPYFETN_CPY_MEMCMS);
@@ -3524,9 +3497,6 @@ int CPYFPTRN(context *ctx, Instruction *instr)
 		}
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
-		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
 		}
 		if(ctx->op1==0) OK(ENC_CPYFPTRN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYFMTRN_CPY_MEMCMS);
@@ -3561,9 +3531,6 @@ int CPYFPTWN(context *ctx, Instruction *instr)
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
 		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
-		}
 		if(ctx->op1==0) OK(ENC_CPYFPTWN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYFMTWN_CPY_MEMCMS);
 		if(ctx->op1==2) OK(ENC_CPYFETWN_CPY_MEMCMS);
@@ -3596,9 +3563,6 @@ int CPYFPWN(context *ctx, Instruction *instr)
 		}
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
-		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
 		}
 		if(ctx->op1==0) OK(ENC_CPYFPWN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYFMWN_CPY_MEMCMS);
@@ -3633,9 +3597,6 @@ int CPYFPWT(context *ctx, Instruction *instr)
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
 		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
-		}
 		if(ctx->op1==0) OK(ENC_CPYFPWT_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYFMWT_CPY_MEMCMS);
 		if(ctx->op1==2) OK(ENC_CPYFEWT_CPY_MEMCMS);
@@ -3668,9 +3629,6 @@ int CPYFPWTN(context *ctx, Instruction *instr)
 		}
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
-		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
 		}
 		if(ctx->op1==0) OK(ENC_CPYFPWTN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYFMWTN_CPY_MEMCMS);
@@ -3705,9 +3663,6 @@ int CPYFPWTRN(context *ctx, Instruction *instr)
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
 		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
-		}
 		if(ctx->op1==0) OK(ENC_CPYFPWTRN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYFMWTRN_CPY_MEMCMS);
 		if(ctx->op1==2) OK(ENC_CPYFEWTRN_CPY_MEMCMS);
@@ -3740,9 +3695,6 @@ int CPYFPWTWN(context *ctx, Instruction *instr)
 		}
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
-		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
 		}
 		if(ctx->op1==0) OK(ENC_CPYFPWTWN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYFMWTWN_CPY_MEMCMS);
@@ -3777,9 +3729,6 @@ int CPYP(context *ctx, Instruction *instr)
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
 		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
-		}
 		if(ctx->op1==0) OK(ENC_CPYP_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYM_CPY_MEMCMS);
 		if(ctx->op1==2) OK(ENC_CPYE_CPY_MEMCMS);
@@ -3812,9 +3761,6 @@ int CPYPN(context *ctx, Instruction *instr)
 		}
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
-		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
 		}
 		if(ctx->op1==0) OK(ENC_CPYPN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYMN_CPY_MEMCMS);
@@ -3849,9 +3795,6 @@ int CPYPRN(context *ctx, Instruction *instr)
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
 		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
-		}
 		if(ctx->op1==0) OK(ENC_CPYPRN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYMRN_CPY_MEMCMS);
 		if(ctx->op1==2) OK(ENC_CPYERN_CPY_MEMCMS);
@@ -3884,9 +3827,6 @@ int CPYPRT(context *ctx, Instruction *instr)
 		}
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
-		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
 		}
 		if(ctx->op1==0) OK(ENC_CPYPRT_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYMRT_CPY_MEMCMS);
@@ -3921,9 +3861,6 @@ int CPYPRTN(context *ctx, Instruction *instr)
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
 		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
-		}
 		if(ctx->op1==0) OK(ENC_CPYPRTN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYMRTN_CPY_MEMCMS);
 		if(ctx->op1==2) OK(ENC_CPYERTN_CPY_MEMCMS);
@@ -3956,9 +3893,6 @@ int CPYPRTRN(context *ctx, Instruction *instr)
 		}
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
-		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
 		}
 		if(ctx->op1==0) OK(ENC_CPYPRTRN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYMRTRN_CPY_MEMCMS);
@@ -3993,9 +3927,6 @@ int CPYPRTWN(context *ctx, Instruction *instr)
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
 		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
-		}
 		if(ctx->op1==0) OK(ENC_CPYPRTWN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYMRTWN_CPY_MEMCMS);
 		if(ctx->op1==2) OK(ENC_CPYERTWN_CPY_MEMCMS);
@@ -4028,9 +3959,6 @@ int CPYPT(context *ctx, Instruction *instr)
 		}
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
-		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
 		}
 		if(ctx->op1==0) OK(ENC_CPYPT_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYMT_CPY_MEMCMS);
@@ -4065,9 +3993,6 @@ int CPYPTN(context *ctx, Instruction *instr)
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
 		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
-		}
 		if(ctx->op1==0) OK(ENC_CPYPTN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYMTN_CPY_MEMCMS);
 		if(ctx->op1==2) OK(ENC_CPYETN_CPY_MEMCMS);
@@ -4100,9 +4025,6 @@ int CPYPTRN(context *ctx, Instruction *instr)
 		}
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
-		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
 		}
 		if(ctx->op1==0) OK(ENC_CPYPTRN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYMTRN_CPY_MEMCMS);
@@ -4137,9 +4059,6 @@ int CPYPTWN(context *ctx, Instruction *instr)
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
 		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
-		}
 		if(ctx->op1==0) OK(ENC_CPYPTWN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYMTWN_CPY_MEMCMS);
 		if(ctx->op1==2) OK(ENC_CPYETWN_CPY_MEMCMS);
@@ -4172,9 +4091,6 @@ int CPYPWN(context *ctx, Instruction *instr)
 		}
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
-		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
 		}
 		if(ctx->op1==0) OK(ENC_CPYPWN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYMWN_CPY_MEMCMS);
@@ -4209,9 +4125,6 @@ int CPYPWT(context *ctx, Instruction *instr)
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
 		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
-		}
 		if(ctx->op1==0) OK(ENC_CPYPWT_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYMWT_CPY_MEMCMS);
 		if(ctx->op1==2) OK(ENC_CPYEWT_CPY_MEMCMS);
@@ -4244,9 +4157,6 @@ int CPYPWTN(context *ctx, Instruction *instr)
 		}
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
-		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
 		}
 		if(ctx->op1==0) OK(ENC_CPYPWTN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYMWTN_CPY_MEMCMS);
@@ -4281,9 +4191,6 @@ int CPYPWTRN(context *ctx, Instruction *instr)
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
 		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
-		}
 		if(ctx->op1==0) OK(ENC_CPYPWTRN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYMWTRN_CPY_MEMCMS);
 		if(ctx->op1==2) OK(ENC_CPYEWTRN_CPY_MEMCMS);
@@ -4316,9 +4223,6 @@ int CPYPWTWN(context *ctx, Instruction *instr)
 		}
 		else if(ctx->op1==2) {
 			ctx->memcpy_stage = MOPSStage_Epilogue;
-		}
-		else {
-			SEE /* "Memory Copy and Memory Set" */
 		}
 		if(ctx->op1==0) OK(ENC_CPYPWTWN_CPY_MEMCMS);
 		if(ctx->op1==1) OK(ENC_CPYMWTWN_CPY_MEMCMS);
@@ -4738,7 +4642,7 @@ int DUP_advsimd_elt(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if((!(ctx->imm5&15))) {
+		if(!(ctx->imm5&15)) {
 			EndOfDecode(Decode_UNDEF);
 		}
 		ctx->size = LowestSetBitNZ(SLICE(ctx->imm5,3,0));
@@ -4760,10 +4664,10 @@ int DUP_advsimd_elt(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if((!(ctx->imm5&15))) {
+		if(!(ctx->imm5&15)) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if(((ctx->imm5&15)==8) && ctx->Q==0) {
+		if((ctx->imm5&15)==8 && ctx->Q==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
 		ctx->size = LowestSetBitNZ(SLICE(ctx->imm5,3,0));
@@ -4792,10 +4696,10 @@ int DUP_advsimd_gen(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if((!(ctx->imm5&15))) {
+		if(!(ctx->imm5&15)) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if(((ctx->imm5&15)==8) && ctx->Q==0) {
+		if((ctx->imm5&15)==8 && ctx->Q==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
 		ctx->size = LowestSetBitNZ(SLICE(ctx->imm5,3,0));
@@ -6068,7 +5972,7 @@ int FCMLA_advsimd_elt(context *ctx, Instruction *instr)
 		if(ctx->size==0 || ctx->size==3) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if(!HaveFP16() && ctx->size==2) {
+		if(!HaveFP16() && ctx->size==1) {
 			EndOfDecode(Decode_UNDEF);
 		}
 		if(ctx->size==2 && (ctx->L==1 || ctx->Q==0)) {
@@ -7550,9 +7454,6 @@ int FCVTZS_advsimd_fix(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
-		}
 		if((!(ctx->immh&14)) || (((ctx->immh&14)==2) && !HaveFP16())) {
 			EndOfDecode(Decode_UNDEF);
 		}
@@ -7769,9 +7670,6 @@ int FCVTZU_advsimd_fix(context *ctx, Instruction *instr)
 		decode_fields32(ENC_FCVTZU_ASIMDSHF_C, ctx, instr);
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
-		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
 		}
 		if((!(ctx->immh&14)) || (((ctx->immh&14)==2) && !HaveFP16())) {
 			EndOfDecode(Decode_UNDEF);
@@ -8141,6 +8039,49 @@ int FDOT_advsimd_4wayvec(context *ctx, Instruction *instr)
 		ctx->esize = 0x20;
 		ctx->elements = ((ctx->esize)!=0 ? ((ctx->datasize) / (ctx->esize)) : 0);
 		OK(ENC_FDOT_ASIMDSAME2_DD);
+	}
+	return rc;
+}
+
+/* fdot_advsimd_elt_fp16fp32.xml */
+int FDOT_advsimd_elt_fp16fp32(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_advanced_simd */
+	/* 0|Q=x|U=0|0|111|1|size=01|L=x|M=x|Rm=xxxx|opcode=1001|H=x|0|Rn=xxxxx|Rd=xxxxx */
+	if((INSWORD & 0xBFC0F400)==0xF409000) {
+		decode_fields32(ENC_FDOT_ASIMDELEM_FP16FP32, ctx, instr);
+		if(!HaveF16F32DOT()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->n = UINT(ctx->Rn);
+		ctx->m = UINT(((ctx->M<<4)|ctx->Rm));
+		ctx->d = UINT(ctx->Rd);
+		ctx->i = UINT(((ctx->H<<1)|ctx->L));
+		ctx->datasize = (0x40) << (UINT(ctx->Q));
+		ctx->elements = ((0x20)!=0 ? ((ctx->datasize) / (0x20)) : 0);
+		OK(ENC_FDOT_ASIMDELEM_FP16FP32);
+	}
+	return rc;
+}
+
+/* fdot_advsimd_fp16fp32.xml */
+int FDOT_advsimd_fp16fp32(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_advanced_simd */
+	/* 0|Q=x|U=0|0|111|0|size=10|0|Rm=xxxxx|1|opcode=1111|1|Rn=xxxxx|Rd=xxxxx */
+	if((INSWORD & 0xBFE0FC00)==0xE80FC00) {
+		decode_fields32(ENC_FDOT_ASIMDSAME2_FP16FP32, ctx, instr);
+		if(!HaveF16F32DOT()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->d = UINT(ctx->Rd);
+		ctx->n = UINT(ctx->Rn);
+		ctx->m = UINT(ctx->Rm);
+		ctx->datasize = (0x40) << (UINT(ctx->Q));
+		ctx->elements = ((0x20)!=0 ? ((ctx->datasize) / (0x20)) : 0);
+		OK(ENC_FDOT_ASIMDSAME2_FP16FP32);
 	}
 	return rc;
 }
@@ -9496,6 +9437,44 @@ int FMMLA_FP8FP32(context *ctx, Instruction *instr)
 		ctx->m = UINT(ctx->Rm);
 		ctx->d = UINT(ctx->Rd);
 		OK(ENC_FMMLA_ASIMD_FP8FP32);
+	}
+	return rc;
+}
+
+/* fmmla_advsimd_fp16fp16.xml */
+int FMMLA_advsimd_fp16fp16(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_advanced_simd */
+	/* 0|Q=1|U=0|0|111|0|size=11|0|Rm=xxxxx|1|opcode=1101|1|Rn=xxxxx|Rd=xxxxx */
+	if((INSWORD & 0xFFE0FC00)==0x4EC0EC00) {
+		decode_fields32(ENC_FMMLA_ASIMD_FP16FP16, ctx, instr);
+		if(!HaveF16MM()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->d = UINT(ctx->Rd);
+		ctx->n = UINT(ctx->Rn);
+		ctx->m = UINT(ctx->Rm);
+		OK(ENC_FMMLA_ASIMD_FP16FP16);
+	}
+	return rc;
+}
+
+/* fmmla_advsimd_fp16fp32.xml */
+int FMMLA_advsimd_fp16fp32(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_advanced_simd */
+	/* 0|Q=1|U=0|0|111|0|size=01|0|Rm=xxxxx|1|opcode=1101|1|Rn=xxxxx|Rd=xxxxx */
+	if((INSWORD & 0xFFE0FC00)==0x4E40EC00) {
+		decode_fields32(ENC_FMMLA_ASIMD_FP16FP32, ctx, instr);
+		if(!HaveF16F32MM()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->d = UINT(ctx->Rd);
+		ctx->n = UINT(ctx->Rn);
+		ctx->m = UINT(ctx->Rm);
+		OK(ENC_FMMLA_ASIMD_FP16FP32);
 	}
 	return rc;
 }
@@ -11490,6 +11469,33 @@ int GCSSTTR(context *ctx, Instruction *instr)
 	return rc;
 }
 
+/* gicr_sysl.xml */
+int GICR_SYSL(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_system */
+	/* 110|101|0100|L=1|01|op1=000|CRn=1100|CRm=0011|op2=xxx|Rt=xxxxx */
+	if((INSWORD & 0xFFFFFF00)==0xD528C300) {
+		decode_fields32(ENC_GICR_SYSL_RC_SYSTEMINSTRS, ctx, instr);
+		OK(ENC_GICR_SYSL_RC_SYSTEMINSTRS);
+	}
+	return rc;
+}
+
+/* gic_sys.xml */
+int GIC_SYS(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_system */
+	/* 110|101|0100|L=0|01|op1=xxx|CRn=1100|CRm=0001|op2=xxx|Rt=xxxxx */
+	/* 110|101|0100|L=0|01|op1=xxx|CRn=1100|CRm=0010|op2=xxx|Rt=xxxxx */
+	if((INSWORD & 0xFFF8FF00)==0xD508C100 || (INSWORD & 0xFFF8FF00)==0xD508C200) {
+		decode_fields32(ENC_GIC_SYS_CR_SYSTEMINSTRS, ctx, instr);
+		OK(ENC_GIC_SYS_CR_SYSTEMINSTRS);
+	}
+	return rc;
+}
+
 /* gmi.xml */
 int GMI(context *ctx, Instruction *instr)
 {
@@ -11505,6 +11511,19 @@ int GMI(context *ctx, Instruction *instr)
 		ctx->n = UINT(ctx->Rn);
 		ctx->m = UINT(ctx->Rm);
 		OK(ENC_GMI_64G_DP_2SRC);
+	}
+	return rc;
+}
+
+/* gsb_sys.xml */
+int GSB_SYS(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_system */
+	/* 110|101|0100|L=0|01|op1=000|CRn=1100|CRm=0000|op2=xxx|Rt=xxxxx */
+	if((INSWORD & 0xFFFFFF00)==0xD508C000) {
+		decode_fields32(ENC_GSB_SYS_CR_SYSTEMINSTRS, ctx, instr);
+		OK(ENC_GSB_SYS_CR_SYSTEMINSTRS);
 	}
 	return rc;
 }
@@ -11643,6 +11662,19 @@ int HINT(context *ctx, Instruction *instr)
 			ctx->stream = SLICE(ctx->op2,0,0)==1;
 			ctx->op = SystemHintOp_STSHH;
 		}
+		else if((((ctx->CRm<<3)|ctx->op2)&0x7e)==0x32) {
+			if(!HaveCMH()) {
+				EndOfDecode(Decode_NOP);
+			}
+			ctx->priority = SLICE(ctx->op2,0,0)==1;
+			ctx->op = SystemHintOp_SHUH;
+		}
+		else if(((ctx->CRm<<3)|ctx->op2)==0x34) {
+			if(!HaveCMH()) {
+				EndOfDecode(Decode_NOP);
+			}
+			ctx->op = SystemHintOp_STCPH;
+		}
 		else {
 			EndOfDecode(Decode_NOP);
 		}
@@ -11711,7 +11743,7 @@ int INS_advsimd_elt(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if((!(ctx->imm5&15))) {
+		if(!(ctx->imm5&15)) {
 			EndOfDecode(Decode_UNDEF);
 		}
 		ctx->size = LowestSetBitNZ(SLICE(ctx->imm5,3,0));
@@ -11739,7 +11771,7 @@ int INS_advsimd_gen(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if((!(ctx->imm5&15))) {
+		if(!(ctx->imm5&15)) {
 			EndOfDecode(Decode_UNDEF);
 		}
 		ctx->size = LowestSetBitNZ(SLICE(ctx->imm5,3,0));
@@ -12799,6 +12831,34 @@ int LDAP1_advsimd_sngl(context *ctx, Instruction *instr)
 	return rc;
 }
 
+/* ldapp_gen.xml */
+int LDAPP_gen(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_no_offset */
+	/* size=11|01|1|0|0|10|L=1|0|Rt2=xxxxx|opc2=0111|10|Rn=xxxxx|Rt=xxxxx */
+	if((INSWORD & 0xFFE0FC00)==0xD9407800) {
+		decode_fields32(ENC_LDAPP_64_LDIAPPSTILP, ctx, instr);
+		if(!HaveLSCP()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->t = UINT(ctx->Rt);
+		ctx->t2 = UINT(ctx->Rt2);
+		ctx->n = UINT(ctx->Rn);
+		ctx->acquire = ctx->t!=0x1f && ctx->t2!=0x1f;
+		ctx->tagchecked = ctx->n!=0x1f;
+		ctx->ispair = TRUE;
+		ctx->rt_unknown = FALSE;
+		if(ctx->t==ctx->t2) {
+			ctx->c = ConstrainUnpredictable(Unpredictable_LDPOVERLAP);
+			// assert
+			// switch on constraint
+		}
+		OK(ENC_LDAPP_64_LDIAPPSTILP);
+	}
+	return rc;
+}
+
 /* ldapr.xml */
 int LDAPR(context *ctx, Instruction *instr)
 {
@@ -13063,6 +13123,34 @@ int LDAPUR_gen(context *ctx, Instruction *instr)
 	ctx->regsize = (ctx->datasize==0x40)!=0 ? 0x40 : 0x20;
 	ctx->acquirepc = ctx->t!=0x1f;
 	ctx->tagchecked = ctx->n!=0x1f;
+	return rc;
+}
+
+/* ldap_gen.xml */
+int LDAP_gen(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_no_offset */
+	/* size=11|01|1|0|0|10|L=1|0|Rt2=xxxxx|opc2=0101|10|Rn=xxxxx|Rt=xxxxx */
+	if((INSWORD & 0xFFE0FC00)==0xD9405800) {
+		decode_fields32(ENC_LDAP_64_LDIAPPSTILP, ctx, instr);
+		if(!HaveLSCP()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->t = UINT(ctx->Rt);
+		ctx->t2 = UINT(ctx->Rt2);
+		ctx->n = UINT(ctx->Rn);
+		ctx->acquire = ctx->t!=0x1f && ctx->t2!=0x1f;
+		ctx->tagchecked = ctx->n!=0x1f;
+		ctx->ispair = TRUE;
+		ctx->rt_unknown = FALSE;
+		if(ctx->t==ctx->t2) {
+			ctx->c = ConstrainUnpredictable(Unpredictable_LDPOVERLAP);
+			// assert
+			// switch on constraint
+		}
+		OK(ENC_LDAP_64_LDIAPPSTILP);
+	}
 	return rc;
 }
 
@@ -16125,6 +16213,19 @@ int MLA_advsimd_vec(context *ctx, Instruction *instr)
 	return rc;
 }
 
+/* mlbi_sys.xml */
+int MLBI_SYS(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_system */
+	/* 110|101|0100|L=0|01|op1=100|CRn=0111|CRm=0000|op2=xxx|Rt=xxxxx */
+	if((INSWORD & 0xFFFFFF00)==0xD50C7000) {
+		decode_fields32(ENC_MLBI_SYS_CR_SYSTEMINSTRS, ctx, instr);
+		OK(ENC_MLBI_SYS_CR_SYSTEMINSTRS);
+	}
+	return rc;
+}
+
 /* mls_advsimd_elt.xml */
 int MLS_advsimd_elt(context *ctx, Instruction *instr)
 {
@@ -17227,7 +17328,8 @@ int PACIA(context *ctx, Instruction *instr)
 			ctx->d = 0x1e;
 			ctx->source_is_sp = TRUE;
 			if(HaveBTI()) {
-				SetBTypeCompatible(BTypeCompatible_PACIXSP());
+				ctx->pacinst = PACIxSP;
+				SetBTypeCompatible(BTypeCompatible_PAC(ctx->pacinst));
 			}
 		}
 		else if(((ctx->CRm<<3)|ctx->op2)==8) {
@@ -17271,7 +17373,8 @@ int PACIASPPC(context *ctx, Instruction *instr)
 		}
 		ctx->d = 0x1e;
 		if(HaveBTI()) {
-			SetBTypeCompatible(BTypeCompatible_PACIXSP());
+			ctx->pacinst = PACIxSPPC;
+			SetBTypeCompatible(BTypeCompatible_PAC(ctx->pacinst));
 		}
 		OK(ENC_PACIASPPC_64LR_DP_1SRC);
 	}
@@ -17323,7 +17426,8 @@ int PACIB(context *ctx, Instruction *instr)
 			ctx->d = 0x1e;
 			ctx->source_is_sp = TRUE;
 			if(HaveBTI()) {
-				SetBTypeCompatible(BTypeCompatible_PACIXSP());
+				ctx->pacinst = PACIxSP;
+				SetBTypeCompatible(BTypeCompatible_PAC(ctx->pacinst));
 			}
 		}
 		else if(((ctx->CRm<<3)|ctx->op2)==10) {
@@ -17367,7 +17471,8 @@ int PACIBSPPC(context *ctx, Instruction *instr)
 		}
 		ctx->d = 0x1e;
 		if(HaveBTI()) {
-			SetBTypeCompatible(BTypeCompatible_PACIXSP());
+			ctx->pacinst = PACIxSPPC;
+			SetBTypeCompatible(BTypeCompatible_PAC(ctx->pacinst));
 		}
 		OK(ENC_PACIBSPPC_64LR_DP_1SRC);
 	}
@@ -18492,9 +18597,6 @@ int RSHRN_advsimd(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
-		}
 		if(SLICE(ctx->immh,3,3)==1) {
 			EndOfDecode(Decode_UNDEF);
 		}
@@ -18921,9 +19023,6 @@ int SCVTF_advsimd_fix(context *ctx, Instruction *instr)
 		decode_fields32(ENC_SCVTF_ASIMDSHF_C, ctx, instr);
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
-		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
 		}
 		if((!(ctx->immh&14)) || (((ctx->immh&14)==2) && !HaveFP16())) {
 			EndOfDecode(Decode_UNDEF);
@@ -19841,9 +19940,6 @@ int SHL_advsimd(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
-		}
 		if(((SLICE(ctx->immh,3,3)<<1)|ctx->Q)==2) {
 			EndOfDecode(Decode_UNDEF);
 		}
@@ -19868,9 +19964,6 @@ int SHRN_advsimd(context *ctx, Instruction *instr)
 		decode_fields32(ENC_SHRN_ASIMDSHF_N, ctx, instr);
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
-		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
 		}
 		if(SLICE(ctx->immh,3,3)==1) {
 			EndOfDecode(Decode_UNDEF);
@@ -19913,6 +20006,23 @@ int SHSUB_advsimd(context *ctx, Instruction *instr)
 	return rc;
 }
 
+/* shuh.xml */
+int SHUH(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_system */
+	/* 110|101|01000000110010|CRm=0110|op2=01x|11111 */
+	if((INSWORD & 0xFFFFFFDF)==0xD503265F) {
+		decode_fields32(ENC_SHUH_HI_HINTS, ctx, instr);
+		if(!HaveCMH()) {
+			EndOfDecode(Decode_NOP);
+		}
+		ctx->priority = SLICE(ctx->op2,0,0)==1;
+		OK(ENC_SHUH_HI_HINTS);
+	}
+	return rc;
+}
+
 /* sli_advsimd.xml */
 int SLI_advsimd(context *ctx, Instruction *instr)
 {
@@ -19941,9 +20051,6 @@ int SLI_advsimd(context *ctx, Instruction *instr)
 		decode_fields32(ENC_SLI_ASIMDSHF_R, ctx, instr);
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
-		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
 		}
 		if(((SLICE(ctx->immh,3,3)<<1)|ctx->Q)==2) {
 			EndOfDecode(Decode_UNDEF);
@@ -20573,7 +20680,7 @@ int SMOV_advsimd(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if((!(ctx->imm5&7))) {
+		if(!(ctx->imm5&7)) {
 			EndOfDecode(Decode_UNDEF);
 		}
 		ctx->size = LowestSetBitNZ(SLICE(ctx->imm5,2,0));
@@ -21683,9 +21790,6 @@ int SQRSHRN_advsimd(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
-		}
 		if(SLICE(ctx->immh,3,3)==1) {
 			EndOfDecode(Decode_UNDEF);
 		}
@@ -21737,9 +21841,6 @@ int SQRSHRUN_advsimd(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
-		}
 		if(SLICE(ctx->immh,3,3)==1) {
 			EndOfDecode(Decode_UNDEF);
 		}
@@ -21787,9 +21888,6 @@ int SQSHLU_advsimd(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
-		}
 		if(((SLICE(ctx->immh,3,3)<<1)|ctx->Q)==2) {
 			EndOfDecode(Decode_UNDEF);
 		}
@@ -21836,9 +21934,6 @@ int SQSHL_advsimd_imm(context *ctx, Instruction *instr)
 		decode_fields32(ENC_SQSHL_ASIMDSHF_R, ctx, instr);
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
-		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
 		}
 		if(((SLICE(ctx->immh,3,3)<<1)|ctx->Q)==2) {
 			EndOfDecode(Decode_UNDEF);
@@ -21938,9 +22033,6 @@ int SQSHRN_advsimd(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
-		}
 		if(SLICE(ctx->immh,3,3)==1) {
 			EndOfDecode(Decode_UNDEF);
 		}
@@ -21991,9 +22083,6 @@ int SQSHRUN_advsimd(context *ctx, Instruction *instr)
 		decode_fields32(ENC_SQSHRUN_ASIMDSHF_N, ctx, instr);
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
-		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
 		}
 		if(SLICE(ctx->immh,3,3)==1) {
 			EndOfDecode(Decode_UNDEF);
@@ -22195,9 +22284,6 @@ int SRI_advsimd(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
-		}
 		if(((SLICE(ctx->immh,3,3)<<1)|ctx->Q)==2) {
 			EndOfDecode(Decode_UNDEF);
 		}
@@ -22288,9 +22374,6 @@ int SRSHR_advsimd(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
-		}
 		if(((SLICE(ctx->immh,3,3)<<1)|ctx->Q)==2) {
 			EndOfDecode(Decode_UNDEF);
 		}
@@ -22338,9 +22421,6 @@ int SRSRA_advsimd(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
-		}
 		if(((SLICE(ctx->immh,3,3)<<1)|ctx->Q)==2) {
 			EndOfDecode(Decode_UNDEF);
 		}
@@ -22380,9 +22460,6 @@ int SSHLL_advsimd(context *ctx, Instruction *instr)
 		decode_fields32(ENC_SSHLL_ASIMDSHF_L, ctx, instr);
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
-		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
 		}
 		if(SLICE(ctx->immh,3,3)==1) {
 			EndOfDecode(Decode_UNDEF);
@@ -22478,9 +22555,6 @@ int SSHR_advsimd(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
-		}
 		if(((SLICE(ctx->immh,3,3)<<1)|ctx->Q)==2) {
 			EndOfDecode(Decode_UNDEF);
 		}
@@ -22527,9 +22601,6 @@ int SSRA_advsimd(context *ctx, Instruction *instr)
 		decode_fields32(ENC_SSRA_ASIMDSHF_R, ctx, instr);
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
-		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
 		}
 		if(((SLICE(ctx->immh,3,3)<<1)|ctx->Q)==2) {
 			EndOfDecode(Decode_UNDEF);
@@ -23467,6 +23538,22 @@ int STCLR_LDCLR(context *ctx, Instruction *instr)
 	return rc;
 }
 
+/* stcph.xml */
+int STCPH(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_system */
+	/* 110|101|01000000110010|CRm=0110|op2=100|11111 */
+	if((INSWORD & 0xFFFFFFFF)==0xD503269F) {
+		decode_fields32(ENC_STCPH_HI_HINTS, ctx, instr);
+		if(!HaveCMH()) {
+			EndOfDecode(Decode_NOP);
+		}
+		OK(ENC_STCPH_HI_HINTS);
+	}
+	return rc;
+}
+
 /* steorb_ldeorb.xml */
 int STEORB_LDEORB(context *ctx, Instruction *instr)
 {
@@ -23918,6 +24005,28 @@ int STLLRH(context *ctx, Instruction *instr)
 		ctx->acquire = FALSE;
 		ctx->tagchecked = ctx->n!=0x1f;
 		OK(ENC_STLLRH_SL32_LDSTORD);
+	}
+	return rc;
+}
+
+/* stlp_gen.xml */
+int STLP_gen(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_no_offset */
+	/* size=11|01|1|0|0|10|L=0|0|Rt2=xxxxx|opc2=0101|10|Rn=xxxxx|Rt=xxxxx */
+	if((INSWORD & 0xFFE0FC00)==0xD9005800) {
+		decode_fields32(ENC_STLP_64_LDIAPPSTILP, ctx, instr);
+		if(!HaveLSCP()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->t = UINT(ctx->Rt);
+		ctx->t2 = UINT(ctx->Rt2);
+		ctx->n = UINT(ctx->Rn);
+		ctx->acquire = FALSE;
+		ctx->tagchecked = ctx->n!=0x1f;
+		ctx->ispair = TRUE;
+		OK(ENC_STLP_64_LDIAPPSTILP);
 	}
 	return rc;
 }
@@ -26212,7 +26321,10 @@ int SYS(context *ctx, Instruction *instr)
 		if(ctx->op1==3 && ctx->CRn==7 && ctx->CRm==7 && ctx->op2==0) return GCSPUSHM_SYS(ctx, instr);
 		if(ctx->op1==0 && ctx->CRn==7 && ctx->CRm==7 && ctx->op2==4) return GCSPUSHX_SYS(ctx, instr);
 		if(ctx->op1==3 && ctx->CRn==7 && ctx->CRm==7 && ctx->op2==2) return GCSSS1_SYS(ctx, instr);
+		// alias:GIC_SYS with preference:["CRn == '1100' && CRm IN {'0001', '0010'} && SysOp(op1, '1100', CRm, op2) == Sys_GIC"] does not apply
+		// alias:GSB_SYS with preference:["op1 == '000' && CRn == '1100' && CRm == '0000' && SysOp('000', '1100', '0000', op2) == Sys_GSB"] does not apply
 		if(ctx->CRn==7 && SysOp(ctx->op1,7,ctx->CRm,ctx->op2)==Sys_IC) return IC_SYS(ctx, instr);
+		// alias:MLBI_SYS with preference:["op1 == '100' && CRn == '0111' && CRm == '0000' && SysOp('100', '0111', '0000', op2) == Sys_MLBI"] does not apply
 		if(((ctx->CRn&14)==8) && SysOp(ctx->op1,ctx->CRn,ctx->CRm,ctx->op2)==Sys_TLBI) return TLBI_SYS(ctx, instr);
 		if(ctx->op1==3 && ctx->CRn==7 && ctx->CRm==2 && ctx->op2==7) return TRCIT_SYS(ctx, instr);
 		OK(ENC_SYS_CR_SYSTEMINSTRS);
@@ -26238,6 +26350,7 @@ int SYSL(context *ctx, Instruction *instr)
 		/* regular aliases */
 		if(ctx->op1==3 && ctx->CRn==7 && ctx->CRm==7 && ctx->op2==1) return GCSPOPM_SYSL(ctx, instr);
 		if(ctx->op1==3 && ctx->CRn==7 && ctx->CRm==7 && ctx->op2==3) return GCSSS2_SYSL(ctx, instr);
+		// alias:GICR_SYSL with preference:["op1 == '000' && CRn == '1100' && CRm == '0011' && SysLOp('000', '1100', '0011', op2) == Sysl_GICR"] does not apply
 		OK(ENC_SYSL_RC_SYSTEMINSTRS);
 	}
 	return rc;
@@ -26358,40 +26471,6 @@ int TBZ(context *ctx, Instruction *instr)
 	return rc;
 }
 
-/* tcancel.xml */
-int TCANCEL(context *ctx, Instruction *instr)
-{
-	int rc = DECODE_STATUS_UNMATCHED;
-	/* class iclass_system */
-	/* 110|101|00|opc=011|imm16=xxxxxxxxxxxxxxxx|op2=000|LL=00 */
-	if((INSWORD & 0xFFE0001F)==0xD4600000) {
-		decode_fields32(ENC_TCANCEL_EX_EXCEPTION, ctx, instr);
-		if(!HaveTME()) {
-			EndOfDecode(Decode_UNDEF);
-		}
-		ctx->retry = (SLICE(ctx->imm16,15,15)==1);
-		ctx->reason = SLICE(ctx->imm16,14,0);
-		OK(ENC_TCANCEL_EX_EXCEPTION);
-	}
-	return rc;
-}
-
-/* tcommit.xml */
-int TCOMMIT(context *ctx, Instruction *instr)
-{
-	int rc = DECODE_STATUS_UNMATCHED;
-	/* class iclass_system */
-	/* 110|101|01000000110011|CRm=0000|op2=011|Rt=11111 */
-	if((INSWORD & 0xFFFFFFFF)==0xD503307F) {
-		decode_fields32(ENC_TCOMMIT_ONLY_BARRIERS, ctx, instr);
-		if(!HaveTME()) {
-			EndOfDecode(Decode_UNDEF);
-		}
-		OK(ENC_TCOMMIT_ONLY_BARRIERS);
-	}
-	return rc;
-}
-
 /* tlbip_sysp.xml */
 int TLBIP_SYSP(context *ctx, Instruction *instr)
 {
@@ -26501,23 +26580,6 @@ int TSB(context *ctx, Instruction *instr)
 	return rc;
 }
 
-/* tstart.xml */
-int TSTART(context *ctx, Instruction *instr)
-{
-	int rc = DECODE_STATUS_UNMATCHED;
-	/* class iclass_system */
-	/* 110|101|0100100|op1=011|CRn=0011|CRm=0000|op2=011|Rt=xxxxx */
-	if((INSWORD & 0xFFFFFFE0)==0xD5233060) {
-		decode_fields32(ENC_TSTART_BR_SYSTEMRESULT, ctx, instr);
-		if(!HaveTME()) {
-			EndOfDecode(Decode_UNDEF);
-		}
-		ctx->t = UINT(ctx->Rt);
-		OK(ENC_TSTART_BR_SYSTEMRESULT);
-	}
-	return rc;
-}
-
 /* tst_ands_log_imm.xml */
 int TST_ANDS_log_imm(context *ctx, Instruction *instr)
 {
@@ -26548,23 +26610,6 @@ int TST_ANDS_log_shift(context *ctx, Instruction *instr)
 		decode_fields32(ENC_TST_ANDS_32_LOG_SHIFT, ctx, instr);
 		if(ctx->sf==0) OK(ENC_TST_ANDS_32_LOG_SHIFT);
 		if(ctx->sf==1) OK(ENC_TST_ANDS_64_LOG_SHIFT);
-	}
-	return rc;
-}
-
-/* ttest.xml */
-int TTEST(context *ctx, Instruction *instr)
-{
-	int rc = DECODE_STATUS_UNMATCHED;
-	/* class iclass_system */
-	/* 110|101|0100100|op1=011|CRn=0011|CRm=0001|op2=011|Rt=xxxxx */
-	if((INSWORD & 0xFFFFFFE0)==0xD5233160) {
-		decode_fields32(ENC_TTEST_BR_SYSTEMRESULT, ctx, instr);
-		if(!HaveTME()) {
-			EndOfDecode(Decode_UNDEF);
-		}
-		ctx->t = UINT(ctx->Rt);
-		OK(ENC_TTEST_BR_SYSTEMRESULT);
 	}
 	return rc;
 }
@@ -26893,9 +26938,6 @@ int UCVTF_advsimd_fix(context *ctx, Instruction *instr)
 		decode_fields32(ENC_UCVTF_ASIMDSHF_C, ctx, instr);
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
-		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
 		}
 		if((!(ctx->immh&14)) || (((ctx->immh&14)==2) && !HaveFP16())) {
 			EndOfDecode(Decode_UNDEF);
@@ -27635,7 +27677,7 @@ int UMOV_advsimd(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if((!(ctx->imm5&15))) {
+		if(!(ctx->imm5&15)) {
 			EndOfDecode(Decode_UNDEF);
 		}
 		ctx->size = LowestSetBitNZ(SLICE(ctx->imm5,3,0));
@@ -27894,9 +27936,6 @@ int UQRSHRN_advsimd(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
-		}
 		if(SLICE(ctx->immh,3,3)==1) {
 			EndOfDecode(Decode_UNDEF);
 		}
@@ -27944,9 +27983,6 @@ int UQSHL_advsimd_imm(context *ctx, Instruction *instr)
 		decode_fields32(ENC_UQSHL_ASIMDSHF_R, ctx, instr);
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
-		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
 		}
 		if(((SLICE(ctx->immh,3,3)<<1)|ctx->Q)==2) {
 			EndOfDecode(Decode_UNDEF);
@@ -28045,9 +28081,6 @@ int UQSHRN_advsimd(context *ctx, Instruction *instr)
 		decode_fields32(ENC_UQSHRN_ASIMDSHF_N, ctx, instr);
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
-		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
 		}
 		if(SLICE(ctx->immh,3,3)==1) {
 			EndOfDecode(Decode_UNDEF);
@@ -28278,9 +28311,6 @@ int URSHR_advsimd(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
-		}
 		if(((SLICE(ctx->immh,3,3)<<1)|ctx->Q)==2) {
 			EndOfDecode(Decode_UNDEF);
 		}
@@ -28352,9 +28382,6 @@ int URSRA_advsimd(context *ctx, Instruction *instr)
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
-		}
 		if(((SLICE(ctx->immh,3,3)<<1)|ctx->Q)==2) {
 			EndOfDecode(Decode_UNDEF);
 		}
@@ -28424,9 +28451,6 @@ int USHLL_advsimd(context *ctx, Instruction *instr)
 		decode_fields32(ENC_USHLL_ASIMDSHF_L, ctx, instr);
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
-		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
 		}
 		if(SLICE(ctx->immh,3,3)==1) {
 			EndOfDecode(Decode_UNDEF);
@@ -28521,9 +28545,6 @@ int USHR_advsimd(context *ctx, Instruction *instr)
 		decode_fields32(ENC_USHR_ASIMDSHF_R, ctx, instr);
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
-		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
 		}
 		if(((SLICE(ctx->immh,3,3)<<1)|ctx->Q)==2) {
 			EndOfDecode(Decode_UNDEF);
@@ -28632,9 +28653,6 @@ int USRA_advsimd(context *ctx, Instruction *instr)
 		decode_fields32(ENC_USRA_ASIMDSHF_R, ctx, instr);
 		if(!HaveAdvSIMD()) {
 			EndOfDecode(Decode_UNDEF);
-		}
-		if(ctx->immh==0) {
-			SEE /* asimdimm */;
 		}
 		if(((SLICE(ctx->immh,3,3)<<1)|ctx->Q)==2) {
 			EndOfDecode(Decode_UNDEF);
@@ -29470,6 +29488,26 @@ int addpt_z_zz(context *ctx, Instruction *instr)
 	return rc;
 }
 
+/* addqp_z_zz.xml */
+int addqp_z_zz(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_sve2 */
+	/* 000|0010|0|size=xx|1|Zm=xxxxx|011|110|Zn=xxxxx|Zd=xxxxx */
+	if((INSWORD & 0xFF20FC00)==0x4207800) {
+		decode_fields32(ENC_ADDQP_Z_ZZ_, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = (8) << (UINT(ctx->size));
+		ctx->n = UINT(ctx->Zn);
+		ctx->m = UINT(ctx->Zm);
+		ctx->d = UINT(ctx->Zd);
+		OK(ENC_ADDQP_Z_ZZ_);
+	}
+	return rc;
+}
+
 /* addqv_z_p_z.xml */
 int addqv_z_p_z(context *ctx, Instruction *instr)
 {
@@ -29506,6 +29544,26 @@ int addspl_r_ri(context *ctx, Instruction *instr)
 		ctx->d = UINT(ctx->Rd);
 		ctx->imm = SInt(ctx->imm6,6);
 		OK(ENC_ADDSPL_R_RI_);
+	}
+	return rc;
+}
+
+/* addsubp_z_zz.xml */
+int addsubp_z_zz(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_sve2 */
+	/* 000|0010|0|size=xx|1|Zm=xxxxx|011|111|Zn=xxxxx|Zd=xxxxx */
+	if((INSWORD & 0xFF20FC00)==0x4207C00) {
+		decode_fields32(ENC_ADDSUBP_Z_ZZ_, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = (8) << (UINT(ctx->size));
+		ctx->n = UINT(ctx->Zn);
+		ctx->m = UINT(ctx->Zm);
+		ctx->d = UINT(ctx->Zd);
+		OK(ENC_ADDSUBP_Z_ZZ_);
 	}
 	return rc;
 }
@@ -30007,7 +30065,7 @@ int asr_z_p_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->g = UINT(ctx->Pg);
 		ctx->dn = UINT(ctx->Zdn);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -30074,7 +30132,7 @@ int asr_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -30121,7 +30179,7 @@ int asrd_z_p_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->g = UINT(ctx->Pg);
 		ctx->dn = UINT(ctx->Zdn);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -31771,6 +31829,25 @@ int bfmlslt_z_zzzi(context *ctx, Instruction *instr)
 		ctx->index = UINT(((ctx->i3h<<1)|ctx->i3l));
 		ctx->op1_neg = TRUE;
 		OK(ENC_BFMLSLT_Z_ZZZI_);
+	}
+	return rc;
+}
+
+/* bfmmla_z16_zzz.xml */
+int bfmmla_z16_zzz(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_sve */
+	/* 011|0010|01|op=1|1|Zm=xxxxx|111000|Zn=xxxxx|Zda=xxxxx */
+	if((INSWORD & 0xFFE0FC00)==0x64E0E000) {
+		decode_fields32(ENC_BFMMLA_Z_ZZZ_H, ctx, instr);
+		if(!HaveSVE_B16MM()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->n = UINT(ctx->Zn);
+		ctx->m = UINT(ctx->Zm);
+		ctx->da = UINT(ctx->Zda);
+		OK(ENC_BFMMLA_Z_ZZZ_H);
 	}
 	return rc;
 }
@@ -36595,6 +36672,30 @@ int fcvtzs_z_p_z(context *ctx, Instruction *instr)
 	return rc;
 }
 
+/* fcvtzsn_z_mz2.xml */
+int fcvtzsn_z_mz2(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_sve2 */
+	/* 011|0010|1|size=xx|001|101|0011|0|U=0|Zn=xxxx|0|Zd=xxxxx */
+	if((INSWORD & 0xFF3FFC20)==0x650D3000) {
+		decode_fields32(ENC_FCVTZSN_Z_MZ2_, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		if(ctx->size==0) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = (8) << (UINT(ctx->size));
+		ctx->n = UINT((ctx->Zn<<1));
+		ctx->d = UINT(ctx->Zd);
+		ctx->unsigned_ = FALSE;
+		ctx->rounding = FPRounding_ZERO;
+		OK(ENC_FCVTZSN_Z_MZ2_);
+	}
+	return rc;
+}
+
 /* fcvtzu_mz_z.xml */
 int fcvtzu_mz_z(context *ctx, Instruction *instr)
 {
@@ -36885,6 +36986,30 @@ int fcvtzu_z_p_z(context *ctx, Instruction *instr)
 		ctx->rounding = FPRounding_ZERO;
 		ctx->merging = FALSE;
 		OK(ENC_FCVTZU_Z_P_Z_D2XZ);
+	}
+	return rc;
+}
+
+/* fcvtzun_z_mz2.xml */
+int fcvtzun_z_mz2(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_sve2 */
+	/* 011|0010|1|size=xx|001|101|0011|0|U=1|Zn=xxxx|0|Zd=xxxxx */
+	if((INSWORD & 0xFF3FFC20)==0x650D3400) {
+		decode_fields32(ENC_FCVTZUN_Z_MZ2_, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		if(ctx->size==0) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = (8) << (UINT(ctx->size));
+		ctx->n = UINT((ctx->Zn<<1));
+		ctx->d = UINT(ctx->Zd);
+		ctx->unsigned_ = TRUE;
+		ctx->rounding = FPRounding_ZERO;
+		OK(ENC_FCVTZUN_Z_MZ2_);
 	}
 	return rc;
 }
@@ -39883,6 +40008,19 @@ int fmmla_z32_zzz(context *ctx, Instruction *instr)
 int fmmla_z_zzz(context *ctx, Instruction *instr)
 {
 	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_16_bit_element */
+	/* 011|0010|01|op=0|1|Zm=xxxxx|111000|Zn=xxxxx|Zda=xxxxx */
+	if((INSWORD & 0xFFE0FC00)==0x64A0E000) {
+		decode_fields32(ENC_FMMLA_Z_ZZZ_H, ctx, instr);
+		if(!HaveSVE2p2() || !HaveF16MM()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = 0x10;
+		ctx->n = UINT(ctx->Zn);
+		ctx->m = UINT(ctx->Zm);
+		ctx->da = UINT(ctx->Zda);
+		OK(ENC_FMMLA_Z_ZZZ_H);
+	}
 	/* class iclass_32_bit_element */
 	/* 011|0010|0|opc=10|1|Zm=xxxxx|111001|Zn=xxxxx|Zda=xxxxx */
 	if((INSWORD & 0xFFE0FC00)==0x64A0E400) {
@@ -49231,7 +49369,7 @@ int lsl_z_p_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->g = UINT(ctx->Pg);
 		ctx->dn = UINT(ctx->Zdn);
 		ctx->shift = UINT(((ctx->tsize<<3)|ctx->imm3))-ctx->esize;
@@ -49298,7 +49436,7 @@ int lsl_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = UINT(((ctx->tsize<<3)|ctx->imm3))-ctx->esize;
@@ -49365,7 +49503,7 @@ int lsr_z_p_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->g = UINT(ctx->Pg);
 		ctx->dn = UINT(ctx->Zdn);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -49432,7 +49570,7 @@ int lsr_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -49833,6 +49971,155 @@ int luti4_z_zz(context *ctx, Instruction *instr)
 		ctx->d = UINT(ctx->Zd);
 		ctx->part = UINT(ctx->i2);
 		OK(ENC_LUTI4_Z_ZZ_1X16);
+	}
+	return rc;
+}
+
+/* luti6_mz4_zmz2.xml */
+int luti6_mz4_zmz2(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_consecutive */
+	/* 1|10|0000|10|i1=x|1|Zm=xxxxx|1111|01|Zn=xxxxx|Zd=xxx|00 */
+	if((INSWORD & 0xFFA0FC03)==0xC120F400) {
+		decode_fields32(ENC_LUTI6_MZ4_ZMZ2_1, ctx, instr);
+		if(!HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		if(MaxImplementedAnyVL()<0x200) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = 0x10;
+		ctx->isize = 6;
+		ctx->n = UINT(ctx->Zn);
+		ctx->m = UINT(ctx->Zm);
+		ctx->dstride = 1;
+		ctx->d = UINT((ctx->Zd<<2));
+		ctx->select = UINT(ctx->i1);
+		OK(ENC_LUTI6_MZ4_ZMZ2_1);
+	}
+	/* class iclass_strided */
+	/* 1|10|0000|10|i1=x|1|Zm=xxxxx|1111|11|Zn=xxxxx|D=x|00|Zd=xx */
+	if((INSWORD & 0xFFA0FC0C)==0xC120FC00) {
+		decode_fields32(ENC_LUTI6_MZ4_ZMZ2_4, ctx, instr);
+		if(!HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		if(MaxImplementedAnyVL()<0x200) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = 0x10;
+		ctx->isize = 6;
+		ctx->n = UINT(ctx->Zn);
+		ctx->m = UINT(ctx->Zm);
+		ctx->dstride = 4;
+		ctx->d = UINT(((ctx->D<<4)|ctx->Zd));
+		ctx->select = UINT(ctx->i1);
+		OK(ENC_LUTI6_MZ4_ZMZ2_4);
+	}
+	return rc;
+}
+
+/* luti6_mz4_ztz.xml */
+int luti6_mz4_ztz(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_consecutive */
+	/* 1|10|0000|01|0|001|01000|size=00|opc=00|Zn=xxx|0|0|Zd=xxx|00 */
+	if((INSWORD & 0xFFFFFC63)==0xC08A0000) {
+		decode_fields32(ENC_LUTI6_MZ4_ZTMZ3_1, ctx, instr);
+		if(!HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = 8;
+		ctx->isize = 6;
+		ctx->n = UINT(ctx->Zn);
+		ctx->dstride = 1;
+		ctx->d = UINT((ctx->Zd<<2));
+		OK(ENC_LUTI6_MZ4_ZTMZ3_1);
+	}
+	/* class iclass_strided */
+	/* 1|10|0000|010011|010|00|size=00|opc=00|Zn=xxx|0|0|D=x|00|Zd=xx */
+	if((INSWORD & 0xFFFFFC6C)==0xC09A0000) {
+		decode_fields32(ENC_LUTI6_MZ4_ZTMZ3_4, ctx, instr);
+		if(!HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = 8;
+		ctx->isize = 6;
+		ctx->n = UINT(ctx->Zn);
+		ctx->dstride = 4;
+		ctx->d = UINT(((ctx->D<<4)|ctx->Zd));
+		OK(ENC_LUTI6_MZ4_ZTMZ3_4);
+	}
+	return rc;
+}
+
+/* luti6_z_z2zz.xml */
+int luti6_z_z2zz(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_sve2 */
+	/* 010|0010|1|i1=x|1|1|Zm=xxxxx|101|011|Zn=xxxxx|Zd=xxxxx */
+	if((INSWORD & 0xFF60FC00)==0x4560AC00) {
+		decode_fields32(ENC_LUTI6_Z_ZZZ_16, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		if(MaxImplementedAnyVL()<0x200) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->isize = 6;
+		ctx->esize = 0x10;
+		ctx->m = UINT(ctx->Zm);
+		ctx->n = UINT(ctx->Zn);
+		ctx->d = UINT(ctx->Zd);
+		ctx->part = UINT(ctx->i1);
+		OK(ENC_LUTI6_Z_ZZZ_16);
+	}
+	return rc;
+}
+
+/* luti6_z_ztz.xml */
+int luti6_z_ztz(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_sme2 */
+	/* 1|10|0000|01|1|001|opc=00001|size=00|opc2=00|Zn=xxxxx|Zd=xxxxx */
+	if((INSWORD & 0xFFFFFC00)==0xC0C84000) {
+		decode_fields32(ENC_LUTI6_Z_ZTZ_, ctx, instr);
+		if(!HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = 8;
+		ctx->isize = 6;
+		ctx->n = UINT(ctx->Zn);
+		ctx->d = UINT(ctx->Zd);
+		OK(ENC_LUTI6_Z_ZTZ_);
+	}
+	return rc;
+}
+
+/* luti6_z_zzz.xml */
+int luti6_z_zzz(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_sve2 */
+	/* 010|0010|1|0|0|1|Zm=xxxxx|101|011|Zn=xxxxx|Zd=xxxxx */
+	if((INSWORD & 0xFFE0FC00)==0x4520AC00) {
+		decode_fields32(ENC_LUTI6_Z_ZZZ_8, ctx, instr);
+		if(!HaveSVE2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		if(MaxImplementedAnyVL()<0x100) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->isize = 6;
+		ctx->esize = 8;
+		ctx->m = UINT(ctx->Zm);
+		ctx->n = UINT(ctx->Zn);
+		ctx->d = UINT(ctx->Zd);
+		OK(ENC_LUTI6_Z_ZZZ_8);
 	}
 	return rc;
 }
@@ -53587,7 +53874,7 @@ int rshrnb_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -53611,7 +53898,7 @@ int rshrnt_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -53683,6 +53970,29 @@ int saba_z_zzz(context *ctx, Instruction *instr)
 		ctx->da = UINT(ctx->Zda);
 		ctx->unsigned_ = FALSE;
 		OK(ENC_SABA_Z_ZZZ_);
+	}
+	return rc;
+}
+
+/* sabal_z_zzz.xml */
+int sabal_z_zzz(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_sve2 */
+	/* 010|0010|0|size=xx|0|Zm=xxxxx|1101|U=0|1|Zn=xxxxx|Zda=xxxxx */
+	if((INSWORD & 0xFF20FC00)==0x4400D400) {
+		decode_fields32(ENC_SABAL_Z_ZZ_, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		if(ctx->size==0) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = (8) << (UINT(ctx->size));
+		ctx->n = UINT(ctx->Zn);
+		ctx->m = UINT(ctx->Zm);
+		ctx->da = UINT(ctx->Zda);
+		OK(ENC_SABAL_Z_ZZ_);
 	}
 	return rc;
 }
@@ -54358,6 +54668,54 @@ int scvtf_z_p_z(context *ctx, Instruction *instr)
 	return rc;
 }
 
+/* scvtf_z_z.xml */
+int scvtf_z_z(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_sve2 */
+	/* 011|0010|1|size=xx|001|100|0011|0|U=0|Zn=xxxxx|Zd=xxxxx */
+	if((INSWORD & 0xFF3FFC00)==0x650C3000) {
+		decode_fields32(ENC_SCVTF_Z_Z_, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		if(ctx->size==0) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = (8) << (UINT(ctx->size));
+		ctx->n = UINT(ctx->Zn);
+		ctx->d = UINT(ctx->Zd);
+		ctx->unsigned_ = FALSE;
+		ctx->rounding = FPRoundingMode(ctx->FPCR);
+		OK(ENC_SCVTF_Z_Z_);
+	}
+	return rc;
+}
+
+/* scvtflt_z_z.xml */
+int scvtflt_z_z(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_sve2 */
+	/* 011|0010|1|size=xx|001|100|0011|1|U=0|Zn=xxxxx|Zd=xxxxx */
+	if((INSWORD & 0xFF3FFC00)==0x650C3800) {
+		decode_fields32(ENC_SCVTFLT_Z_Z_, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		if(ctx->size==0) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = (8) << (UINT(ctx->size));
+		ctx->n = UINT(ctx->Zn);
+		ctx->d = UINT(ctx->Zd);
+		ctx->unsigned_ = FALSE;
+		ctx->rounding = FPRoundingMode(ctx->FPCR);
+		OK(ENC_SCVTFLT_Z_Z_);
+	}
+	return rc;
+}
+
 /* sdiv_z_p_zz.xml */
 int sdiv_z_p_zz(context *ctx, Instruction *instr)
 {
@@ -54408,6 +54766,19 @@ int sdivr_z_p_zz(context *ctx, Instruction *instr)
 int sdot_z32_zzz(context *ctx, Instruction *instr)
 {
 	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_8_bit_to_16_bit */
+	/* 010|0010|0|size=01|0|Zm=xxxxx|0|0000|U=0|Zn=xxxxx|Zda=xxxxx */
+	if((INSWORD & 0xFFE0FC00)==0x44400000) {
+		decode_fields32(ENC_SDOT_Z16_ZZZ_H, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = 0x10;
+		ctx->n = UINT(ctx->Zn);
+		ctx->m = UINT(ctx->Zm);
+		ctx->da = UINT(ctx->Zda);
+		OK(ENC_SDOT_Z16_ZZZ_H);
+	}
 	/* class iclass_16_bit_to_32_bit */
 	/* 010|0010|0000|Zm=xxxxx|11001|U=0|Zn=xxxxx|Zda=xxxxx */
 	if((INSWORD & 0xFFE0FC00)==0x4400C800) {
@@ -54428,6 +54799,20 @@ int sdot_z32_zzz(context *ctx, Instruction *instr)
 int sdot_z32_zzzi(context *ctx, Instruction *instr)
 {
 	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_8_bit_to_16_bit */
+	/* 010|0010|0|0|i3h=x|1|i3l=xx|Zm=xxx|00000|U=0|Zn=xxxxx|Zda=xxxxx */
+	if((INSWORD & 0xFFA0FC00)==0x44200000) {
+		decode_fields32(ENC_SDOT_Z16_ZZZI_H, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = 0x10;
+		ctx->index = UINT(((ctx->i3h<<2)|ctx->i3l));
+		ctx->n = UINT(ctx->Zn);
+		ctx->m = UINT(ctx->Zm);
+		ctx->da = UINT(ctx->Zda);
+		OK(ENC_SDOT_Z16_ZZZI_H);
+	}
 	/* class iclass_16_bit_to_32_bit */
 	/* 010|0010|0100|i2=xx|Zm=xxx|11001|U=0|Zn=xxxxx|Zda=xxxxx */
 	if((INSWORD & 0xFFE0FC00)==0x4480C800) {
@@ -54454,9 +54839,6 @@ int sdot_z_zzz(context *ctx, Instruction *instr)
 	if((INSWORD & 0xFFA0FC00)==0x44800000) {
 		decode_fields32(ENC_SDOT_Z_ZZZ_, ctx, instr);
 		if(!HaveSVE() && !HaveSME()) {
-			EndOfDecode(Decode_UNDEF);
-		}
-		if((!(ctx->size&2))) {
 			EndOfDecode(Decode_UNDEF);
 		}
 		ctx->esize = (8) << (UINT(ctx->size));
@@ -54914,7 +55296,7 @@ int shrnb_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -54938,7 +55320,7 @@ int shrnt_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -55002,7 +55384,7 @@ int sli_z_zzi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = UINT(((ctx->tsize<<3)|ctx->imm3))-ctx->esize;
@@ -55152,7 +55534,7 @@ int smax_z_zi(context *ctx, Instruction *instr)
 		ctx->esize = (8) << (UINT(ctx->size));
 		ctx->dn = UINT(ctx->Zdn);
 		ctx->unsigned_ = FALSE;
-		ctx->imm = UINT(ctx->imm8);
+		ctx->imm = (ctx->unsigned_)!=0 ? UINT(ctx->imm8) : SInt(ctx->imm8,8);
 		OK(ENC_SMAX_Z_ZI_);
 	}
 	return rc;
@@ -55324,7 +55706,7 @@ int smin_z_zi(context *ctx, Instruction *instr)
 		ctx->esize = (8) << (UINT(ctx->size));
 		ctx->dn = UINT(ctx->Zdn);
 		ctx->unsigned_ = FALSE;
-		ctx->imm = UINT(ctx->imm8);
+		ctx->imm = (ctx->unsigned_)!=0 ? UINT(ctx->imm8) : SInt(ctx->imm8,8);
 		OK(ENC_SMIN_Z_ZI_);
 	}
 	return rc;
@@ -58888,7 +59270,7 @@ int sqrshr_z_mz4(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT((ctx->Zn<<2));
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((8) * (ctx->esize))-UINT(((ctx->tsize<<5)|ctx->imm5));
@@ -58901,6 +59283,19 @@ int sqrshr_z_mz4(context *ctx, Instruction *instr)
 int sqrshrn_z_mz2(context *ctx, Instruction *instr)
 {
 	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_8_bit */
+	/* 010|0010|1|1|op0=0|1|01|imm3=xxx|0|0|op1=1|U=0|R=1|0|Zn=xxxx|0|Zd=xxxxx */
+	if((INSWORD & 0xFFF8FC20)==0x45A82800) {
+		decode_fields32(ENC_SQRSHRN_Z_MZ2_B, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = 8;
+		ctx->n = UINT((ctx->Zn<<1));
+		ctx->d = UINT(ctx->Zd);
+		ctx->shift = ctx->esize-UINT(ctx->imm3);
+		OK(ENC_SQRSHRN_Z_MZ2_B);
+	}
 	/* class iclass_16_bit */
 	/* 010|0010|1|1|op0=0|1|1|imm4=xxxx|0|0|op1=1|U=0|R=1|0|Zn=xxxx|0|Zd=xxxxx */
 	if((INSWORD & 0xFFF0FC20)==0x45B02800) {
@@ -58931,7 +59326,7 @@ int sqrshrn_z_mz4(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT((ctx->Zn<<2));
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((8) * (ctx->esize))-UINT(((ctx->tsize<<5)|ctx->imm5));
@@ -58955,7 +59350,7 @@ int sqrshrnb_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -58979,7 +59374,7 @@ int sqrshrnt_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -59022,7 +59417,7 @@ int sqrshru_z_mz4(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT((ctx->Zn<<2));
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((8) * (ctx->esize))-UINT(((ctx->tsize<<5)|ctx->imm5));
@@ -59035,6 +59430,19 @@ int sqrshru_z_mz4(context *ctx, Instruction *instr)
 int sqrshrun_z_mz2(context *ctx, Instruction *instr)
 {
 	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_8_bit */
+	/* 010|0010|1|1|op0=0|1|01|imm3=xxx|0|0|op1=0|U=0|R=1|0|Zn=xxxx|0|Zd=xxxxx */
+	if((INSWORD & 0xFFF8FC20)==0x45A80800) {
+		decode_fields32(ENC_SQRSHRUN_Z_MZ2_B, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = 8;
+		ctx->n = UINT((ctx->Zn<<1));
+		ctx->d = UINT(ctx->Zd);
+		ctx->shift = ctx->esize-UINT(ctx->imm3);
+		OK(ENC_SQRSHRUN_Z_MZ2_B);
+	}
 	/* class iclass_16_bit */
 	/* 010|0010|1|1|op0=0|1|1|imm4=xxxx|0|0|op1=0|U=0|R=1|0|Zn=xxxx|0|Zd=xxxxx */
 	if((INSWORD & 0xFFF0FC20)==0x45B00800) {
@@ -59065,7 +59473,7 @@ int sqrshrun_z_mz4(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT((ctx->Zn<<2));
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((8) * (ctx->esize))-UINT(((ctx->tsize<<5)|ctx->imm5));
@@ -59089,7 +59497,7 @@ int sqrshrunb_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -59113,7 +59521,7 @@ int sqrshrunt_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -59137,7 +59545,7 @@ int sqshl_z_p_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->g = UINT(ctx->Pg);
 		ctx->dn = UINT(ctx->Zdn);
 		ctx->shift = UINT(((ctx->tsize<<3)|ctx->imm3))-ctx->esize;
@@ -59201,11 +59609,34 @@ int sqshlu_z_p_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->g = UINT(ctx->Pg);
 		ctx->dn = UINT(ctx->Zdn);
 		ctx->shift = UINT(((ctx->tsize<<3)|ctx->imm3))-ctx->esize;
 		OK(ENC_SQSHLU_Z_P_ZI_);
+	}
+	return rc;
+}
+
+/* sqshrn_z_mz2.xml */
+int sqshrn_z_mz2(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_sve2 */
+	/* 010|0010|1|1|op0=0|1|tsize=xx|imm3=xxx|0|0|op1=0|U=0|R=0|0|Zn=xxxx|0|Zd=xxxxx */
+	if((INSWORD & 0xFFE0FC20)==0x45A00000) {
+		decode_fields32(ENC_SQSHRN_Z_MZ2_, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		if(ctx->tsize==0) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
+		ctx->n = UINT((ctx->Zn<<1));
+		ctx->d = UINT(ctx->Zd);
+		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
+		OK(ENC_SQSHRN_Z_MZ2_);
 	}
 	return rc;
 }
@@ -59225,7 +59656,7 @@ int sqshrnb_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -59249,11 +59680,34 @@ int sqshrnt_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
 		OK(ENC_SQSHRNT_Z_ZI_);
+	}
+	return rc;
+}
+
+/* sqshrun_z_mz2.xml */
+int sqshrun_z_mz2(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_sve2 */
+	/* 010|0010|1|1|op0=0|1|tsize=xx|imm3=xxx|0|0|op1=1|U=0|R=0|0|Zn=xxxx|0|Zd=xxxxx */
+	if((INSWORD & 0xFFE0FC20)==0x45A02000) {
+		decode_fields32(ENC_SQSHRUN_Z_MZ2_, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		if(ctx->tsize==0) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
+		ctx->n = UINT((ctx->Zn<<1));
+		ctx->d = UINT(ctx->Zd);
+		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
+		OK(ENC_SQSHRUN_Z_MZ2_);
 	}
 	return rc;
 }
@@ -59273,7 +59727,7 @@ int sqshrunb_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -59297,7 +59751,7 @@ int sqshrunt_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -59520,7 +59974,7 @@ int sri_z_zzi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -59650,7 +60104,7 @@ int srshr_z_p_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->g = UINT(ctx->Pg);
 		ctx->dn = UINT(ctx->Zdn);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -59674,7 +60128,7 @@ int srsra_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->da = UINT(ctx->Zda);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -59698,7 +60152,7 @@ int sshllb_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = UINT(((ctx->tsize<<3)|ctx->imm3))-ctx->esize;
@@ -59722,7 +60176,7 @@ int sshllt_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = UINT(((ctx->tsize<<3)|ctx->imm3))-ctx->esize;
@@ -59746,7 +60200,7 @@ int ssra_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->da = UINT(ctx->Zda);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -63399,6 +63853,26 @@ int subhnt_z_zz(context *ctx, Instruction *instr)
 	return rc;
 }
 
+/* subp_z_p_zz.xml */
+int subp_z_p_zz(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_sve2 */
+	/* 010|0010|0|size=xx|0|10|opc=00|U=0|10|1|Pg=xxx|Zm=xxxxx|Zdn=xxxxx */
+	if((INSWORD & 0xFF3FE000)==0x4410A000) {
+		decode_fields32(ENC_SUBP_Z_P_ZZ_, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = (8) << (UINT(ctx->size));
+		ctx->g = UINT(ctx->Pg);
+		ctx->m = UINT(ctx->Zm);
+		ctx->dn = UINT(ctx->Zdn);
+		OK(ENC_SUBP_Z_P_ZZ_);
+	}
+	return rc;
+}
+
 /* subpt_z_p_zz.xml */
 int subpt_z_p_zz(context *ctx, Instruction *instr)
 {
@@ -64593,6 +65067,29 @@ int uaba_z_zzz(context *ctx, Instruction *instr)
 	return rc;
 }
 
+/* uabal_z_zzz.xml */
+int uabal_z_zzz(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_sve2 */
+	/* 010|0010|0|size=xx|0|Zm=xxxxx|1101|U=1|1|Zn=xxxxx|Zda=xxxxx */
+	if((INSWORD & 0xFF20FC00)==0x4400DC00) {
+		decode_fields32(ENC_UABAL_Z_ZZ_, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		if(ctx->size==0) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = (8) << (UINT(ctx->size));
+		ctx->n = UINT(ctx->Zn);
+		ctx->m = UINT(ctx->Zm);
+		ctx->da = UINT(ctx->Zda);
+		OK(ENC_UABAL_Z_ZZ_);
+	}
+	return rc;
+}
+
 /* uabalb_z_zzz.xml */
 int uabalb_z_zzz(context *ctx, Instruction *instr)
 {
@@ -65195,6 +65692,54 @@ int ucvtf_z_p_z(context *ctx, Instruction *instr)
 	return rc;
 }
 
+/* ucvtf_z_z.xml */
+int ucvtf_z_z(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_sve2 */
+	/* 011|0010|1|size=xx|001|100|0011|0|U=1|Zn=xxxxx|Zd=xxxxx */
+	if((INSWORD & 0xFF3FFC00)==0x650C3400) {
+		decode_fields32(ENC_UCVTF_Z_Z_, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		if(ctx->size==0) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = (8) << (UINT(ctx->size));
+		ctx->n = UINT(ctx->Zn);
+		ctx->d = UINT(ctx->Zd);
+		ctx->unsigned_ = TRUE;
+		ctx->rounding = FPRoundingMode(ctx->FPCR);
+		OK(ENC_UCVTF_Z_Z_);
+	}
+	return rc;
+}
+
+/* ucvtflt_z_z.xml */
+int ucvtflt_z_z(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_sve2 */
+	/* 011|0010|1|size=xx|001|100|0011|1|U=1|Zn=xxxxx|Zd=xxxxx */
+	if((INSWORD & 0xFF3FFC00)==0x650C3C00) {
+		decode_fields32(ENC_UCVTFLT_Z_Z_, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		if(ctx->size==0) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = (8) << (UINT(ctx->size));
+		ctx->n = UINT(ctx->Zn);
+		ctx->d = UINT(ctx->Zd);
+		ctx->unsigned_ = TRUE;
+		ctx->rounding = FPRoundingMode(ctx->FPCR);
+		OK(ENC_UCVTFLT_Z_Z_);
+	}
+	return rc;
+}
+
 /* udiv_z_p_zz.xml */
 int udiv_z_p_zz(context *ctx, Instruction *instr)
 {
@@ -65245,6 +65790,19 @@ int udivr_z_p_zz(context *ctx, Instruction *instr)
 int udot_z32_zzz(context *ctx, Instruction *instr)
 {
 	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_8_bit_to_16_bit */
+	/* 010|0010|0|size=01|0|Zm=xxxxx|0|0000|U=1|Zn=xxxxx|Zda=xxxxx */
+	if((INSWORD & 0xFFE0FC00)==0x44400400) {
+		decode_fields32(ENC_UDOT_Z16_ZZZ_H, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = 0x10;
+		ctx->n = UINT(ctx->Zn);
+		ctx->m = UINT(ctx->Zm);
+		ctx->da = UINT(ctx->Zda);
+		OK(ENC_UDOT_Z16_ZZZ_H);
+	}
 	/* class iclass_16_bit_to_32_bit */
 	/* 010|0010|0000|Zm=xxxxx|11001|U=1|Zn=xxxxx|Zda=xxxxx */
 	if((INSWORD & 0xFFE0FC00)==0x4400CC00) {
@@ -65265,6 +65823,20 @@ int udot_z32_zzz(context *ctx, Instruction *instr)
 int udot_z32_zzzi(context *ctx, Instruction *instr)
 {
 	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_8_bit_to_16_bit */
+	/* 010|0010|0|0|i3h=x|1|i3l=xx|Zm=xxx|00000|U=1|Zn=xxxxx|Zda=xxxxx */
+	if((INSWORD & 0xFFA0FC00)==0x44200400) {
+		decode_fields32(ENC_UDOT_Z16_ZZZI_H, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = 0x10;
+		ctx->index = UINT(((ctx->i3h<<2)|ctx->i3l));
+		ctx->n = UINT(ctx->Zn);
+		ctx->m = UINT(ctx->Zm);
+		ctx->da = UINT(ctx->Zda);
+		OK(ENC_UDOT_Z16_ZZZI_H);
+	}
 	/* class iclass_16_bit_to_32_bit */
 	/* 010|0010|0100|i2=xx|Zm=xxx|11001|U=1|Zn=xxxxx|Zda=xxxxx */
 	if((INSWORD & 0xFFE0FC00)==0x4480CC00) {
@@ -65291,9 +65863,6 @@ int udot_z_zzz(context *ctx, Instruction *instr)
 	if((INSWORD & 0xFFA0FC00)==0x44800400) {
 		decode_fields32(ENC_UDOT_Z_ZZZ_, ctx, instr);
 		if(!HaveSVE() && !HaveSME()) {
-			EndOfDecode(Decode_UNDEF);
-		}
-		if((!(ctx->size&2))) {
 			EndOfDecode(Decode_UNDEF);
 		}
 		ctx->esize = (8) << (UINT(ctx->size));
@@ -65774,7 +66343,7 @@ int umax_z_zi(context *ctx, Instruction *instr)
 		ctx->esize = (8) << (UINT(ctx->size));
 		ctx->dn = UINT(ctx->Zdn);
 		ctx->unsigned_ = TRUE;
-		ctx->imm = UINT(ctx->imm8);
+		ctx->imm = (ctx->unsigned_)!=0 ? UINT(ctx->imm8) : SInt(ctx->imm8,8);
 		OK(ENC_UMAX_Z_ZI_);
 	}
 	return rc;
@@ -65946,7 +66515,7 @@ int umin_z_zi(context *ctx, Instruction *instr)
 		ctx->esize = (8) << (UINT(ctx->size));
 		ctx->dn = UINT(ctx->Zdn);
 		ctx->unsigned_ = TRUE;
-		ctx->imm = UINT(ctx->imm8);
+		ctx->imm = (ctx->unsigned_)!=0 ? UINT(ctx->imm8) : SInt(ctx->imm8,8);
 		OK(ENC_UMIN_Z_ZI_);
 	}
 	return rc;
@@ -68481,7 +69050,7 @@ int uqrshr_z_mz4(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT((ctx->Zn<<2));
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((8) * (ctx->esize))-UINT(((ctx->tsize<<5)|ctx->imm5));
@@ -68494,6 +69063,19 @@ int uqrshr_z_mz4(context *ctx, Instruction *instr)
 int uqrshrn_z_mz2(context *ctx, Instruction *instr)
 {
 	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_8_bit */
+	/* 010|0010|1|1|op0=0|1|01|imm3=xxx|0|0|op1=1|U=1|R=1|0|Zn=xxxx|0|Zd=xxxxx */
+	if((INSWORD & 0xFFF8FC20)==0x45A83800) {
+		decode_fields32(ENC_UQRSHRN_Z_MZ2_B, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = 8;
+		ctx->n = UINT((ctx->Zn<<1));
+		ctx->d = UINT(ctx->Zd);
+		ctx->shift = ctx->esize-UINT(ctx->imm3);
+		OK(ENC_UQRSHRN_Z_MZ2_B);
+	}
 	/* class iclass_16_bit */
 	/* 010|0010|1|1|op0=0|1|1|imm4=xxxx|0|0|op1=1|U=1|R=1|0|Zn=xxxx|0|Zd=xxxxx */
 	if((INSWORD & 0xFFF0FC20)==0x45B03800) {
@@ -68524,7 +69106,7 @@ int uqrshrn_z_mz4(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT((ctx->Zn<<2));
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((8) * (ctx->esize))-UINT(((ctx->tsize<<5)|ctx->imm5));
@@ -68548,7 +69130,7 @@ int uqrshrnb_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -68572,7 +69154,7 @@ int uqrshrnt_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -68596,7 +69178,7 @@ int uqshl_z_p_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->g = UINT(ctx->Pg);
 		ctx->dn = UINT(ctx->Zdn);
 		ctx->shift = UINT(((ctx->tsize<<3)|ctx->imm3))-ctx->esize;
@@ -68645,6 +69227,29 @@ int uqshlr_z_p_zz(context *ctx, Instruction *instr)
 	return rc;
 }
 
+/* uqshrn_z_mz2.xml */
+int uqshrn_z_mz2(context *ctx, Instruction *instr)
+{
+	int rc = DECODE_STATUS_UNMATCHED;
+	/* class iclass_sve2 */
+	/* 010|0010|1|1|op0=0|1|tsize=xx|imm3=xxx|0|0|op1=0|U=1|R=0|0|Zn=xxxx|0|Zd=xxxxx */
+	if((INSWORD & 0xFFE0FC20)==0x45A01000) {
+		decode_fields32(ENC_UQSHRN_Z_MZ2_, ctx, instr);
+		if(!HaveSVE2p3() && !HaveSME2p3()) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		if(ctx->tsize==0) {
+			EndOfDecode(Decode_UNDEF);
+		}
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
+		ctx->n = UINT((ctx->Zn<<1));
+		ctx->d = UINT(ctx->Zd);
+		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
+		OK(ENC_UQSHRN_Z_MZ2_);
+	}
+	return rc;
+}
+
 /* uqshrnb_z_zi.xml */
 int uqshrnb_z_zi(context *ctx, Instruction *instr)
 {
@@ -68660,7 +69265,7 @@ int uqshrnb_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -68684,7 +69289,7 @@ int uqshrnt_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -69008,7 +69613,7 @@ int urshr_z_p_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->g = UINT(ctx->Pg);
 		ctx->dn = UINT(ctx->Zdn);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -69073,7 +69678,7 @@ int ursra_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->da = UINT(ctx->Zda);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -69245,7 +69850,7 @@ int ushllb_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = UINT(((ctx->tsize<<3)|ctx->imm3))-ctx->esize;
@@ -69269,7 +69874,7 @@ int ushllt_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->d = UINT(ctx->Zd);
 		ctx->shift = UINT(((ctx->tsize<<3)|ctx->imm3))-ctx->esize;
@@ -69862,7 +70467,7 @@ int usra_z_zi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->n = UINT(ctx->Zn);
 		ctx->da = UINT(ctx->Zda);
 		ctx->shift = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));
@@ -71182,7 +71787,7 @@ int xar_z_zzi(context *ctx, Instruction *instr)
 		if(ctx->tsize==0) {
 			EndOfDecode(Decode_UNDEF);
 		}
-		ctx->esize = (8) << (HighestSetBit(ctx->tsize));
+		ctx->esize = (8) << (HighestSetBitNZ(ctx->tsize));
 		ctx->m = UINT(ctx->Zm);
 		ctx->dn = UINT(ctx->Zdn);
 		ctx->rot = ((2) * (ctx->esize))-UINT(((ctx->tsize<<3)|ctx->imm3));

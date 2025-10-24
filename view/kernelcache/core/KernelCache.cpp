@@ -77,7 +77,7 @@ bool KernelCache::ProcessEntryImage(Ref<BinaryView> bv, const std::string& path,
 		// Associate this region with this image, this makes it easier to identify what image owns this region.
 		sectionRegion.imageStart = image.headerFileAddress;
 
-		uint32_t flags = SegmentFlagsFromMachOProtections(segment.initprot, segment.maxprot);
+		uint32_t flags = SegmentFlagsForSegment(segment);
 		// if we're positive we have an entry point for some reason, force the segment
 		// executable. this helps with kernel images.
 		for (const auto& entryPoint : imageHeader->m_entryPoints)

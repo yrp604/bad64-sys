@@ -1966,9 +1966,9 @@ pub struct BasicBlockAnalysisContext {
     pub translate_tail_calls: bool,
     pub disallow_branch_to_string: bool,
     pub max_function_size: u64,
-    pub max_size_reached: bool,
 
     // In/Out
+    pub max_size_reached: bool,
     contextual_returns: HashMap<ArchAndAddr, bool>,
 
     // Out
@@ -2177,6 +2177,10 @@ impl BasicBlockAnalysisContext {
                     total,
                 );
             }
+        }
+
+        unsafe {
+            (*self.handle).maxSizeReached = self.max_size_reached;
         }
 
         if self.contextual_returns_dirty {

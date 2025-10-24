@@ -60,16 +60,25 @@ namespace BinaryNinja
 	struct SSAVariable
 	{
 		Variable var;
-		size_t version;
+		size_t version = 0;
 
-		SSAVariable();
-		SSAVariable(const Variable& v, size_t i);
-		SSAVariable(const SSAVariable& v);
+		// TODO: `= default` these when we can rely on C++20
+		bool operator==(const SSAVariable& other) const
+		{
+			return var == other.var && version == other.version;
+		}
 
-		SSAVariable& operator=(const SSAVariable& v);
-		bool operator==(const SSAVariable& v) const;
-		bool operator!=(const SSAVariable& v) const;
-		bool operator<(const SSAVariable& v) const;
+		bool operator!=(const SSAVariable& other) const
+		{
+			return !(*this == other);
+		}
+
+		bool operator<(const SSAVariable& other) const
+		{
+			if (var != other.var)
+				return var < other.var;
+			return version < other.version;
+		}
 	};
 
 	/*!

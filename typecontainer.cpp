@@ -336,6 +336,12 @@ std::optional<std::unordered_map<std::string, QualifiedName>> TypeContainer::Get
 }
 
 
+size_t TypeContainer::GetTypeCount() const
+{
+	return BNTypeContainerGetTypeCount(m_object);
+}
+
+
 bool TypeContainer::ParseTypeString(
 	const std::string& source,
 	bool importDependencies,

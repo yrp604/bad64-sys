@@ -1,3 +1,11 @@
+#include "machoview.h"
+
+#include "chained_fixups.h"
+#include "fatmachoview.h"
+#include "lowlevelilinstruction.h"
+#include "rapidjsonwrapper.h"
+#include "universalview.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <sstream>
@@ -8,11 +16,6 @@
 #ifndef _MSC_VER
 #include <cxxabi.h>
 #endif
-#include "machoview.h"
-#include "fatmachoview.h"
-#include "universalview.h"
-#include "lowlevelilinstruction.h"
-#include "rapidjsonwrapper.h"
 
 using namespace BinaryNinja;
 using namespace std;
@@ -2151,7 +2154,7 @@ bool MachoView::InitializeHeader(MachOHeader& header, bool isMainHeader, uint64_
 		default:
 			if (ordinal > 0)
 			{
-				if (auto symbol = GetSymbolByRawName(name, GetExternalNameSpace()); symbol)
+				if (auto symbol = GetSymbolByRawName(name, GetExternalNameSpace()))
 				{
 					DefineRelocation(m_arch, relocation, symbol, relocation.address);
 					handled = true;
@@ -3270,427 +3273,44 @@ void MachoView::ParseChainedFixups(
 	if (!chainedFixups.dataoff)
 		return;
 
-	m_logger->LogDebug("Processing Chained Fixups");
-
-	// Dummy relocation
-	BNRelocationInfo reloc;
-	memset(&reloc, 0, sizeof(BNRelocationInfo));
-	reloc.type = StandardRelocationType;
-	reloc.size = m_addressSize;
-	reloc.nativeType = BINARYNINJA_MANUAL_RELOCATION;
-
-	bool processBinds = true;
-
-	BinaryReader parentReader(GetParentView());
-	BinaryReader mappedReader(this);
-
 	try {
-		dyld_chained_fixups_header fixupsHeader {};
-		uint64_t fixupHeaderAddress = m_universalImageOffset + chainedFixups.dataoff;
-		parentReader.Seek(fixupHeaderAddress);
-		fixupsHeader.fixups_version = parentReader.Read32();
-		fixupsHeader.starts_offset = parentReader.Read32();
-		fixupsHeader.imports_offset = parentReader.Read32();
-		fixupsHeader.symbols_offset = parentReader.Read32();
-		fixupsHeader.imports_count = parentReader.Read32();
-		fixupsHeader.imports_format = parentReader.Read32();
-		fixupsHeader.symbols_format = parentReader.Read32();
-
-		m_logger->LogDebugF(
-			"Chained Fixups: Header @ {:#x} // Fixups version {}", fixupHeaderAddress, fixupsHeader.fixups_version);
-
-		size_t importsAddress = fixupHeaderAddress + fixupsHeader.imports_offset;
-		size_t importTableSize = sizeof(dyld_chained_import) * fixupsHeader.imports_count;
-
-		if (fixupsHeader.fixups_version > 0)
+		std::unordered_map<uint64_t, uint64_t> segmentVMAddrToFileOffset;
+		segmentVMAddrToFileOffset.reserve(m_allSegments.size());
+		for (const auto& segment : m_allSegments)
 		{
-			m_logger->LogError("Chained Fixup parsing failed. Unknown Fixups Version");
-			return;
+			// Note that while `fileoff` within the binary is relative to the start of the Mach-O slice,
+			// `MachoView::HeaderForAddress` updates it to be relative to the start of the file.
+			segmentVMAddrToFileOffset[segment.vmaddr] = segment.fileoff;
 		}
 
-		if (importTableSize > chainedFixups.datasize)
-		{
-			m_logger->LogError("Chained Fixup parsing failed. Binary is malformed");
-			return;
-		}
+		ChainedFixupProcessor processor(GetParentView(), m_logger, m_universalImageOffset, GetOriginalImageBase(), chainedFixups, std::move(segmentVMAddrToFileOffset));
+		auto importsTable = processor.ProcessImports();
+		processor.ProcessFixups([=, this, &header](uint64_t offset, const FixupInfo& fixup) {
+			BNRelocationInfo reloc{};
+			reloc.size = m_addressSize;
+			reloc.nativeType = BINARYNINJA_MANUAL_RELOCATION;
+			reloc.address = GetStart() + offset;
 
-		size_t symbolsAddress = fixupHeaderAddress + fixupsHeader.symbols_offset;
+			if (fixup.type == FixupType::Rebase) {
+				reloc.type = StandardRelocationType;
+				DefineRelocation(m_arch, reloc, GetStart() + fixup.rebase.target, reloc.address);
 
-		// Pre-load the import table. We may re-access the same ordinal multiple times, this will be faster.
-		std::vector<import_entry> importTable;
-		parentReader.Seek(importsAddress);
-
-		auto processChainedImport =
-			[symbolsAddress, &importTable](
-				uint64_t ordinal, uint64_t addend, uint32_t nameOffset, bool weak, auto& reader) {
-				import_entry entry;
-				entry.lib_ordinal = ordinal;
-				entry.addend = addend;
-				entry.weak = weak;
-
-				auto nextEntryAddress = reader.GetOffset();
-				size_t symNameAddr = symbolsAddress + nameOffset;
-
-				reader.Seek(symNameAddr);
-				try
-				{
-					string symbolName = reader.ReadCString();
-					entry.name = symbolName;
-				}
-				catch (ReadException& ex)
-				{
-					entry.name = "";
+				if (objcProcessor)
+					objcProcessor->AddRelocatedPointer(reloc.address, GetStart() + fixup.rebase.target);
+			} else {
+				if (fixup.bind.ordinal >= importsTable.size()) {
+					m_logger->LogWarnF("Chained Fixups: Import ordinal {} out of bounds (max {})", fixup.bind.ordinal, importsTable.size());
+					return;
 				}
 
-				importTable.push_back(entry);
-				reader.Seek(nextEntryAddress);
-			};
-
-		switch (fixupsHeader.imports_format)
-		{
-			case DYLD_CHAINED_IMPORT:
-			{
-				for (size_t i = 0; i < fixupsHeader.imports_count; i++)
-				{
-					uint32_t importEntry = parentReader.Read32();
-					dyld_chained_import import = *(reinterpret_cast<dyld_chained_import*>(&importEntry));
-					processChainedImport(static_cast<int8_t>(import.lib_ordinal), 0, import.name_offset, import.weak_import, parentReader);
-				}
-				break;
+				const auto& import = importsTable[fixup.bind.ordinal];
+				reloc.type = ELFGlobalRelocationType;
+				reloc.addend = import.addend + fixup.bind.addend;
+				header.bindingRelocations.emplace_back(reloc, std::string(import.name), import.libraryOrdinal);
 			}
-			case DYLD_CHAINED_IMPORT_ADDEND:
-			{
-				for (size_t i = 0; i < fixupsHeader.imports_count; i++)
-				{
-					dyld_chained_import_addend import;
-					parentReader.Read(&import, sizeof(import));
-					processChainedImport(static_cast<int8_t>(import.lib_ordinal), import.addend, import.name_offset, import.weak_import, parentReader);
-				}
-				break;
-			}
-			case DYLD_CHAINED_IMPORT_ADDEND64:
-			{
-				for (size_t i = 0; i < fixupsHeader.imports_count; i++)
-				{
-					dyld_chained_import_addend64 import;
-					parentReader.Read(&import, sizeof(import));
-					processChainedImport(static_cast<int16_t>(import.lib_ordinal), import.addend, import.name_offset, import.weak_import, parentReader);
-				}
-				break;
-			}
-			default:
-			{
-				m_logger->LogWarnF("Chained Fixups: Unknown import binding format {}", fixupsHeader.imports_format);
-				processBinds = false; // We can still handle rebases.
-				break;
-			}
-		}
-
-		m_logger->LogDebugF("Chained Fixups: {:#x} import table entries", importTable.size());
-
-		uint64_t fixupStartsAddress = fixupHeaderAddress + fixupsHeader.starts_offset;
-		parentReader.Seek(fixupStartsAddress);
-		dyld_chained_starts_in_image segs {};
-		segs.seg_count = parentReader.Read32();
-		vector<uint32_t> segInfoOffsets {};
-		for (size_t i = 0; i < segs.seg_count; i++)
-		{
-			segInfoOffsets.push_back(parentReader.Read32());
-		}
-		for (auto offset : segInfoOffsets)
-		{
-			if (!offset)
-				continue;
-
-			dyld_chained_starts_in_segment starts {};
-			uint64_t startsAddr = fixupStartsAddress + offset;
-			parentReader.Seek(startsAddr);
-			starts.size = parentReader.Read32();
-			starts.page_size = parentReader.Read16();
-			starts.pointer_format = parentReader.Read16();
-			starts.segment_offset = parentReader.Read64();
-			starts.max_valid_pointer = parentReader.Read32();
-			starts.page_count = parentReader.Read16();
-
-			uint8_t strideSize;
-			ChainedFixupPointerGeneric format;
-
-			// Firmware formats will require digging up whatever place they're being used and reversing it.
-			// They are not handled by dyld.
-			switch (starts.pointer_format) {
-			case DYLD_CHAINED_PTR_ARM64E:
-			case DYLD_CHAINED_PTR_ARM64E_USERLAND:
-			case DYLD_CHAINED_PTR_ARM64E_USERLAND24:
-				strideSize = 8;
-				format = GenericArm64eFixupFormat;
-				break;
-			case DYLD_CHAINED_PTR_ARM64E_KERNEL:
-				strideSize = 4;
-				format = GenericArm64eFixupFormat;
-				break;
-			// case DYLD_CHAINED_PTR_ARM64E_FIRMWARE: Unsupported.
-			case DYLD_CHAINED_PTR_64:
-			case DYLD_CHAINED_PTR_64_OFFSET:
-				strideSize = 4;
-				format = Generic64FixupFormat;
-				break;
-			case DYLD_CHAINED_PTR_32:
-			case DYLD_CHAINED_PTR_32_CACHE:
-				strideSize = 4;
-				format = Generic32FixupFormat;
-				break;
-			case DYLD_CHAINED_PTR_32_FIRMWARE:
-				strideSize = 4;
-				format = Firmware32FixupFormat;
-				break;
-			case DYLD_CHAINED_PTR_64_KERNEL_CACHE:
-				strideSize = 4;
-				format = Kernel64Format;
-				break;
-			case DYLD_CHAINED_PTR_X86_64_KERNEL_CACHE:
-				strideSize = 1;
-				format = Kernel64Format;
-				break;
-			default:
-			{
-				m_logger->LogErrorF("Chained Fixups: Unknown or unsupported pointer format {}, "
-					"unable to process chains for segment at @ {:#x}", starts.pointer_format, starts.segment_offset);
-				continue;
-			}
-			}
-
-			uint16_t fmt = starts.pointer_format;
-			m_logger->LogDebugF("Chained Fixups: Segment start @ {:#x}, fmt {}", starts.segment_offset, fmt);
-
-			uint64_t pageStartsTableStartAddress = parentReader.GetOffset();
-			vector<vector<uint16_t>> pageStartOffsets {};
-			for (size_t i = 0; i < starts.page_count; i++)
-			{
-				// On armv7, Chained pointers here can have multiple starts.
-				// And if so, there's another table *overlapping* the table we're currently reading.
-				// dyld handles this through 'overflow indexing'
-				// This is technically supported on other archs however is not (currently) used.
-				parentReader.Seek(pageStartsTableStartAddress + (sizeof(uint16_t) * i));
-				uint16_t start = parentReader.Read16();
-				if ((start & DYLD_CHAINED_PTR_START_MULTI) && (start != DYLD_CHAINED_PTR_START_NONE))
-				{
-					uint64_t overflowIndex = start & ~DYLD_CHAINED_PTR_START_MULTI;
-					vector<uint16_t> pageStartSubStarts;
-					parentReader.Seek(pageStartsTableStartAddress + (overflowIndex * sizeof(uint16_t)));
-					bool done = false;
-					while (!done)
-					{
-						uint16_t subPageStart = parentReader.Read16();
-						if ((subPageStart & DYLD_CHAINED_PTR_START_LAST) == 0)
-						{
-							pageStartSubStarts.push_back(subPageStart);
-						}
-						else
-						{
-							pageStartSubStarts.push_back(subPageStart & ~DYLD_CHAINED_PTR_START_LAST);
-							done = true;
-						}
-					}
-					pageStartOffsets.push_back(pageStartSubStarts);
-				}
-				else
-				{
-					pageStartOffsets.push_back({start});
-				}
-			}
-
-			int i = -1;
-			for (auto pageStarts : pageStartOffsets)
-			{
-				i++;
-				uint64_t pageAddress = m_universalImageOffset + starts.segment_offset + (i * starts.page_size);
-				for (uint16_t start : pageStarts)
-				{
-					if (start == DYLD_CHAINED_PTR_START_NONE)
-						continue;
-
-					uint64_t chainEntryAddress = pageAddress + start;
-
-					bool fixupsDone = false;
-
-					while (!fixupsDone)
-					{
-						ChainedFixupPointer pointer;
-						parentReader.Seek(chainEntryAddress);
-						mappedReader.Seek(chainEntryAddress - m_universalImageOffset + GetStart());
-						if (format == Generic32FixupFormat || format == Firmware32FixupFormat)
-							pointer.raw32 = (uint32_t)(uintptr_t)mappedReader.Read32();
-						else
-							pointer.raw64 = (uintptr_t)mappedReader.Read64();
-
-						bool bind = false;
-						uint64_t nextEntryStrideCount;
-
-						switch (format)
-						{
-						case Generic32FixupFormat:
-							bind = pointer.generic32.bind.bind;
-							nextEntryStrideCount = pointer.generic32.rebase.next;
-							break;
-						case Generic64FixupFormat:
-							bind = pointer.generic64.bind.bind;
-							nextEntryStrideCount = pointer.generic64.rebase.next;
-							break;
-						case GenericArm64eFixupFormat:
-							bind = pointer.arm64e.bind.bind;
-							nextEntryStrideCount = pointer.arm64e.rebase.next;
-							break;
-						case Firmware32FixupFormat:
-							nextEntryStrideCount = pointer.firmware32.next;
-							bind = false;
-							break;
-						case Kernel64Format:
-							nextEntryStrideCount = pointer.kernel64.next;
-							bind = false;
-							break;
-						}
-
-						m_logger->LogTraceF("Chained Fixups: @ {:#x} ( {:#x} ) - {} {:#x}", chainEntryAddress,
-							GetStart() + (chainEntryAddress - m_universalImageOffset),
-							bind, nextEntryStrideCount);
-
-						if (bind && processBinds)
-						{
-							uint64_t ordinal;
-
-							switch (starts.pointer_format)
-							{
-							case DYLD_CHAINED_PTR_64:
-							case DYLD_CHAINED_PTR_64_OFFSET:
-								ordinal = pointer.generic64.bind.ordinal;
-								break;
-							// case DYLD_CHAINED_PTR_ARM64E_OFFSET: ; old _KERNEL name.
-							case DYLD_CHAINED_PTR_ARM64E:
-							case DYLD_CHAINED_PTR_ARM64E_USERLAND24:
-							case DYLD_CHAINED_PTR_ARM64E_KERNEL:
-								if (pointer.arm64e.bind.auth)
-									ordinal = starts.pointer_format == DYLD_CHAINED_PTR_ARM64E_USERLAND24
-										? pointer.arm64e.authBind24.ordinal : pointer.arm64e.authBind.ordinal;
-								else
-									ordinal = starts.pointer_format == DYLD_CHAINED_PTR_ARM64E_USERLAND24
-										? pointer.arm64e.bind24.ordinal : pointer.arm64e.bind.ordinal;
-								break;
-							case DYLD_CHAINED_PTR_32:
-								ordinal = pointer.generic32.bind.ordinal;
-								break;
-							case DYLD_CHAINED_PTR_64_KERNEL_CACHE: // no binding
-							case DYLD_CHAINED_PTR_X86_64_KERNEL_CACHE: // ''
-							default:
-								m_logger->LogWarnF("Chained Fixups: Unknown Bind Pointer Format at {:#x}",
-									GetStart() + (chainEntryAddress - m_universalImageOffset));
-
-								chainEntryAddress += (nextEntryStrideCount * strideSize);
-								if (chainEntryAddress > pageAddress + starts.page_size)
-								{
-									m_logger->LogErrorF("Chained Fixups: Pointer at {:#x} left page",
-										GetStart() + ((chainEntryAddress - (nextEntryStrideCount * strideSize))) - m_universalImageOffset);
-									fixupsDone = true;
-								}
-								if (nextEntryStrideCount == 0)
-									fixupsDone = true;
-
-								continue;
-							}
-
-							if (ordinal < importTable.size())
-							{
-								import_entry entry = importTable.at(ordinal);
-								uint64_t targetAddress = GetStart() + (chainEntryAddress - m_universalImageOffset);
-
-								if (!entry.name.empty())
-								{
-									reloc.address = targetAddress;
-
-									BNRelocationInfo externReloc;
-									memset(&externReloc, 0, sizeof(externReloc));
-									externReloc.nativeType = BINARYNINJA_MANUAL_RELOCATION;
-									externReloc.address = targetAddress;
-									externReloc.size = m_addressSize;
-									externReloc.pcRelative = false;
-									externReloc.addend = entry.addend;
-									header.bindingRelocations.emplace_back(externReloc, entry.name, entry.lib_ordinal);
-								}
-								else
-								{
-									m_logger->LogWarnF("Chained Fixups: Import Table entry {:#x} has no symbol; "
-										"Unable to bind item at {:#x}", ordinal, targetAddress);
-								}
-							}
-						}
-						else if (!bind)
-						{
-							uint64_t entryOffset;
-							switch (starts.pointer_format)
-							{
-							case DYLD_CHAINED_PTR_ARM64E:
-							case DYLD_CHAINED_PTR_ARM64E_KERNEL:
-							case DYLD_CHAINED_PTR_ARM64E_USERLAND:
-							case DYLD_CHAINED_PTR_ARM64E_USERLAND24:
-							{
-								if (pointer.arm64e.bind.auth)
-									entryOffset = pointer.arm64e.authRebase.target;
-								else
-									entryOffset = pointer.arm64e.rebase.target;
-
-								if ( starts.pointer_format != DYLD_CHAINED_PTR_ARM64E || pointer.arm64e.bind.auth)
-									entryOffset += GetStart();
-
-								break;
-							}
-							case DYLD_CHAINED_PTR_64:
-								entryOffset = pointer.generic64.rebase.target;
-								break;
-							case DYLD_CHAINED_PTR_64_OFFSET:
-								entryOffset = pointer.generic64.rebase.target + GetStart();
-								break;
-							case DYLD_CHAINED_PTR_64_KERNEL_CACHE:
-							case DYLD_CHAINED_PTR_X86_64_KERNEL_CACHE:
-								entryOffset = pointer.kernel64.target;
-								break;
-							case DYLD_CHAINED_PTR_32:
-							case DYLD_CHAINED_PTR_32_CACHE:
-								entryOffset = pointer.generic32.rebase.target;
-								break;
-							case DYLD_CHAINED_PTR_32_FIRMWARE:
-								entryOffset = pointer.firmware32.target;
-								break;
-							}
-
-							reloc.address = GetStart() + (chainEntryAddress - m_universalImageOffset);
-							DefineRelocation(m_arch, reloc, entryOffset, reloc.address);
-
-							if (objcProcessor)
-							{
-								objcProcessor->AddRelocatedPointer(reloc.address, entryOffset);
-							}
-						}
-
-						chainEntryAddress += (nextEntryStrideCount * strideSize);
-
-						if (chainEntryAddress > pageAddress + starts.page_size)
-						{
-							// Something is seriously wrong here. likely malformed binary, or our parsing failed elsewhere.
-							// This will log the pointer in mapped memory.
-							m_logger->LogErrorF("Chained Fixups: Pointer at {:#x} left page",
-								GetStart() + ((chainEntryAddress - (nextEntryStrideCount * strideSize))) - m_universalImageOffset);
-							fixupsDone = true;
-						}
-
-						if (nextEntryStrideCount == 0)
-							fixupsDone = true;
-					}
-				}
-			}
-		}
-	}
-	catch (ReadException&)
-	{
-		m_logger->LogError("Chained Fixup parsing failed");
+		});
+	} catch (std::exception& e) {
+		m_logger->LogErrorForExceptionF(e, "Failed to parse chained fixups: {}", e.what());
 	}
 }
 
@@ -3699,6 +3319,9 @@ void MachoView::ParseChainedStarts(MachOHeader& header, section_64 chainedStarts
 {
 	if (!chainedStarts.offset)
 		return;
+
+	// TODO: Share code with ChainedFixupProcessor.
+	// TODO: Distinguish between `-fixup_chains_section` and `-fixup_chains_section_vm`.
 
 	m_logger->LogDebug("Processing Chained Starts");
 

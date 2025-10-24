@@ -3640,10 +3640,10 @@ namespace BinaryNinja {
 		std::string GetId() const;
 		std::string GetName() const;
 		std::string GetDescription() const;
-		void SetName(const std::string& name);
-		void SetDescription(const std::string& description);
+		bool SetName(const std::string& name);
+		bool SetDescription(const std::string& description);
 		Ref<ProjectFolder> GetParent() const;
-		void SetParent(Ref<ProjectFolder> parent);
+		bool SetParent(Ref<ProjectFolder> parent);
 		bool Export(const std::string& destination, const ProgressFunction& progressCallback = {}) const;
 	};
 
@@ -3662,11 +3662,11 @@ namespace BinaryNinja {
 		bool ExistsOnDisk() const;
 		std::string GetName() const;
 		std::string GetDescription() const;
-		void SetName(const std::string& name);
-		void SetDescription(const std::string& description);
+		bool SetName(const std::string& name);
+		bool SetDescription(const std::string& description);
 		std::string GetId() const;
 		Ref<ProjectFolder> GetFolder() const;
-		void SetFolder(Ref<ProjectFolder> folder);
+		bool SetFolder(Ref<ProjectFolder> folder);
 		bool Export(const std::string& destination) const;
 		int64_t GetCreationTimestamp() const;
 	};
@@ -3696,13 +3696,13 @@ namespace BinaryNinja {
 		std::string GetPath() const;
 		std::string GetFilePathInProject(const Ref<ProjectFile>& file) const;
 		std::string GetName() const;
-		void SetName(const std::string& name);
+		bool SetName(const std::string& name);
 		std::string GetDescription() const;
-		void SetDescription(const std::string& description);
+		bool SetDescription(const std::string& description);
 
 		Ref<Metadata> QueryMetadata(const std::string& key);
 		bool StoreMetadata(const std::string& key, Ref<Metadata> value);
-		void RemoveMetadata(const std::string& key);
+		bool RemoveMetadata(const std::string& key);
 
 		Ref<ProjectFolder> CreateFolderFromPath(const std::string& path, Ref<ProjectFolder> parent, const std::string& description,
 			const ProgressFunction& progressCallback = {});
@@ -3710,7 +3710,7 @@ namespace BinaryNinja {
 		Ref<ProjectFolder> CreateFolderUnsafe(Ref<ProjectFolder> parent, const std::string& name, const std::string& description, const std::string& id);
 		std::vector<Ref<ProjectFolder>> GetFolders() const;
 		Ref<ProjectFolder> GetFolderById(const std::string& id) const;
-		void PushFolder(Ref<ProjectFolder> folder);
+		bool PushFolder(Ref<ProjectFolder> folder);
 		bool DeleteFolder(Ref<ProjectFolder> folder, const ProgressFunction& progressCallback = {});
 
 		Ref<ProjectFile> CreateFileFromPath(const std::string& path, Ref<ProjectFolder> folder, const std::string& name, const std::string& description, const ProgressFunction& progressCallback = {});
@@ -3721,14 +3721,14 @@ namespace BinaryNinja {
 		Ref<ProjectFile> GetFileById(const std::string& id) const;
 		Ref<ProjectFile> GetFileByPathOnDisk(const std::string& path) const;
 		std::vector<Ref<ProjectFile>> GetFilesByPathInProject(const std::string& path) const;
-		void PushFile(Ref<ProjectFile> file);
+		bool PushFile(Ref<ProjectFile> file);
 		bool DeleteFile_(Ref<ProjectFile> file);
 
 		void RegisterNotification(ProjectNotification* notify);
 		void UnregisterNotification(ProjectNotification* notify);
 
-		void BeginBulkOperation();
-		void EndBulkOperation();
+		bool BeginBulkOperation();
+		bool EndBulkOperation();
 
 		Ref<Collaboration::RemoteProject> GetRemoteProject();
 	};
@@ -4074,6 +4074,7 @@ namespace BinaryNinja {
 	class Segment;
 	class Component;
 	class TypeArchive;
+	struct DerivedString;
 
 	/*!
 
@@ -4107,6 +4108,8 @@ namespace BinaryNinja {
 
 		static void StringFoundCallback(void* ctxt, BNBinaryView* data, BNStringType type, uint64_t offset, size_t len);
 		static void StringRemovedCallback(void* ctxt, BNBinaryView* data, BNStringType type, uint64_t offset, size_t len);
+		static void DerivedStringFoundCallback(void* ctxt, BNBinaryView* data, BNDerivedString* str);
+		static void DerivedStringRemovedCallback(void* ctxt, BNBinaryView* data, BNDerivedString* str);
 		static void TypeDefinedCallback(void* ctxt, BNBinaryView* data, BNQualifiedName* name, BNType* type);
 		static void TypeUndefinedCallback(void* ctxt, BNBinaryView* data, BNQualifiedName* name, BNType* type);
 		static void TypeReferenceChangedCallback(void* ctx, BNBinaryView* data, BNQualifiedName* name, BNType* type);
@@ -4203,6 +4206,8 @@ namespace BinaryNinja {
 			UndoEntryTaken = 1ULL << 50,
 			RedoEntryTaken = 1ULL << 51,
 			Rebased = 1ULL << 52,
+			DerivedStringFound = 1ULL << 53,
+			DerivedStringRemoved = 1ULL << 54,
 
 			BinaryDataUpdates = DataWritten | DataInserted | DataRemoved,
 			FunctionLifetime = FunctionAdded | FunctionRemoved,
@@ -4213,7 +4218,7 @@ namespace BinaryNinja {
 			TagUpdates = TagLifetime | TagUpdated,
 			SymbolLifetime = SymbolAdded | SymbolRemoved,
 			SymbolUpdates = SymbolLifetime | SymbolUpdated,
-			StringUpdates = StringFound | StringRemoved,
+			StringUpdates = StringFound | StringRemoved | DerivedStringFound | DerivedStringRemoved,
 			TypeLifetime = TypeDefined | TypeUndefined,
 			TypeUpdates = TypeLifetime | TypeReferenceChanged | TypeFieldReferenceChanged,
 			SegmentLifetime = SegmentAdded | SegmentRemoved,
@@ -4349,6 +4354,16 @@ namespace BinaryNinja {
 			(void)type;
 			(void)offset;
 			(void)len;
+		}
+		virtual void OnDerivedStringFound(BinaryView* data, const DerivedString& str)
+		{
+			(void)data;
+			(void)str;
+		}
+		virtual void OnDerivedStringRemoved(BinaryView* data, const DerivedString& str)
+		{
+			(void)data;
+			(void)str;
 		}
 		virtual void OnTypeDefined(BinaryView* data, const QualifiedName& name, Type* type)
 		{
@@ -4811,6 +4826,7 @@ namespace BinaryNinja {
 	public:
 		StringRef();
 		explicit StringRef(BNStringRef* ref);
+		StringRef(const std::string& str);
 		StringRef(const StringRef& other);
 		StringRef(StringRef&& other);
 		~StringRef();
@@ -4822,7 +4838,7 @@ namespace BinaryNinja {
 
 		const char* c_str() const;
 		size_t size() const;
-		BNStringRef* GetObject() { return m_ref; }
+		BNStringRef* GetObject() const { return m_ref; }
 
 		bool operator==(const StringRef& other) const { return this->operator std::string_view() == other.operator std::string_view(); }
 		bool operator!=(const StringRef& other) const { return this->operator std::string_view() != other.operator std::string_view(); }
@@ -5356,6 +5372,89 @@ namespace BinaryNinja {
 		std::vector<TypeReferenceSource> typeRefs;
 	};
 
+	class CustomStringType: public StaticCoreRefCountObject<BNCustomStringType>
+	{
+	public:
+		CustomStringType(BNCustomStringType* type);
+		std::string GetName() const;
+		std::string GetStringPrefix() const;
+		std::string GetStringPostfix() const;
+
+		static Ref<CustomStringType> Register(
+			const std::string& name, const std::string& stringPrefix = "", const std::string& stringPostfix = "");
+	};
+
+	struct DerivedStringLocation
+	{
+		BNDerivedStringLocationType locationType;
+		uint64_t addr;
+		uint64_t len;
+
+		bool operator==(const DerivedStringLocation& other) const
+		{
+			if (locationType != other.locationType)
+				return false;
+			if (addr != other.addr)
+				return false;
+			return len == other.len;
+		}
+
+		bool operator!=(const DerivedStringLocation& other) const
+		{
+			return !(*this == other);
+		}
+
+		bool operator<(const DerivedStringLocation& other) const
+		{
+			if (addr < other.addr)
+				return true;
+			if (addr > other.addr)
+				return false;
+			if (len < other.len)
+				return true;
+			if (len > other.len)
+				return false;
+			return locationType < other.locationType;
+		}
+	};
+
+	struct DerivedString
+	{
+		StringRef value;
+		std::optional<DerivedStringLocation> location;
+		Ref<CustomStringType> customType;
+
+		bool operator==(const DerivedString& other) const
+		{
+			if (value != other.value)
+				return false;
+			if (location != other.location)
+				return false;
+			return customType == other.customType;
+		}
+
+		bool operator!=(const DerivedString& other) const
+		{
+			return !(*this == other);
+		}
+
+		bool operator<(const DerivedString& other) const
+		{
+			if (value < other.value)
+				return true;
+			if (other.value < value)
+				return false;
+			if (location < other.location)
+				return true;
+			if (other.location < location)
+				return false;
+			return customType < other.customType;
+		}
+
+		BNDerivedString ToAPIObject(bool owned) const;
+		static DerivedString FromAPIObject(BNDerivedString* str, bool owned);
+	};
+
 	struct QualifiedNameAndType;
 	struct PossibleValueSet;
 	class Metadata;
@@ -5828,6 +5927,18 @@ namespace BinaryNinja {
 		    \return DataBuffer containing the read bytes
 		*/
 		DataBuffer ReadBuffer(uint64_t offset, size_t len);
+
+		/*! GetDataPointer returns a pointer to the underlying data for zero-copy access
+
+		    \return pointer to data if available for zero-copy access, nullptr otherwise
+		*/
+		const uint8_t* GetDataPointer() const;
+
+		/*! GetDataLength returns the length of the underlying data
+
+		    \return length of data if available for zero-copy access, 0 otherwise
+		*/
+		size_t GetDataLength() const;
 
 		/*! Write writes `len` bytes data at address `dest` to virtual address `offset`
 
@@ -7118,6 +7229,10 @@ namespace BinaryNinja {
 			\return The list of strings
 		*/
 		std::vector<BNStringReference> GetStrings(uint64_t start, uint64_t len);
+
+		std::vector<DerivedString> GetDerivedStrings();
+		std::vector<ReferenceSource> GetDerivedStringCodeReferences(
+			const DerivedString& str, std::optional<size_t> maxItems = std::nullopt);
 
 		/*! Sets up a call back function to be called when analysis has been completed.
 
@@ -8929,6 +9044,7 @@ namespace BinaryNinja {
 	};
 
 	class TransformContext;
+	typedef BNTransformCapabilities TransformCapabilities;
 
 	/*! Allows users to implement custom transformations.
 
@@ -9027,15 +9143,22 @@ namespace BinaryNinja {
 		TransformContext(BNTransformContext* context);
 		virtual ~TransformContext();
 
-		std::string GetTransformName() const;
-		std::string GetFileName() const;
 		Ref<BinaryView> GetInput() const;
+		std::string GetFileName() const;
+		std::string GetTransformName() const;
+		void SetTransformParameters(const std::map<std::string, DataBuffer>& params);
+		void SetTransformParameter(const std::string& name, const DataBuffer& data);
+		bool HasTransformParameter(const std::string& name) const;
+		void ClearTransformParameter(const std::string& name);
+		std::string GetExtractionMessage() const;
+		BNTransformResult GetExtractionResult() const;
+		BNTransformResult GetTransformResult() const;
 		Ref<Metadata> GetMetadata() const;
 		Ref<TransformContext> GetParent() const;
 		size_t GetChildCount() const;
 		std::vector<Ref<TransformContext>> GetChildren() const;
-		Ref<TransformContext> GetChild(const std::string& filename) const;
-		Ref<TransformContext> CreateChild(const DataBuffer& data, const std::string& filename);
+		Ref<TransformContext> GetChild(const std::string& filename = "") const;
+		Ref<TransformContext> SetChild(const DataBuffer& data, const std::string& filename = "", BNTransformResult result = TransformSuccess, const std::string& message = "");
 		bool IsLeaf() const;
 		bool IsRoot() const;
 		std::vector<std::string> GetAvailableFiles() const;
@@ -9060,19 +9183,13 @@ namespace BinaryNinja {
 		Ref<BinaryView> GetCurrentView() const;
 		Ref<TransformContext> GetRootContext() const;
 		Ref<TransformContext> GetCurrentContext() const;
+		bool ProcessFrom(Ref<TransformContext> context);
 		bool Process();
 		bool HasAnyStages() const;
 		bool HasSinglePath() const;
 
 		std::vector<Ref<TransformContext>> GetSelectedContexts() const;
 		void SetSelectedContexts(const std::vector<Ref<TransformContext>>& contexts);
-
-		// UI interaction support
-		bool RequiresUserInput() const;
-		bool HasMultipleFileChoices() const;
-		std::vector<std::string> GetAvailableFileChoices() const;
-		bool SelectFiles(const std::vector<std::string>& selectedFiles);
-		bool ProcessWithUserInput();
 	};
 
 
@@ -9924,17 +10041,38 @@ namespace BinaryNinja {
 	*/
 	struct Variable : public BNVariable
 	{
-		Variable();
-		Variable(BNVariableSourceType type, uint32_t index, uint64_t storage);
-		Variable(BNVariableSourceType type, uint64_t storage);
-		Variable(const BNVariable& var);
-		Variable(const Variable& var);
+		Variable() : BNVariable{RegisterVariableSourceType, 0, 0} {}
+		Variable(BNVariableSourceType type, uint64_t storage) : Variable(type, 0, storage) {}
+		Variable(BNVariableSourceType type, uint32_t index, uint64_t storage)
+			: BNVariable{type, index, static_cast<int64_t>(storage)}
+		{
+		}
+		Variable(const BNVariable& var) : BNVariable(var) {}
 
-		Variable& operator=(const Variable& var);
+		Variable(const Variable&) = default;
+		Variable& operator=(const Variable&) = default;
 
-		bool operator==(const Variable& var) const;
-		bool operator!=(const Variable& var) const;
-		bool operator<(const Variable& var) const;
+		Variable(Variable&&) = default;
+		Variable& operator=(Variable&&) = default;
+
+		bool operator==(const Variable& var) const
+		{
+			return type == var.type && index == var.index && storage == var.storage;
+		}
+
+		bool operator!=(const Variable& var) const
+		{
+			return !(*this == var);
+		}
+
+		bool operator<(const Variable& var) const
+		{
+			if (type != var.type)
+				return type < var.type;
+			if (storage != var.storage)
+				return storage < var.storage;
+			return index < var.index;
+		}
 
 		uint64_t ToIdentifier() const;
 		static Variable FromIdentifier(uint64_t id);
@@ -10053,7 +10191,16 @@ namespace BinaryNinja {
 	};
 
 	/*!
-		\ingroup types
+	    \ingroup types
+	*/
+	struct TypeAttribute
+	{
+		std::string name;
+		std::string value;
+	};
+
+	/*!
+	    \ingroup types
 	*/
 	class Type : public CoreRefCountObject<BNType, BNNewTypeReference, BNFreeType>
 	{
@@ -10195,6 +10342,9 @@ namespace BinaryNinja {
 		std::string GetPointerSuffixString() const;
 		std::vector<InstructionTextToken> GetPointerSuffixTokens(uint8_t baseConfidence = BN_FULL_CONFIDENCE) const;
 
+		std::vector<TypeAttribute> GetAttributes() const;
+		std::optional<std::string> GetAttribute(const std::string& name) const;
+
 		std::string GetString(Platform* platform = nullptr, BNTokenEscapingType escaping = NoTokenEscapingType) const;
 		std::string GetTypeAndName(const QualifiedName& name, BNTokenEscapingType escaping = NoTokenEscapingType) const;
 		std::string GetStringBeforeName(Platform* platform = nullptr, BNTokenEscapingType escaping = NoTokenEscapingType) const;
@@ -10211,6 +10361,11 @@ namespace BinaryNinja {
 		    BNTokenEscapingType escaping = NoTokenEscapingType) const;
 
 		Ref<Type> Duplicate() const;
+
+		/*! Call this with setIgnored=True if this Type object is expected to be always resident.
+		 *  This prevents the type object from showing up in the results of GetMemoryUsageInfo
+		 */
+		Type* SetIgnored(bool setIgnored);
 
 
 		/*! Create a "void" type
@@ -10525,6 +10680,8 @@ namespace BinaryNinja {
 			int paddingCols = 64, bool collapsed = false, BNTokenEscapingType escaping = NoTokenEscapingType) const;
 
 		static std::string GetSizeSuffix(size_t size);
+
+		Ref<Type> DerefNamedTypeReference(BinaryView* view) const;
 	};
 
 	class EnumerationBuilder;
@@ -10609,6 +10766,12 @@ namespace BinaryNinja {
 
 		TypeBuilder& AddPointerSuffix(BNPointerSuffix ps);
 		TypeBuilder& SetPointerSuffix(const std::set<BNPointerSuffix>& suffix);
+
+		void SetAttribute(const std::string& name, const std::string& value);
+		void SetAttributes(const std::map<std::string, std::string>& attrs);
+		void RemoveAttribute(const std::string& name);
+		std::vector<TypeAttribute> GetAttributes() const;
+		std::optional<std::string> GetAttribute(const std::string& name) const;
 
 		std::string GetString(Platform* platform = nullptr) const;
 		std::string GetTypeAndName(const QualifiedName& name) const;
@@ -10748,6 +10911,8 @@ namespace BinaryNinja {
 		uint64_t offset;
 		BNMemberAccess access;
 		BNMemberScope scope;
+		uint8_t bitPosition;
+		uint8_t bitWidth;
 	};
 
 	/*!
@@ -10949,6 +11114,7 @@ namespace BinaryNinja {
 		    \return Whether a StructureMember was successfully retrieved
 		*/
 		bool GetMemberByName(const std::string& name, StructureMember& result) const;
+		// TODO: GetMember at offset also needs to pass a bit position.
 		bool GetMemberAtOffset(int64_t offset, StructureMember& result) const;
 		bool GetMemberAtOffset(int64_t offset, StructureMember& result, size_t& idx) const;
 		uint64_t GetWidth() const;
@@ -10998,10 +11164,26 @@ namespace BinaryNinja {
 		    \param overwriteExisting Whether to overwrite an existing member at that offset, Optional, default true
 		    \param access One of NoAccess, PrivateAccess, ProtectedAccess, PublicAccess
 		    \param scope One of NoScope, StaticScope, VirtualScope, ThunkScope, FriendScope
+			\param bitPosition The number of bits from the start of the `offset` to place this member, used for bitfields
+			\param bitWidth The number of bits wide to make the member, this is analogous to a bitfield width in C
 		    \return Reference to the StructureBuilder
 		*/
 		StructureBuilder& AddMemberAtOffset(const Confidence<Ref<Type>>& type, const std::string& name, uint64_t offset,
-		    bool overwriteExisting = true, BNMemberAccess access = NoAccess, BNMemberScope scope = NoScope);
+		    bool overwriteExisting = true, BNMemberAccess access = NoAccess, BNMemberScope scope = NoScope, uint8_t bitPosition = 0, uint8_t bitWidth = 0);
+
+		/*! AddMemberAtBitOffset adds a member at a specific bit offset within the struct
+
+			\param type Type of the Field
+			\param name Name of the field
+			\param bitOffset Offset, in bits, to add the member within the struct
+			\param bitWidth The number of bits wide to make the member, this is analogous to a bitfield width in C
+			\param overwriteExisting Whether to overwrite an existing member at that offset, Optional, default true
+			\param access One of NoAccess, PrivateAccess, ProtectedAccess, PublicAccess
+			\param scope One of NoScope, StaticScope, VirtualScope, ThunkScope, FriendScope
+			\return Reference to the StructureBuilder
+		*/
+		StructureBuilder& AddMemberAtBitOffset(const Confidence<Ref<Type>>& type, const std::string& name, uint64_t bitOffset,
+			uint8_t bitWidth, bool overwriteExisting = true, BNMemberAccess access = NoAccess, BNMemberScope scope = NoScope);
 
 		/*! RemoveMember removes a member at a specified index
 
@@ -15401,6 +15583,10 @@ namespace BinaryNinja {
 		std::set<Variable> GetVariables();
 		std::set<Variable> GetAliasedVariables();
 		std::set<SSAVariable> GetSSAVariables();
+
+		void SetDerivedStringReferenceForExpr(size_t expr, const DerivedString& str);
+		void RemoveDerivedStringReferenceForExpr(size_t expr);
+		std::optional<DerivedString> GetDerivedStringReferenceForExpr(size_t expr);
 	};
 
 	struct LineFormatterSettings
@@ -20076,7 +20262,7 @@ namespace BinaryNinja {
 		 */
 		std::optional<std::unordered_set<std::string>> GetTypeIds() const;
 
-		/*! Get all type names in a Type Container.
+		/*! Get all type names in a Type Container. Sort order is not guaranteed in 5.2 and later.
 
 			\return List of all type names
 		 */
@@ -20087,6 +20273,12 @@ namespace BinaryNinja {
 			\return Map of type id -> type name
 		 */
 		std::optional<std::unordered_map<std::string, QualifiedName>> GetTypeNamesAndIds() const;
+
+		/*! Get the number of types in a Type Container.
+
+			\return Number of types in the container
+		 */
+		size_t GetTypeCount() const;
 
 		/*! Parse a single type and name from a string containing their definition,
 			with knowledge of the types in the Type Container.
@@ -21232,6 +21424,110 @@ namespace BinaryNinja {
 			std::vector<LinearDisassemblyLine>& lines
 		) override;
 	};
+
+	class ConstantRenderer : public StaticCoreRefCountObject<BNConstantRenderer>
+	{
+		std::string m_nameForRegister;
+
+	public:
+		ConstantRenderer(const std::string& name);
+		ConstantRenderer(BNConstantRenderer* renderer);
+
+		std::string GetName() const;
+
+		virtual bool IsValidForType(HighLevelILFunction* func, Type* type);
+		virtual bool RenderConstant(const HighLevelILInstruction& instr, Type* type, int64_t val,
+			HighLevelILTokenEmitter& tokens, DisassemblySettings* settings, BNOperatorPrecedence precedence);
+		virtual bool RenderConstantPointer(const HighLevelILInstruction& instr, Type* type, int64_t val,
+			HighLevelILTokenEmitter& tokens, DisassemblySettings* settings, BNSymbolDisplayType symbolDisplay,
+			BNOperatorPrecedence precedence);
+
+		/*! Registers the constant renderer.
+
+		    \param renderer The constant renderer to register.
+		*/
+		static void Register(ConstantRenderer* renderer);
+
+		static Ref<ConstantRenderer> GetByName(const std::string& name);
+		static std::vector<Ref<ConstantRenderer>> GetRenderers();
+
+	private:
+		static bool IsValidForTypeCallback(void* ctxt, BNHighLevelILFunction* hlil, BNType* type);
+		static bool RenderConstantCallback(void* ctxt, BNHighLevelILFunction* hlil, size_t expr, BNType* type,
+			int64_t val, BNHighLevelILTokenEmitter* tokens, BNDisassemblySettings* settings,
+			BNOperatorPrecedence precedence);
+		static bool RenderConstantPointerCallback(void* ctxt, BNHighLevelILFunction* hlil, size_t expr, BNType* type,
+			int64_t val, BNHighLevelILTokenEmitter* tokens, BNDisassemblySettings* settings,
+			BNSymbolDisplayType symbolDisplay, BNOperatorPrecedence precedence);
+	};
+
+	class CoreConstantRenderer : public ConstantRenderer
+	{
+	public:
+		CoreConstantRenderer(BNConstantRenderer* renderer);
+		bool IsValidForType(HighLevelILFunction* func, Type* type) override;
+		bool RenderConstant(const HighLevelILInstruction& instr, Type* type, int64_t val,
+			HighLevelILTokenEmitter& tokens, DisassemblySettings* settings, BNOperatorPrecedence precedence) override;
+		bool RenderConstantPointer(const HighLevelILInstruction& instr, Type* type, int64_t val,
+			HighLevelILTokenEmitter& tokens, DisassemblySettings* settings, BNSymbolDisplayType symbolDisplay,
+			BNOperatorPrecedence precedence) override;
+	};
+
+	class StringRecognizer : public StaticCoreRefCountObject<BNStringRecognizer>
+	{
+		std::string m_nameForRegister;
+
+	public:
+		StringRecognizer(const std::string& name);
+		StringRecognizer(BNStringRecognizer* renderer);
+
+		std::string GetName() const;
+
+		virtual bool IsValidForType(HighLevelILFunction* func, Type* type);
+		virtual std::optional<DerivedString> RecognizeConstant(
+			const HighLevelILInstruction& instr, Type* type, int64_t val);
+		virtual std::optional<DerivedString> RecognizeConstantPointer(
+			const HighLevelILInstruction& instr, Type* type, int64_t val);
+		virtual std::optional<DerivedString> RecognizeExternPointer(
+			const HighLevelILInstruction& instr, Type* type, int64_t val, uint64_t offset);
+		virtual std::optional<DerivedString> RecognizeImport(
+			const HighLevelILInstruction& instr, Type* type, int64_t val);
+
+		/*! Registers the string recognizer.
+
+		    \param recognizer The string recognizer to register.
+		*/
+		static void Register(StringRecognizer* recognizer);
+
+		static Ref<StringRecognizer> GetByName(const std::string& name);
+		static std::vector<Ref<StringRecognizer>> GetRecognizers();
+
+	private:
+		static bool IsValidForTypeCallback(void* ctxt, BNHighLevelILFunction* hlil, BNType* type);
+		static bool RecognizeConstantCallback(
+			void* ctxt, BNHighLevelILFunction* hlil, size_t expr, BNType* type, int64_t val, BNDerivedString* result);
+		static bool RecognizeConstantPointerCallback(
+			void* ctxt, BNHighLevelILFunction* hlil, size_t expr, BNType* type, int64_t val, BNDerivedString* result);
+		static bool RecognizeExternPointerCallback(void* ctxt, BNHighLevelILFunction* hlil, size_t expr, BNType* type,
+			int64_t val, uint64_t offset, BNDerivedString* result);
+		static bool RecognizeImportCallback(
+			void* ctxt, BNHighLevelILFunction* hlil, size_t expr, BNType* type, int64_t val, BNDerivedString* result);
+	};
+
+	class CoreStringRecognizer : public StringRecognizer
+	{
+	public:
+		CoreStringRecognizer(BNStringRecognizer* recognizer);
+		bool IsValidForType(HighLevelILFunction* func, Type* type) override;
+		std::optional<DerivedString> RecognizeConstant(
+			const HighLevelILInstruction& instr, Type* type, int64_t val) override;
+		std::optional<DerivedString> RecognizeConstantPointer(
+			const HighLevelILInstruction& instr, Type* type, int64_t val) override;
+		std::optional<DerivedString> RecognizeExternPointer(
+			const HighLevelILInstruction& instr, Type* type, int64_t val, uint64_t offset) override;
+		std::optional<DerivedString> RecognizeImport(
+			const HighLevelILInstruction& instr, Type* type, int64_t val) override;
+	};
 }  // namespace BinaryNinja
 
 
@@ -21563,6 +21859,16 @@ namespace BinaryNinja::Collaboration
 			\throws RemoteException If there is an error in any request or if the remote is not connected
 		*/
 		std::vector<std::pair<std::string, std::string>> SearchUsers(const std::string& prefix);
+
+		struct FileSearchMatch
+		{
+			std::string projectId;
+			std::string projectName;
+			std::string fileId;
+			std::string fileName;
+		};
+
+		std::vector<FileSearchMatch> FindFiles(const std::string& name);
 
 
 		/*!
@@ -22448,4 +22754,3 @@ template<> struct fmt::formatter<BinaryNinja::Type>
 		return it;
 	}
 };
-

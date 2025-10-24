@@ -1132,6 +1132,8 @@ namespace BinaryNinja
 		DYLD_CHAINED_PTR_ARM64E_FIRMWARE        = 10,    // stride 4, unauth target is vmaddr
 		DYLD_CHAINED_PTR_X86_64_KERNEL_CACHE    = 11,    // stride 1, x86_64 kernel caches
 		DYLD_CHAINED_PTR_ARM64E_USERLAND24      = 12,    // stride 8, unauth target is vm offset, 24-bit bind
+		DYLD_CHAINED_PTR_ARM64E_SHARED_CACHE    = 13,    // stride 8, regular/auth targets both vm offsets.  Only A keys supported
+		DYLD_CHAINED_PTR_ARM64E_SEGMENTED       = 14,    // stride 4, rebase offsets use segIndex and segOffset
 	};
 
 	// DYLD_CHAINED_PTR_ARM64E

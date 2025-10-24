@@ -24,7 +24,7 @@ use binaryninja::{
     },
 };
 
-use gimli::{constants, AttributeValue, DebuggingInformationEntry, Dwarf, Operation, Unit};
+use gimli::{constants, AttributeValue, DebuggingInformationEntry, DwAt, Dwarf, Operation, Unit};
 
 use log::{debug, error, warn};
 
@@ -162,6 +162,7 @@ fn do_structure_parse<R: ReaderType>(
             full_name.to_owned(),
             ntr,
             false,
+            None,
         );
     } else {
         // We _need_ to have initial typedefs or else we can enter infinite parsing loops
@@ -170,20 +171,34 @@ fn do_structure_parse<R: ReaderType>(
         let full_name = format!("anonymous_structure_{:x}", get_uid(dwarf, unit, entry));
         let ntr =
             Type::named_type_from_type(&full_name, &Type::structure(&structure_builder.finalize()));
-        debug_info_builder.add_type(get_uid(dwarf, unit, entry), full_name, ntr, false);
+        debug_info_builder.add_type(get_uid(dwarf, unit, entry), full_name, ntr, false, None);
     }
 
     // Get all the children and base classes to populate
     let mut base_structures = Vec::new();
-    let mut tree = unit.entries_tree(Some(entry.offset())).unwrap();
-    let mut children = tree.root().unwrap().children();
+    let mut tree = match unit.entries_tree(Some(entry.offset())) {
+        Ok(x) => x,
+        Err(e) => {
+            log::error!("Failed to get structure entry tree: {}", e);
+            return None;
+        }
+    };
+    let tree_root = match tree.root() {
+        Ok(x) => x,
+        Err(e) => {
+            log::error!("Failed to get structure entry tree root: {}", e);
+            return None;
+        }
+    };
+    let mut children = tree_root.children();
     while let Ok(Some(child)) = children.next() {
-        match child.entry().tag() {
+        let child_entry = child.entry();
+        match child_entry.tag() {
             constants::DW_TAG_member => {
                 let Some(child_type_id) = get_type(
                     dwarf,
                     unit,
-                    child.entry(),
+                    child_entry,
                     debug_info_builder_context,
                     debug_info_builder,
                 ) else {
@@ -196,7 +211,7 @@ fn do_structure_parse<R: ReaderType>(
                 let child_type = child_dbg_ty.get_type();
 
                 let Some(child_name) = debug_info_builder_context
-                    .get_name(dwarf, unit, child.entry())
+                    .get_name(dwarf, unit, child_entry)
                     .or_else(|| match child_type.type_class() {
                         TypeClass::StructureTypeClass => Some(String::new()),
                         _ => None,
@@ -205,37 +220,94 @@ fn do_structure_parse<R: ReaderType>(
                     continue;
                 };
 
-                // TODO : support DW_AT_data_bit_offset for offset as well
                 if let Ok(Some(raw_struct_offset)) =
-                    child.entry().attr(constants::DW_AT_data_member_location)
+                    child_entry.attr(constants::DW_AT_data_member_location)
                 {
-                    // TODO : Let this fail; don't unwrap_or_default get_expr_value
-                    let struct_offset = get_attr_as_u64(&raw_struct_offset).unwrap_or_else(|| {
-                        get_expr_value(unit, raw_struct_offset).unwrap_or_default()
-                    });
+                    let Some(struct_offset_bytes) = get_attr_as_u64(&raw_struct_offset)
+                        .or_else(|| get_expr_value(unit, raw_struct_offset))
+                    else {
+                        log::warn!(
+                            "Failed to get DW_AT_data_member_location for offset {:#x} in unit {:?}",
+                            child_entry.offset().0,
+                            unit.header.offset()
+                        );
+                        continue;
+                    };
 
                     structure_builder.insert(
                         &child_type,
                         &child_name,
-                        struct_offset,
+                        struct_offset_bytes,
                         false,
                         MemberAccess::NoAccess, // TODO : Resolve actual scopes, if possible
                         MemberScope::NoScope,
                     );
                 } else {
-                    structure_builder.append(
-                        &child_type,
-                        &child_name,
-                        MemberAccess::NoAccess,
-                        MemberScope::NoScope,
-                    );
+                    let select_value =
+                        |e: &DebuggingInformationEntry<R>, attr: DwAt| -> Option<u64> {
+                            get_attr_as_u64(&e.attr(attr).ok()??)
+                        };
+
+                    // If no byte offset, try the bitfield using DW_AT_bit_offset/DW_AT_data_bit_offset + DW_AT_bit_size
+                    let bit_size = select_value(child_entry, constants::DW_AT_bit_size);
+                    let bit_offset = select_value(child_entry, constants::DW_AT_bit_offset);
+                    let data_bit_offset =
+                        select_value(child_entry, constants::DW_AT_data_bit_offset);
+
+                    match (bit_size, bit_offset, data_bit_offset) {
+                        (Some(bit_size), Some(bit_offset), _) => {
+                            // Heuristic storage unit bits from the member type width (bytes -> bits). Fallback to 8.
+                            let storage_bits = {
+                                let w = child_type.width();
+                                if w > 0 {
+                                    w * 8
+                                } else {
+                                    8
+                                }
+                            };
+
+                            // DW_AT_bit_offset is from the MSB of the storage unit:
+                            // absolute = base_byte_off*8 + storage_bits - (boffs + bit_sz)
+                            // With no base_byte_off available here, treat base as 0.
+                            let total_bit_off = storage_bits.saturating_sub(bit_offset + bit_size);
+
+                            structure_builder.insert_bitwise(
+                                &child_type,
+                                &child_name,
+                                total_bit_off,
+                                Some(bit_size as u8),
+                                false,
+                                MemberAccess::NoAccess,
+                                MemberScope::NoScope,
+                            );
+                        }
+                        (Some(bit_size), None, Some(data_bit_offset)) => {
+                            structure_builder.insert_bitwise(
+                                &child_type,
+                                &child_name,
+                                data_bit_offset,
+                                Some(bit_size as u8),
+                                false,
+                                MemberAccess::NoAccess,
+                                MemberScope::NoScope,
+                            );
+                        }
+                        _ => {
+                            structure_builder.append(
+                                &child_type,
+                                &child_name,
+                                MemberAccess::NoAccess,
+                                MemberScope::NoScope,
+                            );
+                        }
+                    }
                 }
             }
             constants::DW_TAG_inheritance => {
                 let Some(base_type_id) = get_type(
                     dwarf,
                     unit,
-                    child.entry(),
+                    child_entry,
                     debug_info_builder_context,
                     debug_info_builder,
                 ) else {
@@ -248,7 +320,7 @@ fn do_structure_parse<R: ReaderType>(
                 let base_type = base_dbg_ty.get_type();
 
                 let Ok(Some(raw_data_member_location)) =
-                    child.entry().attr(constants::DW_AT_data_member_location)
+                    child_entry.attr(constants::DW_AT_data_member_location)
                 else {
                     warn!("Failed to get DW_AT_data_member_location for inheritance");
                     continue;
@@ -275,6 +347,7 @@ fn do_structure_parse<R: ReaderType>(
             full_name,
             finalized_structure,
             true,
+            None,
         );
     } else {
         debug_info_builder.add_type(
@@ -282,6 +355,7 @@ fn do_structure_parse<R: ReaderType>(
             finalized_structure.to_string(),
             finalized_structure,
             false, // Don't commit anonymous unions (because I think it'll break things)
+            None,
         );
     }
     Some(get_uid(dwarf, unit, entry))
@@ -315,13 +389,27 @@ pub(crate) fn get_type<R: ReaderType>(
     ) {
         // This needs to recurse first (before the early return below) to ensure all sub-types have been parsed
         match die_reference {
-            DieReference::UnitAndOffset((dwarf, entry_unit, entry_offset)) => get_type(
-                dwarf,
-                entry_unit,
-                &entry_unit.entry(entry_offset).unwrap(),
-                debug_info_builder_context,
-                debug_info_builder,
-            ),
+            DieReference::UnitAndOffset((dwarf, entry_unit, entry_offset)) => {
+                let resolved_entry = match entry_unit.entry(entry_offset) {
+                    Ok(x) => x,
+                    Err(e) => {
+                        log::error!(
+                            "Failed to resolve entry in unit {:?} at offset {:#x}: {}",
+                            entry_unit.header.offset(),
+                            entry_offset.0,
+                            e
+                        );
+                        return None;
+                    }
+                };
+                get_type(
+                    dwarf,
+                    entry_unit,
+                    &resolved_entry,
+                    debug_info_builder_context,
+                    debug_info_builder,
+                )
+            }
             DieReference::Err => {
                 warn!("Failed to fetch DIE when getting type through DW_AT_type. Debug information may be incomplete.");
                 None
@@ -336,13 +424,27 @@ pub(crate) fn get_type<R: ReaderType>(
     ) {
         // This needs to recurse first (before the early return below) to ensure all sub-types have been parsed
         match die_reference {
-            DieReference::UnitAndOffset((dwarf, entry_unit, entry_offset)) => get_type(
-                dwarf,
-                entry_unit,
-                &entry_unit.entry(entry_offset).unwrap(),
-                debug_info_builder_context,
-                debug_info_builder,
-            ),
+            DieReference::UnitAndOffset((dwarf, entry_unit, entry_offset)) => {
+                let resolved_entry = match entry_unit.entry(entry_offset) {
+                    Ok(x) => x,
+                    Err(e) => {
+                        log::error!(
+                            "Failed to resolve entry in unit {:?} at offset {:#x}: {}",
+                            entry_unit.header.offset(),
+                            entry_offset.0,
+                            e
+                        );
+                        return None;
+                    }
+                };
+                get_type(
+                    dwarf,
+                    entry_unit,
+                    &resolved_entry,
+                    debug_info_builder_context,
+                    debug_info_builder,
+                )
+            }
             DieReference::Err => {
                 warn!("Failed to fetch DIE when getting type through DW_AT_abstract_origin. Debug information may be incomplete.");
                 None
@@ -355,10 +457,22 @@ pub(crate) fn get_type<R: ReaderType>(
                 if entry_unit.header.offset() != unit.header.offset()
                     && entry_offset != entry.offset() =>
             {
+                let resolved_entry = match entry_unit.entry(entry_offset) {
+                    Ok(x) => x,
+                    Err(e) => {
+                        log::error!(
+                            "Failed to resolve entry in unit {:?} at offset {:#x}: {}",
+                            entry_unit.header.offset(),
+                            entry_offset.0,
+                            e
+                        );
+                        return None;
+                    }
+                };
                 get_type(
                     dwarf,
                     entry_unit,
-                    &entry_unit.entry(entry_offset).unwrap(),
+                    &resolved_entry,
                     debug_info_builder_context,
                     debug_info_builder,
                 )
@@ -501,7 +615,7 @@ pub(crate) fn get_type<R: ReaderType>(
             type_def.to_string()
         });
 
-        debug_info_builder.add_type(entry_uid, name, type_def, commit);
+        debug_info_builder.add_type(entry_uid, name, type_def, commit, entry_type);
         Some(entry_uid)
     } else {
         None

@@ -405,6 +405,10 @@ namespace BinaryNinja
 		void SetAttribute(BNILInstructionAttribute attribute, bool state = true);
 		void ClearAttribute(BNILInstructionAttribute attribute);
 
+		std::optional<DerivedString> GetDerivedStringReference() const;
+		void SetDerivedStringReference(const DerivedString& str);
+		void RemoveDerivedStringReference();
+
 		size_t GetInstructionIndex() const;
 		HighLevelILInstruction GetInstruction() const;
 

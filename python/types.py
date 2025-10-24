@@ -551,6 +551,26 @@ class MutableTypeBuilder(Generic[TB]):
 			self.container.add_named_type(self.name, self.type.immutable_copy())
 
 
+class TypeBuilderAttributes(dict):
+	def __init__(self, builder, *args):
+		super(TypeBuilderAttributes, self).__init__(*args)
+		self._builder = builder
+
+	def __setitem__(self, key: str, value: str):
+		if not isinstance(key, str):
+			raise TypeError("Type attribute key must be a string")
+		if not isinstance(value, str):
+			raise TypeError("Type attribute value must be a string")
+		core.BNSetTypeBuilderAttribute(self._builder._handle, key, value)
+		super(TypeBuilderAttributes, self).__setitem__(key, value)
+
+	def __delitem__(self, key: str):
+		if not isinstance(key, str):
+			raise TypeError("Type attribute key must be a string")
+		core.BNRemoveTypeBuilderAttribute(self._builder._handle, key)
+		super(TypeBuilderAttributes, self).__delitem__(key)
+
+
 class TypeBuilder:
 	"""
 	All TypeBuilder objects should not be instantiated directly but created via ``.create`` APIs.
@@ -601,11 +621,11 @@ class TypeBuilder:
 		    TypeClass.IntegerTypeClass: IntegerType, TypeClass.FloatTypeClass: FloatType,
 		    TypeClass.PointerTypeClass: PointerType, TypeClass.ArrayTypeClass: ArrayType,
 		    TypeClass.FunctionTypeClass: FunctionType, TypeClass.WideCharTypeClass: WideCharType,
-		    # TypeClass.StructureTypeClass:StructureType,
-		    # TypeClass.EnumerationTypeClass:EnumerationType,
-		    # TypeClass.NamedTypeReferenceClass:NamedTypeReferenceType,
+		    TypeClass.StructureTypeClass: StructureType,
+		    TypeClass.EnumerationTypeClass: EnumerationType,
+		    TypeClass.NamedTypeReferenceClass: NamedTypeReferenceType,
 		}
-		return Types[self.type_class](self.finalized, self.platform, self.confidence)
+		return Types[self.type_class](self._finalized, self.platform, self.confidence)
 
 	def mutable_copy(self) -> 'TypeBuilder':
 		return self
@@ -767,11 +787,9 @@ class TypeBuilder:
 		return self.width
 
 	@property
-	def finalized(self):
+	def _finalized(self):
 		type_handle = core.BNFinalizeTypeBuilder(self._handle)
 		assert type_handle is not None, "core.BNFinalizeTypeBuilder returned None"
-		type_handle = core.BNNewTypeReference(type_handle)
-		assert type_handle is not None, "core.BNNewTypeReference returned None"
 		return type_handle
 
 	@property
@@ -854,6 +872,34 @@ class TypeBuilder:
 	@property
 	def children(self) -> List['TypeBuilder']:
 		return []
+
+	@property
+	def attributes(self) -> Dict[str, str]:
+		"""Attribute names and their values"""
+		count = ctypes.c_ulonglong()
+		attributes = core.BNGetTypeBuilderAttributes(self._handle, count)
+		result = dict()
+		for i in range(count.value):
+			result[attributes[i].name] = attributes[i].value
+		core.BNFreeTypeAttributeList(attributes, count.value)
+		return TypeBuilderAttributes(self, result)
+
+	@attributes.setter
+	def attributes(self, values: Dict[str, str]) -> None:
+		if not isinstance(values, dict):
+			raise TypeError("Attributes must be a dictionary")
+		attributes = (core.BNTypeAttribute * len(values))()
+		i = 0
+		for name, value in values.items():
+			if not isinstance(name, str):
+				raise TypeError("Attribute names must be strings")
+			if not isinstance(value, str):
+				raise TypeError("Attribute values must be strings")
+			attributes[i].name = name
+			attributes[i].value = value
+			i += 1
+		core.BNSetTypeBuilderAttributeList(self._handle, attributes, len(values))
+
 
 class VoidBuilder(TypeBuilder):
 	@classmethod
@@ -1284,11 +1330,18 @@ class StructureMember:
 	offset: int
 	access: MemberAccess = MemberAccess.NoAccess
 	scope: MemberScope = MemberScope.NoScope
+	bit_position: int = 0
+	bit_width: int = 0
 
 	def __repr__(self):
 		if len(self.name) == 0:
-			return f"<member: {self.type}, offset {self.offset:#x}>"
-		return f"<{self.type.get_string_before_name()} {self.name}{self.type.get_string_after_name()}, offset {self.offset:#x}>"
+			base = f"<member: {self.type}, offset {self.offset:#x}>"
+		else:
+			base = f"<{self.type.get_string_before_name()} {self.name}{self.type.get_string_after_name()}, offset {self.offset:#x}>"
+		# Append bit position/width only if bit_width is not zero (indicates a bitfield)
+		if self.bit_width != 0:
+			return base[:-1] + f", bit {self.bit_position}:{self.bit_width}>"
+		return base
 
 	def __len__(self):
 		return len(self.type)
@@ -1368,7 +1421,7 @@ class StructureBuilder(TypeBuilder):
 			elif isinstance(member, StructureMember):
 				core.BNAddStructureBuilderMemberAtOffset(
 				    structure_builder_handle, member.type._to_core_struct(), member.name, member.offset, False,
-				    member.access, member.scope
+				    member.access, member.scope, member.bit_position, member.bit_width
 				)
 			elif isinstance(member, (TypeBuilder, Type)):
 				core.BNAddStructureBuilderMember(
@@ -1395,14 +1448,6 @@ class StructureBuilder(TypeBuilder):
 		assert type_builder_handle is not None, "core.BNCreateStructureTypeBuilderWithBuilder returned None"
 		return cls(type_builder_handle, structure_builder_handle, platform, confidence)
 
-	def immutable_copy(self) -> 'StructureType':
-		assert self.builder_handle is not None
-		structure_handle = core.BNFinalizeStructureBuilder(self.builder_handle)
-		assert structure_handle is not None, "core.BNFinalizeStructureBuilder returned None"
-		handle = core.BNCreateStructureType(structure_handle)
-		assert handle is not None, "core.BNCreateStructureType returned None"
-		return StructureType(handle, self.platform, self.confidence)
-
 	@property
 	def members(self) -> List[StructureMember]:
 		"""Structure member list (read-only)"""
@@ -1416,7 +1461,7 @@ class StructureBuilder(TypeBuilder):
 				result.append(
 				    StructureMember(
 				        t, members[i].name, members[i].offset, MemberAccess(members[i].access),
-				        MemberScope(members[i].scope)
+				        MemberScope(members[i].scope), members[i].bitPosition, members[i].bitWidth
 				    )
 				)
 			return result
@@ -1512,7 +1557,7 @@ class StructureBuilder(TypeBuilder):
 			return StructureMember(
 			    Type.create(core.BNNewTypeReference(member.contents.type), confidence=member.contents.typeConfidence),
 			    member.contents.name, member.contents.offset, MemberAccess(member.contents.access),
-			    MemberScope(member.contents.scope)
+			    MemberScope(member.contents.scope), member.contents.bitPosition, member.contents.bitWidth
 			)
 		finally:
 			core.BNFreeStructureMember(member)
@@ -1552,10 +1597,11 @@ class StructureBuilder(TypeBuilder):
 
 	def insert(
 	    self, offset: int, type: SomeType, name: str = "", overwrite_existing: bool = True,
-	    access: MemberAccess = MemberAccess.NoAccess, scope: MemberScope = MemberScope.NoScope
+	    access: MemberAccess = MemberAccess.NoAccess, scope: MemberScope = MemberScope.NoScope, bit_position: int = 0, bit_width: int = 0
 	):
 		core.BNAddStructureBuilderMemberAtOffset(
-		    self.builder_handle, type._to_core_struct(), name, offset, overwrite_existing, access, scope
+		    self.builder_handle, type._to_core_struct(), name, offset, overwrite_existing, access, scope, bit_position,
+		    bit_width
 		)
 
 	def append(
@@ -1568,11 +1614,12 @@ class StructureBuilder(TypeBuilder):
 
 	def add_member_at_offset(
 	    self, name: MemberName, type: SomeType, offset: MemberOffset, overwrite_existing: bool = True,
-	    access: MemberAccess = MemberAccess.NoAccess, scope: MemberScope = MemberScope.NoScope
+	    access: MemberAccess = MemberAccess.NoAccess, scope: MemberScope = MemberScope.NoScope, bit_position: int = 0, bit_width: int = 0
 	) -> 'StructureBuilder':
 		# Adds structure member to the given offset optionally clearing any members within the range offset-offset+len(type)
 		core.BNAddStructureBuilderMemberAtOffset(
-		    self.builder_handle, type._to_core_struct(), name, offset, overwrite_existing, access, scope
+		    self.builder_handle, type._to_core_struct(), name, offset, overwrite_existing, access, scope, bit_position,
+		    bit_width
 		)
 		return self
 
@@ -1625,14 +1672,6 @@ class EnumerationBuilder(TypeBuilder):
 		type_builder_handle = core.BNCreateEnumerationTypeBuilderWithBuilder(None, enum_builder_handle, _width, _sign)
 		assert type_builder_handle is not None, "core.BNCreateEnumerationTypeBuilderWithBuilder returned None"
 		return cls(type_builder_handle, enum_builder_handle, platform, confidence)
-
-	def immutable_copy(self) -> 'EnumerationType':
-		enum_handle = core.BNFinalizeEnumerationBuilder(self.enum_builder_handle)
-		assert enum_handle is not None, "core.BNFinalizeEnumerationBuilder returned None"
-		_signed = BoolWithConfidence.get_core_struct(self.signed)
-		handle = core.BNCreateEnumerationType(None, enum_handle, self.width, _signed)
-		assert handle is not None, "core.BNCreateEnumerationType returned None"
-		return EnumerationType(handle, self.platform, self.confidence)
 
 	@property
 	def members(self) -> List[EnumerationMember]:
@@ -1750,17 +1789,6 @@ class NamedTypeReferenceBuilder(TypeBuilder):
 		)
 		assert type_builder_handle is not None, "core.BNCreateNamedTypeReferenceBuilderWithBuilder returned None"
 		return cls(type_builder_handle, ntr_builder_handle, platform, confidence)
-
-	def immutable_copy(self) -> 'NamedTypeReferenceType':
-		ntr_handle = core.BNFinalizeNamedTypeReferenceBuilder(self.ntr_builder_handle)
-		assert ntr_handle is not None, "core.BNFinalizeEnumerationBuilder returned None"
-
-		_const = BoolWithConfidence.get_core_struct(self.const)
-		_volatile = BoolWithConfidence.get_core_struct(self.volatile)
-
-		handle = core.BNCreateNamedTypeReference(ntr_handle, self.width, self.alignment, _const, _volatile)
-		assert handle is not None, "core.BNCreateEnumerationType returned None"
-		return NamedTypeReferenceType(handle, self.platform, self.confidence)
 
 	@property
 	def name(self) -> QualifiedName:
@@ -1940,6 +1968,17 @@ class Type:
 		"""Alternative name for the type object"""
 		return core.BNGetTypeAlternateName(self._handle)
 
+	@property
+	def attributes(self) -> Dict[str, str]:
+		"""Attribute names and their values"""
+		count = ctypes.c_ulonglong()
+		attributes = core.BNGetTypeAttributes(self._handle, count)
+		result = dict()
+		for i in range(count.value):
+			result[attributes[i].name] = attributes[i].value
+		core.BNFreeTypeAttributeList(attributes, count.value)
+		return result
+
 	def _to_core_struct(self) -> core.BNTypeWithConfidence:
 		type_conf = core.BNTypeWithConfidence()
 		type_conf.type = self._handle
@@ -2096,7 +2135,7 @@ class Type:
 		return result
 
 	def get_lines(
-		self, bv: Union['binaryview.BinaryView', 'typecontainer.TypeContainer'], name: str, padding_cols: int = 64, collapsed: bool = False,
+		self, bv: Union['binaryview.BinaryView', 'typecontainer.TypeContainer'], name: Union[str, 'QualifiedName'], padding_cols: int = 64, collapsed: bool = False,
 		escaping: TokenEscapingType = TokenEscapingType.NoTokenEscapingType
 	) -> List['TypeDefinitionLine']:
 		"""
@@ -2119,6 +2158,8 @@ class Type:
 			container = bv
 		else:
 			assert False, "Unexpected type container type"
+		if isinstance(name, QualifiedName):
+		    name = str(name)
 		core_lines = core.BNGetTypeLines(self._handle, container.handle, name, padding_cols, collapsed, escaping, count)
 		assert core_lines is not None, "core.BNGetTypeLines returned None"
 		lines = []
@@ -2214,6 +2255,19 @@ class Type:
 		if not isinstance(to_ref, NamedTypeReferenceType):
 			raise ValueError("to_ref must be a NamedTypeReferenceType")
 		handle=core.BNTypeWithReplacedNamedTypeReference(self._handle, from_ref.ntr_handle, to_ref.ntr_handle)
+		return Type.create(handle)
+
+	def deref_named_type_reference(self, view: 'binaryview.BinaryView') -> 'Type':
+		"""
+		Dereferences any named type references to find the underlying type. This may still return a
+		named type reference if there are circular references. If the type isn't a named type
+		reference, the input type is returned unchanged.
+
+		:param BinaryView view: BinaryView object owning this Type
+		:return: Type with named type references resolved
+		:rtype: :py:class:`Type`
+		"""
+		handle = core.BNDerefNamedTypeReference(view.handle, self._handle)
 		return Type.create(handle)
 
 	@staticmethod
@@ -2522,6 +2576,7 @@ class StructureType(Type):
 		assert structure_handle is not None, "core.BNGetTypeStructure returned None"
 		structure_builder_handle = core.BNCreateStructureBuilderFromStructure(structure_handle)
 		assert structure_builder_handle is not None, "core.BNCreateStructureBuilderFromStructure returned None"
+		core.BNSetStructureBuilder(type_builder_handle, structure_builder_handle)
 		return StructureBuilder(type_builder_handle, structure_builder_handle, self.platform, self.confidence)
 
 	@classmethod
@@ -2531,6 +2586,7 @@ class StructureType(Type):
 	def __del__(self):
 		if core is not None:
 			core.BNFreeStructure(self.struct_handle)
+		super(StructureType, self).__del__()
 
 	def __hash__(self):
 		return hash(ctypes.addressof(self.struct_handle.contents))
@@ -2544,7 +2600,7 @@ class StructureType(Type):
 			return StructureMember(
 			    Type.create(core.BNNewTypeReference(member.contents.type), confidence=member.contents.typeConfidence),
 			    member.contents.name, member.contents.offset, MemberAccess(member.contents.access),
-			    MemberScope(member.contents.scope)
+			    MemberScope(member.contents.scope), member.contents.bitPosition, member.contents.bitWidth
 			)
 		finally:
 			if member is not None:
@@ -2559,14 +2615,17 @@ class StructureType(Type):
 			return StructureMember(
 			    Type.create(core.BNNewTypeReference(member.contents.type), confidence=member.contents.typeConfidence),
 			    member.contents.name, member.contents.offset, MemberAccess(member.contents.access),
-			    MemberScope(member.contents.scope)
+			    MemberScope(member.contents.scope), member.contents.bitPosition, member.contents.bitWidth
 			)
 		finally:
 			core.BNFreeStructureMember(member)
 
 	@property
 	def members(self):
-		"""Structure member list (read-only)"""
+		"""
+		Structure member list (read-only). This list will **not** contain members inherited from base structures.
+		To get members including inherited ones, call `members_including_inherited`.
+		"""
 		count = ctypes.c_ulonglong()
 		members = core.BNGetStructureMembers(self.struct_handle, count)
 		assert members is not None, "core.BNGetStructureMembers returned None"
@@ -2577,7 +2636,7 @@ class StructureType(Type):
 				    StructureMember(
 				        Type.create(core.BNNewTypeReference(members[i].type), confidence=members[i].typeConfidence),
 				        members[i].name, members[i].offset, MemberAccess(members[i].access),
-				        MemberScope(members[i].scope)
+				        MemberScope(members[i].scope), members[i].bitPosition, members[i].bitWidth
 				    )
 				)
 		finally:
@@ -2660,7 +2719,7 @@ class StructureType(Type):
 				        StructureMember(
 							Type.create(core.BNNewTypeReference(members[i].member.type), confidence=members[i].member.typeConfidence),
 							members[i].member.name, members[i].member.offset, MemberAccess(members[i].member.access),
-							MemberScope(members[i].member.scope)
+							MemberScope(members[i].member.scope), members[i].member.bitPosition, members[i].member.bitWidth
 						),
 						members[i].memberIndex
 				    )
@@ -2674,7 +2733,6 @@ class StructureType(Type):
 		member = None
 		try:
 			member = core.BNGetMemberIncludingInheritedAtOffset(self.struct_handle, view.handle, offset)
-			result = None
 			if member is None:
 				raise ValueError(f"No member exists at offset {offset}")
 
@@ -2692,7 +2750,7 @@ class StructureType(Type):
 				StructureMember(
 					Type.create(core.BNNewTypeReference(member[0].member.type), confidence=member[0].member.typeConfidence),
 					member[0].member.name, member[0].member.offset, MemberAccess(member[0].member.access),
-					MemberScope(member[0].member.scope)
+					MemberScope(member[0].member.scope), member[0].member.bitPosition, member[0].member.bitWidth
 				),
 				member[0].memberIndex
 			)
@@ -2776,6 +2834,7 @@ class EnumerationType(IntegerType):
 	def __del__(self):
 		if core is not None:
 			core.BNFreeEnumeration(self.enum_handle)
+		super(EnumerationType, self).__del__()
 
 	def __hash__(self):
 		return hash(ctypes.addressof(self.enum_handle.contents))
@@ -2829,6 +2888,7 @@ class EnumerationType(IntegerType):
 		assert enumeration_handle is not None, "core.BNGetTypeEnumeration returned None"
 		enumeration_builder_handle = core.BNCreateEnumerationBuilderFromEnumeration(enumeration_handle)
 		assert enumeration_builder_handle is not None, "core.BNCreateEnumerationBuilderFromEnumeration returned None"
+		core.BNSetEnumerationBuilder(type_builder_handle, enumeration_builder_handle)
 		return EnumerationBuilder(type_builder_handle, enumeration_builder_handle, self.platform, self.confidence)
 
 	def generate_named_type_reference(self, guid: str, name: QualifiedNameType):
@@ -3170,6 +3230,7 @@ class NamedTypeReferenceType(Type):
 		    self.named_type_class, self.type_id, self.name._to_core_struct()
 		)
 		assert ntr_builder_handle is not None, "core.BNCreateNamedTypeBuilder returned None"
+		core.BNSetNamedTypeReferenceBuilder(type_builder_handle, ntr_builder_handle)
 		return NamedTypeReferenceBuilder(type_builder_handle, ntr_builder_handle, self.platform, self.confidence)
 
 	@classmethod
@@ -3234,6 +3295,7 @@ class NamedTypeReferenceType(Type):
 	def __del__(self):
 		if core is not None:
 			core.BNFreeNamedTypeReference(self.ntr_handle)
+		super(NamedTypeReferenceType, self).__del__()
 
 	def __repr__(self):
 		if self.named_type_class == NamedTypeReferenceClass.TypedefNamedTypeClass:

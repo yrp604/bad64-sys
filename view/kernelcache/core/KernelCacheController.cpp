@@ -124,10 +124,13 @@ bool KernelCacheController::ApplyImage(BinaryView& view, const CacheImage& image
 		loadedRegion = true;
 		for (const auto& segment : image.header->segments)
 		{
-			auto flags = SegmentFlagsFromMachOProtections(segment.initprot, segment.maxprot);
+			if (segment.vmsize == 0)
+				continue;
+
+			auto flags = SegmentFlagsForSegment(segment);
 			view.AddAutoSegment(segment.vmaddr, segment.vmsize, segment.fileoff, segment.filesize, flags);
 
-			auto relocations = m_cache.GetRelocations();
+			const auto& relocations = m_cache.GetRelocations();
 
 			auto begin = std::lower_bound(relocations.begin(), relocations.end(), segment.vmaddr,
 				[](const std::pair<uint64_t, uint64_t>& reloc, uint64_t addr) {

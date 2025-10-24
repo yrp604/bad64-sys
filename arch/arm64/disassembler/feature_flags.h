@@ -1,6 +1,6 @@
 /* GENERATED FILE */
 #pragma once
-// 100 HasXXX() functions used by decode:
+// 107 HasXXX() functions used by decode:
 #define HasFeature(feat) (ctx->decode_features[(feat) / 64] & ((uint64_t)1 << ((feat) % 64)))
 
 #define HasAES() HasFeature(ARCH_FEATURE_AES)
@@ -9,6 +9,7 @@
 #define HasBTI() HasFeature(ARCH_FEATURE_BTI)
 #define HasCHK() HasFeature(ARCH_FEATURE_CHK)
 #define HasCLRBHB() HasFeature(ARCH_FEATURE_CLRBHB)
+#define HasCMH() HasFeature(ARCH_FEATURE_CMH)
 #define HasCMPBR() HasFeature(ARCH_FEATURE_CMPBR)
 #define HasCPA() HasFeature(ARCH_FEATURE_CPA)
 #define HasCRC32() HasFeature(ARCH_FEATURE_CRC32)
@@ -16,6 +17,9 @@
 #define HasD128() HasFeature(ARCH_FEATURE_D128)
 #define HasDGH() HasFeature(ARCH_FEATURE_DGH)
 #define HasDotProd() HasFeature(ARCH_FEATURE_DotProd)
+#define HasF16F32DOT() HasFeature(ARCH_FEATURE_F16F32DOT)
+#define HasF16F32MM() HasFeature(ARCH_FEATURE_F16F32MM)
+#define HasF16MM() HasFeature(ARCH_FEATURE_F16MM)
 #define HasF32MM() HasFeature(ARCH_FEATURE_F32MM)
 #define HasF64MM() HasFeature(ARCH_FEATURE_F64MM)
 #define HasF8F16MM() HasFeature(ARCH_FEATURE_F8F16MM)
@@ -44,6 +48,7 @@
 #define HasLS64() HasFeature(ARCH_FEATURE_LS64)
 #define HasLS64_ACCDATA() HasFeature(ARCH_FEATURE_LS64_ACCDATA)
 #define HasLS64_V() HasFeature(ARCH_FEATURE_LS64_V)
+#define HasLSCP() HasFeature(ARCH_FEATURE_LSCP)
 #define HasLSE() HasFeature(ARCH_FEATURE_LSE)
 #define HasLSE128() HasFeature(ARCH_FEATURE_LSE128)
 #define HasLSFE() HasFeature(ARCH_FEATURE_LSFE)
@@ -69,6 +74,7 @@
 #define HasSME2() HasFeature(ARCH_FEATURE_SME2)
 #define HasSME2p1() HasFeature(ARCH_FEATURE_SME2p1)
 #define HasSME2p2() HasFeature(ARCH_FEATURE_SME2p2)
+#define HasSME2p3() HasFeature(ARCH_FEATURE_SME2p3)
 #define HasSME_B16B16() HasFeature(ARCH_FEATURE_SME_B16B16)
 #define HasSME_F16F16() HasFeature(ARCH_FEATURE_SME_F16F16)
 #define HasSME_F64F64() HasFeature(ARCH_FEATURE_SME_F64F64)
@@ -87,9 +93,11 @@
 #define HasSVE2() HasFeature(ARCH_FEATURE_SVE2)
 #define HasSVE2p1() HasFeature(ARCH_FEATURE_SVE2p1)
 #define HasSVE2p2() HasFeature(ARCH_FEATURE_SVE2p2)
+#define HasSVE2p3() HasFeature(ARCH_FEATURE_SVE2p3)
 #define HasSVE_AES() HasFeature(ARCH_FEATURE_SVE_AES)
 #define HasSVE_AES2() HasFeature(ARCH_FEATURE_SVE_AES2)
 #define HasSVE_B16B16() HasFeature(ARCH_FEATURE_SVE_B16B16)
+#define HasSVE_B16MM() HasFeature(ARCH_FEATURE_SVE_B16MM)
 #define HasSVE_BFSCALE() HasFeature(ARCH_FEATURE_SVE_BFSCALE)
 #define HasSVE_BitPerm() HasFeature(ARCH_FEATURE_SVE_BitPerm)
 #define HasSVE_F16F32MM() HasFeature(ARCH_FEATURE_SVE_F16F32MM)
@@ -99,12 +107,11 @@
 #define HasSYSINSTR128() HasFeature(ARCH_FEATURE_SYSINSTR128)
 #define HasSYSREG128() HasFeature(ARCH_FEATURE_SYSREG128)
 #define HasTHE() HasFeature(ARCH_FEATURE_THE)
-#define HasTME() HasFeature(ARCH_FEATURE_TME)
 #define HasTRF() HasFeature(ARCH_FEATURE_TRF)
 #define HasWFxT() HasFeature(ARCH_FEATURE_WFxT)
 #define HasXS() HasFeature(ARCH_FEATURE_XS)
 
-// 108 HaveXXX()/IsImplemented(FEAT_XXX) functions used by pcode:
+// 115 HaveXXX()/IsImplemented(FEAT_XXX) functions used by pcode:
 #define HaveFeature(feat) (ctx->pcode_features[(feat) / 64] & ((uint64_t)1 << ((feat) % 64)))
 #define HaveAES() HaveFeature(ARCH_FEATURE_AES)
 #define HaveAdvSIMD() HaveFeature(ARCH_FEATURE_AdvSIMD)
@@ -112,6 +119,7 @@
 #define HaveBTI() HaveFeature(ARCH_FEATURE_BTI)
 #define HaveCHK() HaveFeature(ARCH_FEATURE_CHK)
 #define HaveCLRBHB() HaveFeature(ARCH_FEATURE_CLRBHB)
+#define HaveCMH() HaveFeature(ARCH_FEATURE_CMH)
 #define HaveCMPBR() HaveFeature(ARCH_FEATURE_CMPBR)
 #define HaveCPA() HaveFeature(ARCH_FEATURE_CPA)
 #define HaveCRC32() HaveFeature(ARCH_FEATURE_CRC32)
@@ -121,6 +129,9 @@
 #define HaveDIT() HaveFeature(ARCH_FEATURE_DIT)
 #define HaveDotProd() HaveFeature(ARCH_FEATURE_DotProd)
 #define HaveEBEP() HaveFeature(ARCH_FEATURE_EBEP)
+#define HaveF16F32DOT() HaveFeature(ARCH_FEATURE_F16F32DOT)
+#define HaveF16F32MM() HaveFeature(ARCH_FEATURE_F16F32MM)
+#define HaveF16MM() HaveFeature(ARCH_FEATURE_F16MM)
 #define HaveF32MM() HaveFeature(ARCH_FEATURE_F32MM)
 #define HaveF64MM() HaveFeature(ARCH_FEATURE_F64MM)
 #define HaveF8F16MM() HaveFeature(ARCH_FEATURE_F8F16MM)
@@ -149,6 +160,7 @@
 #define HaveLS64() HaveFeature(ARCH_FEATURE_LS64)
 #define HaveLS64_ACCDATA() HaveFeature(ARCH_FEATURE_LS64_ACCDATA)
 #define HaveLS64_V() HaveFeature(ARCH_FEATURE_LS64_V)
+#define HaveLSCP() HaveFeature(ARCH_FEATURE_LSCP)
 #define HaveLSE() HaveFeature(ARCH_FEATURE_LSE)
 #define HaveLSE128() HaveFeature(ARCH_FEATURE_LSE128)
 #define HaveLSFE() HaveFeature(ARCH_FEATURE_LSFE)
@@ -177,6 +189,7 @@
 #define HaveSME2() HaveFeature(ARCH_FEATURE_SME2)
 #define HaveSME2p1() HaveFeature(ARCH_FEATURE_SME2p1)
 #define HaveSME2p2() HaveFeature(ARCH_FEATURE_SME2p2)
+#define HaveSME2p3() HaveFeature(ARCH_FEATURE_SME2p3)
 #define HaveSME_B16B16() HaveFeature(ARCH_FEATURE_SME_B16B16)
 #define HaveSME_F16F16() HaveFeature(ARCH_FEATURE_SME_F16F16)
 #define HaveSME_F64F64() HaveFeature(ARCH_FEATURE_SME_F64F64)
@@ -196,9 +209,11 @@
 #define HaveSVE2FP8FMA() HaveFeature(ARCH_FEATURE_SVE2FP8FMA)
 #define HaveSVE2p1() HaveFeature(ARCH_FEATURE_SVE2p1)
 #define HaveSVE2p2() HaveFeature(ARCH_FEATURE_SVE2p2)
+#define HaveSVE2p3() HaveFeature(ARCH_FEATURE_SVE2p3)
 #define HaveSVE_AES() HaveFeature(ARCH_FEATURE_SVE_AES)
 #define HaveSVE_AES2() HaveFeature(ARCH_FEATURE_SVE_AES2)
 #define HaveSVE_B16B16() HaveFeature(ARCH_FEATURE_SVE_B16B16)
+#define HaveSVE_B16MM() HaveFeature(ARCH_FEATURE_SVE_B16MM)
 #define HaveSVE_BFSCALE() HaveFeature(ARCH_FEATURE_SVE_BFSCALE)
 #define HaveSVE_BitPerm() HaveFeature(ARCH_FEATURE_SVE_BitPerm)
 #define HaveSVE_F16F32MM() HaveFeature(ARCH_FEATURE_SVE_F16F32MM)
@@ -208,7 +223,6 @@
 #define HaveSYSINSTR128() HaveFeature(ARCH_FEATURE_SYSINSTR128)
 #define HaveSYSREG128() HaveFeature(ARCH_FEATURE_SYSREG128)
 #define HaveTHE() HaveFeature(ARCH_FEATURE_THE)
-#define HaveTME() HaveFeature(ARCH_FEATURE_TME)
 #define HaveTRF() HaveFeature(ARCH_FEATURE_TRF)
 #define HaveUAO() HaveFeature(ARCH_FEATURE_UAO)
 #define HaveVHE() HaveFeature(ARCH_FEATURE_VHE)
@@ -221,111 +235,118 @@
 #define ARCH_FEATURE_BTI                3  // Referenced by decode and pcode
 #define ARCH_FEATURE_CHK                4  // Referenced by decode and pcode
 #define ARCH_FEATURE_CLRBHB             5  // Referenced by decode and pcode
-#define ARCH_FEATURE_CMPBR              6  // Referenced by decode and pcode
-#define ARCH_FEATURE_CPA                7  // Referenced by decode and pcode
-#define ARCH_FEATURE_CRC32              8  // Referenced by decode and pcode
-#define ARCH_FEATURE_CSSC               9  // Referenced by decode and pcode
-#define ARCH_FEATURE_D128              10  // Referenced by decode and pcode
-#define ARCH_FEATURE_DGH               11  // Referenced by decode and pcode
-#define ARCH_FEATURE_DIT               12  // Referenced by pcode
-#define ARCH_FEATURE_DotProd           13  // Referenced by decode and pcode
-#define ARCH_FEATURE_EBEP              14  // Referenced by pcode
-#define ARCH_FEATURE_F32MM             15  // Referenced by decode and pcode
-#define ARCH_FEATURE_F64MM             16  // Referenced by decode and pcode
-#define ARCH_FEATURE_F8F16MM           17  // Referenced by decode and pcode
-#define ARCH_FEATURE_F8F32MM           18  // Referenced by decode and pcode
-#define ARCH_FEATURE_FAMINMAX          19  // Referenced by decode and pcode
-#define ARCH_FEATURE_FCMA              20  // Referenced by decode and pcode
-#define ARCH_FEATURE_FHM               21  // Referenced by decode and pcode
-#define ARCH_FEATURE_FP                22  // Referenced by decode and pcode
-#define ARCH_FEATURE_FP16              23  // Referenced by decode and pcode
-#define ARCH_FEATURE_FP8               24  // Referenced by decode and pcode
-#define ARCH_FEATURE_FP8DOT2           25  // Referenced by decode and pcode
-#define ARCH_FEATURE_FP8DOT4           26  // Referenced by decode and pcode
-#define ARCH_FEATURE_FP8FMA            27  // Referenced by decode and pcode
-#define ARCH_FEATURE_FPRCVT            28  // Referenced by decode and pcode
-#define ARCH_FEATURE_FRINTTS           29  // Referenced by decode and pcode
-#define ARCH_FEATURE_FlagM             30  // Referenced by decode and pcode
-#define ARCH_FEATURE_FlagM2            31  // Referenced by decode and pcode
-#define ARCH_FEATURE_GCS               32  // Referenced by decode and pcode
-#define ARCH_FEATURE_HBC               33  // Referenced by decode and pcode
-#define ARCH_FEATURE_I8MM              34  // Referenced by decode and pcode
-#define ARCH_FEATURE_JSCVT             35  // Referenced by decode and pcode
-#define ARCH_FEATURE_LOR               36  // Referenced by decode and pcode
-#define ARCH_FEATURE_LRCPC             37  // Referenced by decode and pcode
-#define ARCH_FEATURE_LRCPC2            38  // Referenced by decode and pcode
-#define ARCH_FEATURE_LRCPC3            39  // Referenced by decode and pcode
-#define ARCH_FEATURE_LS64              40  // Referenced by decode and pcode
-#define ARCH_FEATURE_LS64_ACCDATA      41  // Referenced by decode and pcode
-#define ARCH_FEATURE_LS64_V            42  // Referenced by decode and pcode
-#define ARCH_FEATURE_LSE               43  // Referenced by decode and pcode
-#define ARCH_FEATURE_LSE128            44  // Referenced by decode and pcode
-#define ARCH_FEATURE_LSFE              45  // Referenced by decode and pcode
-#define ARCH_FEATURE_LSUI              46  // Referenced by decode and pcode
-#define ARCH_FEATURE_LUT               47  // Referenced by decode and pcode
-#define ARCH_FEATURE_MOPS              48  // Referenced by decode and pcode
-#define ARCH_FEATURE_MTE               49  // Referenced by decode and pcode
-#define ARCH_FEATURE_MTE2              50  // Referenced by decode and pcode
-#define ARCH_FEATURE_NMI               51  // Referenced by pcode
-#define ARCH_FEATURE_PAN               52  // Referenced by pcode
-#define ARCH_FEATURE_PAuth             53  // Referenced by decode and pcode
-#define ARCH_FEATURE_PAuth_LR          54  // Referenced by decode and pcode
-#define ARCH_FEATURE_PCDPHINT          55  // Referenced by decode and pcode
-#define ARCH_FEATURE_PMULL             56  // Referenced by pcode
-#define ARCH_FEATURE_RAS               57  // Referenced by decode and pcode
-#define ARCH_FEATURE_RDM               58  // Referenced by decode and pcode
-#define ARCH_FEATURE_RPRFM             59  // Referenced by decode and pcode
-#define ARCH_FEATURE_SB                60  // Referenced by decode and pcode
-#define ARCH_FEATURE_SHA1              61  // Referenced by decode and pcode
-#define ARCH_FEATURE_SHA256            62  // Referenced by decode and pcode
-#define ARCH_FEATURE_SHA3              63  // Referenced by decode and pcode
-#define ARCH_FEATURE_SHA512            64  // Referenced by decode and pcode
-#define ARCH_FEATURE_SM3               65  // Referenced by decode and pcode
-#define ARCH_FEATURE_SM4               66  // Referenced by decode and pcode
-#define ARCH_FEATURE_SME               67  // Referenced by decode and pcode
-#define ARCH_FEATURE_SME2              68  // Referenced by decode and pcode
-#define ARCH_FEATURE_SME2p1            69  // Referenced by decode and pcode
-#define ARCH_FEATURE_SME2p2            70  // Referenced by decode and pcode
-#define ARCH_FEATURE_SME_B16B16        71  // Referenced by decode and pcode
-#define ARCH_FEATURE_SME_F16F16        72  // Referenced by decode and pcode
-#define ARCH_FEATURE_SME_F64F64        73  // Referenced by decode and pcode
-#define ARCH_FEATURE_SME_F8F16         74  // Referenced by decode and pcode
-#define ARCH_FEATURE_SME_F8F32         75  // Referenced by decode and pcode
-#define ARCH_FEATURE_SME_I16I64        76  // Referenced by decode and pcode
-#define ARCH_FEATURE_SME_LUTv2         77  // Referenced by decode and pcode
-#define ARCH_FEATURE_SME_MOP4          78  // Referenced by decode and pcode
-#define ARCH_FEATURE_SME_TMOP          79  // Referenced by decode and pcode
-#define ARCH_FEATURE_SPE               80  // Referenced by decode and pcode
-#define ARCH_FEATURE_SSBS              81  // Referenced by pcode
-#define ARCH_FEATURE_SSVE_FEXPA        82  // Referenced by decode and pcode
-#define ARCH_FEATURE_SSVE_FP8DOT2      83  // Referenced by decode
-#define ARCH_FEATURE_SSVE_FP8DOT4      84  // Referenced by decode
-#define ARCH_FEATURE_SSVE_FP8FMA       85  // Referenced by decode
-#define ARCH_FEATURE_SVE               86  // Referenced by decode and pcode
-#define ARCH_FEATURE_SVE2              87  // Referenced by decode and pcode
-#define ARCH_FEATURE_SVE2FP8DOT2       88  // Referenced by pcode
-#define ARCH_FEATURE_SVE2FP8DOT4       89  // Referenced by pcode
-#define ARCH_FEATURE_SVE2FP8FMA        90  // Referenced by pcode
-#define ARCH_FEATURE_SVE2p1            91  // Referenced by decode and pcode
-#define ARCH_FEATURE_SVE2p2            92  // Referenced by decode and pcode
-#define ARCH_FEATURE_SVE_AES           93  // Referenced by decode and pcode
-#define ARCH_FEATURE_SVE_AES2          94  // Referenced by decode and pcode
-#define ARCH_FEATURE_SVE_B16B16        95  // Referenced by decode and pcode
-#define ARCH_FEATURE_SVE_BFSCALE       96  // Referenced by decode and pcode
-#define ARCH_FEATURE_SVE_BitPerm       97  // Referenced by decode and pcode
-#define ARCH_FEATURE_SVE_F16F32MM      98  // Referenced by decode and pcode
-#define ARCH_FEATURE_SVE_PMULL128      99  // Referenced by decode and pcode
-#define ARCH_FEATURE_SVE_SHA3         100  // Referenced by decode and pcode
-#define ARCH_FEATURE_SVE_SM4          101  // Referenced by decode and pcode
-#define ARCH_FEATURE_SYSINSTR128      102  // Referenced by decode and pcode
-#define ARCH_FEATURE_SYSREG128        103  // Referenced by decode and pcode
-#define ARCH_FEATURE_THE              104  // Referenced by decode and pcode
-#define ARCH_FEATURE_TME              105  // Referenced by decode and pcode
-#define ARCH_FEATURE_TRF              106  // Referenced by decode and pcode
-#define ARCH_FEATURE_UAO              107  // Referenced by pcode
-#define ARCH_FEATURE_VHE              108  // Referenced by pcode
-#define ARCH_FEATURE_WFxT             109  // Referenced by decode and pcode
-#define ARCH_FEATURE_XS               110  // Referenced by decode and pcode
+#define ARCH_FEATURE_CMH                6  // Referenced by decode and pcode
+#define ARCH_FEATURE_CMPBR              7  // Referenced by decode and pcode
+#define ARCH_FEATURE_CPA                8  // Referenced by decode and pcode
+#define ARCH_FEATURE_CRC32              9  // Referenced by decode and pcode
+#define ARCH_FEATURE_CSSC              10  // Referenced by decode and pcode
+#define ARCH_FEATURE_D128              11  // Referenced by decode and pcode
+#define ARCH_FEATURE_DGH               12  // Referenced by decode and pcode
+#define ARCH_FEATURE_DIT               13  // Referenced by pcode
+#define ARCH_FEATURE_DotProd           14  // Referenced by decode and pcode
+#define ARCH_FEATURE_EBEP              15  // Referenced by pcode
+#define ARCH_FEATURE_F16F32DOT         16  // Referenced by decode and pcode
+#define ARCH_FEATURE_F16F32MM          17  // Referenced by decode and pcode
+#define ARCH_FEATURE_F16MM             18  // Referenced by decode and pcode
+#define ARCH_FEATURE_F32MM             19  // Referenced by decode and pcode
+#define ARCH_FEATURE_F64MM             20  // Referenced by decode and pcode
+#define ARCH_FEATURE_F8F16MM           21  // Referenced by decode and pcode
+#define ARCH_FEATURE_F8F32MM           22  // Referenced by decode and pcode
+#define ARCH_FEATURE_FAMINMAX          23  // Referenced by decode and pcode
+#define ARCH_FEATURE_FCMA              24  // Referenced by decode and pcode
+#define ARCH_FEATURE_FHM               25  // Referenced by decode and pcode
+#define ARCH_FEATURE_FP                26  // Referenced by decode and pcode
+#define ARCH_FEATURE_FP16              27  // Referenced by decode and pcode
+#define ARCH_FEATURE_FP8               28  // Referenced by decode and pcode
+#define ARCH_FEATURE_FP8DOT2           29  // Referenced by decode and pcode
+#define ARCH_FEATURE_FP8DOT4           30  // Referenced by decode and pcode
+#define ARCH_FEATURE_FP8FMA            31  // Referenced by decode and pcode
+#define ARCH_FEATURE_FPRCVT            32  // Referenced by decode and pcode
+#define ARCH_FEATURE_FRINTTS           33  // Referenced by decode and pcode
+#define ARCH_FEATURE_FlagM             34  // Referenced by decode and pcode
+#define ARCH_FEATURE_FlagM2            35  // Referenced by decode and pcode
+#define ARCH_FEATURE_GCS               36  // Referenced by decode and pcode
+#define ARCH_FEATURE_HBC               37  // Referenced by decode and pcode
+#define ARCH_FEATURE_I8MM              38  // Referenced by decode and pcode
+#define ARCH_FEATURE_JSCVT             39  // Referenced by decode and pcode
+#define ARCH_FEATURE_LOR               40  // Referenced by decode and pcode
+#define ARCH_FEATURE_LRCPC             41  // Referenced by decode and pcode
+#define ARCH_FEATURE_LRCPC2            42  // Referenced by decode and pcode
+#define ARCH_FEATURE_LRCPC3            43  // Referenced by decode and pcode
+#define ARCH_FEATURE_LS64              44  // Referenced by decode and pcode
+#define ARCH_FEATURE_LS64_ACCDATA      45  // Referenced by decode and pcode
+#define ARCH_FEATURE_LS64_V            46  // Referenced by decode and pcode
+#define ARCH_FEATURE_LSCP              47  // Referenced by decode and pcode
+#define ARCH_FEATURE_LSE               48  // Referenced by decode and pcode
+#define ARCH_FEATURE_LSE128            49  // Referenced by decode and pcode
+#define ARCH_FEATURE_LSFE              50  // Referenced by decode and pcode
+#define ARCH_FEATURE_LSUI              51  // Referenced by decode and pcode
+#define ARCH_FEATURE_LUT               52  // Referenced by decode and pcode
+#define ARCH_FEATURE_MOPS              53  // Referenced by decode and pcode
+#define ARCH_FEATURE_MTE               54  // Referenced by decode and pcode
+#define ARCH_FEATURE_MTE2              55  // Referenced by decode and pcode
+#define ARCH_FEATURE_NMI               56  // Referenced by pcode
+#define ARCH_FEATURE_PAN               57  // Referenced by pcode
+#define ARCH_FEATURE_PAuth             58  // Referenced by decode and pcode
+#define ARCH_FEATURE_PAuth_LR          59  // Referenced by decode and pcode
+#define ARCH_FEATURE_PCDPHINT          60  // Referenced by decode and pcode
+#define ARCH_FEATURE_PMULL             61  // Referenced by pcode
+#define ARCH_FEATURE_RAS               62  // Referenced by decode and pcode
+#define ARCH_FEATURE_RDM               63  // Referenced by decode and pcode
+#define ARCH_FEATURE_RPRFM             64  // Referenced by decode and pcode
+#define ARCH_FEATURE_SB                65  // Referenced by decode and pcode
+#define ARCH_FEATURE_SHA1              66  // Referenced by decode and pcode
+#define ARCH_FEATURE_SHA256            67  // Referenced by decode and pcode
+#define ARCH_FEATURE_SHA3              68  // Referenced by decode and pcode
+#define ARCH_FEATURE_SHA512            69  // Referenced by decode and pcode
+#define ARCH_FEATURE_SM3               70  // Referenced by decode and pcode
+#define ARCH_FEATURE_SM4               71  // Referenced by decode and pcode
+#define ARCH_FEATURE_SME               72  // Referenced by decode and pcode
+#define ARCH_FEATURE_SME2              73  // Referenced by decode and pcode
+#define ARCH_FEATURE_SME2p1            74  // Referenced by decode and pcode
+#define ARCH_FEATURE_SME2p2            75  // Referenced by decode and pcode
+#define ARCH_FEATURE_SME2p3            76  // Referenced by decode and pcode
+#define ARCH_FEATURE_SME_B16B16        77  // Referenced by decode and pcode
+#define ARCH_FEATURE_SME_F16F16        78  // Referenced by decode and pcode
+#define ARCH_FEATURE_SME_F64F64        79  // Referenced by decode and pcode
+#define ARCH_FEATURE_SME_F8F16         80  // Referenced by decode and pcode
+#define ARCH_FEATURE_SME_F8F32         81  // Referenced by decode and pcode
+#define ARCH_FEATURE_SME_I16I64        82  // Referenced by decode and pcode
+#define ARCH_FEATURE_SME_LUTv2         83  // Referenced by decode and pcode
+#define ARCH_FEATURE_SME_MOP4          84  // Referenced by decode and pcode
+#define ARCH_FEATURE_SME_TMOP          85  // Referenced by decode and pcode
+#define ARCH_FEATURE_SPE               86  // Referenced by decode and pcode
+#define ARCH_FEATURE_SSBS              87  // Referenced by pcode
+#define ARCH_FEATURE_SSVE_FEXPA        88  // Referenced by decode and pcode
+#define ARCH_FEATURE_SSVE_FP8DOT2      89  // Referenced by decode
+#define ARCH_FEATURE_SSVE_FP8DOT4      90  // Referenced by decode
+#define ARCH_FEATURE_SSVE_FP8FMA       91  // Referenced by decode
+#define ARCH_FEATURE_SVE               92  // Referenced by decode and pcode
+#define ARCH_FEATURE_SVE2              93  // Referenced by decode and pcode
+#define ARCH_FEATURE_SVE2FP8DOT2       94  // Referenced by pcode
+#define ARCH_FEATURE_SVE2FP8DOT4       95  // Referenced by pcode
+#define ARCH_FEATURE_SVE2FP8FMA        96  // Referenced by pcode
+#define ARCH_FEATURE_SVE2p1            97  // Referenced by decode and pcode
+#define ARCH_FEATURE_SVE2p2            98  // Referenced by decode and pcode
+#define ARCH_FEATURE_SVE2p3            99  // Referenced by decode and pcode
+#define ARCH_FEATURE_SVE_AES          100  // Referenced by decode and pcode
+#define ARCH_FEATURE_SVE_AES2         101  // Referenced by decode and pcode
+#define ARCH_FEATURE_SVE_B16B16       102  // Referenced by decode and pcode
+#define ARCH_FEATURE_SVE_B16MM        103  // Referenced by decode and pcode
+#define ARCH_FEATURE_SVE_BFSCALE      104  // Referenced by decode and pcode
+#define ARCH_FEATURE_SVE_BitPerm      105  // Referenced by decode and pcode
+#define ARCH_FEATURE_SVE_F16F32MM     106  // Referenced by decode and pcode
+#define ARCH_FEATURE_SVE_PMULL128     107  // Referenced by decode and pcode
+#define ARCH_FEATURE_SVE_SHA3         108  // Referenced by decode and pcode
+#define ARCH_FEATURE_SVE_SM4          109  // Referenced by decode and pcode
+#define ARCH_FEATURE_SYSINSTR128      110  // Referenced by decode and pcode
+#define ARCH_FEATURE_SYSREG128        111  // Referenced by decode and pcode
+#define ARCH_FEATURE_THE              112  // Referenced by decode and pcode
+#define ARCH_FEATURE_TRF              113  // Referenced by decode and pcode
+#define ARCH_FEATURE_UAO              114  // Referenced by pcode
+#define ARCH_FEATURE_VHE              115  // Referenced by pcode
+#define ARCH_FEATURE_WFxT             116  // Referenced by decode and pcode
+#define ARCH_FEATURE_XS               117  // Referenced by decode and pcode
 
 #define ARCH_FEATURES_ENABLE_ALL(feature_field)  do { \
 	    _Static_assert(sizeof(feature_field) * 8 > ARCH_FEATURE_XS, "Feature field too small for largest feature value"); \

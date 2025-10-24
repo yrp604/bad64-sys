@@ -632,7 +632,6 @@ fn create_export_form(bv_arch: &str) -> Form {
     form.add_field(FormInputField::SaveFileName {
         prompt: "Save Location".to_string(),
         extension: Some("Debug Files (*.dwo *.debug);;All Files (*)".to_string()),
-        default_name: None,
         default: None,
         value: None,
     });

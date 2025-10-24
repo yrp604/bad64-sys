@@ -9,28 +9,28 @@
 
 class WarpCurrentFunctionWidget : public QWidget
 {
-    Q_OBJECT
-    FunctionRef m_current;
+	Q_OBJECT
+	FunctionRef m_current;
 
-    QSplitter *m_splitter;
+	QSplitter* m_splitter;
 
-    WarpFunctionTableWidget *m_tableWidget;
-    WarpFunctionInfoWidget *m_infoWidget;
+	WarpFunctionTableWidget* m_tableWidget;
+	WarpFunctionInfoWidget* m_infoWidget;
 
-    LoggerRef m_logger;
+	LoggerRef m_logger;
 
-    std::shared_ptr<WarpFetcher> m_fetcher;
+	std::shared_ptr<WarpFetcher> m_fetcher;
 
 public:
-    explicit WarpCurrentFunctionWidget();
+	explicit WarpCurrentFunctionWidget();
 
-    ~WarpCurrentFunctionWidget() override = default;
+	~WarpCurrentFunctionWidget() override = default;
 
-    void SetFetcher(std::shared_ptr<WarpFetcher> fetcher);
+	void SetFetcher(std::shared_ptr<WarpFetcher> fetcher);
 
-    void SetCurrentFunction(FunctionRef current);
+	void SetCurrentFunction(FunctionRef current);
 
-    FunctionRef GetCurrentFunction() { return m_current; };
+	FunctionRef GetCurrentFunction() { return m_current; };
 
-    void UpdateMatches();
+	void UpdateMatches();
 };

@@ -753,6 +753,29 @@ std::vector<InstructionTextToken> Type::GetPointerSuffixTokens(uint8_t baseConfi
 }
 
 
+std::vector<TypeAttribute> Type::GetAttributes() const
+{
+	size_t count = 0;
+	BNTypeAttribute* attributes = BNGetTypeAttributes(m_object, &count);
+	std::vector<TypeAttribute> result;
+	for (size_t i = 0; i < count; i++)
+		result.emplace_back(attributes[i].name, attributes[i].value);
+	BNFreeTypeAttributeList(attributes, count);
+	return result;
+}
+
+
+std::optional<std::string> Type::GetAttribute(const std::string& name) const
+{
+	char* result = BNGetTypeAttributeByName(m_object, name.c_str());
+	if (!result)
+		return std::nullopt;
+	std::string resultStr(result);
+	BNFreeString(result);
+	return resultStr;
+}
+
+
 string Type::GetString(Platform* platform, BNTokenEscapingType escaping) const
 {
 	char* str = BNGetTypeString(m_object, platform ? platform->GetObject() : nullptr, escaping);
@@ -769,6 +792,8 @@ string Type::GetTypeAndName(const QualifiedName& nameList, BNTokenEscapingType e
 	QualifiedName::FreeAPIObject(&name);
 	return outName;
 }
+
+
 
 string Type::GetStringBeforeName(Platform* platform, BNTokenEscapingType escaping) const
 {
@@ -820,6 +845,13 @@ vector<InstructionTextToken> Type::GetTokensAfterName(Platform* platform, uint8_
 Ref<Type> Type::Duplicate() const
 {
 	return new Type(BNDuplicateType(m_object));
+}
+
+
+Type* Type::SetIgnored(bool setIgnored)
+{
+	BNTypeSetIgnored(m_object, setIgnored);
+	return this;
 }
 
 
@@ -1381,6 +1413,12 @@ string Type::GetSizeSuffix(size_t size)
 	default:
 		return fmt::format(".{}", size);
 	}
+}
+
+
+Ref<Type> Type::DerefNamedTypeReference(BinaryView* view) const
+{
+	return new Type(BNDerefNamedTypeReference(view->GetObject(), m_object));
 }
 
 
@@ -2189,6 +2227,55 @@ TypeBuilder& TypeBuilder::SetPointerSuffix(const std::set<BNPointerSuffix>& suff
 }
 
 
+void TypeBuilder::SetAttribute(const std::string& name, const std::string& value)
+{
+	BNSetTypeBuilderAttribute(m_object, name.c_str(), value.c_str());
+}
+
+
+void TypeBuilder::SetAttributes(const std::map<std::string, std::string>& values)
+{
+	BNTypeAttribute* attrs = new BNTypeAttribute[values.size()];
+	size_t i = 0;
+	for (auto& [name, value] : values)
+	{
+		attrs[i].name = (char*)name.c_str();
+		attrs[i].value = (char*)value.c_str();
+		i++;
+	}
+	BNSetTypeBuilderAttributeList(m_object, attrs, values.size());
+}
+
+
+void TypeBuilder::RemoveAttribute(const std::string& name)
+{
+	BNRemoveTypeBuilderAttribute(m_object, name.c_str());
+}
+
+
+std::vector<TypeAttribute> TypeBuilder::GetAttributes() const
+{
+	size_t count;
+	BNTypeAttribute* attributes = BNGetTypeBuilderAttributes(m_object, &count);
+	std::vector<TypeAttribute> result;
+	for (size_t i = 0; i < count; i++)
+		result.emplace_back(attributes[i].name, attributes[i].value);
+	BNFreeTypeAttributeList(attributes, count);
+	return result;
+}
+
+
+std::optional<std::string> TypeBuilder::GetAttribute(const std::string& name) const
+{
+	char* result = BNGetTypeBuilderAttributeByName(m_object, name.c_str());
+	if (!result)
+		return std::nullopt;
+	std::string resultStr(result);
+	BNFreeString(result);
+	return resultStr;
+}
+
+
 QualifiedName TypeBuilder::GetTypeName() const
 {
 	BNQualifiedName name = BNTypeBuilderGetTypeName(m_object);
@@ -2428,6 +2515,8 @@ vector<StructureMember> Structure::GetMembers() const
 		member.offset = members[i].offset;
 		member.access = members[i].access;
 		member.scope = members[i].scope;
+		member.bitPosition = members[i].bitPosition;
+		member.bitWidth = members[i].bitWidth;
 		result.push_back(member);
 	}
 
@@ -2453,6 +2542,8 @@ vector<InheritedStructureMember> Structure::GetMembersIncludingInherited(const T
 		member.member.offset = members[i].member.offset;
 		member.member.access = members[i].member.access;
 		member.member.scope = members[i].member.scope;
+		member.member.bitPosition = members[i].member.bitPosition;
+		member.member.bitWidth = members[i].member.bitWidth;
 		member.memberIndex = members[i].memberIndex;
 		result.push_back(member);
 	}
@@ -2476,6 +2567,8 @@ bool Structure::GetMemberIncludingInheritedAtOffset(BinaryView* view, int64_t of
 	result.member.offset = member->member.offset;
 	result.member.access = member->member.access;
 	result.member.scope = member->member.scope;
+	result.member.bitPosition = member->member.bitPosition;
+	result.member.bitWidth = member->member.bitWidth;
 	result.memberIndex = member->memberIndex;
 
 	BNFreeInheritedStructureMember(member);
@@ -2493,6 +2586,8 @@ bool Structure::GetMemberByName(const string& name, StructureMember& result) con
 		result.offset = member->offset;
 		result.access = member->access;
 		result.scope = member->scope;
+		result.bitPosition = member->bitPosition;
+		result.bitWidth = member->bitWidth;
 		BNFreeStructureMember(member);
 		return true;
 	}
@@ -2517,6 +2612,8 @@ bool Structure::GetMemberAtOffset(int64_t offset, StructureMember& result, size_
 		result.offset = member->offset;
 		result.access = member->access;
 		result.scope = member->scope;
+		result.bitPosition = member->bitPosition;
+		result.bitWidth = member->bitWidth;
 		BNFreeStructureMember(member);
 		return true;
 	}
@@ -2621,6 +2718,8 @@ static void ResolveMemberCallback(void* ctxt, BNNamedTypeReference* baseName, BN
 	apiMember.offset = member.offset;
 	apiMember.access = member.access;
 	apiMember.scope = member.scope;
+	apiMember.bitPosition = member.bitPosition;
+	apiMember.bitWidth = member.bitWidth;
 	(*resolveFunc->callback)(baseNameRef, resolvedStructRef, memberIndex, structOffset, adjustedOffset, apiMember);
 }
 
@@ -2761,6 +2860,8 @@ vector<StructureMember> StructureBuilder::GetMembers() const
 		member.offset = members[i].offset;
 		member.access = members[i].access;
 		member.scope = members[i].scope;
+		member.bitPosition = members[i].bitPosition;
+		member.bitWidth = members[i].bitWidth;
 		result.push_back(member);
 	}
 
@@ -2779,6 +2880,8 @@ bool StructureBuilder::GetMemberByName(const string& name, StructureMember& resu
 		result.offset = member->offset;
 		result.access = member->access;
 		result.scope = member->scope;
+		result.bitPosition = member->bitPosition;
+		result.bitWidth = member->bitWidth;
 		BNFreeStructureMember(member);
 		return true;
 	}
@@ -2803,6 +2906,8 @@ bool StructureBuilder::GetMemberAtOffset(int64_t offset, StructureMember& result
 		result.offset = member->offset;
 		result.access = member->access;
 		result.scope = member->scope;
+		result.bitPosition = member->bitPosition;
+		result.bitWidth = member->bitWidth;
 		BNFreeStructureMember(member);
 		return true;
 	}
@@ -2906,13 +3011,22 @@ StructureBuilder& StructureBuilder::AddMember(
 
 
 StructureBuilder& StructureBuilder::AddMemberAtOffset(const Confidence<Ref<Type>>& type, const string& name,
-    uint64_t offset, bool overwriteExisting, BNMemberAccess access, BNMemberScope scope)
+    uint64_t offset, bool overwriteExisting, BNMemberAccess access, BNMemberScope scope, uint8_t bitPosition, uint8_t bitWidth)
 {
 	BNTypeWithConfidence tc;
 	tc.type = type->GetObject();
 	tc.confidence = type.GetConfidence();
-	BNAddStructureBuilderMemberAtOffset(m_object, &tc, name.c_str(), offset, overwriteExisting, access, scope);
+	BNAddStructureBuilderMemberAtOffset(m_object, &tc, name.c_str(), offset, overwriteExisting, access, scope, bitPosition, bitWidth);
 	return *this;
+}
+
+
+StructureBuilder& StructureBuilder::AddMemberAtBitOffset(const Confidence<Ref<Type>>& type, const string& name,
+	uint64_t bitOffset, uint8_t bitWidth, bool overwriteExisting, BNMemberAccess access, BNMemberScope scope)
+{
+	const uint64_t byteOffset = bitOffset / 8;
+	const uint8_t bitPosition = bitOffset % 8;
+	return AddMemberAtOffset(type, name, byteOffset, overwriteExisting, access, scope, bitPosition, bitWidth);
 }
 
 

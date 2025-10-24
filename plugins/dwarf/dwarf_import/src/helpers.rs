@@ -22,7 +22,7 @@ use binaryninja::file_metadata::FileMetadata;
 use binaryninja::Endianness;
 use binaryninja::{
     binary_view::{BinaryView, BinaryViewExt},
-    download_provider::{DownloadInstanceInputOutputCallbacks, DownloadProvider},
+    download::{DownloadInstanceInputOutputCallbacks, DownloadProvider},
     rc::Ref,
     settings::Settings,
 };
@@ -110,11 +110,14 @@ pub(crate) fn get_attr_die<'a, R: ReaderType>(
         Ok(Some(DebugInfoRefSup(offset))) => {
             for source_unit in debug_info_builder_context.sup_units() {
                 if let Some(new_offset) = offset.to_unit_offset(&source_unit.header) {
-                    return Some(DieReference::UnitAndOffset((
-                        dwarf.sup().unwrap(),
-                        source_unit,
-                        new_offset,
-                    )));
+                    let sup: &Dwarf<R> = match dwarf.sup() {
+                        Some(x) => x,
+                        None => {
+                            log::error!("Trying to get offset in supplmentary dwarf info, but none is present");
+                            return None;
+                        }
+                    };
+                    return Some(DieReference::UnitAndOffset((sup, source_unit, new_offset)));
                 }
             }
             warn!("Failed to fetch DIE. Supplementary debug information may be incomplete.");
@@ -185,11 +188,18 @@ pub(crate) fn get_name<R: ReaderType>(
 ) -> Option<String> {
     match resolve_specification(dwarf, unit, entry, debug_info_builder_context) {
         DieReference::UnitAndOffset((dwarf, entry_unit, entry_offset)) => {
-            if let Ok(Some(attr_val)) = entry_unit
-                .entry(entry_offset)
-                .unwrap()
-                .attr_value(constants::DW_AT_name)
-            {
+            let resolved_entry = match entry_unit.entry(entry_offset) {
+                Ok(x) => x,
+                Err(_) => {
+                    log::error!(
+                        "Failed to get entry in unit at {:?} at offset {:#x} (get_name)",
+                        entry_unit.header.offset(),
+                        entry_offset.0
+                    );
+                    return None;
+                }
+            };
+            if let Ok(Some(attr_val)) = resolved_entry.attr_value(constants::DW_AT_name) {
                 if let Ok(attr_string) = dwarf.attr_string(entry_unit, attr_val.clone()) {
                     if let Ok(attr_string) = attr_string.to_string() {
                         return Some(attr_string.to_string());
@@ -225,11 +235,19 @@ pub(crate) fn get_raw_name<R: ReaderType>(
 ) -> Option<String> {
     match resolve_specification(dwarf, unit, entry, debug_info_builder_context) {
         DieReference::UnitAndOffset((dwarf, entry_unit, entry_offset)) => {
-            if let Ok(Some(attr_val)) = entry_unit
-                .entry(entry_offset)
-                .unwrap()
-                .attr_value(constants::DW_AT_linkage_name)
-            {
+            let resolved_entry = match entry_unit.entry(entry_offset) {
+                Ok(x) => x,
+                Err(_) => {
+                    log::error!(
+                        "Failed to get entry in unit at {:?} at offset {:#x} (get_raw_name)",
+                        entry_unit.header.offset(),
+                        entry_offset.0
+                    );
+                    return None;
+                }
+            };
+
+            if let Ok(Some(attr_val)) = resolved_entry.attr_value(constants::DW_AT_linkage_name) {
                 if let Ok(attr_string) = dwarf.attr_string(entry_unit, attr_val.clone()) {
                     if let Ok(attr_string) = attr_string.to_string() {
                         return Some(attr_string.to_string());
@@ -379,21 +397,25 @@ pub(crate) fn get_build_id(view: &BinaryView) -> Result<String, String> {
                 return Err("Build id section must be at least 12 bytes".to_string());
             }
 
-            let name_len: u32;
-            let desc_len: u32;
-            let note_type: u32;
-            match raw_view.default_endianness() {
-                Endianness::LittleEndian => {
-                    name_len = u32::from_le_bytes(build_id_bytes[0..4].try_into().unwrap());
-                    desc_len = u32::from_le_bytes(build_id_bytes[4..8].try_into().unwrap());
-                    note_type = u32::from_le_bytes(build_id_bytes[8..12].try_into().unwrap());
-                }
-                Endianness::BigEndian => {
-                    name_len = u32::from_be_bytes(build_id_bytes[0..4].try_into().unwrap());
-                    desc_len = u32::from_be_bytes(build_id_bytes[4..8].try_into().unwrap());
-                    note_type = u32::from_be_bytes(build_id_bytes[8..12].try_into().unwrap());
-                }
+            let conversion_func = match raw_view.default_endianness() {
+                Endianness::LittleEndian => u32::from_le_bytes,
+                Endianness::BigEndian => u32::from_be_bytes,
             };
+
+            let name_len = build_id_bytes[0..4]
+                .try_into()
+                .map_err(|e| format!("Failed to get name length: {}", e))
+                .map(|byte_val| conversion_func(byte_val))?;
+
+            let desc_len = build_id_bytes[4..8]
+                .try_into()
+                .map_err(|e| format!("Failed to get desc length: {}", e))
+                .map(|byte_val| conversion_func(byte_val))?;
+
+            let note_type = build_id_bytes[8..12]
+                .try_into()
+                .map_err(|e| format!("Failed to get note type: {}", e))
+                .map(|byte_val| conversion_func(byte_val))?;
 
             if note_type != 3 {
                 return Err(format!("Build id section has wrong type: {}", note_type));
@@ -635,6 +657,6 @@ pub(crate) fn load_sibling_debug_file(view: &BinaryView) -> (Option<Ref<BinaryVi
 
     (
         binaryninja::load_with_options(debug_file, false, Some(load_settings)),
-        false,
+        true,
     )
 }

@@ -415,18 +415,18 @@ class Operand():
         array = False
         if self.element_size > 1:
             array = True
-        
+
         inner_str = ''
         if self.type == 'float':
-            inner_str = 'Type::FloatType(%d)' % self.element_size_byte
+            inner_str = 'Type::FloatType(%d)->SetIgnored(true)' % self.element_size_byte
         elif self.type == 'int':
             signed_str = 'true' if self.signed else 'false'
-            inner_str = 'Type::IntegerType(%d, %s)' % (self.element_size_byte, signed_str)
+            inner_str = 'Type::IntegerType(%d, %s)->SetIgnored(true)' % (self.element_size_byte, signed_str)
         else:
-            inner_str = 'Type::BoolType()'
-        
+            inner_str = 'Type::BoolType()->SetIgnored(true)'
+
         if self.n_element > 1:
-            s = 'Type::ArrayType(%s, %d)' % (inner_str, self.n_element)
+            s = 'Type::ArrayType(%s, %d)->SetIgnored(true)' % (inner_str, self.n_element)
         else:
             s = inner_str
 
