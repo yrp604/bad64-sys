@@ -2923,17 +2923,11 @@ extern "C"
 {
 	BN_DECLARE_CORE_ABI_VERSION
 
-#ifndef DEMO_VERSION
 	BINARYNINJAPLUGIN void CorePluginDependencies()
 	{
 	}
-#endif
 
-#ifdef DEMO_VERSION
-	bool PseudoCPluginInit()
-#else
 	BINARYNINJAPLUGIN bool CorePluginInit()
-#endif
 	{
 		LanguageRepresentationFunctionType* type = new PseudoRustFunctionType();
 		LanguageRepresentationFunctionType::Register(type);

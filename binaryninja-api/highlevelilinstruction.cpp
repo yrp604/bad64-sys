@@ -1012,6 +1012,24 @@ void HighLevelILInstructionBase::ClearAttribute(BNILInstructionAttribute attribu
 }
 
 
+std::optional<DerivedString> HighLevelILInstructionBase::GetDerivedStringReference() const
+{
+	return function->GetDerivedStringReferenceForExpr(exprIndex);
+}
+
+
+void HighLevelILInstructionBase::SetDerivedStringReference(const DerivedString& str)
+{
+	function->SetDerivedStringReferenceForExpr(exprIndex, str);
+}
+
+
+void HighLevelILInstructionBase::RemoveDerivedStringReference()
+{
+	function->RemoveDerivedStringReferenceForExpr(exprIndex);
+}
+
+
 size_t HighLevelILInstructionBase::GetInstructionIndex() const
 {
 	return function->GetInstructionForExpr(exprIndex);

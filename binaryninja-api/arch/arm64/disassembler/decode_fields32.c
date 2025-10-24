@@ -1874,6 +1874,17 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 			ctx->Rn = (insword>>5)&0x1f;
 			ctx->Rt = insword&0x1f;
 			break;
+		case ENC_LDAPP_64_LDIAPPSTILP:
+		case ENC_LDAP_64_LDIAPPSTILP:
+		case ENC_STLP_64_LDIAPPSTILP:
+			// size=xx|xx|x|x|x|xx|L=x|x|Rt2=xxxxx|opc2=xxxx|xx|Rn=xxxxx|Rt=xxxxx
+			ctx->size = insword>>30;
+			ctx->L = (insword>>22)&1;
+			ctx->Rt2 = (insword>>16)&0x1f;
+			ctx->opc2 = (insword>>12)&15;
+			ctx->Rn = (insword>>5)&0x1f;
+			ctx->Rt = insword&0x1f;
+			break;
 		case ENC_LDAPURB_32_LDAPSTL_UNSCALED:
 		case ENC_LDAPURH_32_LDAPSTL_UNSCALED:
 		case ENC_LDAPURSW_64_LDAPSTL_UNSCALED:
@@ -2813,8 +2824,10 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 			ctx->Zn = (insword>>5)&0x1f;
 			ctx->Zt = insword&0x1f;
 			break;
+		case ENC_BFMMLA_Z_ZZZ_H:
 		case ENC_FMMLA_Z16_ZZ8Z8_:
 		case ENC_FMMLA_Z32_ZZ8Z8_:
+		case ENC_FMMLA_Z_ZZZ_H:
 			// xxx|xxxx|xx|op=x|x|Zm=xxxxx|xxxxxx|Zn=xxxxx|Zda=xxxxx
 			ctx->op = (insword>>22)&1;
 			ctx->Zm = (insword>>16)&0x1f;
@@ -2977,6 +2990,7 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 			ctx->Pd = insword&15;
 			break;
 		case ENC_LUTI4_Z_ZZ_8:
+		case ENC_LUTI6_Z_ZZZ_16:
 			// xxx|xxxx|x|i1=x|x|x|Zm=xxxxx|xxx|xxx|Zn=xxxxx|Zd=xxxxx
 			ctx->i1 = (insword>>23)&1;
 			ctx->Zm = (insword>>16)&0x1f;
@@ -3466,6 +3480,24 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 			ctx->PNn = (insword>>5)&15;
 			ctx->Rd = insword&0x1f;
 			break;
+		case ENC_SCVTF_Z_Z_:
+		case ENC_SCVTFLT_Z_Z_:
+		case ENC_UCVTF_Z_Z_:
+		case ENC_UCVTFLT_Z_Z_:
+			// xxx|xxxx|x|size=xx|xxx|xxx|xxxx|x|U=x|Zn=xxxxx|Zd=xxxxx
+			ctx->size = (insword>>22)&3;
+			ctx->U = (insword>>10)&1;
+			ctx->Zn = (insword>>5)&0x1f;
+			ctx->Zd = insword&0x1f;
+			break;
+		case ENC_FCVTZSN_Z_MZ2_:
+		case ENC_FCVTZUN_Z_MZ2_:
+			// xxx|xxxx|x|size=xx|xxx|xxx|xxxx|x|U=x|Zn=xxxx|x|Zd=xxxxx
+			ctx->size = (insword>>22)&3;
+			ctx->U = (insword>>10)&1;
+			ctx->Zn = (insword>>6)&15;
+			ctx->Zd = insword&0x1f;
+			break;
 		case ENC_FRECPX_Z_P_Z_Z:
 		case ENC_FSQRT_Z_P_Z_Z:
 			// xxx|xxxx|x|size=xx|xxx|xxx|x|opc=xx|Pg=xxx|Zn=xxxxx|Zd=xxxxx
@@ -3839,6 +3871,15 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 			ctx->Zn = (insword>>5)&0x1f;
 			ctx->Zd = insword&0x1f;
 			break;
+		case ENC_SABAL_Z_ZZ_:
+		case ENC_UABAL_Z_ZZ_:
+			// xxx|xxxx|x|size=xx|x|Zm=xxxxx|xxxx|U=x|x|Zn=xxxxx|Zda=xxxxx
+			ctx->size = (insword>>22)&3;
+			ctx->Zm = (insword>>16)&0x1f;
+			ctx->U = (insword>>11)&1;
+			ctx->Zn = (insword>>5)&0x1f;
+			ctx->Zda = insword&0x1f;
+			break;
 		case ENC_FTSSEL_Z_ZZ_:
 			// xxx|xxxx|x|size=xx|x|Zm=xxxxx|xxxx|x|op=x|Zn=xxxxx|Zd=xxxxx
 			ctx->size = (insword>>22)&3;
@@ -3886,6 +3927,8 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 			ctx->Zn = (insword>>5)&0x1f;
 			ctx->Zd = insword&0x1f;
 			break;
+		case ENC_ADDQP_Z_ZZ_:
+		case ENC_ADDSUBP_Z_ZZ_:
 		case ENC_HISTSEG_Z_ZZ_:
 			// xxx|xxxx|x|size=xx|x|Zm=xxxxx|xxx|xxx|Zn=xxxxx|Zd=xxxxx
 			ctx->size = (insword>>22)&3;
@@ -4074,7 +4117,9 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 			ctx->Zn = (insword>>5)&0x1f;
 			ctx->Zda = insword&0x1f;
 			break;
+		case ENC_SDOT_Z16_ZZZ_H:
 		case ENC_SDOT_Z_ZZZ_:
+		case ENC_UDOT_Z16_ZZZ_H:
 		case ENC_UDOT_Z_ZZZ_:
 			// xxx|xxxx|x|size=xx|x|Zm=xxxxx|x|xxxx|U=x|Zn=xxxxx|Zda=xxxxx
 			ctx->size = (insword>>22)&3;
@@ -4888,6 +4933,7 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 		case ENC_ADDP_Z_P_ZZ_:
 		case ENC_SMAXP_Z_P_ZZ_:
 		case ENC_SMINP_Z_P_ZZ_:
+		case ENC_SUBP_Z_P_ZZ_:
 		case ENC_UMAXP_Z_P_ZZ_:
 		case ENC_UMINP_Z_P_ZZ_:
 			// xxx|xxxx|x|size=xx|x|xx|opc=xx|U=x|xx|x|Pg=xxx|Zm=xxxxx|Zdn=xxxxx
@@ -5394,6 +5440,16 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 			ctx->Zn = (insword>>5)&0x1f;
 			ctx->Zda = insword&0x1f;
 			break;
+		case ENC_SDOT_Z16_ZZZI_H:
+		case ENC_UDOT_Z16_ZZZI_H:
+			// xxx|xxxx|x|x|i3h=x|x|i3l=xx|Zm=xxx|xxxxx|U=x|Zn=xxxxx|Zda=xxxxx
+			ctx->i3h = (insword>>22)&1;
+			ctx->i3l = (insword>>19)&3;
+			ctx->Zm = (insword>>16)&7;
+			ctx->U = (insword>>10)&1;
+			ctx->Zn = (insword>>5)&0x1f;
+			ctx->Zda = insword&0x1f;
+			break;
 		case ENC_BFMLA_Z_ZZZI_H:
 		case ENC_BFMLS_Z_ZZZI_H:
 		case ENC_FMLA_Z_ZZZI_H:
@@ -5464,6 +5520,31 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 			ctx->T = (insword>>10)&1;
 			ctx->Zn = (insword>>5)&0x1f;
 			ctx->Zda = insword&0x1f;
+			break;
+		case ENC_SQSHRN_Z_MZ2_:
+		case ENC_SQSHRUN_Z_MZ2_:
+		case ENC_UQSHRN_Z_MZ2_:
+			// xxx|xxxx|x|x|op0=x|x|tsize=xx|imm3=xxx|x|x|op1=x|U=x|R=x|x|Zn=xxxx|x|Zd=xxxxx
+			ctx->op0 = (insword>>22)&1;
+			ctx->tsize = (insword>>19)&3;
+			ctx->imm3 = (insword>>16)&7;
+			ctx->op1 = (insword>>13)&1;
+			ctx->U = (insword>>12)&1;
+			ctx->R = (insword>>11)&1;
+			ctx->Zn = (insword>>6)&15;
+			ctx->Zd = insword&0x1f;
+			break;
+		case ENC_SQRSHRN_Z_MZ2_B:
+		case ENC_SQRSHRUN_Z_MZ2_B:
+		case ENC_UQRSHRN_Z_MZ2_B:
+			// xxx|xxxx|x|x|op0=x|x|xx|imm3=xxx|x|x|op1=x|U=x|R=x|x|Zn=xxxx|x|Zd=xxxxx
+			ctx->op0 = (insword>>22)&1;
+			ctx->imm3 = (insword>>16)&7;
+			ctx->op1 = (insword>>13)&1;
+			ctx->U = (insword>>12)&1;
+			ctx->R = (insword>>11)&1;
+			ctx->Zn = (insword>>6)&15;
+			ctx->Zd = insword&0x1f;
 			break;
 		case ENC_SQRSHRN_Z_MZ2_:
 		case ENC_SQRSHRUN_Z_MZ2_:
@@ -5650,6 +5731,12 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 			ctx->Zn = (insword>>5)&0x1f;
 			ctx->Zda = insword&0x1f;
 			break;
+		case ENC_LUTI6_Z_ZZZ_8:
+			// xxx|xxxx|x|x|x|x|Zm=xxxxx|xxx|xxx|Zn=xxxxx|Zd=xxxxx
+			ctx->Zm = (insword>>16)&0x1f;
+			ctx->Zn = (insword>>5)&0x1f;
+			ctx->Zd = insword&0x1f;
+			break;
 		case ENC_WFET_ONLY_SYSTEMINSTRSWITHREG:
 		case ENC_WFIT_ONLY_SYSTEMINSTRSWITHREG:
 			// xxx|xxx|xxxxxxxxxxxxxx|CRm=xxxx|op2=xxx|Rd=xxxxx
@@ -5658,7 +5745,6 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 			ctx->Rd = insword&0x1f;
 			break;
 		case ENC_CLREX_BN_BARRIERS:
-		case ENC_TCOMMIT_ONLY_BARRIERS:
 			// xxx|xxx|xxxxxxxxxxxxxx|CRm=xxxx|op2=xxx|Rt=xxxxx
 			ctx->CRm = (insword>>8)&15;
 			ctx->op2 = (insword>>5)&7;
@@ -5677,6 +5763,8 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 		case ENC_PSB_HC_HINTS:
 		case ENC_SEV_HI_HINTS:
 		case ENC_SEVL_HI_HINTS:
+		case ENC_SHUH_HI_HINTS:
+		case ENC_STCPH_HI_HINTS:
 		case ENC_STSHH_HI_HINTS:
 		case ENC_TSB_HC_HINTS:
 		case ENC_WFE_HI_HINTS:
@@ -5701,15 +5789,6 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 		case ENC_DSB_BON_BARRIERS:
 			// xxx|xxx|xxxxxxxxxxxxxx|imm2=xx|xx|op2=xxx|Rt=xxxxx
 			ctx->imm2 = (insword>>10)&3;
-			ctx->op2 = (insword>>5)&7;
-			ctx->Rt = insword&0x1f;
-			break;
-		case ENC_TSTART_BR_SYSTEMRESULT:
-		case ENC_TTEST_BR_SYSTEMRESULT:
-			// xxx|xxx|xxxxxxx|op1=xxx|CRn=xxxx|CRm=xxxx|op2=xxx|Rt=xxxxx
-			ctx->op1 = (insword>>16)&7;
-			ctx->CRn = (insword>>12)&15;
-			ctx->CRm = (insword>>8)&15;
 			ctx->op2 = (insword>>5)&7;
 			ctx->Rt = insword&0x1f;
 			break;
@@ -5740,7 +5819,11 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 		case ENC_GCSPUSHX_SYS_CR_SYSTEMINSTRS:
 		case ENC_GCSSS1_SYS_CR_SYSTEMINSTRS:
 		case ENC_GCSSS2_SYSL_RC_SYSTEMINSTRS:
+		case ENC_GICR_SYSL_RC_SYSTEMINSTRS:
+		case ENC_GIC_SYS_CR_SYSTEMINSTRS:
+		case ENC_GSB_SYS_CR_SYSTEMINSTRS:
 		case ENC_IC_SYS_CR_SYSTEMINSTRS:
+		case ENC_MLBI_SYS_CR_SYSTEMINSTRS:
 		case ENC_SYS_CR_SYSTEMINSTRS:
 		case ENC_SYSL_RC_SYSTEMINSTRS:
 		case ENC_SYSP_CR_SYSPAIRINSTRS:
@@ -5798,7 +5881,6 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 		case ENC_HVC_EX_EXCEPTION:
 		case ENC_SMC_EX_EXCEPTION:
 		case ENC_SVC_EX_EXCEPTION:
-		case ENC_TCANCEL_EX_EXCEPTION:
 			// xxx|xxx|xx|opc=xxx|imm16=xxxxxxxxxxxxxxxx|op2=xxx|LL=xx
 			ctx->opc = (insword>>21)&7;
 			ctx->imm16 = (insword>>5)&0xffff;
@@ -6597,6 +6679,7 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 		case ENC_BFMLAL_ASIMDELEM_F:
 		case ENC_FDOT_ASIMDELEM_G:
 		case ENC_FDOT_ASIMDELEM_D:
+		case ENC_FDOT_ASIMDELEM_FP16FP32:
 		case ENC_FMULX_ASIMDELEM_RH_H:
 		case ENC_FMUL_ASIMDELEM_RH_H:
 		case ENC_MUL_ASIMDELEM_R:
@@ -6917,8 +7000,11 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 		case ENC_FCVTN_ASIMDSAME2_H:
 		case ENC_FDOT_ASIMDSAME2_D:
 		case ENC_FDOT_ASIMDSAME2_DD:
+		case ENC_FDOT_ASIMDSAME2_FP16FP32:
 		case ENC_FMMLA_ASIMD_FP8FP16:
 		case ENC_FMMLA_ASIMD_FP8FP32:
+		case ENC_FMMLA_ASIMD_FP16FP16:
+		case ENC_FMMLA_ASIMD_FP16FP32:
 		case ENC_SDOT_ASIMDSAME2_D:
 		case ENC_UDOT_ASIMDSAME2_D:
 		case ENC_USDOT_ASIMDSAME2_D:
@@ -7781,6 +7867,14 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 			ctx->D = (insword>>4)&1;
 			ctx->Zd = insword&3;
 			break;
+		case ENC_LUTI6_MZ4_ZTMZ3_4:
+			// x|xx|xxxx|xxxxxx|xxx|xx|size=xx|opc=xx|Zn=xxx|x|x|D=x|xx|Zd=xx
+			ctx->size = (insword>>12)&3;
+			ctx->opc = (insword>>10)&3;
+			ctx->Zn = (insword>>7)&7;
+			ctx->D = (insword>>4)&1;
+			ctx->Zd = insword&3;
+			break;
 		case ENC_LUTI4_MZ4_ZTZ_4:
 			// x|xx|xxxx|xxxxxx|xx|i1=x|xx|size=xx|opc2=xx|Zn=xxxxx|D=x|xx|Zd=xx
 			ctx->i1 = (insword>>16)&1;
@@ -7841,6 +7935,21 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 			ctx->opc = (insword>>16)&0x3f;
 			ctx->Rn = (insword>>5)&0x1f;
 			ctx->opc2 = insword&3;
+			break;
+		case ENC_LUTI6_MZ4_ZMZ2_4:
+			// x|xx|xxxx|xx|i1=x|x|Zm=xxxxx|xxxx|xx|Zn=xxxxx|D=x|xx|Zd=xx
+			ctx->i1 = (insword>>22)&1;
+			ctx->Zm = (insword>>16)&0x1f;
+			ctx->Zn = (insword>>5)&0x1f;
+			ctx->D = (insword>>4)&1;
+			ctx->Zd = insword&3;
+			break;
+		case ENC_LUTI6_MZ4_ZMZ2_1:
+			// x|xx|xxxx|xx|i1=x|x|Zm=xxxxx|xxxx|xx|Zn=xxxxx|Zd=xxx|xx
+			ctx->i1 = (insword>>22)&1;
+			ctx->Zm = (insword>>16)&0x1f;
+			ctx->Zn = (insword>>5)&0x1f;
+			ctx->Zd = (insword>>2)&7;
 			break;
 		case ENC_SMLALL_ZA_ZZV_1:
 		case ENC_SMLSLL_ZA_ZZV_1:
@@ -8239,11 +8348,26 @@ void decode_fields32(enum ENCODING enc, context *ctx, Instruction *instr)
 			ctx->Zt = (insword>>2)&7;
 			ctx->N = insword&1;
 			break;
+		case ENC_LUTI6_Z_ZTZ_:
+			// x|xx|xxxx|xx|x|xxx|opc=xxxxx|size=xx|opc2=xx|Zn=xxxxx|Zd=xxxxx
+			ctx->opc = (insword>>14)&0x1f;
+			ctx->size = (insword>>12)&3;
+			ctx->opc2 = (insword>>10)&3;
+			ctx->Zn = (insword>>5)&0x1f;
+			ctx->Zd = insword&0x1f;
+			break;
 		case ENC_LUTI4_MZ4_ZTMZ2_1:
 			// x|xx|xxxx|xx|x|xxx|xxxxx|size=xx|opc=xx|Zn=xxxx|x|Zd=xxx|xx
 			ctx->size = (insword>>12)&3;
 			ctx->opc = (insword>>10)&3;
 			ctx->Zn = (insword>>6)&15;
+			ctx->Zd = (insword>>2)&7;
+			break;
+		case ENC_LUTI6_MZ4_ZTMZ3_1:
+			// x|xx|xxxx|xx|x|xxx|xxxxx|size=xx|opc=xx|Zn=xxx|x|x|Zd=xxx|xx
+			ctx->size = (insword>>12)&3;
+			ctx->opc = (insword>>10)&3;
+			ctx->Zn = (insword>>7)&7;
 			ctx->Zd = (insword>>2)&7;
 			break;
 		case ENC_LUTI4_MZ4_ZTZ_1:

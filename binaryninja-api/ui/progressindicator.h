@@ -23,6 +23,7 @@
 
 #include <QtWidgets/QWidget>
 #include <QtGui/QColor>
+#include <QtGui/QPixmap>
 #include "uicontext.h"
 
 /*!
@@ -100,6 +101,7 @@ class BINARYNINJAUIAPI QProgressIndicator : public QWidget
 	    \sa color
 	 */
 	void setColor(const QColor& color);
+	void setStaticPixmap(const QPixmap& pixmap, const QPixmap& hoverPixmap = QPixmap());
 
   Q_SIGNALS:
 	void clicked();
@@ -129,6 +131,8 @@ class BINARYNINJAUIAPI QProgressIndicator : public QWidget
 	QString m_animatedToolTip;
 	QColor m_color;
 	bool m_activeHover = false;
+	QPixmap m_staticPixmap;
+	QPixmap m_staticHoverPixmap;
 };
 
 #endif  // QPROGRESSINDICATOR_H

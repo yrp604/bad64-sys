@@ -211,15 +211,14 @@ pub trait InteractionHandler: Sync + Send + 'static {
         &mut self,
         prompt: &str,
         extension: Option<String>,
-        default_name: Option<String>,
+        default: Option<String>,
     ) -> Option<String> {
         let mut form = Form::new(prompt.to_owned());
         form.add_field(FormInputField::SaveFileName {
             prompt: prompt.to_string(),
             extension,
-            default: None,
+            default,
             value: None,
-            default_name,
         });
         if !self.get_form_input(&mut form) {
             return None;
@@ -231,13 +230,12 @@ pub trait InteractionHandler: Sync + Send + 'static {
     fn get_directory_name_input(
         &mut self,
         prompt: &str,
-        default_name: Option<String>,
+        default: Option<String>,
     ) -> Option<String> {
         let mut form = Form::new(prompt.to_owned());
         form.add_field(FormInputField::DirectoryName {
             prompt: prompt.to_string(),
-            default_name,
-            default: None,
+            default,
             value: None,
         });
         if !self.get_form_input(&mut form) {

@@ -1,6 +1,6 @@
 use crate::processor::{
     new_processing_state_background_thread, CompressionTypeField, FileDataKindField,
-    FileFilterField, WarpFileProcessor,
+    FileFilterField, ProcessingFileState, RequestAnalysisField, WarpFileProcessor,
 };
 use crate::report::{ReportGenerator, ReportKindField};
 use binaryninja::background_task::BackgroundTask;
@@ -30,6 +30,7 @@ impl CreateSignaturesForm {
         form.add_field(Self::compression_type_field());
         form.add_field(Self::save_individual_files_field());
         form.add_field(Self::skip_existing_warp_files_field());
+        form.add_field(Self::request_analysis_field());
         form.add_field(Self::processing_thread_count_field());
         Self { form }
     }
@@ -46,7 +47,7 @@ impl CreateSignaturesForm {
         FileFilterField::to_field()
     }
 
-    pub fn file_filter(&self) -> Option<Regex> {
+    pub fn file_filter(&self) -> Option<Result<Regex, regex::Error>> {
         FileFilterField::from_form(&self.form)
     }
 
@@ -100,6 +101,14 @@ impl CreateSignaturesForm {
         }
     }
 
+    pub fn request_analysis_field() -> FormInputField {
+        RequestAnalysisField::default().to_field()
+    }
+
+    pub fn request_analysis(&self) -> RequestAnalysisField {
+        RequestAnalysisField::from_form(&self.form).unwrap_or_default()
+    }
+
     pub fn processing_thread_count_field() -> FormInputField {
         let default = rayon::current_num_threads();
         FormInputField::Integer {
@@ -136,6 +145,7 @@ impl CreateSignatures {
         let compression_type = form.compression_type();
         let save_individual_files = form.save_individual_files();
         let skip_existing_warp_files = form.skip_existing_warp_files();
+        let request_analysis = form.request_analysis();
         let processing_thread_count = form.processing_thread_count();
 
         // Save the warp file to the project.
@@ -189,7 +199,8 @@ impl CreateSignatures {
         let mut processor = WarpFileProcessor::new()
             .with_file_data(file_data_kind)
             .with_compression_type(compression_type)
-            .with_skip_warp_files(skip_existing_warp_files);
+            .with_skip_warp_files(skip_existing_warp_files)
+            .with_request_analysis(request_analysis == RequestAnalysisField::Yes);
 
         if save_individual_files {
             processor = processor.with_processed_file_callback(save_individual_files_cb);
@@ -198,7 +209,18 @@ impl CreateSignatures {
         // Construct the user-supplied file filter. This will filter files in the project only, files
         // in an archive will be considered a part of the archive file.
         if let Some(filter) = form.file_filter() {
-            processor = processor.with_file_filter(filter);
+            match filter {
+                Ok(f) => {
+                    processor = processor.with_file_filter(f);
+                }
+                Err(err) => {
+                    log::error!("Failed to parse file filter: {}", err);
+                    log::error!(
+                        "Consider using a substring instead of a glob pattern, e.g. *.exe => exe"
+                    );
+                    return;
+                }
+            }
         }
 
         // This thread will show the state in a background task.
@@ -234,7 +256,15 @@ impl CreateSignatures {
                 log::error!("Failed to process project: {}", e);
             }
         });
-        log::info!("Processing project files took: {:?}", start.elapsed());
+
+        let processed_file_count = processor
+            .state()
+            .files_with_state(ProcessingFileState::Processed);
+        log::info!(
+            "Processing {} project files took: {:?}",
+            processed_file_count,
+            start.elapsed()
+        );
         // Reset the worker thread count to the user specified; either way it will not persist.
         set_worker_thread_count(previous_worker_thread_count);
         // Tells the processing state thread to finish.

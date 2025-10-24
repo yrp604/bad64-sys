@@ -6,22 +6,22 @@
 
 class WarpMatchedFunctionTableWidget : public WarpFunctionTableWidget
 {
-    Q_OBJECT
+	Q_OBJECT
 };
 
 class WarpMatchedWidget : public QWidget
 {
-    Q_OBJECT
-    BinaryViewRef m_current;
+	Q_OBJECT
+	BinaryViewRef m_current;
 
-    QSplitter *m_splitter;
+	QSplitter* m_splitter;
 
-    WarpFunctionTableWidget *m_tableWidget;
+	WarpFunctionTableWidget* m_tableWidget;
 
 public:
-    explicit WarpMatchedWidget(BinaryViewRef current);
+	explicit WarpMatchedWidget(BinaryViewRef current);
 
-    ~WarpMatchedWidget() override = default;
+	~WarpMatchedWidget() override = default;
 
-    void Update();
+	void Update();
 };

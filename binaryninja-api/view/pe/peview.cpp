@@ -842,9 +842,10 @@ bool PEView::Init()
 				"\tsection.pointerToLineNumbers: %lx\n"
 				"\tsection.relocCount:           %hx\n"
 				"\tsection.lineNumberCount:      %hx\n"
-				"\tsection.characteristics:      %lx\n"
-				"\tsection.virtualSize:          %lx\n",
-				i, section.name.c_str(),
+				"\tsection.characteristics:      %lx\n",
+				i,
+				section.name.c_str(),
+				section.virtualSize,
 				section.virtualAddress,
 				section.sizeOfRawData,
 				section.pointerToRawData,
@@ -2706,12 +2707,40 @@ bool PEView::Init()
 			QualifiedName resourceDataEntryTypeName = DefineType(resourceDataEntryTypeId, resourceDataEntryName, resourceDataEntryType);
 
 			std::list<uint64_t> tableAddrsToParse = {dir.virtualAddress};
+			std::unordered_set<uint64_t> visitedTables;
+
+			uint64_t maxTableCount = 10000;
+			if (settings && settings->Contains("loader.pe.maxResourceDirectoryTableCount"))
+				maxTableCount = settings->Get<uint64_t>("loader.pe.maxResourceDirectoryTableCount", this);
 
 			uint32_t resourceDirectoryTableNum = 0;
 			while (!tableAddrsToParse.empty())
 			{
+				// Check for safety limit to prevent infinite parsing
+				if (resourceDirectoryTableNum >= maxTableCount)
+				{
+					m_logger->LogError("Resource directory parsing exceeded safety limit (%" PRIu64 " tables), possible malformed/malicious file", maxTableCount);
+					break;
+				}
+
 				uint64_t tableAddr = tableAddrsToParse.front();
 				tableAddrsToParse.pop_front();
+
+				// Cycle detection - skip if we've already processed this table
+				if (visitedTables.count(tableAddr))
+				{
+					m_logger->LogWarn("Resource directory cycle detected at RVA 0x%" PRIx64 ", skipping", tableAddr);
+					continue;
+				}
+				visitedTables.insert(tableAddr);
+
+				// Bounds check - ensure table address is within resource section
+				if (tableAddr < dir.virtualAddress || tableAddr >= dir.virtualAddress + dir.size)
+				{
+					m_logger->LogWarn("Resource directory table at RVA 0x%" PRIx64 " is outside resource section bounds", tableAddr);
+					continue;
+				}
+
 				// Read in next directory entry
 				reader.Seek(RVAToFileOffset(tableAddr));
 				PEResourceDirectoryTable importDirTable;
@@ -2752,10 +2781,26 @@ bool PEView::Init()
 
 							size_t nameAddr = dir.virtualAddress + (importDirEntry.id ^ 0x80000000);
 
+							// Bounds check - ensure name address is within resource section
+							if (nameAddr < dir.virtualAddress || nameAddr >= dir.virtualAddress + dir.size)
+							{
+								m_logger->LogWarn("Resource name at RVA 0x%zx is outside resource section bounds, skipping", nameAddr);
+								continue;
+							}
+
 							BinaryReader nameReader(GetParentView(), LittleEndian);
 							nameReader.Seek(RVAToFileOffset(nameAddr));
 
 							uint16_t nameLen = nameReader.Read16();
+
+							// Check that the full name fits within the resource section
+							// nameLen is in UTF-16 code-units, each 2 bytes, plus 2 bytes for the length prefix
+							if (nameAddr + 2 + (nameLen * 2) > dir.virtualAddress + dir.size)
+							{
+								m_logger->LogWarn("Resource name extends beyond resource section bounds, skipping");
+								continue;
+							}
+
 							// Plus 2 because it's length-prefixed
 							DefineDataVariable(m_imageBase + nameAddr + 2, Type::ArrayType(Type::WideCharType(2), nameLen));
 						}
@@ -2763,12 +2808,31 @@ bool PEView::Init()
 						if (importDirEntry.offset & 0x80000000)
 						{
 							// Lower 31 bits are address of another table
-							tableAddrsToParse.push_back(dir.virtualAddress + (importDirEntry.offset ^ 0x80000000));
+							uint64_t nextTableAddr = dir.virtualAddress + (importDirEntry.offset ^ 0x80000000);
+
+							// Bounds check before adding to queue to prevent invalid references
+							if (nextTableAddr >= dir.virtualAddress && nextTableAddr < dir.virtualAddress + dir.size)
+							{
+								tableAddrsToParse.push_back(nextTableAddr);
+							}
+							else
+							{
+								m_logger->LogWarn("Resource directory entry points to invalid address 0x%" PRIx64 ", skipping", nextTableAddr);
+							}
 						}
 						else
 						{
 							// Address of data entry
-							dataEntryOffsets.push_back(importDirEntry.offset);
+							// Validate offset is within resource section bounds
+							uint64_t dataEntryAddr = dir.virtualAddress + importDirEntry.offset;
+							if (dataEntryAddr >= dir.virtualAddress && dataEntryAddr + sizeof(PEResourceDataEntry) <= dir.virtualAddress + dir.size)
+							{
+								dataEntryOffsets.push_back(importDirEntry.offset);
+							}
+							else
+							{
+								m_logger->LogWarn("Resource data entry at offset 0x%" PRIx32 " is outside resource section bounds, skipping", importDirEntry.offset);
+							}
 						}
 					}
 
@@ -2777,10 +2841,11 @@ bool PEView::Init()
 					DefineAutoSymbol(new Symbol(DataSymbol, fmt::format("__resource_directory_table_{}_entries", resourceDirectoryTableNum), tableEntriesStart, NoBinding));
 				}
 
+				// Create BinaryReader once outside the loop for better performance
+				BinaryReader entryReader(GetParentView(), LittleEndian);
+
 				for(size_t dataEntryNum = 0; dataEntryNum < dataEntryOffsets.size(); dataEntryNum++)
 				{
-					BinaryReader entryReader(GetParentView(), LittleEndian);
-
 					size_t entryOffset = dataEntryOffsets[dataEntryNum];
 					entryReader.Seek(RVAToFileOffset(dir.virtualAddress + entryOffset));
 					PEResourceDataEntry dataEntry;
@@ -2795,13 +2860,35 @@ bool PEView::Init()
 						continue;
 					}
 
+					// Limit excessively large data sizes 
+					const uint32_t MAX_REASONABLE_RESOURCE_SIZE = 100 * 1024 * 1024; // 100 MB
+					if (dataEntry.dataSize > MAX_REASONABLE_RESOURCE_SIZE)
+					{
+						m_logger->LogWarn("Resource data size 0x%" PRIx32 " exceeds reasonable limit, skipping", dataEntry.dataSize);
+						continue;
+					}
+
+					// Check for overflow when adding dataRva + dataSize
+					if (dataEntry.dataSize > 0)
+					{
+						uint64_t dataEnd = (uint64_t)dataEntry.dataRva + dataEntry.dataSize;
+						if (dataEnd < dataEntry.dataRva)
+						{
+							m_logger->LogWarn("Resource data RVA 0x%" PRIx32 " + size 0x%" PRIx32 " would overflow, skipping", dataEntry.dataRva, dataEntry.dataSize);
+							continue;
+						}
+					}
+
 					size_t entryAddr = m_imageBase + dir.virtualAddress + entryOffset;
 
 					DefineDataVariable(entryAddr, Type::NamedType(this, resourceDataEntryTypeName));
 					DefineAutoSymbol(new Symbol(DataSymbol, fmt::format("__resource_directory_table_{}_data_entry_{}", resourceDirectoryTableNum, dataEntryNum), entryAddr, NoBinding));
 
 					//TODO: properly name based on path taken to get here
-					DefineDataVariable(m_imageBase + dataEntry.dataRva, Type::ArrayType(Type::IntegerType(1, true), dataEntry.dataSize));
+					if (dataEntry.dataSize > 0)
+					{
+						DefineDataVariable(m_imageBase + dataEntry.dataRva, Type::ArrayType(Type::IntegerType(1, true), dataEntry.dataSize));
+					}
 				}
 
 				resourceDirectoryTableNum++;
@@ -3136,6 +3223,16 @@ Ref<Settings> PEViewType::GetLoadSettingsForData(BinaryView* data)
 			"type" : "boolean",
 			"default" : true,
 			"description" : "Add function starts sourced from the Structured Exception Handling (SEH) table to the core for analysis."
+			})");
+
+	settings->RegisterSetting("loader.pe.maxResourceDirectoryTableCount",
+			R"({
+			"title" : "Maximum PE Resource Directory Table Count",
+			"type" : "number",
+			"default" : 10000,
+			"minValue" : 1,
+			"maxValue" : 1000000,
+			"description" : "Maximum number of resource directory tables to parse. This limit prevents infinite loops when processing malformed or malicious PE files with circular resource directory references."
 			})");
 
 	return settings;

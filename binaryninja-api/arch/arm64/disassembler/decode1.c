@@ -11,18 +11,17 @@
 int decode_iclass_barriers(context *ctx, Instruction *dec)
 {
 	uint32_t CRm=(INSWORD>>8)&15, op2=(INSWORD>>5)&7, Rt=INSWORD&0x1f;
-	if(!CRm && op2==3 && Rt==0x1f && HasTME()) return TCOMMIT(ctx, dec); // -> TCOMMIT_only_barriers
-	if(CRm && op2==3 && Rt==0x1f) UNALLOCATED(ENC_UNALLOCATED_810_BARRIERS);
 	if((CRm&3)==2 && op2==1 && Rt==0x1f && HasXS()) return DSB(ctx, dec); // -> DSB_BOn_barriers
-	if((CRm&3)==3 && op2==1 && Rt==0x1f) UNALLOCATED(ENC_UNALLOCATED_811_BARRIERS);
-	if((CRm&2)==2 && !op2 && Rt==0x1f) UNALLOCATED(ENC_UNALLOCATED_812_BARRIERS);
+	if((CRm&3)==2 && op2==3 && Rt==0x1f) UNALLOCATED(ENC_UNALLOCATED_823_BARRIERS);
+	if((CRm&3)==3 && (op2&5)==1 && Rt==0x1f) UNALLOCATED(ENC_UNALLOCATED_822_BARRIERS);
+	if(!op2 && Rt==0x1f) UNALLOCATED(ENC_UNALLOCATED_821_BARRIERS);
 	if(op2==2 && Rt==0x1f) return CLREX(ctx, dec); // -> CLREX_BN_barriers
 	if(op2==4 && Rt==0x1f) return DSB(ctx, dec); // -> DSB_BO_barriers
 	if(op2==5 && Rt==0x1f) return DMB(ctx, dec); // -> DMB_BO_barriers
 	if(op2==6 && Rt==0x1f) return ISB(ctx, dec); // -> ISB_BI_barriers
 	if(op2==7 && Rt==0x1f && HasSB()) return SB(ctx, dec); // -> SB_only_barriers
-	if(!(CRm&2) && !(op2&6) && Rt==0x1f) UNALLOCATED(ENC_UNALLOCATED_809_BARRIERS);
-	if(Rt!=0x1f) UNALLOCATED(ENC_UNALLOCATED_808_BARRIERS);
+	if(!(CRm&2) && (op2&5)==1 && Rt==0x1f) UNALLOCATED(ENC_UNALLOCATED_820_BARRIERS);
+	if(Rt!=0x1f) UNALLOCATED(ENC_UNALLOCATED_819_BARRIERS);
 	UNMATCHED;
 }
 
@@ -51,7 +50,7 @@ int decode_iclass_compbranch_regs2(context *ctx, Instruction *dec)
 	if(cc==6 && H && HasCMPBR()) return CBHcc_regs(ctx, dec); // -> CBHEQ_16_regs
 	if(cc==7 && !H && HasCMPBR()) return CBBcc_regs(ctx, dec); // -> CBBNE_8_regs
 	if(cc==7 && H && HasCMPBR()) return CBHcc_regs(ctx, dec); // -> CBHNE_16_regs
-	if((cc&6)==4) UNALLOCATED(ENC_UNALLOCATED_813_COMPBRANCH_REGS2);
+	if((cc&6)==4) UNALLOCATED(ENC_UNALLOCATED_824_COMPBRANCH_REGS2);
 	UNMATCHED;
 }
 
@@ -70,7 +69,7 @@ int decode_iclass_compbranch_imm(context *ctx, Instruction *dec)
 	if(sf && cc==3 && HasCMPBR()) return CBcc_imm(ctx, dec); // -> CBLO_64_imm
 	if(sf && cc==6 && HasCMPBR()) return CBcc_imm(ctx, dec); // -> CBEQ_64_imm
 	if(sf && cc==7 && HasCMPBR()) return CBcc_imm(ctx, dec); // -> CBNE_64_imm
-	if((cc&6)==4) UNALLOCATED(ENC_UNALLOCATED_814_COMPBRANCH_IMM);
+	if((cc&6)==4) UNALLOCATED(ENC_UNALLOCATED_825_COMPBRANCH_IMM);
 	UNMATCHED;
 }
 
@@ -89,7 +88,7 @@ int decode_iclass_compbranch_regs(context *ctx, Instruction *dec)
 	if(sf && cc==3 && HasCMPBR()) return CBcc_regs(ctx, dec); // -> CBHS_64_regs
 	if(sf && cc==6 && HasCMPBR()) return CBcc_regs(ctx, dec); // -> CBEQ_64_regs
 	if(sf && cc==7 && HasCMPBR()) return CBcc_regs(ctx, dec); // -> CBNE_64_regs
-	if((cc&6)==4) UNALLOCATED(ENC_UNALLOCATED_815_COMPBRANCH_REGS);
+	if((cc&6)==4) UNALLOCATED(ENC_UNALLOCATED_826_COMPBRANCH_REGS);
 	UNMATCHED;
 }
 
@@ -104,22 +103,21 @@ int decode_iclass_condbranch(context *ctx, Instruction *dec)
 int decode_iclass_exception(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>21)&7, op2=(INSWORD>>2)&7, LL=INSWORD&3;
-	if(!opc && !op2 && !LL) UNALLOCATED(ENC_UNALLOCATED_822_EXCEPTION);
+	if(!opc && !op2 && !LL) UNALLOCATED(ENC_UNALLOCATED_832_EXCEPTION);
 	if(!opc && !op2 && LL==1) return SVC(ctx, dec); // -> SVC_EX_exception
 	if(!opc && !op2 && LL==2) return HVC(ctx, dec); // -> HVC_EX_exception
 	if(!opc && !op2 && LL==3) return SMC(ctx, dec); // -> SMC_EX_exception
 	if(opc==1 && !op2 && !LL) return BRK(ctx, dec); // -> BRK_EX_exception
-	if(opc==1 && !op2 && LL) UNALLOCATED(ENC_UNALLOCATED_820_EXCEPTION);
+	if(opc==1 && !op2 && LL) UNALLOCATED(ENC_UNALLOCATED_830_EXCEPTION);
 	if(opc==2 && !op2 && !LL) return HLT(ctx, dec); // -> HLT_EX_exception
-	if(opc==2 && !op2 && LL) UNALLOCATED(ENC_UNALLOCATED_819_EXCEPTION);
-	if(opc==3 && !op2 && !LL && HasTME()) return TCANCEL(ctx, dec); // -> TCANCEL_EX_exception
+	if(opc==2 && !op2 && LL) UNALLOCATED(ENC_UNALLOCATED_831_EXCEPTION);
+	if(opc==5 && !op2 && !LL) UNALLOCATED(ENC_UNALLOCATED_833_EXCEPTION);
 	if(opc==5 && !op2 && LL==1) return DCPS1(ctx, dec); // -> DCPS1_DC_exception
 	if(opc==5 && !op2 && LL==2) return DCPS2(ctx, dec); // -> DCPS2_DC_exception
 	if(opc==5 && !op2 && LL==3) return DCPS3(ctx, dec); // -> DCPS3_DC_exception
-	if((opc&3)==3 && !op2 && LL) UNALLOCATED(ENC_UNALLOCATED_818_EXCEPTION);
-	if((opc&5)==5 && !op2 && !LL) UNALLOCATED(ENC_UNALLOCATED_821_EXCEPTION);
-	if((opc&5)==4 && !op2) UNALLOCATED(ENC_UNALLOCATED_817_EXCEPTION);
-	if(op2) UNALLOCATED(ENC_UNALLOCATED_816_EXCEPTION);
+	if((opc&3)==3 && !op2) UNALLOCATED(ENC_UNALLOCATED_829_EXCEPTION);
+	if((opc&5)==4 && !op2) UNALLOCATED(ENC_UNALLOCATED_828_EXCEPTION);
+	if(op2) UNALLOCATED(ENC_UNALLOCATED_827_EXCEPTION);
 	UNMATCHED;
 }
 
@@ -154,7 +152,9 @@ int decode_iclass_hints(context *ctx, Instruction *dec)
 	if(CRm==3 && op2==7 && HasPAuth()) return AUTIB(ctx, dec); // -> AUTIBSP_HI_hints
 	if(CRm==4 && op2==7 && HasPAuth_LR()) return PACM(ctx, dec); // -> PACM_HI_hints
 	if(CRm==5 && !op2 && HasCHK()) return CHKFEAT(ctx, dec); // -> CHKFEAT_HF_hints
+	if(CRm==6 && op2==4 && HasCMH()) return STCPH(ctx, dec); // -> STCPH_HI_hints
 	if(CRm==6 && !(op2&6) && HasPCDPHINT()) return STSHH(ctx, dec); // -> STSHH_HI_hints
+	if(CRm==6 && (op2&6)==2 && HasCMH()) return SHUH(ctx, dec); // -> SHUH_HI_hints
 	if(CRm==4 && !(op2&1) && HasBTI()) return BTI(ctx, dec); // -> BTI_HB_hints
 	if(1) return HINT(ctx, dec); // -> HINT_HM_hints
 	UNMATCHED;
@@ -165,9 +165,9 @@ int decode_iclass_miscbranch(context *ctx, Instruction *dec)
 	uint32_t opc=(INSWORD>>21)&7, op2=INSWORD&0x1f;
 	if(!opc && op2==0x1f && HasPAuth_LR()) return RETASPPC_imm(ctx, dec); // -> RETAASPPC_only_miscbranch
 	if(opc==1 && op2==0x1f && HasPAuth_LR()) return RETASPPC_imm(ctx, dec); // -> RETABSPPC_only_miscbranch
-	if(!(opc&6) && op2!=0x1f) UNALLOCATED(ENC_UNALLOCATED_834_MISCBRANCH);
-	if((opc&6)==2) UNALLOCATED(ENC_UNALLOCATED_833_MISCBRANCH);
-	if((opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_832_MISCBRANCH);
+	if(!(opc&6) && op2!=0x1f) UNALLOCATED(ENC_UNALLOCATED_836_MISCBRANCH);
+	if((opc&6)==2) UNALLOCATED(ENC_UNALLOCATED_835_MISCBRANCH);
+	if((opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_834_MISCBRANCH);
 	UNMATCHED;
 }
 
@@ -178,11 +178,11 @@ int decode_iclass_pstate(context *ctx, Instruction *dec)
 	if(((op1 << 3) | op2)==1 && Rt==0x1f && HasFlagM2()) return XAFLAG(ctx, dec); // -> XAFLAG_M_pstate
 	if(((op1 << 3) | op2)==2 && Rt==0x1f && HasFlagM2()) return AXFLAG(ctx, dec); // -> AXFLAG_M_pstate
 	if(((op1 << 3) | op2)&0x3e && Rt==0x1f) return MSR_imm(ctx, dec); // -> MSR_SI_pstate
-	if(Rt==0x1e) UNALLOCATED(ENC_UNALLOCATED_839_PSTATE);
-	if((Rt&0x1e)==0x1c) UNALLOCATED(ENC_UNALLOCATED_838_PSTATE);
-	if((Rt&0x1c)==0x18) UNALLOCATED(ENC_UNALLOCATED_837_PSTATE);
-	if((Rt&0x18)==0x10) UNALLOCATED(ENC_UNALLOCATED_836_PSTATE);
-	if(!(Rt&0x10)) UNALLOCATED(ENC_UNALLOCATED_835_PSTATE);
+	if(Rt==0x1e) UNALLOCATED(ENC_UNALLOCATED_841_PSTATE);
+	if((Rt&0x1e)==0x1c) UNALLOCATED(ENC_UNALLOCATED_840_PSTATE);
+	if((Rt&0x1c)==0x18) UNALLOCATED(ENC_UNALLOCATED_839_PSTATE);
+	if((Rt&0x18)==0x10) UNALLOCATED(ENC_UNALLOCATED_838_PSTATE);
+	if(!(Rt&0x10)) UNALLOCATED(ENC_UNALLOCATED_837_PSTATE);
 	UNMATCHED;
 }
 
@@ -199,9 +199,9 @@ int decode_iclass_systeminstrswithreg(context *ctx, Instruction *dec)
 	uint32_t CRm=(INSWORD>>8)&15, op2=(INSWORD>>5)&7;
 	if(!CRm && !op2 && HasWFxT()) return WFET(ctx, dec); // -> WFET_only_systeminstrswithreg
 	if(!CRm && op2==1 && HasWFxT()) return WFIT(ctx, dec); // -> WFIT_only_systeminstrswithreg
-	if(!CRm && (op2&6)==2) UNALLOCATED(ENC_UNALLOCATED_842_SYSTEMINSTRSWITHREG);
-	if(!CRm && (op2&4)==4) UNALLOCATED(ENC_UNALLOCATED_841_SYSTEMINSTRSWITHREG);
-	if(CRm) UNALLOCATED(ENC_UNALLOCATED_840_SYSTEMINSTRSWITHREG);
+	if(!CRm && (op2&6)==2) UNALLOCATED(ENC_UNALLOCATED_844_SYSTEMINSTRSWITHREG);
+	if(!CRm && (op2&4)==4) UNALLOCATED(ENC_UNALLOCATED_843_SYSTEMINSTRSWITHREG);
+	if(CRm) UNALLOCATED(ENC_UNALLOCATED_842_SYSTEMINSTRSWITHREG);
 	UNMATCHED;
 }
 
@@ -209,7 +209,7 @@ int decode_iclass_syspairinstrs(context *ctx, Instruction *dec)
 {
 	uint32_t L=(INSWORD>>21)&1;
 	if(!L && HasSYSINSTR128()) return SYSP(ctx, dec); // -> SYSP_CR_syspairinstrs
-	if(L) UNALLOCATED(ENC_UNALLOCATED_843_SYSPAIRINSTRS);
+	if(L) UNALLOCATED(ENC_UNALLOCATED_845_SYSPAIRINSTRS);
 	UNMATCHED;
 }
 
@@ -226,20 +226,6 @@ int decode_iclass_systemmovepr(context *ctx, Instruction *dec)
 	uint32_t L=(INSWORD>>21)&1;
 	if(!L && HasSYSREG128()) return MSRR(ctx, dec); // -> MSRR_SR_systemmovepr
 	if(L && HasSYSREG128()) return MRRS(ctx, dec); // -> MRRS_RS_systemmovepr
-	UNMATCHED;
-}
-
-int decode_iclass_systemresult(context *ctx, Instruction *dec)
-{
-	uint32_t op1=(INSWORD>>16)&7, CRn=(INSWORD>>12)&15, CRm=(INSWORD>>8)&15, op2=(INSWORD>>5)&7;
-	if(op1==3 && CRn==3 && !CRm && op2==3 && HasTME()) return TSTART(ctx, dec); // -> TSTART_BR_systemresult
-	if(op1==3 && CRn==3 && CRm==1 && op2==3 && HasTME()) return TTEST(ctx, dec); // -> TTEST_BR_systemresult
-	if(op1==3 && CRn==3 && !(CRm&14) && op2!=3) UNALLOCATED(ENC_UNALLOCATED_849_SYSTEMRESULT);
-	if(op1==3 && CRn==3 && (CRm&14)==2) UNALLOCATED(ENC_UNALLOCATED_848_SYSTEMRESULT);
-	if(op1==3 && CRn==3 && (CRm&12)==4) UNALLOCATED(ENC_UNALLOCATED_847_SYSTEMRESULT);
-	if(op1==3 && CRn==3 && (CRm&8)==8) UNALLOCATED(ENC_UNALLOCATED_846_SYSTEMRESULT);
-	if(op1==3 && CRn!=3) UNALLOCATED(ENC_UNALLOCATED_845_SYSTEMRESULT);
-	if(op1!=3) UNALLOCATED(ENC_UNALLOCATED_844_SYSTEMRESULT);
 	UNMATCHED;
 }
 
@@ -271,41 +257,41 @@ int decode_iclass_branch_reg(context *ctx, Instruction *dec)
 	if(opc==4 && op2==0x1f && op3==3 && Rn==0x1f && op4==0x1f && HasPAuth()) return ERETA(ctx, dec); // -> ERETAB_64E_branch_reg
 	if(opc==5 && op2==0x1f && !op3 && Rn==0x1f && !op4) return DRPS(ctx, dec); // -> DRPS_64E_branch_reg
 	if((opc&14)==4 && op2==0x1f && !op3 && Rn==0x1f && op4) UNALLOCATED(ENC_UNALLOCATED_866_BRANCH_REG);
-	if(opc==4 && op2==0x1f && (op3&0x3e)==2 && Rn==0x1f && op4==0x1d) UNALLOCATED(ENC_UNALLOCATED_874_BRANCH_REG);
-	if(opc==4 && op2==0x1f && (op3&0x3e)==2 && Rn==0x1f && (op4&0x1d)==0x19) UNALLOCATED(ENC_UNALLOCATED_873_BRANCH_REG);
-	if(opc==4 && op2==0x1f && (op3&0x3e)==2 && Rn==0x1f && (op4&0x19)==0x11) UNALLOCATED(ENC_UNALLOCATED_872_BRANCH_REG);
-	if(opc==4 && op2==0x1f && (op3&0x3e)==2 && Rn==0x1f && (op4&0x11)==1) UNALLOCATED(ENC_UNALLOCATED_871_BRANCH_REG);
+	if(opc==4 && op2==0x1f && (op3&0x3e)==2 && Rn==0x1f && op4==0x1d) UNALLOCATED(ENC_UNALLOCATED_870_BRANCH_REG);
+	if(opc==4 && op2==0x1f && (op3&0x3e)==2 && Rn==0x1f && (op4&0x1d)==0x19) UNALLOCATED(ENC_UNALLOCATED_869_BRANCH_REG);
+	if(opc==4 && op2==0x1f && (op3&0x3e)==2 && Rn==0x1f && (op4&0x19)==0x11) UNALLOCATED(ENC_UNALLOCATED_868_BRANCH_REG);
+	if(opc==4 && op2==0x1f && (op3&0x3e)==2 && Rn==0x1f && (op4&0x11)==1) UNALLOCATED(ENC_UNALLOCATED_867_BRANCH_REG);
 	if(!opc && op2==0x1f && !op3 && !op4) return BR(ctx, dec); // -> BR_64_branch_reg
 	if(!opc && op2==0x1f && op3==2 && op4==0x1f && HasPAuth()) return BRA(ctx, dec); // -> BRAAZ_64_branch_reg
 	if(!opc && op2==0x1f && op3==3 && op4==0x1f && HasPAuth()) return BRA(ctx, dec); // -> BRABZ_64_branch_reg
 	if(opc==1 && op2==0x1f && !op3 && !op4) return BLR(ctx, dec); // -> BLR_64_branch_reg
-	if(opc==1 && op2==0x1f && !op3 && op4) UNALLOCATED(ENC_UNALLOCATED_865_BRANCH_REG);
+	if(opc==1 && op2==0x1f && !op3 && op4) UNALLOCATED(ENC_UNALLOCATED_862_BRANCH_REG);
 	if(opc==1 && op2==0x1f && op3==2 && op4==0x1f && HasPAuth()) return BLRA(ctx, dec); // -> BLRAAZ_64_branch_reg
 	if(opc==1 && op2==0x1f && op3==3 && op4==0x1f && HasPAuth()) return BLRA(ctx, dec); // -> BLRABZ_64_branch_reg
 	if(opc==2 && op2==0x1f && !op3 && !op4) return RET(ctx, dec); // -> RET_64R_branch_reg
-	if(opc==5 && op2==0x1f && (op3&0x3e)==2 && Rn==0x1f && op4&1) UNALLOCATED(ENC_UNALLOCATED_867_BRANCH_REG);
-	if(!(opc&13) && op2==0x1f && !op3 && op4) UNALLOCATED(ENC_UNALLOCATED_864_BRANCH_REG);
-	if(opc==2 && op2==0x1f && (op3&0x3e)==2 && Rn!=0x1f) UNALLOCATED(ENC_UNALLOCATED_868_BRANCH_REG);
+	if(opc==5 && op2==0x1f && (op3&0x3e)==2 && Rn==0x1f && op4&1) UNALLOCATED(ENC_UNALLOCATED_865_BRANCH_REG);
+	if(!(opc&13) && op2==0x1f && !op3 && op4) UNALLOCATED(ENC_UNALLOCATED_861_BRANCH_REG);
+	if(opc==2 && op2==0x1f && (op3&0x3e)==2 && Rn!=0x1f) UNALLOCATED(ENC_UNALLOCATED_860_BRANCH_REG);
 	if((opc&14)==4 && op2==0x1f && op3==1 && Rn==0x1f) UNALLOCATED(ENC_UNALLOCATED_863_BRANCH_REG);
-	if((opc&14)==4 && op2==0x1f && (op3&0x3e)==2 && Rn==0x1f && !(op4&1)) UNALLOCATED(ENC_UNALLOCATED_870_BRANCH_REG);
-	if(!(opc&14) && op2==0x1f && (op3&0x3e)==2 && op4!=0x1f) UNALLOCATED(ENC_UNALLOCATED_869_BRANCH_REG);
-	if((opc&14)==4 && op2==0x1f && !(op3&0x3c) && Rn!=0x1f) UNALLOCATED(ENC_UNALLOCATED_859_BRANCH_REG);
-	if(opc==1 && op2==0x1f && op3==1) UNALLOCATED(ENC_UNALLOCATED_862_BRANCH_REG);
+	if((opc&14)==4 && op2==0x1f && (op3&0x3e)==2 && Rn==0x1f && !(op4&1)) UNALLOCATED(ENC_UNALLOCATED_864_BRANCH_REG);
+	if(!(opc&14) && op2==0x1f && (op3&0x3e)==2 && op4!=0x1f) UNALLOCATED(ENC_UNALLOCATED_857_BRANCH_REG);
+	if((opc&14)==4 && op2==0x1f && !(op3&0x3c) && Rn!=0x1f) UNALLOCATED(ENC_UNALLOCATED_855_BRANCH_REG);
+	if(opc==1 && op2==0x1f && op3==1) UNALLOCATED(ENC_UNALLOCATED_859_BRANCH_REG);
 	if(opc==8 && op2==0x1f && op3==2 && HasPAuth()) return BRA(ctx, dec); // -> BRAA_64P_branch_reg
 	if(opc==8 && op2==0x1f && op3==3 && HasPAuth()) return BRA(ctx, dec); // -> BRAB_64P_branch_reg
 	if(opc==9 && op2==0x1f && op3==2 && HasPAuth()) return BLRA(ctx, dec); // -> BLRAA_64P_branch_reg
 	if(opc==9 && op2==0x1f && op3==3 && HasPAuth()) return BLRA(ctx, dec); // -> BLRAB_64P_branch_reg
-	if(!(opc&13) && op2==0x1f && op3==1) UNALLOCATED(ENC_UNALLOCATED_861_BRANCH_REG);
-	if(opc==3 && op2==0x1f && !(op3&0x3c)) UNALLOCATED(ENC_UNALLOCATED_860_BRANCH_REG);
-	if((opc&14)==8 && op2==0x1f && !(op3&0x3e)) UNALLOCATED(ENC_UNALLOCATED_857_BRANCH_REG);
-	if((opc&14)==6 && op2==0x1f && !(op3&0x3c)) UNALLOCATED(ENC_UNALLOCATED_858_BRANCH_REG);
-	if((opc&14)==10 && op2==0x1f && !(op3&0x3c)) UNALLOCATED(ENC_UNALLOCATED_856_BRANCH_REG);
-	if((opc&12)==12 && op2==0x1f && !(op3&0x3c)) UNALLOCATED(ENC_UNALLOCATED_855_BRANCH_REG);
-	if(op2==0x1f && (op3&0x3c)==4) UNALLOCATED(ENC_UNALLOCATED_854_BRANCH_REG);
-	if(op2==0x1f && (op3&0x38)==8) UNALLOCATED(ENC_UNALLOCATED_853_BRANCH_REG);
-	if(op2==0x1f && (op3&0x30)==0x10) UNALLOCATED(ENC_UNALLOCATED_852_BRANCH_REG);
-	if(op2==0x1f && (op3&0x20)==0x20) UNALLOCATED(ENC_UNALLOCATED_851_BRANCH_REG);
-	if(op2!=0x1f) UNALLOCATED(ENC_UNALLOCATED_850_BRANCH_REG);
+	if(!(opc&13) && op2==0x1f && op3==1) UNALLOCATED(ENC_UNALLOCATED_858_BRANCH_REG);
+	if(opc==3 && op2==0x1f && !(op3&0x3c)) UNALLOCATED(ENC_UNALLOCATED_854_BRANCH_REG);
+	if((opc&14)==8 && op2==0x1f && !(op3&0x3e)) UNALLOCATED(ENC_UNALLOCATED_856_BRANCH_REG);
+	if((opc&14)==6 && op2==0x1f && !(op3&0x3c)) UNALLOCATED(ENC_UNALLOCATED_852_BRANCH_REG);
+	if((opc&14)==10 && op2==0x1f && !(op3&0x3c)) UNALLOCATED(ENC_UNALLOCATED_853_BRANCH_REG);
+	if((opc&12)==12 && op2==0x1f && !(op3&0x3c)) UNALLOCATED(ENC_UNALLOCATED_851_BRANCH_REG);
+	if(op2==0x1f && (op3&0x3c)==4) UNALLOCATED(ENC_UNALLOCATED_850_BRANCH_REG);
+	if(op2==0x1f && (op3&0x38)==8) UNALLOCATED(ENC_UNALLOCATED_849_BRANCH_REG);
+	if(op2==0x1f && (op3&0x30)==0x10) UNALLOCATED(ENC_UNALLOCATED_848_BRANCH_REG);
+	if(op2==0x1f && (op3&0x20)==0x20) UNALLOCATED(ENC_UNALLOCATED_847_BRANCH_REG);
+	if(op2!=0x1f) UNALLOCATED(ENC_UNALLOCATED_846_BRANCH_REG);
 	UNMATCHED;
 }
 
@@ -348,10 +334,10 @@ int decode_iclass_memop_128(context *ctx, Instruction *dec)
 	if(S && A && R && o3 && opc==1 && HasD128() && HasTHE()) return RCWSCLRP(ctx, dec); // -> RCWSCLRPAL_128_memop_128
 	if(S && A && R && o3 && opc==2 && HasD128() && HasTHE()) return RCWSSWPP(ctx, dec); // -> RCWSSWPPAL_128_memop_128
 	if(S && A && R && o3 && opc==3 && HasD128() && HasTHE()) return RCWSSETP(ctx, dec); // -> RCWSSETPAL_128_memop_128
-	if(S && o3 && !opc) UNALLOCATED(ENC_UNALLOCATED_878_MEMOP_128);
-	if(!S && !o3 && !(opc&5)) UNALLOCATED(ENC_UNALLOCATED_877_MEMOP_128);
-	if(S && !o3 && !(opc&4)) UNALLOCATED(ENC_UNALLOCATED_876_MEMOP_128);
-	if((opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_875_MEMOP_128);
+	if(S && o3 && !opc) UNALLOCATED(ENC_UNALLOCATED_874_MEMOP_128);
+	if(!S && !o3 && !(opc&5)) UNALLOCATED(ENC_UNALLOCATED_873_MEMOP_128);
+	if(S && !o3 && !(opc&4)) UNALLOCATED(ENC_UNALLOCATED_872_MEMOP_128);
+	if((opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_871_MEMOP_128);
 	UNMATCHED;
 }
 
@@ -372,9 +358,9 @@ int decode_iclass_asisdlse(context *ctx, Instruction *dec)
 	if(L && opcode==7 && HasAdvSIMD()) return LD1_advsimd_mult(ctx, dec); // -> LD1_asisdlse_R1_1v
 	if(L && opcode==8 && HasAdvSIMD()) return LD2_advsimd_mult(ctx, dec); // -> LD2_asisdlse_R2
 	if(L && opcode==10 && HasAdvSIMD()) return LD1_advsimd_mult(ctx, dec); // -> LD1_asisdlse_R2_2v
-	if(opcode==5) UNALLOCATED(ENC_UNALLOCATED_881_ASISDLSE);
-	if((opcode&5)==1) UNALLOCATED(ENC_UNALLOCATED_880_ASISDLSE);
-	if((opcode&12)==12) UNALLOCATED(ENC_UNALLOCATED_879_ASISDLSE);
+	if(opcode==5) UNALLOCATED(ENC_UNALLOCATED_877_ASISDLSE);
+	if((opcode&5)==1) UNALLOCATED(ENC_UNALLOCATED_876_ASISDLSE);
+	if((opcode&12)==12) UNALLOCATED(ENC_UNALLOCATED_875_ASISDLSE);
 	UNMATCHED;
 }
 
@@ -409,9 +395,9 @@ int decode_iclass_asisdlsep(context *ctx, Instruction *dec)
 	if(L && Rm!=0x1f && opcode==7 && HasAdvSIMD()) return LD1_advsimd_mult(ctx, dec); // -> LD1_asisdlsep_R1_r1
 	if(L && Rm!=0x1f && opcode==8 && HasAdvSIMD()) return LD2_advsimd_mult(ctx, dec); // -> LD2_asisdlsep_R2_r
 	if(L && Rm!=0x1f && opcode==10 && HasAdvSIMD()) return LD1_advsimd_mult(ctx, dec); // -> LD1_asisdlsep_R2_r2
-	if(opcode==5) UNALLOCATED(ENC_UNALLOCATED_884_ASISDLSEP);
-	if((opcode&5)==1) UNALLOCATED(ENC_UNALLOCATED_883_ASISDLSEP);
-	if((opcode&12)==12) UNALLOCATED(ENC_UNALLOCATED_882_ASISDLSEP);
+	if(opcode==5) UNALLOCATED(ENC_UNALLOCATED_880_ASISDLSEP);
+	if((opcode&5)==1) UNALLOCATED(ENC_UNALLOCATED_879_ASISDLSEP);
+	if((opcode&12)==12) UNALLOCATED(ENC_UNALLOCATED_878_ASISDLSEP);
 	UNMATCHED;
 }
 
@@ -428,7 +414,7 @@ int decode_iclass_asisdlso(context *ctx, Instruction *dec)
 	if(L && !R && o2 && opcode==4 && !S && size==1 && HasAdvSIMD() && HasLRCPC3()) return LDAP1_advsimd_sngl(ctx, dec); // -> LDAP1_asisdlso_D1
 	if(L && R && !o2 && opcode==4 && !S && size==1 && HasAdvSIMD()) return LD2_advsimd_sngl(ctx, dec); // -> LD2_asisdlso_D2_2d
 	if(L && R && !o2 && opcode==5 && !S && size==1 && HasAdvSIMD()) return LD4_advsimd_sngl(ctx, dec); // -> LD4_asisdlso_D4_4d
-	if(!R && o2 && opcode==4 && S && size==1) UNALLOCATED(ENC_UNALLOCATED_893_ASISDLSO);
+	if(!R && o2 && opcode==4 && S && size==1) UNALLOCATED(ENC_UNALLOCATED_889_ASISDLSO);
 	if(!L && !R && !o2 && opcode==4 && !size && HasAdvSIMD()) return ST1_advsimd_sngl(ctx, dec); // -> ST1_asisdlso_S1_1s
 	if(!L && !R && !o2 && opcode==5 && !size && HasAdvSIMD()) return ST3_advsimd_sngl(ctx, dec); // -> ST3_asisdlso_S3_3s
 	if(!L && R && !o2 && opcode==4 && !size && HasAdvSIMD()) return ST2_advsimd_sngl(ctx, dec); // -> ST2_asisdlso_S2_2s
@@ -450,7 +436,7 @@ int decode_iclass_asisdlso(context *ctx, Instruction *dec)
 	if(L && R && !o2 && opcode==3 && !(size&1) && HasAdvSIMD()) return LD4_advsimd_sngl(ctx, dec); // -> LD4_asisdlso_H4_4h
 	if(L && R && !o2 && opcode==6 && !S && HasAdvSIMD()) return LD2R_advsimd(ctx, dec); // -> LD2R_asisdlso_R2
 	if(L && R && !o2 && opcode==7 && !S && HasAdvSIMD()) return LD4R_advsimd(ctx, dec); // -> LD4R_asisdlso_R4
-	if(!o2 && (opcode&6)==4 && S && size==1) UNALLOCATED(ENC_UNALLOCATED_892_ASISDLSO);
+	if(!o2 && (opcode&6)==4 && S && size==1) UNALLOCATED(ENC_UNALLOCATED_888_ASISDLSO);
 	if(!L && !R && !o2 && !opcode && HasAdvSIMD()) return ST1_advsimd_sngl(ctx, dec); // -> ST1_asisdlso_B1_1b
 	if(!L && !R && !o2 && opcode==1 && HasAdvSIMD()) return ST3_advsimd_sngl(ctx, dec); // -> ST3_asisdlso_B3_3b
 	if(!L && R && !o2 && !opcode && HasAdvSIMD()) return ST2_advsimd_sngl(ctx, dec); // -> ST2_asisdlso_B2_2b
@@ -459,12 +445,12 @@ int decode_iclass_asisdlso(context *ctx, Instruction *dec)
 	if(L && !R && !o2 && opcode==1 && HasAdvSIMD()) return LD3_advsimd_sngl(ctx, dec); // -> LD3_asisdlso_B3_3b
 	if(L && R && !o2 && !opcode && HasAdvSIMD()) return LD2_advsimd_sngl(ctx, dec); // -> LD2_asisdlso_B2_2b
 	if(L && R && !o2 && opcode==1 && HasAdvSIMD()) return LD4_advsimd_sngl(ctx, dec); // -> LD4_asisdlso_B4_4b
-	if(!R && o2 && opcode!=4) UNALLOCATED(ENC_UNALLOCATED_886_ASISDLSO);
-	if(L && !o2 && (opcode&6)==6 && S) UNALLOCATED(ENC_UNALLOCATED_891_ASISDLSO);
-	if(!o2 && (opcode&6)==2 && size&1) UNALLOCATED(ENC_UNALLOCATED_889_ASISDLSO);
-	if(!o2 && (opcode&6)==4 && (size&2)==2) UNALLOCATED(ENC_UNALLOCATED_890_ASISDLSO);
-	if(!L && !o2 && (opcode&6)==6) UNALLOCATED(ENC_UNALLOCATED_888_ASISDLSO);
-	if(R && o2) UNALLOCATED(ENC_UNALLOCATED_885_ASISDLSO);
+	if(!R && o2 && opcode!=4) UNALLOCATED(ENC_UNALLOCATED_882_ASISDLSO);
+	if(L && !o2 && (opcode&6)==6 && S) UNALLOCATED(ENC_UNALLOCATED_886_ASISDLSO);
+	if(!o2 && (opcode&6)==2 && size&1) UNALLOCATED(ENC_UNALLOCATED_884_ASISDLSO);
+	if(!o2 && (opcode&6)==4 && (size&2)==2) UNALLOCATED(ENC_UNALLOCATED_885_ASISDLSO);
+	if(!L && !o2 && (opcode&6)==6) UNALLOCATED(ENC_UNALLOCATED_883_ASISDLSO);
+	if(R && o2) UNALLOCATED(ENC_UNALLOCATED_881_ASISDLSO);
 	UNMATCHED;
 }
 
@@ -543,11 +529,11 @@ int decode_iclass_asisdlsop(context *ctx, Instruction *dec)
 	if(L && R && Rm==0x1f && opcode==1 && HasAdvSIMD()) return LD4_advsimd_sngl(ctx, dec); // -> LD4_asisdlsop_B4_i4b
 	if(L && R && Rm!=0x1f && !opcode && HasAdvSIMD()) return LD2_advsimd_sngl(ctx, dec); // -> LD2_asisdlsop_BX2_r2b
 	if(L && R && Rm!=0x1f && opcode==1 && HasAdvSIMD()) return LD4_advsimd_sngl(ctx, dec); // -> LD4_asisdlsop_BX4_r4b
-	if((opcode&6)==4 && S && size==1) UNALLOCATED(ENC_UNALLOCATED_898_ASISDLSOP);
-	if(L && (opcode&6)==6 && S) UNALLOCATED(ENC_UNALLOCATED_897_ASISDLSOP);
-	if((opcode&6)==2 && size&1) UNALLOCATED(ENC_UNALLOCATED_895_ASISDLSOP);
-	if((opcode&6)==4 && (size&2)==2) UNALLOCATED(ENC_UNALLOCATED_896_ASISDLSOP);
-	if(!L && (opcode&6)==6) UNALLOCATED(ENC_UNALLOCATED_894_ASISDLSOP);
+	if((opcode&6)==4 && S && size==1) UNALLOCATED(ENC_UNALLOCATED_894_ASISDLSOP);
+	if(L && (opcode&6)==6 && S) UNALLOCATED(ENC_UNALLOCATED_893_ASISDLSOP);
+	if((opcode&6)==2 && size&1) UNALLOCATED(ENC_UNALLOCATED_891_ASISDLSOP);
+	if((opcode&6)==4 && (size&2)==2) UNALLOCATED(ENC_UNALLOCATED_892_ASISDLSOP);
+	if(!L && (opcode&6)==6) UNALLOCATED(ENC_UNALLOCATED_890_ASISDLSOP);
 	UNMATCHED;
 }
 
@@ -596,9 +582,9 @@ int decode_iclass_memop(context *ctx, Instruction *dec)
 	if(size==3 && VR && !A && R && o3 && opc==5 && Rt==0x1f && HasLSFE()) return STFMIN(ctx, dec); // -> STFMINL_64
 	if(size==3 && VR && !A && R && o3 && opc==6 && Rt==0x1f && HasLSFE()) return STFMAXNM(ctx, dec); // -> STFMAXNML_64
 	if(size==3 && VR && !A && R && o3 && opc==7 && Rt==0x1f && HasLSFE()) return STFMINNM(ctx, dec); // -> STFMINNML_64
-	if(size==3 && !VR && !A && !R && Rs!=0x1f && o3 && (opc&3)==1) UNALLOCATED(ENC_UNALLOCATED_920_MEMOP);
-	if(VR && !A && o3 && opc==1 && Rt==0x1f) UNALLOCATED(ENC_UNALLOCATED_904_MEMOP);
-	if(VR && !A && o3 && (opc&6)==2 && Rt==0x1f) UNALLOCATED(ENC_UNALLOCATED_902_MEMOP);
+	if(size==3 && !VR && !A && !R && Rs!=0x1f && o3 && (opc&3)==1) UNALLOCATED(ENC_UNALLOCATED_912_MEMOP);
+	if(VR && !A && o3 && opc==1 && Rt==0x1f) UNALLOCATED(ENC_UNALLOCATED_916_MEMOP);
+	if(VR && !A && o3 && (opc&6)==2 && Rt==0x1f) UNALLOCATED(ENC_UNALLOCATED_915_MEMOP);
 	if(!size && !VR && !A && !R && !o3 && !opc && HasLSE()) return LDADDB(ctx, dec); // -> LDADDB_32_memop
 	if(!size && !VR && !A && !R && !o3 && opc==1 && HasLSE()) return LDCLRB(ctx, dec); // -> LDCLRB_32_memop
 	if(!size && !VR && !A && !R && !o3 && opc==2 && HasLSE()) return LDEORB(ctx, dec); // -> LDEORB_32_memop
@@ -814,8 +800,8 @@ int decode_iclass_memop(context *ctx, Instruction *dec)
 	if(size==3 && !VR && !A && R && !o3 && opc==6 && HasLSE()) return LDUMAX(ctx, dec); // -> LDUMAXL_64_memop
 	if(size==3 && !VR && !A && R && !o3 && opc==7 && HasLSE()) return LDUMIN(ctx, dec); // -> LDUMINL_64_memop
 	if(size==3 && !VR && !A && R && o3 && !opc && HasLSE()) return SWP(ctx, dec); // -> SWPL_64_memop
-	if(size==3 && !VR && !A && R && o3 && opc==2) UNALLOCATED(ENC_UNALLOCATED_918_MEMOP);
-	if(size==3 && !VR && !A && R && o3 && opc==3) UNALLOCATED(ENC_UNALLOCATED_917_MEMOP);
+	if(size==3 && !VR && !A && R && o3 && opc==2) UNALLOCATED(ENC_UNALLOCATED_913_MEMOP);
+	if(size==3 && !VR && !A && R && o3 && opc==3) UNALLOCATED(ENC_UNALLOCATED_914_MEMOP);
 	if(size==3 && !VR && A && !R && !o3 && !opc && HasLSE()) return LDADD(ctx, dec); // -> LDADDA_64_memop
 	if(size==3 && !VR && A && !R && !o3 && opc==1 && HasLSE()) return LDCLR(ctx, dec); // -> LDCLRA_64_memop
 	if(size==3 && !VR && A && !R && !o3 && opc==2 && HasLSE()) return LDEOR(ctx, dec); // -> LDEORA_64_memop
@@ -855,23 +841,23 @@ int decode_iclass_memop(context *ctx, Instruction *dec)
 	if(size==3 && VR && A && R && !o3 && opc==5 && HasLSFE()) return LDFMIN(ctx, dec); // -> LDFMINAL_64
 	if(size==3 && VR && A && R && !o3 && opc==6 && HasLSFE()) return LDFMAXNM(ctx, dec); // -> LDFMAXNMAL_64
 	if(size==3 && VR && A && R && !o3 && opc==7 && HasLSFE()) return LDFMINNM(ctx, dec); // -> LDFMINNMAL_64
-	if(VR && !A && o3 && Rt!=0x1f) UNALLOCATED(ENC_UNALLOCATED_900_MEMOP);
-	if(!(size&2) && !VR && !A && R && o3 && opc==5) UNALLOCATED(ENC_UNALLOCATED_912_MEMOP);
-	if(!(size&2) && !VR && A && R && o3 && opc==5) UNALLOCATED(ENC_UNALLOCATED_910_MEMOP);
-	if(size==2 && !VR && !A && o3 && opc==2) UNALLOCATED(ENC_UNALLOCATED_915_MEMOP);
-	if(size==2 && !VR && !A && o3 && opc==3) UNALLOCATED(ENC_UNALLOCATED_914_MEMOP);
-	if(size==3 && !VR && !A && R && o3 && (opc&3)==1) UNALLOCATED(ENC_UNALLOCATED_916_MEMOP);
-	if(!VR && A && R && o3 && opc==4) UNALLOCATED(ENC_UNALLOCATED_909_MEMOP);
-	if(!(size&2) && !VR && !R && o3 && opc==5) UNALLOCATED(ENC_UNALLOCATED_911_MEMOP);
-	if(size==2 && !VR && !A && o3 && (opc&3)==1) UNALLOCATED(ENC_UNALLOCATED_913_MEMOP);
-	if(!VR && !A && o3 && opc==4) UNALLOCATED(ENC_UNALLOCATED_919_MEMOP);
-	if(!(size&2) && !VR && A && o3 && (opc&6)==6) UNALLOCATED(ENC_UNALLOCATED_908_MEMOP);
-	if((size&2)==2 && !VR && A && o3 && (opc&3)==1) UNALLOCATED(ENC_UNALLOCATED_906_MEMOP);
-	if(!VR && !A && o3 && (opc&6)==6) UNALLOCATED(ENC_UNALLOCATED_907_MEMOP);
-	if(VR && !o3 && opc==1) UNALLOCATED(ENC_UNALLOCATED_903_MEMOP);
-	if((size&2)==2 && !VR && A && o3 && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_905_MEMOP);
-	if(VR && !o3 && (opc&6)==2) UNALLOCATED(ENC_UNALLOCATED_901_MEMOP);
-	if(VR && A && o3) UNALLOCATED(ENC_UNALLOCATED_899_MEMOP);
+	if(VR && !A && o3 && Rt!=0x1f) UNALLOCATED(ENC_UNALLOCATED_896_MEMOP);
+	if(!(size&2) && !VR && !A && R && o3 && opc==5) UNALLOCATED(ENC_UNALLOCATED_907_MEMOP);
+	if(!(size&2) && !VR && A && R && o3 && opc==5) UNALLOCATED(ENC_UNALLOCATED_908_MEMOP);
+	if(size==2 && !VR && !A && o3 && opc==2) UNALLOCATED(ENC_UNALLOCATED_909_MEMOP);
+	if(size==2 && !VR && !A && o3 && opc==3) UNALLOCATED(ENC_UNALLOCATED_910_MEMOP);
+	if(size==3 && !VR && !A && R && o3 && (opc&3)==1) UNALLOCATED(ENC_UNALLOCATED_911_MEMOP);
+	if(!VR && A && R && o3 && opc==4) UNALLOCATED(ENC_UNALLOCATED_906_MEMOP);
+	if(!(size&2) && !VR && !R && o3 && opc==5) UNALLOCATED(ENC_UNALLOCATED_904_MEMOP);
+	if(size==2 && !VR && !A && o3 && (opc&3)==1) UNALLOCATED(ENC_UNALLOCATED_905_MEMOP);
+	if(!VR && !A && o3 && opc==4) UNALLOCATED(ENC_UNALLOCATED_903_MEMOP);
+	if(!(size&2) && !VR && A && o3 && (opc&6)==6) UNALLOCATED(ENC_UNALLOCATED_901_MEMOP);
+	if((size&2)==2 && !VR && A && o3 && (opc&3)==1) UNALLOCATED(ENC_UNALLOCATED_902_MEMOP);
+	if(!VR && !A && o3 && (opc&6)==6) UNALLOCATED(ENC_UNALLOCATED_899_MEMOP);
+	if(VR && !o3 && opc==1) UNALLOCATED(ENC_UNALLOCATED_900_MEMOP);
+	if((size&2)==2 && !VR && A && o3 && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_898_MEMOP);
+	if(VR && !o3 && (opc&6)==2) UNALLOCATED(ENC_UNALLOCATED_897_MEMOP);
+	if(VR && A && o3) UNALLOCATED(ENC_UNALLOCATED_895_MEMOP);
 	UNMATCHED;
 }
 
@@ -910,9 +896,9 @@ int decode_iclass_memop_unpriv(context *ctx, Instruction *dec)
 	if(sz && A && R && !o3 && opc==1 && HasLSUI()) return LDTCLR(ctx, dec); // -> LDTCLRAL_64_memop_unpriv
 	if(sz && A && R && !o3 && opc==3 && HasLSUI()) return LDTSET(ctx, dec); // -> LDTSETAL_64_memop_unpriv
 	if(sz && A && R && o3 && !opc && HasLSUI()) return SWPT(ctx, dec); // -> SWPTAL_64_memop_unpriv
-	if(opc==2) UNALLOCATED(ENC_UNALLOCATED_923_MEMOP_UNPRIV);
-	if(o3 && (opc&5)==1) UNALLOCATED(ENC_UNALLOCATED_922_MEMOP_UNPRIV);
-	if((opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_921_MEMOP_UNPRIV);
+	if(opc==2) UNALLOCATED(ENC_UNALLOCATED_919_MEMOP_UNPRIV);
+	if(o3 && (opc&5)==1) UNALLOCATED(ENC_UNALLOCATED_918_MEMOP_UNPRIV);
+	if((opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_917_MEMOP_UNPRIV);
 	UNMATCHED;
 }
 
@@ -935,7 +921,7 @@ int decode_iclass_comswap(context *ctx, Instruction *dec)
 	if(size==3 && !L && o0 && Rt2==0x1f && HasLSE()) return CAS(ctx, dec); // -> CASL_C64_comswap
 	if(size==3 && L && !o0 && Rt2==0x1f && HasLSE()) return CAS(ctx, dec); // -> CASA_C64_comswap
 	if(size==3 && L && o0 && Rt2==0x1f && HasLSE()) return CAS(ctx, dec); // -> CASAL_C64_comswap
-	if(Rt2!=0x1f) UNALLOCATED(ENC_UNALLOCATED_924_COMSWAP);
+	if(Rt2!=0x1f) UNALLOCATED(ENC_UNALLOCATED_920_COMSWAP);
 	UNMATCHED;
 }
 
@@ -946,8 +932,8 @@ int decode_iclass_comswap_unpriv(context *ctx, Instruction *dec)
 	if(sz && !L && o0 && Rt2==0x1f && HasLSUI()) return CAST(ctx, dec); // -> CASLT_C64_comswap_unpriv
 	if(sz && L && !o0 && Rt2==0x1f && HasLSUI()) return CAST(ctx, dec); // -> CASAT_C64_comswap_unpriv
 	if(sz && L && o0 && Rt2==0x1f && HasLSUI()) return CAST(ctx, dec); // -> CASALT_C64_comswap_unpriv
-	if(sz && Rt2!=0x1f) UNALLOCATED(ENC_UNALLOCATED_926_COMSWAP_UNPRIV);
-	if(!sz) UNALLOCATED(ENC_UNALLOCATED_925_COMSWAP_UNPRIV);
+	if(sz && Rt2!=0x1f) UNALLOCATED(ENC_UNALLOCATED_922_COMSWAP_UNPRIV);
+	if(!sz) UNALLOCATED(ENC_UNALLOCATED_921_COMSWAP_UNPRIV);
 	UNMATCHED;
 }
 
@@ -962,7 +948,7 @@ int decode_iclass_comswappr(context *ctx, Instruction *dec)
 	if(sz && !L && o0 && Rt2==0x1f && HasLSE()) return CASP(ctx, dec); // -> CASPL_CP64_comswappr
 	if(sz && L && !o0 && Rt2==0x1f && HasLSE()) return CASP(ctx, dec); // -> CASPA_CP64_comswappr
 	if(sz && L && o0 && Rt2==0x1f && HasLSE()) return CASP(ctx, dec); // -> CASPAL_CP64_comswappr
-	if(Rt2!=0x1f) UNALLOCATED(ENC_UNALLOCATED_927_COMSWAPPR);
+	if(Rt2!=0x1f) UNALLOCATED(ENC_UNALLOCATED_923_COMSWAPPR);
 	UNMATCHED;
 }
 
@@ -973,8 +959,8 @@ int decode_iclass_comswappr_unpriv(context *ctx, Instruction *dec)
 	if(sz && !L && o0 && Rt2==0x1f && HasLSUI()) return CASPT(ctx, dec); // -> CASPLT_CP64_comswappr_unpriv
 	if(sz && L && !o0 && Rt2==0x1f && HasLSUI()) return CASPT(ctx, dec); // -> CASPAT_CP64_comswappr_unpriv
 	if(sz && L && o0 && Rt2==0x1f && HasLSUI()) return CASPT(ctx, dec); // -> CASPALT_CP64_comswappr_unpriv
-	if(sz && Rt2!=0x1f) UNALLOCATED(ENC_UNALLOCATED_929_COMSWAPPR_UNPRIV);
-	if(!sz) UNALLOCATED(ENC_UNALLOCATED_928_COMSWAPPR_UNPRIV);
+	if(sz && Rt2!=0x1f) UNALLOCATED(ENC_UNALLOCATED_925_COMSWAPPR_UNPRIV);
+	if(!sz) UNALLOCATED(ENC_UNALLOCATED_924_COMSWAPPR_UNPRIV);
 	UNMATCHED;
 }
 
@@ -983,8 +969,8 @@ int decode_iclass_ldst_gcs(context *ctx, Instruction *dec)
 	uint32_t opc=(INSWORD>>12)&7;
 	if(!opc && HasGCS()) return GCSSTR(ctx, dec); // -> GCSSTR_64_ldst_gcs
 	if(opc==1 && HasGCS()) return GCSSTTR(ctx, dec); // -> GCSSTTR_64_ldst_gcs
-	if((opc&6)==2) UNALLOCATED(ENC_UNALLOCATED_931_LDST_GCS);
-	if((opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_930_LDST_GCS);
+	if((opc&6)==2) UNALLOCATED(ENC_UNALLOCATED_927_LDST_GCS);
+	if((opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_926_LDST_GCS);
 	UNMATCHED;
 }
 
@@ -998,7 +984,7 @@ int decode_iclass_loadlit(context *ctx, Instruction *dec)
 	if(opc==2 && !VR) return LDRSW_lit(ctx, dec); // -> LDRSW_64_loadlit
 	if(opc==2 && VR && HasFP()) return LDR_lit_fpsimd(ctx, dec); // -> LDR_Q_loadlit
 	if(opc==3 && !VR) return PRFM_lit(ctx, dec); // -> PRFM_P_loadlit
-	if(opc==3 && VR) UNALLOCATED(ENC_UNALLOCATED_932_LOADLIT);
+	if(opc==3 && VR) UNALLOCATED(ENC_UNALLOCATED_928_LOADLIT);
 	UNMATCHED;
 }
 
@@ -1058,7 +1044,7 @@ int decode_iclass_ldsttags(context *ctx, Instruction *dec)
 	if(!opc && !imm9 && !op2 && HasMTE2()) return STZGM(ctx, dec); // -> STZGM_64bulk_ldsttags
 	if(opc==2 && !imm9 && !op2 && HasMTE2()) return STGM(ctx, dec); // -> STGM_64bulk_ldsttags
 	if(opc==3 && !imm9 && !op2 && HasMTE2()) return LDGM(ctx, dec); // -> LDGM_64bulk_ldsttags
-	if(opc!=1 && imm9 && !op2) UNALLOCATED(ENC_UNALLOCATED_933_LDSTTAGS);
+	if(opc!=1 && imm9 && !op2) UNALLOCATED(ENC_UNALLOCATED_929_LDSTTAGS);
 	if(!opc && op2==1 && HasMTE()) return STG(ctx, dec); // -> STG_64Spost_ldsttags
 	if(!opc && op2==2 && HasMTE()) return STG(ctx, dec); // -> STG_64Soffset_ldsttags
 	if(!opc && op2==3 && HasMTE()) return STG(ctx, dec); // -> STG_64Spre_ldsttags
@@ -1092,7 +1078,7 @@ int decode_iclass_ldstnapair_offs(context *ctx, Instruction *dec)
 	if(opc==3 && !VR && L && HasLSUI()) return LDTNP_gen(ctx, dec); // -> LDTNP_64_ldstnapair_offs
 	if(opc==3 && VR && !L && HasFP() && HasLSUI()) return STTNP_fpsimd(ctx, dec); // -> STTNP_Q_ldstnapair_offs
 	if(opc==3 && VR && L && HasFP() && HasLSUI()) return LDTNP_fpsimd(ctx, dec); // -> LDTNP_Q_ldstnapair_offs
-	if(opc==1 && !VR) UNALLOCATED(ENC_UNALLOCATED_934_LDSTNAPAIR_OFFS);
+	if(opc==1 && !VR) UNALLOCATED(ENC_UNALLOCATED_930_LDSTNAPAIR_OFFS);
 	UNMATCHED;
 }
 
@@ -1131,7 +1117,7 @@ int decode_iclass_ldapstl_simd(context *ctx, Instruction *dec)
 	if(size==2 && opc==1 && HasFP() && HasLRCPC3()) return LDAPUR_fpsimd(ctx, dec); // -> LDAPUR_S_ldapstl_simd
 	if(size==3 && !opc && HasFP() && HasLRCPC3()) return STLUR_fpsimd(ctx, dec); // -> STLUR_D_ldapstl_simd
 	if(size==3 && opc==1 && HasFP() && HasLRCPC3()) return LDAPUR_fpsimd(ctx, dec); // -> LDAPUR_D_ldapstl_simd
-	if(size && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_935_LDAPSTL_SIMD);
+	if(size && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_931_LDAPSTL_SIMD);
 	UNMATCHED;
 }
 
@@ -1149,10 +1135,10 @@ int decode_iclass_ldapstl_unscaled(context *ctx, Instruction *dec)
 	if(size==2 && !opc && HasLRCPC2()) return STLUR_gen(ctx, dec); // -> STLUR_32_ldapstl_unscaled
 	if(size==2 && opc==1 && HasLRCPC2()) return LDAPUR_gen(ctx, dec); // -> LDAPUR_32_ldapstl_unscaled
 	if(size==2 && opc==2 && HasLRCPC2()) return LDAPURSW(ctx, dec); // -> LDAPURSW_64_ldapstl_unscaled
-	if(size==2 && opc==3) UNALLOCATED(ENC_UNALLOCATED_937_LDAPSTL_UNSCALED);
+	if(size==2 && opc==3) UNALLOCATED(ENC_UNALLOCATED_933_LDAPSTL_UNSCALED);
 	if(size==3 && !opc && HasLRCPC2()) return STLUR_gen(ctx, dec); // -> STLUR_64_ldapstl_unscaled
 	if(size==3 && opc==1 && HasLRCPC2()) return LDAPUR_gen(ctx, dec); // -> LDAPUR_64_ldapstl_unscaled
-	if(size==3 && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_936_LDAPSTL_UNSCALED);
+	if(size==3 && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_932_LDAPSTL_UNSCALED);
 	UNMATCHED;
 }
 
@@ -1163,7 +1149,7 @@ int decode_iclass_ldapstl_writeback(context *ctx, Instruction *dec)
 	if(size==2 && L && HasLRCPC3()) return LDAPR(ctx, dec); // -> LDAPR_32L_ldapstl_writeback
 	if(size==3 && !L && HasLRCPC3()) return STLR(ctx, dec); // -> STLR_64S_ldapstl_writeback
 	if(size==3 && L && HasLRCPC3()) return LDAPR(ctx, dec); // -> LDAPR_64L_ldapstl_writeback
-	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_938_LDAPSTL_WRITEBACK);
+	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_934_LDAPSTL_WRITEBACK);
 	UNMATCHED;
 }
 
@@ -1176,12 +1162,19 @@ int decode_iclass_ldiappstilp(context *ctx, Instruction *dec)
 	if(size==2 && L && opc2==1 && HasLRCPC3()) return LDIAPP(ctx, dec); // -> LDIAPP_32L_ldiappstilp
 	if(size==3 && !L && !opc2 && HasLRCPC3()) return STILP(ctx, dec); // -> STILP_64SS_ldiappstilp
 	if(size==3 && !L && opc2==1 && HasLRCPC3()) return STILP(ctx, dec); // -> STILP_64S_ldiappstilp
+	if(size==3 && !L && opc2==5 && HasLSCP()) return STLP_gen(ctx, dec); // -> STLP_64_ldiappstilp
 	if(size==3 && L && !opc2 && HasLRCPC3()) return LDIAPP(ctx, dec); // -> LDIAPP_64LS_ldiappstilp
 	if(size==3 && L && opc2==1 && HasLRCPC3()) return LDIAPP(ctx, dec); // -> LDIAPP_64L_ldiappstilp
-	if((size&2)==2 && (opc2&14)==2) UNALLOCATED(ENC_UNALLOCATED_942_LDIAPPSTILP);
-	if((size&2)==2 && (opc2&12)==4) UNALLOCATED(ENC_UNALLOCATED_941_LDIAPPSTILP);
-	if((size&2)==2 && (opc2&8)==8) UNALLOCATED(ENC_UNALLOCATED_940_LDIAPPSTILP);
-	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_939_LDIAPPSTILP);
+	if(size==3 && L && opc2==5 && HasLSCP()) return LDAP_gen(ctx, dec); // -> LDAP_64_ldiappstilp
+	if(size==3 && L && opc2==6) UNALLOCATED(ENC_UNALLOCATED_942_LDIAPPSTILP);
+	if(size==3 && L && opc2==7 && HasLSCP()) return LDAPP_gen(ctx, dec); // -> LDAPP_64_ldiappstilp
+	if(size==3 && opc2==4) UNALLOCATED(ENC_UNALLOCATED_941_LDIAPPSTILP);
+	if(size==3 && !L && (opc2&14)==6) UNALLOCATED(ENC_UNALLOCATED_940_LDIAPPSTILP);
+	if((size&2)==2 && !L && (opc2&14)==2) UNALLOCATED(ENC_UNALLOCATED_938_LDIAPPSTILP);
+	if((size&2)==2 && L && (opc2&14)==2) UNALLOCATED(ENC_UNALLOCATED_939_LDIAPPSTILP);
+	if(size==2 && (opc2&12)==4) UNALLOCATED(ENC_UNALLOCATED_937_LDIAPPSTILP);
+	if((size&2)==2 && (opc2&8)==8) UNALLOCATED(ENC_UNALLOCATED_936_LDIAPPSTILP);
+	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_935_LDIAPPSTILP);
 	UNMATCHED;
 }
 
@@ -1205,15 +1198,15 @@ int decode_iclass_ldst_immpost(context *ctx, Instruction *dec)
 	if(size==2 && !VR && !opc) return STR_imm_gen(ctx, dec); // -> STR_32_ldst_immpost
 	if(size==2 && !VR && opc==1) return LDR_imm_gen(ctx, dec); // -> LDR_32_ldst_immpost
 	if(size==2 && !VR && opc==2) return LDRSW_imm(ctx, dec); // -> LDRSW_64_ldst_immpost
-	if(size==2 && !VR && opc==3) UNALLOCATED(ENC_UNALLOCATED_945_LDST_IMMPOST);
+	if(size==2 && !VR && opc==3) UNALLOCATED(ENC_UNALLOCATED_946_LDST_IMMPOST);
 	if(size==2 && VR && !opc && HasFP()) return STR_imm_fpsimd(ctx, dec); // -> STR_S_ldst_immpost
 	if(size==2 && VR && opc==1 && HasFP()) return LDR_imm_fpsimd(ctx, dec); // -> LDR_S_ldst_immpost
 	if(size==3 && !VR && !opc) return STR_imm_gen(ctx, dec); // -> STR_64_ldst_immpost
 	if(size==3 && !VR && opc==1) return LDR_imm_gen(ctx, dec); // -> LDR_64_ldst_immpost
 	if(size==3 && VR && !opc && HasFP()) return STR_imm_fpsimd(ctx, dec); // -> STR_D_ldst_immpost
 	if(size==3 && VR && opc==1 && HasFP()) return LDR_imm_fpsimd(ctx, dec); // -> LDR_D_ldst_immpost
-	if(size==1 && VR && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_946_LDST_IMMPOST);
-	if(size==2 && VR && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_944_LDST_IMMPOST);
+	if(size==1 && VR && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_944_LDST_IMMPOST);
+	if(size==2 && VR && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_945_LDST_IMMPOST);
 	if(size==3 && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_943_LDST_IMMPOST);
 	UNMATCHED;
 }
@@ -1238,15 +1231,15 @@ int decode_iclass_ldst_immpre(context *ctx, Instruction *dec)
 	if(size==2 && !VR && !opc) return STR_imm_gen(ctx, dec); // -> STR_32_ldst_immpre
 	if(size==2 && !VR && opc==1) return LDR_imm_gen(ctx, dec); // -> LDR_32_ldst_immpre
 	if(size==2 && !VR && opc==2) return LDRSW_imm(ctx, dec); // -> LDRSW_64_ldst_immpre
-	if(size==2 && !VR && opc==3) UNALLOCATED(ENC_UNALLOCATED_949_LDST_IMMPRE);
+	if(size==2 && !VR && opc==3) UNALLOCATED(ENC_UNALLOCATED_950_LDST_IMMPRE);
 	if(size==2 && VR && !opc && HasFP()) return STR_imm_fpsimd(ctx, dec); // -> STR_S_ldst_immpre
 	if(size==2 && VR && opc==1 && HasFP()) return LDR_imm_fpsimd(ctx, dec); // -> LDR_S_ldst_immpre
 	if(size==3 && !VR && !opc) return STR_imm_gen(ctx, dec); // -> STR_64_ldst_immpre
 	if(size==3 && !VR && opc==1) return LDR_imm_gen(ctx, dec); // -> LDR_64_ldst_immpre
 	if(size==3 && VR && !opc && HasFP()) return STR_imm_fpsimd(ctx, dec); // -> STR_D_ldst_immpre
 	if(size==3 && VR && opc==1 && HasFP()) return LDR_imm_fpsimd(ctx, dec); // -> LDR_D_ldst_immpre
-	if(size==1 && VR && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_950_LDST_IMMPRE);
-	if(size==2 && VR && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_948_LDST_IMMPRE);
+	if(size==1 && VR && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_948_LDST_IMMPRE);
+	if(size==2 && VR && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_949_LDST_IMMPRE);
 	if(size==3 && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_947_LDST_IMMPRE);
 	UNMATCHED;
 }
@@ -1629,8 +1622,8 @@ int decode_iclass_addsub_immtags(context *ctx, Instruction *dec)
 	uint32_t sf=INSWORD>>31, op=(INSWORD>>30)&1, S=(INSWORD>>29)&1;
 	if(sf && !op && !S && HasMTE()) return ADDG(ctx, dec); // -> ADDG_64_addsub_immtags
 	if(sf && op && !S && HasMTE()) return SUBG(ctx, dec); // -> SUBG_64_addsub_immtags
-	if(sf && S) UNALLOCATED(ENC_UNALLOCATED_786_ADDSUB_IMMTAGS);
-	if(!sf) UNALLOCATED(ENC_UNALLOCATED_785_ADDSUB_IMMTAGS);
+	if(sf && S) UNALLOCATED(ENC_UNALLOCATED_797_ADDSUB_IMMTAGS);
+	if(!sf) UNALLOCATED(ENC_UNALLOCATED_796_ADDSUB_IMMTAGS);
 	UNMATCHED;
 }
 
@@ -1640,13 +1633,13 @@ int decode_iclass_bitfield(context *ctx, Instruction *dec)
 	if(!sf && !opc && !N) return SBFM(ctx, dec); // -> SBFM_32M_bitfield
 	if(!sf && opc==1 && !N) return BFM(ctx, dec); // -> BFM_32M_bitfield
 	if(!sf && opc==2 && !N) return UBFM(ctx, dec); // -> UBFM_32M_bitfield
-	if(!sf && opc==3 && !N) UNALLOCATED(ENC_UNALLOCATED_789_BITFIELD);
+	if(!sf && opc==3 && !N) UNALLOCATED(ENC_UNALLOCATED_800_BITFIELD);
 	if(sf && !opc && N) return SBFM(ctx, dec); // -> SBFM_64M_bitfield
 	if(sf && opc==1 && N) return BFM(ctx, dec); // -> BFM_64M_bitfield
 	if(sf && opc==2 && N) return UBFM(ctx, dec); // -> UBFM_64M_bitfield
-	if(sf && opc==3 && N) UNALLOCATED(ENC_UNALLOCATED_790_BITFIELD);
-	if(!sf && N) UNALLOCATED(ENC_UNALLOCATED_787_BITFIELD);
-	if(sf && !N) UNALLOCATED(ENC_UNALLOCATED_788_BITFIELD);
+	if(sf && opc==3 && N) UNALLOCATED(ENC_UNALLOCATED_801_BITFIELD);
+	if(!sf && N) UNALLOCATED(ENC_UNALLOCATED_798_BITFIELD);
+	if(sf && !N) UNALLOCATED(ENC_UNALLOCATED_799_BITFIELD);
 	UNMATCHED;
 }
 
@@ -1655,9 +1648,9 @@ int decode_iclass_dp_1src_imm(context *ctx, Instruction *dec)
 	uint32_t sf=INSWORD>>31, opc=(INSWORD>>21)&3, Rd=INSWORD&0x1f;
 	if(sf && !opc && Rd==0x1f && HasPAuth_LR()) return AUTIASPPC_imm(ctx, dec); // -> AUTIASPPC_only_dp_1src_imm
 	if(sf && opc==1 && Rd==0x1f && HasPAuth_LR()) return AUTIBSPPC_imm(ctx, dec); // -> AUTIBSPPC_only_dp_1src_imm
-	if(sf && !(opc&2) && Rd!=0x1f) UNALLOCATED(ENC_UNALLOCATED_793_DP_1SRC_IMM);
-	if(sf && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_792_DP_1SRC_IMM);
-	if(!sf) UNALLOCATED(ENC_UNALLOCATED_791_DP_1SRC_IMM);
+	if(sf && !(opc&2) && Rd!=0x1f) UNALLOCATED(ENC_UNALLOCATED_804_DP_1SRC_IMM);
+	if(sf && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_803_DP_1SRC_IMM);
+	if(!sf) UNALLOCATED(ENC_UNALLOCATED_802_DP_1SRC_IMM);
 	UNMATCHED;
 }
 
@@ -1665,13 +1658,13 @@ int decode_iclass_extract(context *ctx, Instruction *dec)
 {
 	uint32_t sf=INSWORD>>31, op21=(INSWORD>>29)&3, N=(INSWORD>>22)&1, o0=(INSWORD>>21)&1, imms=(INSWORD>>10)&0x3f;
 	if(!sf && !op21 && !N && !o0 && !(imms&0x20)) return EXTR(ctx, dec); // -> EXTR_32_extract
-	if(!sf && !op21 && !N && !o0 && (imms&0x20)==0x20) UNALLOCATED(ENC_UNALLOCATED_799_EXTRACT);
-	if(!sf && !op21 && N && !o0) UNALLOCATED(ENC_UNALLOCATED_797_EXTRACT);
-	if(sf && !op21 && !N && !o0) UNALLOCATED(ENC_UNALLOCATED_798_EXTRACT);
+	if(!sf && !op21 && !N && !o0 && (imms&0x20)==0x20) UNALLOCATED(ENC_UNALLOCATED_810_EXTRACT);
+	if(!sf && !op21 && N && !o0) UNALLOCATED(ENC_UNALLOCATED_808_EXTRACT);
+	if(sf && !op21 && !N && !o0) UNALLOCATED(ENC_UNALLOCATED_809_EXTRACT);
 	if(sf && !op21 && N && !o0) return EXTR(ctx, dec); // -> EXTR_64_extract
-	if(!op21 && o0) UNALLOCATED(ENC_UNALLOCATED_796_EXTRACT);
-	if(op21==1) UNALLOCATED(ENC_UNALLOCATED_794_EXTRACT);
-	if(op21==2) UNALLOCATED(ENC_UNALLOCATED_795_EXTRACT);
+	if(!op21 && o0) UNALLOCATED(ENC_UNALLOCATED_807_EXTRACT);
+	if(op21==1) UNALLOCATED(ENC_UNALLOCATED_805_EXTRACT);
+	if(op21==2) UNALLOCATED(ENC_UNALLOCATED_806_EXTRACT);
 	UNMATCHED;
 }
 
@@ -1686,7 +1679,7 @@ int decode_iclass_log_imm(context *ctx, Instruction *dec)
 	if(sf && opc==1) return ORR_log_imm(ctx, dec); // -> ORR_64_log_imm
 	if(sf && opc==2) return EOR_log_imm(ctx, dec); // -> EOR_64_log_imm
 	if(sf && opc==3) return ANDS_log_imm(ctx, dec); // -> ANDS_64S_log_imm
-	if(!sf && N) UNALLOCATED(ENC_UNALLOCATED_800_LOG_IMM);
+	if(!sf && N) UNALLOCATED(ENC_UNALLOCATED_811_LOG_IMM);
 	UNMATCHED;
 }
 
@@ -1701,10 +1694,10 @@ int decode_iclass_minmax_imm(context *ctx, Instruction *dec)
 	if(sf && !op && !S && opc==1 && HasCSSC()) return UMAX_imm(ctx, dec); // -> UMAX_64U_minmax_imm
 	if(sf && !op && !S && opc==2 && HasCSSC()) return SMIN_imm(ctx, dec); // -> SMIN_64_minmax_imm
 	if(sf && !op && !S && opc==3 && HasCSSC()) return UMIN_imm(ctx, dec); // -> UMIN_64U_minmax_imm
-	if(!op && !S && (opc&12)==4) UNALLOCATED(ENC_UNALLOCATED_804_MINMAX_IMM);
-	if(!op && !S && (opc&8)==8) UNALLOCATED(ENC_UNALLOCATED_803_MINMAX_IMM);
-	if(!op && S) UNALLOCATED(ENC_UNALLOCATED_802_MINMAX_IMM);
-	if(op) UNALLOCATED(ENC_UNALLOCATED_801_MINMAX_IMM);
+	if(!op && !S && (opc&12)==4) UNALLOCATED(ENC_UNALLOCATED_815_MINMAX_IMM);
+	if(!op && !S && (opc&8)==8) UNALLOCATED(ENC_UNALLOCATED_814_MINMAX_IMM);
+	if(!op && S) UNALLOCATED(ENC_UNALLOCATED_813_MINMAX_IMM);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_812_MINMAX_IMM);
 	UNMATCHED;
 }
 
@@ -1714,12 +1707,12 @@ int decode_iclass_movewide(context *ctx, Instruction *dec)
 	if(!sf && !opc && !(hw&2)) return MOVN(ctx, dec); // -> MOVN_32_movewide
 	if(!sf && opc==2 && !(hw&2)) return MOVZ(ctx, dec); // -> MOVZ_32_movewide
 	if(!sf && opc==3 && !(hw&2)) return MOVK(ctx, dec); // -> MOVK_32_movewide
-	if(sf && opc==1 && (hw&2)==2) UNALLOCATED(ENC_UNALLOCATED_807_MOVEWIDE);
-	if(opc==1 && !(hw&2)) UNALLOCATED(ENC_UNALLOCATED_806_MOVEWIDE);
+	if(sf && opc==1 && (hw&2)==2) UNALLOCATED(ENC_UNALLOCATED_818_MOVEWIDE);
+	if(opc==1 && !(hw&2)) UNALLOCATED(ENC_UNALLOCATED_817_MOVEWIDE);
 	if(sf && !opc) return MOVN(ctx, dec); // -> MOVN_64_movewide
 	if(sf && opc==2) return MOVZ(ctx, dec); // -> MOVZ_64_movewide
 	if(sf && opc==3) return MOVK(ctx, dec); // -> MOVK_64_movewide
-	if(!sf && (hw&2)==2) UNALLOCATED(ENC_UNALLOCATED_805_MOVEWIDE);
+	if(!sf && (hw&2)==2) UNALLOCATED(ENC_UNALLOCATED_816_MOVEWIDE);
 	UNMATCHED;
 }
 
@@ -1839,8 +1832,8 @@ int decode_iclass_dp_1src(context *ctx, Instruction *dec)
 	if(sf && !S && opcode2==1 && opcode==0x2f && Rn==0x1f && Rd==0x1e && HasPAuth_LR()) return AUTIB171615(ctx, dec); // -> AUTIB171615_64LR_dp_1src
 	if(sf && !S && opcode2==1 && (opcode&0x3e)==0x2a && Rn==0x1f && Rd==0x1e) UNALLOCATED(ENC_UNALLOCATED_997_DP_1SRC);
 	if(sf && !S && opcode2==1 && (opcode&0x3e)==0x2c && Rn==0x1f && Rd==0x1e) UNALLOCATED(ENC_UNALLOCATED_998_DP_1SRC);
-	if(sf && !S && opcode2==1 && (opcode&0x3c)==0x20 && Rn!=0x1f && Rd==0x1e) UNALLOCATED(ENC_UNALLOCATED_994_DP_1SRC);
-	if(sf && !S && opcode2==1 && (opcode&0x38)==0x28 && Rn!=0x1f && Rd==0x1e) UNALLOCATED(ENC_UNALLOCATED_993_DP_1SRC);
+	if(sf && !S && opcode2==1 && (opcode&0x3c)==0x20 && Rn!=0x1f && Rd==0x1e) UNALLOCATED(ENC_UNALLOCATED_995_DP_1SRC);
+	if(sf && !S && opcode2==1 && (opcode&0x38)==0x28 && Rn!=0x1f && Rd==0x1e) UNALLOCATED(ENC_UNALLOCATED_994_DP_1SRC);
 	if(sf && !S && opcode2==1 && opcode==8 && Rn==0x1f && HasPAuth()) return PACIA(ctx, dec); // -> PACIZA_64Z_dp_1src
 	if(sf && !S && opcode2==1 && opcode==9 && Rn==0x1f && HasPAuth()) return PACIB(ctx, dec); // -> PACIZB_64Z_dp_1src
 	if(sf && !S && opcode2==1 && opcode==10 && Rn==0x1f && HasPAuth()) return PACDA(ctx, dec); // -> PACDZA_64Z_dp_1src
@@ -1853,14 +1846,14 @@ int decode_iclass_dp_1src(context *ctx, Instruction *dec)
 	if(sf && !S && opcode2==1 && opcode==0x11 && Rn==0x1f && HasPAuth()) return XPAC(ctx, dec); // -> XPACD_64Z_dp_1src
 	if(sf && !S && opcode2==1 && opcode==0x24 && Rd==0x1e && HasPAuth_LR()) return AUTIASPPCR(ctx, dec); // -> AUTIASPPCR_64LRR_dp_1src
 	if(sf && !S && opcode2==1 && opcode==0x25 && Rd==0x1e && HasPAuth_LR()) return AUTIBSPPCR(ctx, dec); // -> AUTIBSPPCR_64LRR_dp_1src
-	if(sf && !S && opcode2==1 && (opcode&0x3e)==0x10 && Rn!=0x1f) UNALLOCATED(ENC_UNALLOCATED_988_DP_1SRC);
+	if(sf && !S && opcode2==1 && (opcode&0x3e)==0x10 && Rn!=0x1f) UNALLOCATED(ENC_UNALLOCATED_993_DP_1SRC);
 	if(sf && !S && opcode2==1 && (opcode&0x3e)==0x26 && Rd==0x1e) UNALLOCATED(ENC_UNALLOCATED_996_DP_1SRC);
-	if(sf && !S && opcode2==1 && (opcode&0x38)==8 && Rn!=0x1f) UNALLOCATED(ENC_UNALLOCATED_992_DP_1SRC);
-	if(sf && !S && opcode2==1 && (opcode&0x30)==0x20 && Rd!=0x1e) UNALLOCATED(ENC_UNALLOCATED_984_DP_1SRC);
+	if(sf && !S && opcode2==1 && (opcode&0x38)==8 && Rn!=0x1f) UNALLOCATED(ENC_UNALLOCATED_987_DP_1SRC);
+	if(sf && !S && opcode2==1 && (opcode&0x30)==0x20 && Rd!=0x1e) UNALLOCATED(ENC_UNALLOCATED_985_DP_1SRC);
 	if(!sf && !S && !opcode2 && !opcode) return RBIT_int(ctx, dec); // -> RBIT_32_dp_1src
 	if(!sf && !S && !opcode2 && opcode==1) return REV16_int(ctx, dec); // -> REV16_32_dp_1src
 	if(!sf && !S && !opcode2 && opcode==2) return REV(ctx, dec); // -> REV_32_dp_1src
-	if(!sf && !S && !opcode2 && opcode==3) UNALLOCATED(ENC_UNALLOCATED_995_DP_1SRC);
+	if(!sf && !S && !opcode2 && opcode==3) UNALLOCATED(ENC_UNALLOCATED_992_DP_1SRC);
 	if(!sf && !S && !opcode2 && opcode==4) return CLZ_int(ctx, dec); // -> CLZ_32_dp_1src
 	if(!sf && !S && !opcode2 && opcode==5) return CLS_int(ctx, dec); // -> CLS_32_dp_1src
 	if(!sf && !S && !opcode2 && opcode==6 && HasCSSC()) return CTZ(ctx, dec); // -> CTZ_32_dp_1src
@@ -1884,11 +1877,11 @@ int decode_iclass_dp_1src(context *ctx, Instruction *dec)
 	if(sf && !S && opcode2==1 && opcode==6 && HasPAuth()) return AUTDA(ctx, dec); // -> AUTDA_64P_dp_1src
 	if(sf && !S && opcode2==1 && opcode==7 && HasPAuth()) return AUTDB(ctx, dec); // -> AUTDB_64P_dp_1src
 	if(!S && !opcode2 && opcode==9) UNALLOCATED(ENC_UNALLOCATED_991_DP_1SRC);
-	if(sf && !S && opcode2==1 && (opcode&0x3e)==0x12) UNALLOCATED(ENC_UNALLOCATED_987_DP_1SRC);
-	if(!S && !opcode2 && (opcode&0x3e)==10) UNALLOCATED(ENC_UNALLOCATED_990_DP_1SRC);
-	if(sf && !S && opcode2==1 && (opcode&0x3c)==0x14) UNALLOCATED(ENC_UNALLOCATED_986_DP_1SRC);
-	if(!S && !opcode2 && (opcode&0x3c)==12) UNALLOCATED(ENC_UNALLOCATED_989_DP_1SRC);
-	if(sf && !S && opcode2==1 && (opcode&0x38)==0x18) UNALLOCATED(ENC_UNALLOCATED_985_DP_1SRC);
+	if(sf && !S && opcode2==1 && (opcode&0x3e)==0x12) UNALLOCATED(ENC_UNALLOCATED_990_DP_1SRC);
+	if(!S && !opcode2 && (opcode&0x3e)==10) UNALLOCATED(ENC_UNALLOCATED_989_DP_1SRC);
+	if(sf && !S && opcode2==1 && (opcode&0x3c)==0x14) UNALLOCATED(ENC_UNALLOCATED_988_DP_1SRC);
+	if(!S && !opcode2 && (opcode&0x3c)==12) UNALLOCATED(ENC_UNALLOCATED_986_DP_1SRC);
+	if(sf && !S && opcode2==1 && (opcode&0x38)==0x18) UNALLOCATED(ENC_UNALLOCATED_984_DP_1SRC);
 	if(sf && !S && opcode2==1 && (opcode&0x30)==0x30) UNALLOCATED(ENC_UNALLOCATED_983_DP_1SRC);
 	if(!S && !opcode2 && (opcode&0x30)==0x10) UNALLOCATED(ENC_UNALLOCATED_982_DP_1SRC);
 	if(!S && !opcode2 && (opcode&0x20)==0x20) UNALLOCATED(ENC_UNALLOCATED_981_DP_1SRC);
@@ -1930,26 +1923,27 @@ int decode_iclass_dp_2src(context *ctx, Instruction *dec)
 	if(sf && !S && opcode==10) return ASRV(ctx, dec); // -> ASRV_64_dp_2src
 	if(sf && !S && opcode==11) return RORV(ctx, dec); // -> RORV_64_dp_2src
 	if(sf && !S && opcode==12 && HasPAuth()) return PACGA(ctx, dec); // -> PACGA_64P_dp_2src
-	if(sf && !S && opcode==13) UNALLOCATED(ENC_UNALLOCATED_1008_DP_2SRC);
+	if(sf && !S && opcode==13) UNALLOCATED(ENC_UNALLOCATED_1013_DP_2SRC);
+	if(sf && !S && opcode==0x11) UNALLOCATED(ENC_UNALLOCATED_1014_DP_2SRC);
 	if(sf && !S && opcode==0x13 && HasCRC32()) return CRC32(ctx, dec); // -> CRC32X_64C_dp_2src
+	if(sf && !S && opcode==0x15) UNALLOCATED(ENC_UNALLOCATED_1015_DP_2SRC);
 	if(sf && !S && opcode==0x17 && HasCRC32()) return CRC32C(ctx, dec); // -> CRC32CX_64C_dp_2src
 	if(sf && !S && opcode==0x18 && HasCSSC()) return SMAX_reg(ctx, dec); // -> SMAX_64_dp_2src
 	if(sf && !S && opcode==0x19 && HasCSSC()) return UMAX_reg(ctx, dec); // -> UMAX_64_dp_2src
 	if(sf && !S && opcode==0x1a && HasCSSC()) return SMIN_reg(ctx, dec); // -> SMIN_64_dp_2src
 	if(sf && !S && opcode==0x1b && HasCSSC()) return UMIN_reg(ctx, dec); // -> UMIN_64_dp_2src
 	if(sf && S && !opcode && HasMTE()) return SUBPS(ctx, dec); // -> SUBPS_64S_dp_2src
-	if(!sf && !S && (opcode&0x3e)==4) UNALLOCATED(ENC_UNALLOCATED_1010_DP_2SRC);
-	if(!sf && !S && (opcode&0x3b)==0x13) UNALLOCATED(ENC_UNALLOCATED_1013_DP_2SRC);
-	if(sf && opcode==1) UNALLOCATED(ENC_UNALLOCATED_1014_DP_2SRC);
-	if(sf && !S && (opcode&0x3e)==14) UNALLOCATED(ENC_UNALLOCATED_1006_DP_2SRC);
-	if(sf && !S && (opcode&0x3b)==0x12) UNALLOCATED(ENC_UNALLOCATED_1012_DP_2SRC);
-	if(!S && (opcode&0x3e)==6) UNALLOCATED(ENC_UNALLOCATED_1005_DP_2SRC);
-	if(S && (opcode&0x3e)==2) UNALLOCATED(ENC_UNALLOCATED_1003_DP_2SRC);
-	if(!sf && !(opcode&0x3e)) UNALLOCATED(ENC_UNALLOCATED_1009_DP_2SRC);
-	if(sf && !S && (opcode&0x3a)==0x10) UNALLOCATED(ENC_UNALLOCATED_1011_DP_2SRC);
-	if(sf && !S && (opcode&0x3c)==0x1c) UNALLOCATED(ENC_UNALLOCATED_1007_DP_2SRC);
-	if(S && (opcode&0x3c)==4) UNALLOCATED(ENC_UNALLOCATED_1002_DP_2SRC);
-	if(!sf && !S && (opcode&0x2c)==12) UNALLOCATED(ENC_UNALLOCATED_1004_DP_2SRC);
+	if(!sf && !S && (opcode&0x3e)==4) UNALLOCATED(ENC_UNALLOCATED_1009_DP_2SRC);
+	if(!sf && !S && (opcode&0x3b)==0x13) UNALLOCATED(ENC_UNALLOCATED_1010_DP_2SRC);
+	if(sf && opcode==1) UNALLOCATED(ENC_UNALLOCATED_1012_DP_2SRC);
+	if(sf && !S && (opcode&0x3e)==14) UNALLOCATED(ENC_UNALLOCATED_1011_DP_2SRC);
+	if(!S && (opcode&0x3e)==6) UNALLOCATED(ENC_UNALLOCATED_1007_DP_2SRC);
+	if(S && (opcode&0x3e)==2) UNALLOCATED(ENC_UNALLOCATED_1008_DP_2SRC);
+	if(!sf && !(opcode&0x3e)) UNALLOCATED(ENC_UNALLOCATED_1004_DP_2SRC);
+	if(sf && !S && (opcode&0x39)==0x10) UNALLOCATED(ENC_UNALLOCATED_1005_DP_2SRC);
+	if(sf && !S && (opcode&0x3c)==0x1c) UNALLOCATED(ENC_UNALLOCATED_1006_DP_2SRC);
+	if(S && (opcode&0x3c)==4) UNALLOCATED(ENC_UNALLOCATED_1003_DP_2SRC);
+	if(!sf && !S && (opcode&0x2c)==12) UNALLOCATED(ENC_UNALLOCATED_1002_DP_2SRC);
 	if(S && (opcode&0x38)==8) UNALLOCATED(ENC_UNALLOCATED_1001_DP_2SRC);
 	if(S && (opcode&0x30)==0x10) UNALLOCATED(ENC_UNALLOCATED_1000_DP_2SRC);
 	if((opcode&0x20)==0x20) UNALLOCATED(ENC_UNALLOCATED_999_DP_2SRC);
@@ -1971,12 +1965,12 @@ int decode_iclass_dp_3src(context *ctx, Instruction *dec)
 	if(sf && !op54 && op31==5 && !o0) return UMADDL(ctx, dec); // -> UMADDL_64WA_dp_3src
 	if(sf && !op54 && op31==5 && o0) return UMSUBL(ctx, dec); // -> UMSUBL_64WA_dp_3src
 	if(sf && !op54 && op31==6 && !o0) return UMULH(ctx, dec); // -> UMULH_64_dp_3src
-	if(sf && !op54 && (op31&3)==2 && o0) UNALLOCATED(ENC_UNALLOCATED_1020_DP_3SRC);
-	if(sf && !op54 && op31==7) UNALLOCATED(ENC_UNALLOCATED_1019_DP_3SRC);
-	if(!op54 && op31==4) UNALLOCATED(ENC_UNALLOCATED_1018_DP_3SRC);
-	if(!sf && !op54 && (op31&3)==1) UNALLOCATED(ENC_UNALLOCATED_1017_DP_3SRC);
-	if(!sf && !op54 && (op31&2)==2) UNALLOCATED(ENC_UNALLOCATED_1016_DP_3SRC);
-	if(op54) UNALLOCATED(ENC_UNALLOCATED_1015_DP_3SRC);
+	if(sf && !op54 && (op31&3)==2 && o0) UNALLOCATED(ENC_UNALLOCATED_1021_DP_3SRC);
+	if(sf && !op54 && op31==7) UNALLOCATED(ENC_UNALLOCATED_1020_DP_3SRC);
+	if(!op54 && op31==4) UNALLOCATED(ENC_UNALLOCATED_1019_DP_3SRC);
+	if(!sf && !op54 && (op31&3)==1) UNALLOCATED(ENC_UNALLOCATED_1018_DP_3SRC);
+	if(!sf && !op54 && (op31&2)==2) UNALLOCATED(ENC_UNALLOCATED_1017_DP_3SRC);
+	if(op54) UNALLOCATED(ENC_UNALLOCATED_1016_DP_3SRC);
 	UNMATCHED;
 }
 
@@ -1985,12 +1979,12 @@ int decode_iclass_setf(context *ctx, Instruction *dec)
 	uint32_t sf=INSWORD>>31, op=(INSWORD>>30)&1, S=(INSWORD>>29)&1, opcode2=(INSWORD>>15)&0x3f, sz=(INSWORD>>14)&1, o3=(INSWORD>>4)&1, mask=INSWORD&15;
 	if(!sf && !op && S && !opcode2 && !sz && !o3 && mask==13 && HasFlagM()) return SETF(ctx, dec); // -> SETF8_only_setf
 	if(!sf && !op && S && !opcode2 && sz && !o3 && mask==13 && HasFlagM()) return SETF(ctx, dec); // -> SETF16_only_setf
-	if(!sf && !op && S && !opcode2 && !o3 && mask!=13) UNALLOCATED(ENC_UNALLOCATED_1026_SETF);
-	if(!sf && !op && S && !opcode2 && o3) UNALLOCATED(ENC_UNALLOCATED_1025_SETF);
-	if(!sf && !op && S && opcode2) UNALLOCATED(ENC_UNALLOCATED_1024_SETF);
-	if(!sf && !op && !S) UNALLOCATED(ENC_UNALLOCATED_1023_SETF);
-	if(!sf && op) UNALLOCATED(ENC_UNALLOCATED_1022_SETF);
-	if(sf) UNALLOCATED(ENC_UNALLOCATED_1021_SETF);
+	if(!sf && !op && S && !opcode2 && !o3 && mask!=13) UNALLOCATED(ENC_UNALLOCATED_1027_SETF);
+	if(!sf && !op && S && !opcode2 && o3) UNALLOCATED(ENC_UNALLOCATED_1026_SETF);
+	if(!sf && !op && S && opcode2) UNALLOCATED(ENC_UNALLOCATED_1025_SETF);
+	if(!sf && !op && !S) UNALLOCATED(ENC_UNALLOCATED_1024_SETF);
+	if(!sf && op) UNALLOCATED(ENC_UNALLOCATED_1023_SETF);
+	if(sf) UNALLOCATED(ENC_UNALLOCATED_1022_SETF);
 	UNMATCHED;
 }
 
@@ -2020,10 +2014,10 @@ int decode_iclass_rmif(context *ctx, Instruction *dec)
 {
 	uint32_t sf=INSWORD>>31, op=(INSWORD>>30)&1, S=(INSWORD>>29)&1, o2=(INSWORD>>4)&1;
 	if(sf && !op && S && !o2 && HasFlagM()) return RMIF(ctx, dec); // -> RMIF_only_rmif
-	if(sf && !op && S && o2) UNALLOCATED(ENC_UNALLOCATED_1030_RMIF);
-	if(sf && !op && !S) UNALLOCATED(ENC_UNALLOCATED_1029_RMIF);
-	if(sf && op) UNALLOCATED(ENC_UNALLOCATED_1028_RMIF);
-	if(!sf) UNALLOCATED(ENC_UNALLOCATED_1027_RMIF);
+	if(sf && !op && S && o2) UNALLOCATED(ENC_UNALLOCATED_1031_RMIF);
+	if(sf && !op && !S) UNALLOCATED(ENC_UNALLOCATED_1030_RMIF);
+	if(sf && op) UNALLOCATED(ENC_UNALLOCATED_1029_RMIF);
+	if(!sf) UNALLOCATED(ENC_UNALLOCATED_1028_RMIF);
 	UNMATCHED;
 }
 
@@ -2038,11 +2032,11 @@ int decode_iclass_asimdall(context *ctx, Instruction *dec)
 	if(!U && !size && opcode==15 && HasAdvSIMD() && HasFP16()) return FMAXV_advsimd(ctx, dec); // -> FMAXV_asimdall_only_H
 	if(!U && size==2 && opcode==12 && HasAdvSIMD() && HasFP16()) return FMINNMV_advsimd(ctx, dec); // -> FMINNMV_asimdall_only_H
 	if(!U && size==2 && opcode==15 && HasAdvSIMD() && HasFP16()) return FMINV_advsimd(ctx, dec); // -> FMINV_asimdall_only_H
-	if(!Q && U && !(size&1) && opcode==15) UNALLOCATED(ENC_UNALLOCATED_1041_ASIMDALL);
-	if(Q && U && !(size&1) && opcode==14) UNALLOCATED(ENC_UNALLOCATED_1044_ASIMDALL);
-	if(!U && !(size&1) && opcode==14) UNALLOCATED(ENC_UNALLOCATED_1043_ASIMDALL);
-	if(!Q && U && !(size&1) && (opcode&0x1d)==12) UNALLOCATED(ENC_UNALLOCATED_1040_ASIMDALL);
-	if(!(size&1) && opcode==13) UNALLOCATED(ENC_UNALLOCATED_1039_ASIMDALL);
+	if(!Q && U && !(size&1) && opcode==15) UNALLOCATED(ENC_UNALLOCATED_1045_ASIMDALL);
+	if(Q && U && !(size&1) && opcode==14) UNALLOCATED(ENC_UNALLOCATED_1046_ASIMDALL);
+	if(!U && !(size&1) && opcode==14) UNALLOCATED(ENC_UNALLOCATED_1044_ASIMDALL);
+	if(!Q && U && !(size&1) && (opcode&0x1d)==12) UNALLOCATED(ENC_UNALLOCATED_1043_ASIMDALL);
+	if(!(size&1) && opcode==13) UNALLOCATED(ENC_UNALLOCATED_1042_ASIMDALL);
 	if(!U && opcode==3 && HasAdvSIMD()) return SADDLV_advsimd(ctx, dec); // -> SADDLV_asimdall_only
 	if(!U && opcode==10 && HasAdvSIMD()) return SMAXV_advsimd(ctx, dec); // -> SMAXV_asimdall_only
 	if(!U && opcode==0x1a && HasAdvSIMD()) return SMINV_advsimd(ctx, dec); // -> SMINV_asimdall_only
@@ -2050,16 +2044,16 @@ int decode_iclass_asimdall(context *ctx, Instruction *dec)
 	if(U && opcode==3 && HasAdvSIMD()) return UADDLV_advsimd(ctx, dec); // -> UADDLV_asimdall_only
 	if(U && opcode==10 && HasAdvSIMD()) return UMAXV_advsimd(ctx, dec); // -> UMAXV_asimdall_only
 	if(U && opcode==0x1a && HasAdvSIMD()) return UMINV_advsimd(ctx, dec); // -> UMINV_asimdall_only
-	if(U && opcode==0x1b) UNALLOCATED(ENC_UNALLOCATED_1042_ASIMDALL);
-	if(opcode==1) UNALLOCATED(ENC_UNALLOCATED_1038_ASIMDALL);
-	if(opcode==11) UNALLOCATED(ENC_UNALLOCATED_1045_ASIMDALL);
-	if(!(opcode&0x1d)) UNALLOCATED(ENC_UNALLOCATED_1036_ASIMDALL);
+	if(U && opcode==0x1b) UNALLOCATED(ENC_UNALLOCATED_1041_ASIMDALL);
+	if(opcode==1) UNALLOCATED(ENC_UNALLOCATED_1039_ASIMDALL);
+	if(opcode==11) UNALLOCATED(ENC_UNALLOCATED_1040_ASIMDALL);
+	if(!(opcode&0x1d)) UNALLOCATED(ENC_UNALLOCATED_1038_ASIMDALL);
 	if(!(size&1) && (opcode&0x1c)==4) UNALLOCATED(ENC_UNALLOCATED_1035_ASIMDALL);
-	if(!(size&1) && (opcode&0x1c)==0x14) UNALLOCATED(ENC_UNALLOCATED_1033_ASIMDALL);
-	if(!(size&1) && (opcode&0x1c)==0x1c) UNALLOCATED(ENC_UNALLOCATED_1034_ASIMDALL);
-	if((opcode&14)==8) UNALLOCATED(ENC_UNALLOCATED_1037_ASIMDALL);
-	if((opcode&0x1c)==0x10) UNALLOCATED(ENC_UNALLOCATED_1032_ASIMDALL);
-	if(size&1 && (opcode&4)==4) UNALLOCATED(ENC_UNALLOCATED_1031_ASIMDALL);
+	if(!(size&1) && (opcode&0x1c)==0x14) UNALLOCATED(ENC_UNALLOCATED_1036_ASIMDALL);
+	if(!(size&1) && (opcode&0x1c)==0x1c) UNALLOCATED(ENC_UNALLOCATED_1037_ASIMDALL);
+	if((opcode&14)==8) UNALLOCATED(ENC_UNALLOCATED_1034_ASIMDALL);
+	if((opcode&0x1c)==0x10) UNALLOCATED(ENC_UNALLOCATED_1033_ASIMDALL);
+	if(size&1 && (opcode&4)==4) UNALLOCATED(ENC_UNALLOCATED_1032_ASIMDALL);
 	UNMATCHED;
 }
 
@@ -2067,21 +2061,21 @@ int decode_iclass_asimdins(context *ctx, Instruction *dec)
 {
 	uint32_t Q=(INSWORD>>30)&1, op=(INSWORD>>29)&1, imm5=(INSWORD>>16)&0x1f, imm4=(INSWORD>>11)&15;
 	if(Q && !op && (imm5&15)==8 && imm4==7 && HasAdvSIMD()) return UMOV_advsimd(ctx, dec); // -> UMOV_asimdins_X_x
-	if(Q && !op && (imm5&15)==9 && imm4==7) UNALLOCATED(ENC_UNALLOCATED_1054_ASIMDINS);
-	if(Q && !op && (imm5&14)==10 && imm4==7) UNALLOCATED(ENC_UNALLOCATED_1053_ASIMDINS);
-	if(Q && !op && (imm5&12)==12 && imm4==7) UNALLOCATED(ENC_UNALLOCATED_1052_ASIMDINS);
-	if(Q && !op && !(imm5&8) && imm4==7) UNALLOCATED(ENC_UNALLOCATED_1051_ASIMDINS);
+	if(Q && !op && (imm5&15)==9 && imm4==7) UNALLOCATED(ENC_UNALLOCATED_1055_ASIMDINS);
+	if(Q && !op && (imm5&14)==10 && imm4==7) UNALLOCATED(ENC_UNALLOCATED_1054_ASIMDINS);
+	if(Q && !op && (imm5&12)==12 && imm4==7) UNALLOCATED(ENC_UNALLOCATED_1053_ASIMDINS);
+	if(Q && !op && !(imm5&8) && imm4==7) UNALLOCATED(ENC_UNALLOCATED_1052_ASIMDINS);
 	if(!Q && !op && imm4==5 && HasAdvSIMD()) return SMOV_advsimd(ctx, dec); // -> SMOV_asimdins_W_w
 	if(!Q && !op && imm4==7 && HasAdvSIMD()) return UMOV_advsimd(ctx, dec); // -> UMOV_asimdins_W_w
-	if(Q && !op && imm4==2) UNALLOCATED(ENC_UNALLOCATED_1050_ASIMDINS);
+	if(Q && !op && imm4==2) UNALLOCATED(ENC_UNALLOCATED_1051_ASIMDINS);
 	if(Q && !op && imm4==3 && HasAdvSIMD()) return INS_advsimd_gen(ctx, dec); // -> INS_asimdins_IR_r
 	if(Q && !op && imm4==5 && HasAdvSIMD()) return SMOV_advsimd(ctx, dec); // -> SMOV_asimdins_X_x
 	if(!op && !imm4 && HasAdvSIMD()) return DUP_advsimd_elt(ctx, dec); // -> DUP_asimdins_DV_v
 	if(!op && imm4==1 && HasAdvSIMD()) return DUP_advsimd_gen(ctx, dec); // -> DUP_asimdins_DR_r
-	if(!Q && !op && (imm4&14)==2) UNALLOCATED(ENC_UNALLOCATED_1048_ASIMDINS);
+	if(!Q && !op && (imm4&14)==2) UNALLOCATED(ENC_UNALLOCATED_1050_ASIMDINS);
 	if(!op && (imm4&13)==4) UNALLOCATED(ENC_UNALLOCATED_1049_ASIMDINS);
-	if(!op && (imm4&8)==8) UNALLOCATED(ENC_UNALLOCATED_1047_ASIMDINS);
-	if(!Q && op) UNALLOCATED(ENC_UNALLOCATED_1046_ASIMDINS);
+	if(!op && (imm4&8)==8) UNALLOCATED(ENC_UNALLOCATED_1048_ASIMDINS);
+	if(!Q && op) UNALLOCATED(ENC_UNALLOCATED_1047_ASIMDINS);
 	if(Q && op && HasAdvSIMD()) return INS_advsimd_elt(ctx, dec); // -> INS_asimdins_IV_v
 	UNMATCHED;
 }
@@ -2090,7 +2084,7 @@ int decode_iclass_asimdext(context *ctx, Instruction *dec)
 {
 	uint32_t op2=(INSWORD>>22)&3;
 	if(!op2 && HasAdvSIMD()) return EXT_advsimd(ctx, dec); // -> EXT_asimdext_only
-	if(op2) UNALLOCATED(ENC_UNALLOCATED_1055_ASIMDEXT);
+	if(op2) UNALLOCATED(ENC_UNALLOCATED_1056_ASIMDEXT);
 	UNMATCHED;
 }
 
@@ -2098,13 +2092,13 @@ int decode_iclass_asimdimm(context *ctx, Instruction *dec)
 {
 	uint32_t Q=(INSWORD>>30)&1, op=(INSWORD>>29)&1, cmode=(INSWORD>>12)&15, o2=(INSWORD>>11)&1;
 	if(!Q && op && cmode==14 && !o2 && HasAdvSIMD()) return MOVI_advsimd(ctx, dec); // -> MOVI_asimdimm_D_ds
-	if(!Q && op && cmode==15 && !o2) UNALLOCATED(ENC_UNALLOCATED_1058_ASIMDIMM);
+	if(!Q && op && cmode==15 && !o2) UNALLOCATED(ENC_UNALLOCATED_1059_ASIMDIMM);
 	if(Q && op && cmode==14 && !o2 && HasAdvSIMD()) return MOVI_advsimd(ctx, dec); // -> MOVI_asimdimm_D2_d
 	if(Q && op && cmode==15 && !o2 && HasAdvSIMD()) return FMOV_advsimd(ctx, dec); // -> FMOV_asimdimm_D2_d
 	if(!op && cmode==14 && !o2 && HasAdvSIMD()) return MOVI_advsimd(ctx, dec); // -> MOVI_asimdimm_N_b
 	if(!op && cmode==15 && !o2 && HasAdvSIMD()) return FMOV_advsimd(ctx, dec); // -> FMOV_asimdimm_S_s
 	if(!op && cmode==15 && o2 && HasAdvSIMD() && HasFP16()) return FMOV_advsimd(ctx, dec); // -> FMOV_asimdimm_H_h
-	if(!op && cmode!=15 && o2) UNALLOCATED(ENC_UNALLOCATED_1057_ASIMDIMM);
+	if(!op && cmode!=15 && o2) UNALLOCATED(ENC_UNALLOCATED_1058_ASIMDIMM);
 	if(!op && (cmode&13)==8 && !o2 && HasAdvSIMD()) return MOVI_advsimd(ctx, dec); // -> MOVI_asimdimm_L_hl
 	if(!op && (cmode&13)==9 && !o2 && HasAdvSIMD()) return ORR_advsimd_imm(ctx, dec); // -> ORR_asimdimm_L_hl
 	if(!op && (cmode&14)==12 && !o2 && HasAdvSIMD()) return MOVI_advsimd(ctx, dec); // -> MOVI_asimdimm_M_sm
@@ -2115,7 +2109,7 @@ int decode_iclass_asimdimm(context *ctx, Instruction *dec)
 	if(!op && (cmode&9)==1 && !o2 && HasAdvSIMD()) return ORR_advsimd_imm(ctx, dec); // -> ORR_asimdimm_L_sl
 	if(op && !(cmode&9) && !o2 && HasAdvSIMD()) return MVNI_advsimd(ctx, dec); // -> MVNI_asimdimm_L_sl
 	if(op && (cmode&9)==1 && !o2 && HasAdvSIMD()) return BIC_advsimd_imm(ctx, dec); // -> BIC_asimdimm_L_sl
-	if(op && o2) UNALLOCATED(ENC_UNALLOCATED_1056_ASIMDIMM);
+	if(op && o2) UNALLOCATED(ENC_UNALLOCATED_1057_ASIMDIMM);
 	UNMATCHED;
 }
 
@@ -2128,7 +2122,7 @@ int decode_iclass_asimdperm(context *ctx, Instruction *dec)
 	if(opcode==5 && HasAdvSIMD()) return UZP2_advsimd(ctx, dec); // -> UZP2_asimdperm_only
 	if(opcode==6 && HasAdvSIMD()) return TRN2_advsimd(ctx, dec); // -> TRN2_asimdperm_only
 	if(opcode==7 && HasAdvSIMD()) return ZIP2_advsimd(ctx, dec); // -> ZIP2_asimdperm_only
-	if(!(opcode&3)) UNALLOCATED(ENC_UNALLOCATED_1059_ASIMDPERM);
+	if(!(opcode&3)) UNALLOCATED(ENC_UNALLOCATED_1060_ASIMDPERM);
 	UNMATCHED;
 }
 
@@ -2136,8 +2130,8 @@ int decode_iclass_asisdone(context *ctx, Instruction *dec)
 {
 	uint32_t op=(INSWORD>>29)&1, imm4=(INSWORD>>11)&15;
 	if(!op && !imm4 && HasAdvSIMD()) return DUP_advsimd_elt(ctx, dec); // -> DUP_asisdone_only
-	if(!op && imm4) UNALLOCATED(ENC_UNALLOCATED_1061_ASISDONE);
-	if(op) UNALLOCATED(ENC_UNALLOCATED_1060_ASISDONE);
+	if(!op && imm4) UNALLOCATED(ENC_UNALLOCATED_1062_ASISDONE);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_1061_ASISDONE);
 	UNMATCHED;
 }
 
@@ -2149,24 +2143,24 @@ int decode_iclass_asisdpair(context *ctx, Instruction *dec)
 	if(!U && !size && opcode==15 && HasAdvSIMD() && HasFP16()) return FMAXP_advsimd_pair(ctx, dec); // -> FMAXP_asisdpair_only_H
 	if(!U && size==2 && opcode==12 && HasAdvSIMD() && HasFP16()) return FMINNMP_advsimd_pair(ctx, dec); // -> FMINNMP_asisdpair_only_H
 	if(!U && size==2 && opcode==15 && HasAdvSIMD() && HasFP16()) return FMINP_advsimd_pair(ctx, dec); // -> FMINP_asisdpair_only_H
-	if(!U && size==3 && opcode==11) UNALLOCATED(ENC_UNALLOCATED_1071_ASISDPAIR);
+	if(!U && size==3 && opcode==11) UNALLOCATED(ENC_UNALLOCATED_1073_ASISDPAIR);
 	if(!U && size==3 && opcode==0x1b && HasAdvSIMD()) return ADDP_advsimd_pair(ctx, dec); // -> ADDP_asisdpair_only
-	if(U && size==3 && opcode==13) UNALLOCATED(ENC_UNALLOCATED_1073_ASISDPAIR);
+	if(U && size==3 && opcode==13) UNALLOCATED(ENC_UNALLOCATED_1074_ASISDPAIR);
 	if(size==2 && opcode==13) UNALLOCATED(ENC_UNALLOCATED_1072_ASISDPAIR);
-	if(!U && size&1 && opcode==12) UNALLOCATED(ENC_UNALLOCATED_1070_ASISDPAIR);
-	if(!U && size==3 && (opcode&15)==10) UNALLOCATED(ENC_UNALLOCATED_1068_ASISDPAIR);
+	if(!U && size&1 && opcode==12) UNALLOCATED(ENC_UNALLOCATED_1071_ASISDPAIR);
+	if(!U && size==3 && (opcode&15)==10) UNALLOCATED(ENC_UNALLOCATED_1070_ASISDPAIR);
 	if(U && !(size&2) && opcode==12 && HasAdvSIMD()) return FMAXNMP_advsimd_pair(ctx, dec); // -> FMAXNMP_asisdpair_only_SD
 	if(U && !(size&2) && opcode==13 && HasAdvSIMD()) return FADDP_advsimd_pair(ctx, dec); // -> FADDP_asisdpair_only_SD
 	if(U && !(size&2) && opcode==15 && HasAdvSIMD()) return FMAXP_advsimd_pair(ctx, dec); // -> FMAXP_asisdpair_only_SD
 	if(U && (size&2)==2 && opcode==12 && HasAdvSIMD()) return FMINNMP_advsimd_pair(ctx, dec); // -> FMINNMP_asisdpair_only_SD
 	if(U && (size&2)==2 && opcode==15 && HasAdvSIMD()) return FMINP_advsimd_pair(ctx, dec); // -> FMINP_asisdpair_only_SD
 	if(!U && size&1 && (opcode&0x1d)==13) UNALLOCATED(ENC_UNALLOCATED_1069_ASISDPAIR);
-	if(!U && size==3 && (opcode&14)==8) UNALLOCATED(ENC_UNALLOCATED_1066_ASISDPAIR);
+	if(!U && size==3 && (opcode&14)==8) UNALLOCATED(ENC_UNALLOCATED_1068_ASISDPAIR);
 	if(opcode==14) UNALLOCATED(ENC_UNALLOCATED_1067_ASISDPAIR);
-	if(!U && size!=3 && (opcode&12)==8) UNALLOCATED(ENC_UNALLOCATED_1064_ASISDPAIR);
+	if(!U && size!=3 && (opcode&12)==8) UNALLOCATED(ENC_UNALLOCATED_1066_ASISDPAIR);
 	if((opcode&0x1c)==0x1c) UNALLOCATED(ENC_UNALLOCATED_1065_ASISDPAIR);
-	if(U && (opcode&12)==8) UNALLOCATED(ENC_UNALLOCATED_1063_ASISDPAIR);
-	if(!(opcode&8)) UNALLOCATED(ENC_UNALLOCATED_1062_ASISDPAIR);
+	if(U && (opcode&12)==8) UNALLOCATED(ENC_UNALLOCATED_1064_ASISDPAIR);
+	if(!(opcode&8)) UNALLOCATED(ENC_UNALLOCATED_1063_ASISDPAIR);
 	UNMATCHED;
 }
 
@@ -2178,7 +2172,7 @@ int decode_iclass_asisdshf(context *ctx, Instruction *dec)
 	if(!U && immh && opcode==0x13 && HasAdvSIMD()) return SQRSHRN_advsimd(ctx, dec); // -> SQRSHRN_asisdshf_N
 	if(!U && immh && opcode==0x1c && HasAdvSIMD()) return SCVTF_advsimd_fix(ctx, dec); // -> SCVTF_asisdshf_C
 	if(!U && immh && opcode==0x1f && HasAdvSIMD()) return FCVTZS_advsimd_fix(ctx, dec); // -> FCVTZS_asisdshf_C
-	if(U && !immh && opcode==12) UNALLOCATED(ENC_UNALLOCATED_1086_ASISDSHF);
+	if(U && !immh && opcode==12) UNALLOCATED(ENC_UNALLOCATED_1091_ASISDSHF);
 	if(U && immh && opcode==12 && HasAdvSIMD()) return SQSHLU_advsimd(ctx, dec); // -> SQSHLU_asisdshf_R
 	if(U && immh && opcode==14 && HasAdvSIMD()) return UQSHL_advsimd_imm(ctx, dec); // -> UQSHL_asisdshf_R
 	if(U && immh && opcode==0x10 && HasAdvSIMD()) return SQSHRUN_advsimd(ctx, dec); // -> SQSHRUN_asisdshf_N
@@ -2187,17 +2181,17 @@ int decode_iclass_asisdshf(context *ctx, Instruction *dec)
 	if(U && immh && opcode==0x13 && HasAdvSIMD()) return UQRSHRN_advsimd(ctx, dec); // -> UQRSHRN_asisdshf_N
 	if(U && immh && opcode==0x1c && HasAdvSIMD()) return UCVTF_advsimd_fix(ctx, dec); // -> UCVTF_asisdshf_C
 	if(U && immh && opcode==0x1f && HasAdvSIMD()) return FCVTZU_advsimd_fix(ctx, dec); // -> FCVTZU_asisdshf_C
-	if(!immh && opcode==0x1c) UNALLOCATED(ENC_UNALLOCATED_1085_ASISDSHF);
-	if(!immh && opcode==0x1f) UNALLOCATED(ENC_UNALLOCATED_1088_ASISDSHF);
-	if(immh && opcode==0x1e) UNALLOCATED(ENC_UNALLOCATED_1090_ASISDSHF);
-	if(U && !immh && (opcode&0x1e)==0x10) UNALLOCATED(ENC_UNALLOCATED_1089_ASISDSHF);
-	if(!immh && (opcode&15)==14) UNALLOCATED(ENC_UNALLOCATED_1084_ASISDSHF);
-	if(!immh && (opcode&0x1e)==0x12) UNALLOCATED(ENC_UNALLOCATED_1087_ASISDSHF);
+	if(!immh && opcode==0x1c) UNALLOCATED(ENC_UNALLOCATED_1089_ASISDSHF);
+	if(!immh && opcode==0x1f) UNALLOCATED(ENC_UNALLOCATED_1090_ASISDSHF);
+	if(immh && opcode==0x1e) UNALLOCATED(ENC_UNALLOCATED_1084_ASISDSHF);
+	if(U && !immh && (opcode&0x1e)==0x10) UNALLOCATED(ENC_UNALLOCATED_1088_ASISDSHF);
+	if(!immh && (opcode&15)==14) UNALLOCATED(ENC_UNALLOCATED_1087_ASISDSHF);
+	if(!immh && (opcode&0x1e)==0x12) UNALLOCATED(ENC_UNALLOCATED_1086_ASISDSHF);
 	if(!U && (immh&8)==8 && !opcode && HasAdvSIMD()) return SSHR_advsimd(ctx, dec); // -> SSHR_asisdshf_R
 	if(!U && (immh&8)==8 && opcode==2 && HasAdvSIMD()) return SSRA_advsimd(ctx, dec); // -> SSRA_asisdshf_R
 	if(!U && (immh&8)==8 && opcode==4 && HasAdvSIMD()) return SRSHR_advsimd(ctx, dec); // -> SRSHR_asisdshf_R
 	if(!U && (immh&8)==8 && opcode==6 && HasAdvSIMD()) return SRSRA_advsimd(ctx, dec); // -> SRSRA_asisdshf_R
-	if(!U && (immh&8)==8 && opcode==8) UNALLOCATED(ENC_UNALLOCATED_1082_ASISDSHF);
+	if(!U && (immh&8)==8 && opcode==8) UNALLOCATED(ENC_UNALLOCATED_1085_ASISDSHF);
 	if(!U && (immh&8)==8 && opcode==10 && HasAdvSIMD()) return SHL_advsimd(ctx, dec); // -> SHL_asisdshf_R
 	if(U && (immh&8)==8 && !opcode && HasAdvSIMD()) return USHR_advsimd(ctx, dec); // -> USHR_asisdshf_R
 	if(U && (immh&8)==8 && opcode==2 && HasAdvSIMD()) return USRA_advsimd(ctx, dec); // -> USRA_asisdshf_R
@@ -2205,15 +2199,15 @@ int decode_iclass_asisdshf(context *ctx, Instruction *dec)
 	if(U && (immh&8)==8 && opcode==6 && HasAdvSIMD()) return URSRA_advsimd(ctx, dec); // -> URSRA_asisdshf_R
 	if(U && (immh&8)==8 && opcode==8 && HasAdvSIMD()) return SRI_advsimd(ctx, dec); // -> SRI_asisdshf_R
 	if(U && (immh&8)==8 && opcode==10 && HasAdvSIMD()) return SLI_advsimd(ctx, dec); // -> SLI_asisdshf_R
-	if(!U && opcode==12) UNALLOCATED(ENC_UNALLOCATED_1081_ASISDSHF);
-	if(opcode==0x1d) UNALLOCATED(ENC_UNALLOCATED_1080_ASISDSHF);
-	if(!(immh&8) && (opcode&0x1d)==0x19) UNALLOCATED(ENC_UNALLOCATED_1077_ASISDSHF);
-	if(!U && (opcode&0x1e)==0x10) UNALLOCATED(ENC_UNALLOCATED_1083_ASISDSHF);
-	if(!(immh&8) && (opcode&13)==8) UNALLOCATED(ENC_UNALLOCATED_1076_ASISDSHF);
-	if(!(immh&8) && !(opcode&0x19)) UNALLOCATED(ENC_UNALLOCATED_1075_ASISDSHF);
+	if(!U && opcode==12) UNALLOCATED(ENC_UNALLOCATED_1083_ASISDSHF);
+	if(opcode==0x1d) UNALLOCATED(ENC_UNALLOCATED_1082_ASISDSHF);
+	if(!(immh&8) && (opcode&0x1d)==0x19) UNALLOCATED(ENC_UNALLOCATED_1081_ASISDSHF);
+	if(!U && (opcode&0x1e)==0x10) UNALLOCATED(ENC_UNALLOCATED_1080_ASISDSHF);
+	if(!(immh&8) && (opcode&13)==8) UNALLOCATED(ENC_UNALLOCATED_1078_ASISDSHF);
+	if(!(immh&8) && !(opcode&0x19)) UNALLOCATED(ENC_UNALLOCATED_1077_ASISDSHF);
 	if((immh&8)==8 && (opcode&0x1c)==0x18) UNALLOCATED(ENC_UNALLOCATED_1079_ASISDSHF);
-	if((opcode&0x1c)==0x14) UNALLOCATED(ENC_UNALLOCATED_1078_ASISDSHF);
-	if((opcode&0x11)==1) UNALLOCATED(ENC_UNALLOCATED_1074_ASISDSHF);
+	if((opcode&0x1c)==0x14) UNALLOCATED(ENC_UNALLOCATED_1076_ASISDSHF);
+	if((opcode&0x11)==1) UNALLOCATED(ENC_UNALLOCATED_1075_ASISDSHF);
 	UNMATCHED;
 }
 
@@ -2223,10 +2217,10 @@ int decode_iclass_asisddiff(context *ctx, Instruction *dec)
 	if(!U && opcode==9 && HasAdvSIMD()) return SQDMLAL_advsimd_vec(ctx, dec); // -> SQDMLAL_asisddiff_only
 	if(!U && opcode==11 && HasAdvSIMD()) return SQDMLSL_advsimd_vec(ctx, dec); // -> SQDMLSL_asisddiff_only
 	if(!U && opcode==13 && HasAdvSIMD()) return SQDMULL_advsimd_vec(ctx, dec); // -> SQDMULL_asisddiff_only
-	if(!U && opcode==15) UNALLOCATED(ENC_UNALLOCATED_1094_ASISDDIFF);
-	if(!U && (opcode&9)==8) UNALLOCATED(ENC_UNALLOCATED_1093_ASISDDIFF);
-	if(!U && !(opcode&8)) UNALLOCATED(ENC_UNALLOCATED_1092_ASISDDIFF);
-	if(U) UNALLOCATED(ENC_UNALLOCATED_1091_ASISDDIFF);
+	if(!U && opcode==15) UNALLOCATED(ENC_UNALLOCATED_1095_ASISDDIFF);
+	if(!U && (opcode&9)==8) UNALLOCATED(ENC_UNALLOCATED_1094_ASISDDIFF);
+	if(!U && !(opcode&8)) UNALLOCATED(ENC_UNALLOCATED_1093_ASISDDIFF);
+	if(U) UNALLOCATED(ENC_UNALLOCATED_1092_ASISDDIFF);
 	UNMATCHED;
 }
 
@@ -2245,52 +2239,51 @@ int decode_iclass_asisdsame(context *ctx, Instruction *dec)
 	if(U && size==3 && opcode==10 && HasAdvSIMD()) return URSHL_advsimd(ctx, dec); // -> URSHL_asisdsame_only
 	if(U && size==3 && opcode==0x10 && HasAdvSIMD()) return SUB_advsimd(ctx, dec); // -> SUB_asisdsame_only
 	if(U && size==3 && opcode==0x11 && HasAdvSIMD()) return CMEQ_advsimd_reg(ctx, dec); // -> CMEQ_asisdsame_only
-	if(size==1 && opcode==6) UNALLOCATED(ENC_UNALLOCATED_1106_ASISDSAME);
-	if(size==3 && !opcode) UNALLOCATED(ENC_UNALLOCATED_1112_ASISDSAME);
-	if(size==3 && opcode==2) UNALLOCATED(ENC_UNALLOCATED_1102_ASISDSAME);
-	if(size==3 && opcode==0x15) UNALLOCATED(ENC_UNALLOCATED_1113_ASISDSAME);
-	if(size!=2 && opcode==0x14) UNALLOCATED(ENC_UNALLOCATED_1110_ASISDSAME);
-	if(size!=3 && opcode==7) UNALLOCATED(ENC_UNALLOCATED_1105_ASISDSAME);
-	if(!U && !(size&2) && opcode==0x17) UNALLOCATED(ENC_UNALLOCATED_1108_ASISDSAME);
+	if(size==1 && opcode==6) UNALLOCATED(ENC_UNALLOCATED_1118_ASISDSAME);
+	if(size==3 && !opcode) UNALLOCATED(ENC_UNALLOCATED_1119_ASISDSAME);
+	if(size==3 && opcode==2) UNALLOCATED(ENC_UNALLOCATED_1120_ASISDSAME);
+	if(size==3 && opcode==0x15) UNALLOCATED(ENC_UNALLOCATED_1121_ASISDSAME);
+	if(size!=2 && opcode==0x14) UNALLOCATED(ENC_UNALLOCATED_1111_ASISDSAME);
+	if(size!=3 && opcode==7) UNALLOCATED(ENC_UNALLOCATED_1110_ASISDSAME);
 	if(!U && !(size&2) && opcode==0x1b && HasAdvSIMD()) return FMULX_advsimd_vec(ctx, dec); // -> FMULX_asisdsame_only
 	if(!U && !(size&2) && opcode==0x1c && HasAdvSIMD()) return FCMEQ_advsimd_reg(ctx, dec); // -> FCMEQ_asisdsame_only
 	if(!U && !(size&2) && opcode==0x1f && HasAdvSIMD()) return FRECPS_advsimd(ctx, dec); // -> FRECPS_asisdsame_only
-	if(!U && (size&2)==2 && opcode==0x17) UNALLOCATED(ENC_UNALLOCATED_1114_ASISDSAME);
-	if(!U && (size&2)==2 && opcode==0x1a) UNALLOCATED(ENC_UNALLOCATED_1119_ASISDSAME);
-	if(!U && (size&2)==2 && opcode==0x1b) UNALLOCATED(ENC_UNALLOCATED_1120_ASISDSAME);
-	if(!U && (size&2)==2 && opcode==0x1c) UNALLOCATED(ENC_UNALLOCATED_1118_ASISDSAME);
+	if(!U && (size&2)==2 && opcode==0x1a) UNALLOCATED(ENC_UNALLOCATED_1115_ASISDSAME);
+	if(!U && (size&2)==2 && opcode==0x1b) UNALLOCATED(ENC_UNALLOCATED_1116_ASISDSAME);
+	if(!U && (size&2)==2 && opcode==0x1c) UNALLOCATED(ENC_UNALLOCATED_1117_ASISDSAME);
 	if(!U && (size&2)==2 && opcode==0x1f && HasAdvSIMD()) return FRSQRTS_advsimd(ctx, dec); // -> FRSQRTS_asisdsame_only
 	if(U && !(size&2) && opcode==0x1c && HasAdvSIMD()) return FCMGE_advsimd_reg(ctx, dec); // -> FCMGE_asisdsame_only
 	if(U && !(size&2) && opcode==0x1d && HasAdvSIMD()) return FACGE_advsimd(ctx, dec); // -> FACGE_asisdsame_only
 	if(U && (size&2)==2 && opcode==0x1a && HasAdvSIMD()) return FABD_advsimd(ctx, dec); // -> FABD_asisdsame_only
 	if(U && (size&2)==2 && opcode==0x1c && HasAdvSIMD()) return FCMGT_advsimd_reg(ctx, dec); // -> FCMGT_asisdsame_only
 	if(U && (size&2)==2 && opcode==0x1d && HasAdvSIMD()) return FACGT_advsimd(ctx, dec); // -> FACGT_asisdsame_only
-	if(size&1 && opcode==4) UNALLOCATED(ENC_UNALLOCATED_1111_ASISDSAME);
-	if((size&2)==2 && opcode==0x12) UNALLOCATED(ENC_UNALLOCATED_1101_ASISDSAME);
-	if((size&2)==2 && opcode==0x18) UNALLOCATED(ENC_UNALLOCATED_1116_ASISDSAME);
+	if(size&1 && opcode==4) UNALLOCATED(ENC_UNALLOCATED_1114_ASISDSAME);
+	if((size&2)==2 && opcode==0x12) UNALLOCATED(ENC_UNALLOCATED_1112_ASISDSAME);
+	if((size&2)==2 && opcode==0x18) UNALLOCATED(ENC_UNALLOCATED_1113_ASISDSAME);
 	if(!U && opcode==1 && HasAdvSIMD()) return SQADD_advsimd(ctx, dec); // -> SQADD_asisdsame_only
 	if(!U && opcode==5 && HasAdvSIMD()) return SQSUB_advsimd(ctx, dec); // -> SQSUB_asisdsame_only
 	if(!U && opcode==9 && HasAdvSIMD()) return SQSHL_advsimd_reg(ctx, dec); // -> SQSHL_asisdsame_only
 	if(!U && opcode==11 && HasAdvSIMD()) return SQRSHL_advsimd(ctx, dec); // -> SQRSHL_asisdsame_only
 	if(!U && opcode==0x16 && HasAdvSIMD()) return SQDMULH_advsimd_vec(ctx, dec); // -> SQDMULH_asisdsame_only
-	if(!U && opcode==0x1d) UNALLOCATED(ENC_UNALLOCATED_1121_ASISDSAME);
+	if(!U && opcode==0x17) UNALLOCATED(ENC_UNALLOCATED_1107_ASISDSAME);
+	if(!U && opcode==0x1d) UNALLOCATED(ENC_UNALLOCATED_1108_ASISDSAME);
 	if(U && opcode==1 && HasAdvSIMD()) return UQADD_advsimd(ctx, dec); // -> UQADD_asisdsame_only
 	if(U && opcode==5 && HasAdvSIMD()) return UQSUB_advsimd(ctx, dec); // -> UQSUB_asisdsame_only
 	if(U && opcode==9 && HasAdvSIMD()) return UQSHL_advsimd_reg(ctx, dec); // -> UQSHL_asisdsame_only
 	if(U && opcode==11 && HasAdvSIMD()) return UQRSHL_advsimd(ctx, dec); // -> UQRSHL_asisdsame_only
 	if(U && opcode==0x16 && HasAdvSIMD()) return SQRDMULH_advsimd_vec(ctx, dec); // -> SQRDMULH_asisdsame_only
-	if(U && opcode==0x1b) UNALLOCATED(ENC_UNALLOCATED_1104_ASISDSAME);
-	if(opcode==0x19) UNALLOCATED(ENC_UNALLOCATED_1115_ASISDSAME);
-	if(opcode==0x1e) UNALLOCATED(ENC_UNALLOCATED_1117_ASISDSAME);
-	if(size&1 && (opcode&0x1d)==12) UNALLOCATED(ENC_UNALLOCATED_1099_ASISDSAME);
-	if(!(size&2) && (opcode&0x1b)==0x11) UNALLOCATED(ENC_UNALLOCATED_1107_ASISDSAME);
-	if(size==2 && !(opcode&0x15)) UNALLOCATED(ENC_UNALLOCATED_1097_ASISDSAME);
-	if(size==2 && (opcode&0x1a)==0x10) UNALLOCATED(ENC_UNALLOCATED_1109_ASISDSAME);
-	if(U && (opcode&0x17)==0x17) UNALLOCATED(ENC_UNALLOCATED_1103_ASISDSAME);
-	if((opcode&15)==3) UNALLOCATED(ENC_UNALLOCATED_1100_ASISDSAME);
+	if(U && opcode==0x1b) UNALLOCATED(ENC_UNALLOCATED_1109_ASISDSAME);
+	if(opcode==0x19) UNALLOCATED(ENC_UNALLOCATED_1105_ASISDSAME);
+	if(opcode==0x1e) UNALLOCATED(ENC_UNALLOCATED_1106_ASISDSAME);
+	if(size&1 && (opcode&0x1d)==12) UNALLOCATED(ENC_UNALLOCATED_1104_ASISDSAME);
+	if(!(size&2) && (opcode&0x1b)==0x11) UNALLOCATED(ENC_UNALLOCATED_1101_ASISDSAME);
+	if(size==2 && !(opcode&0x15)) UNALLOCATED(ENC_UNALLOCATED_1102_ASISDSAME);
+	if(size==2 && (opcode&0x1a)==0x10) UNALLOCATED(ENC_UNALLOCATED_1103_ASISDSAME);
+	if(U && (opcode&0x17)==0x17) UNALLOCATED(ENC_UNALLOCATED_1100_ASISDSAME);
+	if((opcode&15)==3) UNALLOCATED(ENC_UNALLOCATED_1099_ASISDSAME);
 	if((opcode&0x1d)==13) UNALLOCATED(ENC_UNALLOCATED_1098_ASISDSAME);
-	if(!(size&1) && (opcode&0x15)==4) UNALLOCATED(ENC_UNALLOCATED_1096_ASISDSAME);
-	if(!(size&2) && !(opcode&5)) UNALLOCATED(ENC_UNALLOCATED_1095_ASISDSAME);
+	if(!(size&1) && (opcode&0x15)==4) UNALLOCATED(ENC_UNALLOCATED_1097_ASISDSAME);
+	if(!(size&2) && !(opcode&5)) UNALLOCATED(ENC_UNALLOCATED_1096_ASISDSAME);
 	UNMATCHED;
 }
 
@@ -2299,20 +2292,21 @@ int decode_iclass_asisdsamefp16(context *ctx, Instruction *dec)
 	uint32_t U=(INSWORD>>29)&1, a=(INSWORD>>23)&1, opcode=(INSWORD>>11)&7;
 	if(!U && !a && opcode==3 && HasAdvSIMD() && HasFP16()) return FMULX_advsimd_vec(ctx, dec); // -> FMULX_asisdsamefp16_only
 	if(!U && !a && opcode==4 && HasAdvSIMD() && HasFP16()) return FCMEQ_advsimd_reg(ctx, dec); // -> FCMEQ_asisdsamefp16_only
+	if(!U && !a && opcode==6) UNALLOCATED(ENC_UNALLOCATED_1128_ASISDSAMEFP16);
 	if(!U && !a && opcode==7 && HasAdvSIMD() && HasFP16()) return FRECPS_advsimd(ctx, dec); // -> FRECPS_asisdsamefp16_only
-	if(!U && a && opcode==3) UNALLOCATED(ENC_UNALLOCATED_1128_ASISDSAMEFP16);
-	if(!U && a && opcode==4) UNALLOCATED(ENC_UNALLOCATED_1124_ASISDSAMEFP16);
+	if(!U && a && opcode==3) UNALLOCATED(ENC_UNALLOCATED_1129_ASISDSAMEFP16);
+	if(!U && a && opcode==4) UNALLOCATED(ENC_UNALLOCATED_1130_ASISDSAMEFP16);
 	if(!U && a && opcode==7 && HasAdvSIMD() && HasFP16()) return FRSQRTS_advsimd(ctx, dec); // -> FRSQRTS_asisdsamefp16_only
 	if(U && !a && opcode==4 && HasAdvSIMD() && HasFP16()) return FCMGE_advsimd_reg(ctx, dec); // -> FCMGE_asisdsamefp16_only
 	if(U && !a && opcode==5 && HasAdvSIMD() && HasFP16()) return FACGE_advsimd(ctx, dec); // -> FACGE_asisdsamefp16_only
 	if(U && a && opcode==2 && HasAdvSIMD() && HasFP16()) return FABD_advsimd(ctx, dec); // -> FABD_asisdsamefp16_only
 	if(U && a && opcode==4 && HasAdvSIMD() && HasFP16()) return FCMGT_advsimd_reg(ctx, dec); // -> FCMGT_asisdsamefp16_only
 	if(U && a && opcode==5 && HasAdvSIMD() && HasFP16()) return FACGT_advsimd(ctx, dec); // -> FACGT_asisdsamefp16_only
-	if(U && a && opcode==6) UNALLOCATED(ENC_UNALLOCATED_1129_ASISDSAMEFP16);
+	if(!a && opcode==2) UNALLOCATED(ENC_UNALLOCATED_1127_ASISDSAMEFP16);
 	if(!U && opcode==5) UNALLOCATED(ENC_UNALLOCATED_1125_ASISDSAMEFP16);
-	if(!U && a && (opcode&3)==2) UNALLOCATED(ENC_UNALLOCATED_1123_ASISDSAMEFP16);
-	if(!a && (opcode&3)==2) UNALLOCATED(ENC_UNALLOCATED_1127_ASISDSAMEFP16);
-	if(U && (opcode&3)==3) UNALLOCATED(ENC_UNALLOCATED_1126_ASISDSAMEFP16);
+	if(!U && a && (opcode&3)==2) UNALLOCATED(ENC_UNALLOCATED_1124_ASISDSAMEFP16);
+	if(U && opcode==3) UNALLOCATED(ENC_UNALLOCATED_1126_ASISDSAMEFP16);
+	if(U && (opcode&6)==6) UNALLOCATED(ENC_UNALLOCATED_1123_ASISDSAMEFP16);
 	if(!(opcode&6)) UNALLOCATED(ENC_UNALLOCATED_1122_ASISDSAMEFP16);
 	UNMATCHED;
 }
@@ -2322,27 +2316,27 @@ int decode_iclass_asisdsame2(context *ctx, Instruction *dec)
 	uint32_t U=(INSWORD>>29)&1, opcode=(INSWORD>>11)&15;
 	if(U && !opcode && HasRDM()) return SQRDMLAH_advsimd_vec(ctx, dec); // -> SQRDMLAH_asisdsame2_only
 	if(U && opcode==1 && HasRDM()) return SQRDMLSH_advsimd_vec(ctx, dec); // -> SQRDMLSH_asisdsame2_only
-	if(U && (opcode&14)==2) UNALLOCATED(ENC_UNALLOCATED_1133_ASISDSAME2);
-	if(U && (opcode&12)==4) UNALLOCATED(ENC_UNALLOCATED_1132_ASISDSAME2);
-	if(U && (opcode&8)==8) UNALLOCATED(ENC_UNALLOCATED_1131_ASISDSAME2);
-	if(!U) UNALLOCATED(ENC_UNALLOCATED_1130_ASISDSAME2);
+	if(U && (opcode&14)==2) UNALLOCATED(ENC_UNALLOCATED_1134_ASISDSAME2);
+	if(U && (opcode&12)==4) UNALLOCATED(ENC_UNALLOCATED_1133_ASISDSAME2);
+	if(U && (opcode&8)==8) UNALLOCATED(ENC_UNALLOCATED_1132_ASISDSAME2);
+	if(!U) UNALLOCATED(ENC_UNALLOCATED_1131_ASISDSAME2);
 	UNMATCHED;
 }
 
 int decode_iclass_asisdmisc(context *ctx, Instruction *dec)
 {
 	uint32_t U=(INSWORD>>29)&1, size=(INSWORD>>22)&3, opcode=(INSWORD>>12)&0x1f;
-	if(!U && size==2 && opcode==10) UNALLOCATED(ENC_UNALLOCATED_1145_ASISDMISC);
+	if(!U && size==2 && opcode==10) UNALLOCATED(ENC_UNALLOCATED_1152_ASISDMISC);
 	if(!U && size==3 && opcode==8 && HasAdvSIMD()) return CMGT_advsimd_zero(ctx, dec); // -> CMGT_asisdmisc_Z
 	if(!U && size==3 && opcode==9 && HasAdvSIMD()) return CMEQ_advsimd_zero(ctx, dec); // -> CMEQ_asisdmisc_Z
 	if(!U && size==3 && opcode==10 && HasAdvSIMD()) return CMLT_advsimd(ctx, dec); // -> CMLT_asisdmisc_Z
 	if(!U && size==3 && opcode==11 && HasAdvSIMD()) return ABS_advsimd(ctx, dec); // -> ABS_asisdmisc_R
-	if(U && !size && opcode==0x16) UNALLOCATED(ENC_UNALLOCATED_1150_ASISDMISC);
+	if(U && !size && opcode==0x16) UNALLOCATED(ENC_UNALLOCATED_1153_ASISDMISC);
 	if(U && size==1 && opcode==0x16 && HasAdvSIMD()) return FCVTXN_advsimd(ctx, dec); // -> FCVTXN_asisdmisc_N
 	if(U && size==3 && opcode==8 && HasAdvSIMD()) return CMGE_advsimd_zero(ctx, dec); // -> CMGE_asisdmisc_Z
 	if(U && size==3 && opcode==9 && HasAdvSIMD()) return CMLE_advsimd(ctx, dec); // -> CMLE_asisdmisc_Z
 	if(U && size==3 && opcode==11 && HasAdvSIMD()) return NEG_advsimd(ctx, dec); // -> NEG_asisdmisc_R
-	if(size==2 && opcode==8) UNALLOCATED(ENC_UNALLOCATED_1144_ASISDMISC);
+	if(size==2 && opcode==8) UNALLOCATED(ENC_UNALLOCATED_1151_ASISDMISC);
 	if(!U && !(size&2) && opcode==0x1a && HasAdvSIMD()) return FCVTNS_advsimd(ctx, dec); // -> FCVTNS_asisdmisc_R
 	if(!U && !(size&2) && opcode==0x1b && HasAdvSIMD()) return FCVTMS_advsimd(ctx, dec); // -> FCVTMS_asisdmisc_R
 	if(!U && !(size&2) && opcode==0x1c && HasAdvSIMD()) return FCVTAS_advsimd(ctx, dec); // -> FCVTAS_asisdmisc_R
@@ -2364,27 +2358,28 @@ int decode_iclass_asisdmisc(context *ctx, Instruction *dec)
 	if(U && (size&2)==2 && opcode==0x1a && HasAdvSIMD()) return FCVTPU_advsimd(ctx, dec); // -> FCVTPU_asisdmisc_R
 	if(U && (size&2)==2 && opcode==0x1b && HasAdvSIMD()) return FCVTZU_advsimd_int(ctx, dec); // -> FCVTZU_asisdmisc_R
 	if(U && (size&2)==2 && opcode==0x1d && HasAdvSIMD()) return FRSQRTE_advsimd(ctx, dec); // -> FRSQRTE_asisdmisc_R
-	if(U && (size&2)==2 && opcode==0x1f) UNALLOCATED(ENC_UNALLOCATED_1147_ASISDMISC);
-	if((size&2)==2 && opcode==15) UNALLOCATED(ENC_UNALLOCATED_1151_ASISDMISC);
+	if(U && (size&2)==2 && opcode==0x1f) UNALLOCATED(ENC_UNALLOCATED_1150_ASISDMISC);
+	if((size&2)==2 && opcode==15) UNALLOCATED(ENC_UNALLOCATED_1147_ASISDMISC);
 	if((size&2)==2 && opcode==0x1c) UNALLOCATED(ENC_UNALLOCATED_1148_ASISDMISC);
-	if(size==2 && (opcode&0x1d)==9) UNALLOCATED(ENC_UNALLOCATED_1143_ASISDMISC);
+	if(size==2 && (opcode&0x1d)==9) UNALLOCATED(ENC_UNALLOCATED_1146_ASISDMISC);
 	if(!U && opcode==3 && HasAdvSIMD()) return SUQADD_advsimd(ctx, dec); // -> SUQADD_asisdmisc_R
 	if(!U && opcode==7 && HasAdvSIMD()) return SQABS_advsimd(ctx, dec); // -> SQABS_asisdmisc_R
+	if(!U && opcode==0x12) UNALLOCATED(ENC_UNALLOCATED_1142_ASISDMISC);
 	if(!U && opcode==0x14 && HasAdvSIMD()) return SQXTN_advsimd(ctx, dec); // -> SQXTN_asisdmisc_N
+	if(!U && opcode==0x16) UNALLOCATED(ENC_UNALLOCATED_1143_ASISDMISC);
 	if(U && opcode==3 && HasAdvSIMD()) return USQADD_advsimd(ctx, dec); // -> USQADD_asisdmisc_R
 	if(U && opcode==7 && HasAdvSIMD()) return SQNEG_advsimd(ctx, dec); // -> SQNEG_asisdmisc_R
 	if(U && opcode==0x12 && HasAdvSIMD()) return SQXTUN_advsimd(ctx, dec); // -> SQXTUN_asisdmisc_N
 	if(U && opcode==0x14 && HasAdvSIMD()) return UQXTN_advsimd(ctx, dec); // -> UQXTN_asisdmisc_N
-	if(U && (size&2)==2 && (opcode&0x1b)==10) UNALLOCATED(ENC_UNALLOCATED_1141_ASISDMISC);
-	if(U && (size&2)==2 && (opcode&0x17)==0x16) UNALLOCATED(ENC_UNALLOCATED_1146_ASISDMISC);
-	if(opcode==0x19) UNALLOCATED(ENC_UNALLOCATED_1138_ASISDMISC);
-	if(!(size&2) && (opcode&0x1e)==0x1e) UNALLOCATED(ENC_UNALLOCATED_1142_ASISDMISC);
-	if(U && (opcode&0x1b)==2) UNALLOCATED(ENC_UNALLOCATED_1140_ASISDMISC);
-	if((opcode&0x17)==0x10) UNALLOCATED(ENC_UNALLOCATED_1137_ASISDMISC);
-	if(!U && (opcode&11)==2) UNALLOCATED(ENC_UNALLOCATED_1139_ASISDMISC);
-	if(!(opcode&0x1a)) UNALLOCATED(ENC_UNALLOCATED_1135_ASISDMISC);
-	if((opcode&0x19)==0x11) UNALLOCATED(ENC_UNALLOCATED_1136_ASISDMISC);
-	if(!(size&2) && (opcode&0x18)==8) UNALLOCATED(ENC_UNALLOCATED_1134_ASISDMISC);
+	if(U && (size&2)==2 && (opcode&0x1b)==10) UNALLOCATED(ENC_UNALLOCATED_1144_ASISDMISC);
+	if(U && (size&2)==2 && (opcode&0x17)==0x16) UNALLOCATED(ENC_UNALLOCATED_1145_ASISDMISC);
+	if(opcode==0x19) UNALLOCATED(ENC_UNALLOCATED_1141_ASISDMISC);
+	if(!(size&2) && (opcode&0x1e)==0x1e) UNALLOCATED(ENC_UNALLOCATED_1140_ASISDMISC);
+	if((opcode&0x1b)==1) UNALLOCATED(ENC_UNALLOCATED_1138_ASISDMISC);
+	if((opcode&0x17)==0x10) UNALLOCATED(ENC_UNALLOCATED_1139_ASISDMISC);
+	if(!(opcode&0x19)) UNALLOCATED(ENC_UNALLOCATED_1136_ASISDMISC);
+	if((opcode&0x19)==0x11) UNALLOCATED(ENC_UNALLOCATED_1137_ASISDMISC);
+	if(!(size&2) && (opcode&0x18)==8) UNALLOCATED(ENC_UNALLOCATED_1135_ASISDMISC);
 	UNMATCHED;
 }
 
@@ -2398,11 +2393,11 @@ int decode_iclass_asisdmiscfp16(context *ctx, Instruction *dec)
 	if(!U && a && opcode==12 && HasAdvSIMD() && HasFP16()) return FCMGT_advsimd_zero(ctx, dec); // -> FCMGT_asisdmiscfp16_FZ
 	if(!U && a && opcode==13 && HasAdvSIMD() && HasFP16()) return FCMEQ_advsimd_zero(ctx, dec); // -> FCMEQ_asisdmiscfp16_FZ
 	if(!U && a && opcode==14 && HasAdvSIMD() && HasFP16()) return FCMLT_advsimd(ctx, dec); // -> FCMLT_asisdmiscfp16_FZ
-	if(!U && a && opcode==15) UNALLOCATED(ENC_UNALLOCATED_1159_ASISDMISCFP16);
+	if(!U && a && opcode==15) UNALLOCATED(ENC_UNALLOCATED_1162_ASISDMISCFP16);
 	if(!U && a && opcode==0x1a && HasAdvSIMD() && HasFP16()) return FCVTPS_advsimd(ctx, dec); // -> FCVTPS_asisdmiscfp16_R
 	if(!U && a && opcode==0x1b && HasAdvSIMD() && HasFP16()) return FCVTZS_advsimd_int(ctx, dec); // -> FCVTZS_asisdmiscfp16_R
 	if(!U && a && opcode==0x1d && HasAdvSIMD() && HasFP16()) return FRECPE_advsimd(ctx, dec); // -> FRECPE_asisdmiscfp16_R
-	if(!U && a && opcode==0x1e) UNALLOCATED(ENC_UNALLOCATED_1161_ASISDMISCFP16);
+	if(!U && a && opcode==0x1e) UNALLOCATED(ENC_UNALLOCATED_1163_ASISDMISCFP16);
 	if(!U && a && opcode==0x1f && HasAdvSIMD() && HasFP16()) return FRECPX_advsimd(ctx, dec); // -> FRECPX_asisdmiscfp16_R
 	if(U && !a && opcode==0x1a && HasAdvSIMD() && HasFP16()) return FCVTNU_advsimd(ctx, dec); // -> FCVTNU_asisdmiscfp16_R
 	if(U && !a && opcode==0x1b && HasAdvSIMD() && HasFP16()) return FCVTMU_advsimd(ctx, dec); // -> FCVTMU_asisdmiscfp16_R
@@ -2413,14 +2408,14 @@ int decode_iclass_asisdmiscfp16(context *ctx, Instruction *dec)
 	if(U && a && opcode==0x1a && HasAdvSIMD() && HasFP16()) return FCVTPU_advsimd(ctx, dec); // -> FCVTPU_asisdmiscfp16_R
 	if(U && a && opcode==0x1b && HasAdvSIMD() && HasFP16()) return FCVTZU_advsimd_int(ctx, dec); // -> FCVTZU_asisdmiscfp16_R
 	if(U && a && opcode==0x1d && HasAdvSIMD() && HasFP16()) return FRSQRTE_advsimd(ctx, dec); // -> FRSQRTE_asisdmiscfp16_R
-	if(a && opcode==0x1c) UNALLOCATED(ENC_UNALLOCATED_1160_ASISDMISCFP16);
-	if(!U && !a && (opcode&0x1e)==0x1e) UNALLOCATED(ENC_UNALLOCATED_1158_ASISDMISCFP16);
-	if(U && a && (opcode&0x1e)==14) UNALLOCATED(ENC_UNALLOCATED_1157_ASISDMISCFP16);
-	if(U && (opcode&0x1e)==0x1e) UNALLOCATED(ENC_UNALLOCATED_1156_ASISDMISCFP16);
-	if((opcode&0x1e)==0x18) UNALLOCATED(ENC_UNALLOCATED_1155_ASISDMISCFP16);
-	if(a && (opcode&0x1c)==8) UNALLOCATED(ENC_UNALLOCATED_1154_ASISDMISCFP16);
-	if(!a && (opcode&0x18)==8) UNALLOCATED(ENC_UNALLOCATED_1153_ASISDMISCFP16);
-	if(!(opcode&8)) UNALLOCATED(ENC_UNALLOCATED_1152_ASISDMISCFP16);
+	if(a && opcode==0x1c) UNALLOCATED(ENC_UNALLOCATED_1161_ASISDMISCFP16);
+	if(!U && !a && (opcode&0x1e)==0x1e) UNALLOCATED(ENC_UNALLOCATED_1159_ASISDMISCFP16);
+	if(U && a && (opcode&0x1e)==14) UNALLOCATED(ENC_UNALLOCATED_1160_ASISDMISCFP16);
+	if(U && (opcode&0x1e)==0x1e) UNALLOCATED(ENC_UNALLOCATED_1158_ASISDMISCFP16);
+	if((opcode&0x1e)==0x18) UNALLOCATED(ENC_UNALLOCATED_1157_ASISDMISCFP16);
+	if(a && (opcode&0x1c)==8) UNALLOCATED(ENC_UNALLOCATED_1156_ASISDMISCFP16);
+	if(!a && (opcode&0x18)==8) UNALLOCATED(ENC_UNALLOCATED_1155_ASISDMISCFP16);
+	if(!(opcode&8)) UNALLOCATED(ENC_UNALLOCATED_1154_ASISDMISCFP16);
 	UNMATCHED;
 }
 
@@ -2431,8 +2426,8 @@ int decode_iclass_asisdelem(context *ctx, Instruction *dec)
 	if(!U && !size && opcode==5 && HasAdvSIMD() && HasFP16()) return FMLS_advsimd_elt(ctx, dec); // -> FMLS_asisdelem_RH_H
 	if(!U && !size && opcode==9 && HasAdvSIMD() && HasFP16()) return FMUL_advsimd_elt(ctx, dec); // -> FMUL_asisdelem_RH_H
 	if(U && !size && opcode==9 && HasAdvSIMD() && HasFP16()) return FMULX_advsimd_elt(ctx, dec); // -> FMULX_asisdelem_RH_H
-	if(size==1 && opcode==9) UNALLOCATED(ENC_UNALLOCATED_1169_ASISDELEM);
-	if(!U && size==1 && (opcode&11)==1) UNALLOCATED(ENC_UNALLOCATED_1168_ASISDELEM);
+	if(size==1 && opcode==9) UNALLOCATED(ENC_UNALLOCATED_1171_ASISDELEM);
+	if(!U && size==1 && (opcode&11)==1) UNALLOCATED(ENC_UNALLOCATED_1170_ASISDELEM);
 	if(!U && (size&2)==2 && opcode==1 && HasAdvSIMD()) return FMLA_advsimd_elt(ctx, dec); // -> FMLA_asisdelem_R_SD
 	if(!U && (size&2)==2 && opcode==5 && HasAdvSIMD()) return FMLS_advsimd_elt(ctx, dec); // -> FMLS_asisdelem_R_SD
 	if(!U && (size&2)==2 && opcode==9 && HasAdvSIMD()) return FMUL_advsimd_elt(ctx, dec); // -> FMUL_asisdelem_R_SD
@@ -2442,14 +2437,14 @@ int decode_iclass_asisdelem(context *ctx, Instruction *dec)
 	if(!U && opcode==11 && HasAdvSIMD()) return SQDMULL_advsimd_elt(ctx, dec); // -> SQDMULL_asisdelem_L
 	if(!U && opcode==12 && HasAdvSIMD()) return SQDMULH_advsimd_elt(ctx, dec); // -> SQDMULH_asisdelem_R
 	if(!U && opcode==13 && HasAdvSIMD()) return SQRDMULH_advsimd_elt(ctx, dec); // -> SQRDMULH_asisdelem_R
-	if(U && opcode==11) UNALLOCATED(ENC_UNALLOCATED_1166_ASISDELEM);
+	if(U && opcode==11) UNALLOCATED(ENC_UNALLOCATED_1169_ASISDELEM);
 	if(U && opcode==13 && HasRDM()) return SQRDMLAH_advsimd_elt(ctx, dec); // -> SQRDMLAH_asisdelem_R
 	if(U && opcode==15 && HasRDM()) return SQRDMLSH_advsimd_elt(ctx, dec); // -> SQRDMLSH_asisdelem_R
-	if(!U && (opcode&13)==8) UNALLOCATED(ENC_UNALLOCATED_1165_ASISDELEM);
-	if(!U && (opcode&14)==14) UNALLOCATED(ENC_UNALLOCATED_1167_ASISDELEM);
-	if(!U && !(opcode&9)) UNALLOCATED(ENC_UNALLOCATED_1164_ASISDELEM);
-	if(U && (opcode&9)==8) UNALLOCATED(ENC_UNALLOCATED_1163_ASISDELEM);
-	if(U && !(opcode&8)) UNALLOCATED(ENC_UNALLOCATED_1162_ASISDELEM);
+	if(!U && (opcode&13)==8) UNALLOCATED(ENC_UNALLOCATED_1167_ASISDELEM);
+	if(!U && (opcode&14)==14) UNALLOCATED(ENC_UNALLOCATED_1168_ASISDELEM);
+	if(!U && !(opcode&9)) UNALLOCATED(ENC_UNALLOCATED_1165_ASISDELEM);
+	if(U && (opcode&9)==8) UNALLOCATED(ENC_UNALLOCATED_1166_ASISDELEM);
+	if(U && !(opcode&8)) UNALLOCATED(ENC_UNALLOCATED_1164_ASISDELEM);
 	UNMATCHED;
 }
 
@@ -2484,12 +2479,12 @@ int decode_iclass_asimdshf(context *ctx, Instruction *dec)
 	if(U && immh && opcode==0x14 && HasAdvSIMD()) return USHLL_advsimd(ctx, dec); // -> USHLL_asimdshf_L
 	if(U && immh && opcode==0x1c && HasAdvSIMD()) return UCVTF_advsimd_fix(ctx, dec); // -> UCVTF_asimdshf_C
 	if(U && immh && opcode==0x1f && HasAdvSIMD()) return FCVTZU_advsimd_fix(ctx, dec); // -> FCVTZU_asimdshf_C
-	if(immh && opcode==0x1d) UNALLOCATED(ENC_UNALLOCATED_1173_ASIMDSHF);
-	if(!U && immh && (opcode&0x1b)==8) UNALLOCATED(ENC_UNALLOCATED_1174_ASIMDSHF);
+	if(immh && opcode==0x1d) UNALLOCATED(ENC_UNALLOCATED_1177_ASIMDSHF);
+	if(!U && immh && (opcode&0x1b)==8) UNALLOCATED(ENC_UNALLOCATED_1176_ASIMDSHF);
 	if(immh && (opcode&0x17)==0x16) UNALLOCATED(ENC_UNALLOCATED_1175_ASIMDSHF);
-	if(immh && (opcode&0x1d)==0x15) UNALLOCATED(ENC_UNALLOCATED_1172_ASIMDSHF);
-	if(immh && (opcode&0x1c)==0x18) UNALLOCATED(ENC_UNALLOCATED_1171_ASIMDSHF);
-	if(immh && (opcode&0x11)==1) UNALLOCATED(ENC_UNALLOCATED_1170_ASIMDSHF);
+	if(immh && (opcode&0x1d)==0x15) UNALLOCATED(ENC_UNALLOCATED_1174_ASIMDSHF);
+	if(immh && (opcode&0x1c)==0x18) UNALLOCATED(ENC_UNALLOCATED_1173_ASIMDSHF);
+	if(immh && (opcode&0x11)==1) UNALLOCATED(ENC_UNALLOCATED_1172_ASIMDSHF);
 	UNMATCHED;
 }
 
@@ -2504,12 +2499,12 @@ int decode_iclass_asimdtbl(context *ctx, Instruction *dec)
 	if(!op2 && len==2 && op && HasAdvSIMD()) return TBX_advsimd(ctx, dec); // -> TBX_asimdtbl_L3_3
 	if(!op2 && len==3 && !op && HasAdvSIMD()) return TBL_advsimd(ctx, dec); // -> TBL_asimdtbl_L4_4
 	if(!op2 && len==3 && op && HasAdvSIMD()) return TBX_advsimd(ctx, dec); // -> TBX_asimdtbl_L4_4
-	if(Q && op2==1 && !(len&1) && !op) UNALLOCATED(ENC_UNALLOCATED_1178_ASIMDTBL);
+	if(Q && op2==1 && !(len&1) && !op) UNALLOCATED(ENC_UNALLOCATED_1180_ASIMDTBL);
 	if(Q && op2==1 && len&1 && !op && HasAdvSIMD() && HasLUT()) return LUTI4_advsimd(ctx, dec); // -> LUTI4_asimdtbl_L5
 	if(Q && op2==1 && op && HasAdvSIMD() && HasLUT()) return LUTI4_advsimd(ctx, dec); // -> LUTI4_asimdtbl_L7
-	if(Q && op2==2 && !op) UNALLOCATED(ENC_UNALLOCATED_1177_ASIMDTBL);
+	if(Q && op2==2 && !op) UNALLOCATED(ENC_UNALLOCATED_1179_ASIMDTBL);
 	if(Q && op2==2 && op && HasAdvSIMD() && HasLUT()) return LUTI2_advsimd(ctx, dec); // -> LUTI2_asimdtbl_L5
-	if(!Q && op2) UNALLOCATED(ENC_UNALLOCATED_1176_ASIMDTBL);
+	if(!Q && op2) UNALLOCATED(ENC_UNALLOCATED_1178_ASIMDTBL);
 	if(Q && op2==3 && HasAdvSIMD() && HasLUT()) return LUTI2_advsimd(ctx, dec); // -> LUTI2_asimdtbl_L6
 	UNMATCHED;
 }
@@ -2532,7 +2527,7 @@ int decode_iclass_asimddiff(context *ctx, Instruction *dec)
 	if(!U && opcode==12 && HasAdvSIMD()) return SMULL_advsimd_vec(ctx, dec); // -> SMULL_asimddiff_L
 	if(!U && opcode==13 && HasAdvSIMD()) return SQDMULL_advsimd_vec(ctx, dec); // -> SQDMULL_asimddiff_L
 	if(!U && opcode==14 && HasAdvSIMD()) return PMULL_advsimd(ctx, dec); // -> PMULL_asimddiff_L
-	if(!U && opcode==15) UNALLOCATED(ENC_UNALLOCATED_1181_ASIMDDIFF);
+	if(!U && opcode==15) UNALLOCATED(ENC_UNALLOCATED_1182_ASIMDDIFF);
 	if(U && !opcode && HasAdvSIMD()) return UADDL_advsimd(ctx, dec); // -> UADDL_asimddiff_L
 	if(U && opcode==1 && HasAdvSIMD()) return UADDW_advsimd(ctx, dec); // -> UADDW_asimddiff_W
 	if(U && opcode==2 && HasAdvSIMD()) return USUBL_advsimd(ctx, dec); // -> USUBL_asimddiff_L
@@ -2544,8 +2539,8 @@ int decode_iclass_asimddiff(context *ctx, Instruction *dec)
 	if(U && opcode==8 && HasAdvSIMD()) return UMLAL_advsimd_vec(ctx, dec); // -> UMLAL_asimddiff_L
 	if(U && opcode==10 && HasAdvSIMD()) return UMLSL_advsimd_vec(ctx, dec); // -> UMLSL_asimddiff_L
 	if(U && opcode==12 && HasAdvSIMD()) return UMULL_advsimd_vec(ctx, dec); // -> UMULL_asimddiff_L
-	if(U && opcode==14) UNALLOCATED(ENC_UNALLOCATED_1180_ASIMDDIFF);
-	if(U && (opcode&9)==9) UNALLOCATED(ENC_UNALLOCATED_1179_ASIMDDIFF);
+	if(U && opcode==14) UNALLOCATED(ENC_UNALLOCATED_1183_ASIMDDIFF);
+	if(U && (opcode&9)==9) UNALLOCATED(ENC_UNALLOCATED_1181_ASIMDDIFF);
 	UNMATCHED;
 }
 
@@ -2564,7 +2559,7 @@ int decode_iclass_asimdsame(context *ctx, Instruction *dec)
 	if(U && size==2 && opcode==3 && HasAdvSIMD()) return BIT_advsimd(ctx, dec); // -> BIT_asimdsame_only
 	if(U && size==2 && opcode==0x19 && HasFHM()) return FMLSL_advsimd_vec(ctx, dec); // -> FMLSL2_asimdsame_F
 	if(U && size==3 && opcode==3 && HasAdvSIMD()) return BIF_advsimd(ctx, dec); // -> BIF_asimdsame_only
-	if(!U && size&1 && opcode==0x1d) UNALLOCATED(ENC_UNALLOCATED_1184_ASIMDSAME);
+	if(!U && size&1 && opcode==0x1d) UNALLOCATED(ENC_UNALLOCATED_1186_ASIMDSAME);
 	if(!U && !(size&2) && opcode==0x18 && HasAdvSIMD()) return FMAXNM_advsimd(ctx, dec); // -> FMAXNM_asimdsame_only
 	if(!U && !(size&2) && opcode==0x19 && HasAdvSIMD()) return FMLA_advsimd_vec(ctx, dec); // -> FMLA_asimdsame_only
 	if(!U && !(size&2) && opcode==0x1a && HasAdvSIMD()) return FADD_advsimd(ctx, dec); // -> FADD_asimdsame_only
@@ -2576,10 +2571,10 @@ int decode_iclass_asimdsame(context *ctx, Instruction *dec)
 	if(!U && (size&2)==2 && opcode==0x19 && HasAdvSIMD()) return FMLS_advsimd_vec(ctx, dec); // -> FMLS_asimdsame_only
 	if(!U && (size&2)==2 && opcode==0x1a && HasAdvSIMD()) return FSUB_advsimd(ctx, dec); // -> FSUB_asimdsame_only
 	if(!U && (size&2)==2 && opcode==0x1b && HasAdvSIMD() && HasFAMINMAX()) return FAMAX_advsimd(ctx, dec); // -> FAMAX_asimdsame_only
-	if(!U && (size&2)==2 && opcode==0x1c) UNALLOCATED(ENC_UNALLOCATED_1183_ASIMDSAME);
+	if(!U && (size&2)==2 && opcode==0x1c) UNALLOCATED(ENC_UNALLOCATED_1185_ASIMDSAME);
 	if(!U && (size&2)==2 && opcode==0x1e && HasAdvSIMD()) return FMIN_advsimd(ctx, dec); // -> FMIN_asimdsame_only
 	if(!U && (size&2)==2 && opcode==0x1f && HasAdvSIMD()) return FRSQRTS_advsimd(ctx, dec); // -> FRSQRTS_asimdsame_only
-	if(U && size&1 && opcode==0x19) UNALLOCATED(ENC_UNALLOCATED_1185_ASIMDSAME);
+	if(U && size&1 && opcode==0x19) UNALLOCATED(ENC_UNALLOCATED_1187_ASIMDSAME);
 	if(U && !(size&2) && opcode==0x18 && HasAdvSIMD()) return FMAXNMP_advsimd_vec(ctx, dec); // -> FMAXNMP_asimdsame_only
 	if(U && !(size&2) && opcode==0x1a && HasAdvSIMD()) return FADDP_advsimd_vec(ctx, dec); // -> FADDP_asimdsame_only
 	if(U && !(size&2) && opcode==0x1b && HasAdvSIMD()) return FMUL_advsimd_vec(ctx, dec); // -> FMUL_asimdsame_only
@@ -2639,7 +2634,7 @@ int decode_iclass_asimdsame(context *ctx, Instruction *dec)
 	if(U && opcode==0x14 && HasAdvSIMD()) return UMAXP_advsimd(ctx, dec); // -> UMAXP_asimdsame_only
 	if(U && opcode==0x15 && HasAdvSIMD()) return UMINP_advsimd(ctx, dec); // -> UMINP_asimdsame_only
 	if(U && opcode==0x16 && HasAdvSIMD()) return SQRDMULH_advsimd_vec(ctx, dec); // -> SQRDMULH_asimdsame_only
-	if(U && opcode==0x17) UNALLOCATED(ENC_UNALLOCATED_1182_ASIMDSAME);
+	if(U && opcode==0x17) UNALLOCATED(ENC_UNALLOCATED_1184_ASIMDSAME);
 	UNMATCHED;
 }
 
@@ -2651,7 +2646,7 @@ int decode_iclass_asimdsamefp16(context *ctx, Instruction *dec)
 	if(!U && !a && opcode==2 && HasAdvSIMD() && HasFP16()) return FADD_advsimd(ctx, dec); // -> FADD_asimdsamefp16_only
 	if(!U && !a && opcode==3 && HasAdvSIMD() && HasFP16()) return FMULX_advsimd_vec(ctx, dec); // -> FMULX_asimdsamefp16_only
 	if(!U && !a && opcode==4 && HasAdvSIMD() && HasFP16()) return FCMEQ_advsimd_reg(ctx, dec); // -> FCMEQ_asimdsamefp16_only
-	if(!U && !a && opcode==5) UNALLOCATED(ENC_UNALLOCATED_1187_ASIMDSAMEFP16);
+	if(!U && !a && opcode==5) UNALLOCATED(ENC_UNALLOCATED_1190_ASIMDSAMEFP16);
 	if(!U && !a && opcode==6 && HasAdvSIMD() && HasFP16()) return FMAX_advsimd(ctx, dec); // -> FMAX_asimdsamefp16_only
 	if(!U && !a && opcode==7 && HasAdvSIMD() && HasFP16()) return FRECPS_advsimd(ctx, dec); // -> FRECPS_asimdsamefp16_only
 	if(!U && a && !opcode && HasAdvSIMD() && HasFP16()) return FMINNM_advsimd(ctx, dec); // -> FMINNM_asimdsamefp16_only
@@ -2674,8 +2669,8 @@ int decode_iclass_asimdsamefp16(context *ctx, Instruction *dec)
 	if(U && a && opcode==5 && HasAdvSIMD() && HasFP16()) return FACGT_advsimd(ctx, dec); // -> FACGT_asimdsamefp16_only
 	if(U && a && opcode==6 && HasAdvSIMD() && HasFP16()) return FMINP_advsimd_vec(ctx, dec); // -> FMINP_asimdsamefp16_only
 	if(U && a && opcode==7 && HasFP8()) return FSCALE_advsimd(ctx, dec); // -> FSCALE_asimdsamefp16_only
-	if(!U && a && (opcode&6)==4) UNALLOCATED(ENC_UNALLOCATED_1186_ASIMDSAMEFP16);
-	if(U && opcode==1) UNALLOCATED(ENC_UNALLOCATED_1188_ASIMDSAMEFP16);
+	if(!U && a && (opcode&6)==4) UNALLOCATED(ENC_UNALLOCATED_1188_ASIMDSAMEFP16);
+	if(U && opcode==1) UNALLOCATED(ENC_UNALLOCATED_1189_ASIMDSAMEFP16);
 	UNMATCHED;
 }
 
@@ -2687,45 +2682,47 @@ int decode_iclass_asimdsame2(context *ctx, Instruction *dec)
 	if(!Q && !U && size==3 && opcode==15 && HasFP8FMA()) return FMLALB_advsimd_vec(ctx, dec); // -> FMLALB_asimdsame2_J
 	if(Q && !U && !size && opcode==8 && HasFP8FMA()) return FMLALLBB_advsimd_vec(ctx, dec); // -> FMLALLTB_asimdsame2_G
 	if(Q && !U && size==1 && opcode==8 && HasFP8FMA()) return FMLALLBB_advsimd_vec(ctx, dec); // -> FMLALLTT_asimdsame2_G
+	if(Q && !U && size==1 && opcode==13 && HasF16F32MM()) return FMMLA_advsimd_fp16fp32(ctx, dec); // -> FMMLA_asimd_FP16FP32
 	if(Q && !U && size==2 && opcode==4 && HasI8MM()) return SMMLA_advsimd_vec(ctx, dec); // -> SMMLA_asimdsame2_G
 	if(Q && !U && size==2 && opcode==5 && HasI8MM()) return USMMLA_advsimd_vec(ctx, dec); // -> USMMLA_asimdsame2_G
-	if(Q && !U && size==3 && opcode==13) UNALLOCATED(ENC_UNALLOCATED_1203_ASIMDSAME2);
+	if(Q && !U && size==3 && opcode==13 && HasF16MM()) return FMMLA_advsimd_fp16fp16(ctx, dec); // -> FMMLA_asimd_FP16FP16
 	if(Q && !U && size==3 && opcode==15 && HasFP8FMA()) return FMLALB_advsimd_vec(ctx, dec); // -> FMLALT_asimdsame2_J
-	if(Q && !U && size!=3 && opcode==13) UNALLOCATED(ENC_UNALLOCATED_1197_ASIMDSAME2);
 	if(Q && U && !size && opcode==13 && HasF8F16MM()) return FMMLA_FP8FP16(ctx, dec); // -> FMMLA_asimd_FP8FP16
 	if(Q && U && size==1 && opcode==13 && HasBF16()) return BFMMLA_advsimd(ctx, dec); // -> BFMMLA_asimdsame2_E
 	if(Q && U && size==2 && opcode==4 && HasI8MM()) return UMMLA_advsimd_vec(ctx, dec); // -> UMMLA_asimdsame2_G
-	if(Q && U && size==2 && opcode==5) UNALLOCATED(ENC_UNALLOCATED_1204_ASIMDSAME2);
+	if(Q && U && size==2 && opcode==5) UNALLOCATED(ENC_UNALLOCATED_1207_ASIMDSAME2);
 	if(Q && U && size==2 && opcode==13 && HasF8F32MM()) return FMMLA_FP8FP32(ctx, dec); // -> FMMLA_asimd_FP8FP32
-	if(Q && U && size==3 && opcode==13) UNALLOCATED(ENC_UNALLOCATED_1207_ASIMDSAME2);
+	if(Q && U && size==3 && opcode==13) UNALLOCATED(ENC_UNALLOCATED_1208_ASIMDSAME2);
+	if(!U && !size && opcode==3) UNALLOCATED(ENC_UNALLOCATED_1206_ASIMDSAME2);
 	if(!U && !size && opcode==14 && HasFP8()) return FCVTN_advsimd_328(ctx, dec); // -> FCVTN_asimdsame2_H
 	if(!U && !size && opcode==15 && HasFP8DOT4()) return FDOT_advsimd_4wayvec(ctx, dec); // -> FDOT_asimdsame2_DD
 	if(!U && size==1 && opcode==14 && HasFP8()) return FCVTN_advsimd_168(ctx, dec); // -> FCVTN_asimdsame2_D
 	if(!U && size==1 && opcode==15 && HasFP8DOT2()) return FDOT_advsimd_2wayvec(ctx, dec); // -> FDOT_asimdsame2_D
-	if(!U && size==2 && opcode==1) UNALLOCATED(ENC_UNALLOCATED_1200_ASIMDSAME2);
 	if(!U && size==2 && opcode==3 && HasI8MM()) return USDOT_advsimd_vec(ctx, dec); // -> USDOT_asimdsame2_D
-	if(!U && size==2 && opcode==9) UNALLOCATED(ENC_UNALLOCATED_1196_ASIMDSAME2);
+	if(!U && size==2 && opcode==15 && HasF16F32DOT()) return FDOT_advsimd_fp16fp32(ctx, dec); // -> FDOT_asimdsame2_FP16FP32
 	if(U && size==1 && opcode==15 && HasBF16()) return BFDOT_advsimd_vec(ctx, dec); // -> BFDOT_asimdsame2_D
 	if(U && size==3 && opcode==15 && HasBF16()) return BFMLAL_advsimd_vec(ctx, dec); // -> BFMLAL_asimdsame2_F_
-	if(!U && !(size&2) && opcode==10) UNALLOCATED(ENC_UNALLOCATED_1201_ASIMDSAME2);
-	if(!U && !(size&2) && opcode==12) UNALLOCATED(ENC_UNALLOCATED_1202_ASIMDSAME2);
-	if(!U && size==2 && (opcode&11)==11) UNALLOCATED(ENC_UNALLOCATED_1195_ASIMDSAME2);
-	if(U && !(size&1) && opcode==15) UNALLOCATED(ENC_UNALLOCATED_1206_ASIMDSAME2);
-	if(Q && size==2 && (opcode&14)==6) UNALLOCATED(ENC_UNALLOCATED_1191_ASIMDSAME2);
-	if(!U && !opcode) UNALLOCATED(ENC_UNALLOCATED_1199_ASIMDSAME2);
+	if(Q && !U && !(size&1) && opcode==13) UNALLOCATED(ENC_UNALLOCATED_1205_ASIMDSAME2);
+	if(!U && !(size&1) && opcode==1) UNALLOCATED(ENC_UNALLOCATED_1201_ASIMDSAME2);
+	if(!U && !(size&1) && opcode==9) UNALLOCATED(ENC_UNALLOCATED_1202_ASIMDSAME2);
+	if(!U && !(size&1) && opcode==11) UNALLOCATED(ENC_UNALLOCATED_1203_ASIMDSAME2);
+	if(!U && !(size&2) && opcode==10) UNALLOCATED(ENC_UNALLOCATED_1199_ASIMDSAME2);
+	if(!U && !(size&2) && opcode==12) UNALLOCATED(ENC_UNALLOCATED_1200_ASIMDSAME2);
+	if(U && !(size&1) && opcode==15) UNALLOCATED(ENC_UNALLOCATED_1204_ASIMDSAME2);
+	if(Q && size==2 && (opcode&14)==6) UNALLOCATED(ENC_UNALLOCATED_1198_ASIMDSAME2);
+	if(!U && !opcode) UNALLOCATED(ENC_UNALLOCATED_1196_ASIMDSAME2);
 	if(!U && opcode==2 && HasDotProd()) return SDOT_advsimd_vec(ctx, dec); // -> SDOT_asimdsame2_D
-	if(!U && size==2 && (opcode&9)==8) UNALLOCATED(ENC_UNALLOCATED_1194_ASIMDSAME2);
-	if(!U && size==3 && (opcode&9)==8) UNALLOCATED(ENC_UNALLOCATED_1198_ASIMDSAME2);
-	if(!U && size!=2 && (opcode&5)==1) UNALLOCATED(ENC_UNALLOCATED_1193_ASIMDSAME2);
 	if(U && !opcode && HasRDM()) return SQRDMLAH_advsimd_vec(ctx, dec); // -> SQRDMLAH_asimdsame2_only
 	if(U && opcode==1 && HasRDM()) return SQRDMLSH_advsimd_vec(ctx, dec); // -> SQRDMLSH_asimdsame2_only
 	if(U && opcode==2 && HasDotProd()) return UDOT_advsimd_vec(ctx, dec); // -> UDOT_asimdsame2_D
-	if(U && opcode==3) UNALLOCATED(ENC_UNALLOCATED_1205_ASIMDSAME2);
-	if(!Q && opcode==13) UNALLOCATED(ENC_UNALLOCATED_1192_ASIMDSAME2);
-	if(Q && size!=2 && (opcode&12)==4) UNALLOCATED(ENC_UNALLOCATED_1190_ASIMDSAME2);
+	if(U && opcode==3) UNALLOCATED(ENC_UNALLOCATED_1197_ASIMDSAME2);
+	if(!Q && opcode==13) UNALLOCATED(ENC_UNALLOCATED_1195_ASIMDSAME2);
+	if(Q && size!=2 && (opcode&12)==4) UNALLOCATED(ENC_UNALLOCATED_1192_ASIMDSAME2);
+	if(!U && size&1 && (opcode&5)==1) UNALLOCATED(ENC_UNALLOCATED_1194_ASIMDSAME2);
+	if(!U && (size&2)==2 && (opcode&9)==8) UNALLOCATED(ENC_UNALLOCATED_1193_ASIMDSAME2);
 	if(U && (opcode&13)==12 && HasFCMA()) return FCADD_advsimd_vec(ctx, dec); // -> FCADD_asimdsame2_C
 	if(U && (opcode&12)==8 && HasFCMA()) return FCMLA_advsimd_vec(ctx, dec); // -> FCMLA_asimdsame2_C
-	if(!Q && (opcode&12)==4) UNALLOCATED(ENC_UNALLOCATED_1189_ASIMDSAME2);
+	if(!Q && (opcode&12)==4) UNALLOCATED(ENC_UNALLOCATED_1191_ASIMDSAME2);
 	UNMATCHED;
 }
 
@@ -2740,7 +2737,7 @@ int decode_iclass_asimdmisc(context *ctx, Instruction *dec)
 	if(U && size==1 && opcode==0x17 && HasFP8()) return F12CVTL_advsimd(ctx, dec); // -> F2CVTL_asimdmisc_V
 	if(U && size==2 && opcode==0x17 && HasFP8()) return BF12CVTL_advsimd(ctx, dec); // -> BF1CVTL_asimdmisc_V
 	if(U && size==3 && opcode==0x17 && HasFP8()) return BF12CVTL_advsimd(ctx, dec); // -> BF2CVTL_asimdmisc_V
-	if(size==2 && opcode==0x1e) UNALLOCATED(ENC_UNALLOCATED_1219_ASIMDMISC);
+	if(size==2 && opcode==0x1e) UNALLOCATED(ENC_UNALLOCATED_1221_ASIMDMISC);
 	if(!U && !(size&2) && opcode==0x16 && HasAdvSIMD()) return FCVTN_advsimd(ctx, dec); // -> FCVTN_asimdmisc_N
 	if(!U && !(size&2) && opcode==0x17 && HasAdvSIMD()) return FCVTL_advsimd(ctx, dec); // -> FCVTL_asimdmisc_L
 	if(!U && !(size&2) && opcode==0x18 && HasAdvSIMD()) return FRINTN_advsimd(ctx, dec); // -> FRINTN_asimdmisc_R
@@ -2762,7 +2759,7 @@ int decode_iclass_asimdmisc(context *ctx, Instruction *dec)
 	if(!U && (size&2)==2 && opcode==0x1c && HasAdvSIMD()) return URECPE_advsimd(ctx, dec); // -> URECPE_asimdmisc_R
 	if(!U && (size&2)==2 && opcode==0x1d && HasAdvSIMD()) return FRECPE_advsimd(ctx, dec); // -> FRECPE_asimdmisc_R
 	if(U && !(size&1) && opcode==0x16) UNALLOCATED(ENC_UNALLOCATED_1220_ASIMDMISC);
-	if(U && !(size&2) && opcode==1) UNALLOCATED(ENC_UNALLOCATED_1215_ASIMDMISC);
+	if(U && !(size&2) && opcode==1) UNALLOCATED(ENC_UNALLOCATED_1217_ASIMDMISC);
 	if(U && !(size&2) && opcode==0x18 && HasAdvSIMD()) return FRINTA_advsimd(ctx, dec); // -> FRINTA_asimdmisc_R
 	if(U && !(size&2) && opcode==0x19 && HasAdvSIMD()) return FRINTX_advsimd(ctx, dec); // -> FRINTX_asimdmisc_R
 	if(U && !(size&2) && opcode==0x1a && HasAdvSIMD()) return FCVTNU_advsimd(ctx, dec); // -> FCVTNU_asimdmisc_R
@@ -2773,16 +2770,16 @@ int decode_iclass_asimdmisc(context *ctx, Instruction *dec)
 	if(U && !(size&2) && opcode==0x1f && HasFRINTTS()) return FRINT64X_advsimd(ctx, dec); // -> FRINT64X_asimdmisc_R
 	if(U && (size&2)==2 && opcode==12 && HasAdvSIMD()) return FCMGE_advsimd_zero(ctx, dec); // -> FCMGE_asimdmisc_FZ
 	if(U && (size&2)==2 && opcode==13 && HasAdvSIMD()) return FCMLE_advsimd(ctx, dec); // -> FCMLE_asimdmisc_FZ
-	if(U && (size&2)==2 && opcode==14) UNALLOCATED(ENC_UNALLOCATED_1214_ASIMDMISC);
+	if(U && (size&2)==2 && opcode==14) UNALLOCATED(ENC_UNALLOCATED_1218_ASIMDMISC);
 	if(U && (size&2)==2 && opcode==15 && HasAdvSIMD()) return FNEG_advsimd(ctx, dec); // -> FNEG_asimdmisc_R
-	if(U && (size&2)==2 && opcode==0x18) UNALLOCATED(ENC_UNALLOCATED_1217_ASIMDMISC);
+	if(U && (size&2)==2 && opcode==0x18) UNALLOCATED(ENC_UNALLOCATED_1219_ASIMDMISC);
 	if(U && (size&2)==2 && opcode==0x19 && HasAdvSIMD()) return FRINTI_advsimd(ctx, dec); // -> FRINTI_asimdmisc_R
 	if(U && (size&2)==2 && opcode==0x1a && HasAdvSIMD()) return FCVTPU_advsimd(ctx, dec); // -> FCVTPU_asimdmisc_R
 	if(U && (size&2)==2 && opcode==0x1b && HasAdvSIMD()) return FCVTZU_advsimd_int(ctx, dec); // -> FCVTZU_asimdmisc_R
 	if(U && (size&2)==2 && opcode==0x1c && HasAdvSIMD()) return URSQRTE_advsimd(ctx, dec); // -> URSQRTE_asimdmisc_R
 	if(U && (size&2)==2 && opcode==0x1d && HasAdvSIMD()) return FRSQRTE_advsimd(ctx, dec); // -> FRSQRTE_asimdmisc_R
 	if(U && (size&2)==2 && opcode==0x1f && HasAdvSIMD()) return FSQRT_advsimd(ctx, dec); // -> FSQRT_asimdmisc_R
-	if(size==3 && (opcode&0x17)==0x16) UNALLOCATED(ENC_UNALLOCATED_1218_ASIMDMISC);
+	if(size==3 && (opcode&0x17)==0x16) UNALLOCATED(ENC_UNALLOCATED_1216_ASIMDMISC);
 	if(!U && !opcode && HasAdvSIMD()) return REV64_advsimd(ctx, dec); // -> REV64_asimdmisc_R
 	if(!U && opcode==1 && HasAdvSIMD()) return REV16_advsimd(ctx, dec); // -> REV16_asimdmisc_R
 	if(!U && opcode==2 && HasAdvSIMD()) return SADDLP_advsimd(ctx, dec); // -> SADDLP_asimdmisc_P
@@ -2796,9 +2793,9 @@ int decode_iclass_asimdmisc(context *ctx, Instruction *dec)
 	if(!U && opcode==10 && HasAdvSIMD()) return CMLT_advsimd(ctx, dec); // -> CMLT_asimdmisc_Z
 	if(!U && opcode==11 && HasAdvSIMD()) return ABS_advsimd(ctx, dec); // -> ABS_asimdmisc_R
 	if(!U && opcode==0x12 && HasAdvSIMD()) return XTN_advsimd(ctx, dec); // -> XTN_asimdmisc_N
-	if(!U && opcode==0x13) UNALLOCATED(ENC_UNALLOCATED_1211_ASIMDMISC);
+	if(!U && opcode==0x13) UNALLOCATED(ENC_UNALLOCATED_1213_ASIMDMISC);
 	if(!U && opcode==0x14 && HasAdvSIMD()) return SQXTN_advsimd(ctx, dec); // -> SQXTN_asimdmisc_N
-	if(!U && (size&2)==2 && (opcode&0x17)==0x17) UNALLOCATED(ENC_UNALLOCATED_1216_ASIMDMISC);
+	if(!U && (size&2)==2 && (opcode&0x17)==0x17) UNALLOCATED(ENC_UNALLOCATED_1212_ASIMDMISC);
 	if(U && !opcode && HasAdvSIMD()) return REV32_advsimd(ctx, dec); // -> REV32_asimdmisc_R
 	if(U && opcode==2 && HasAdvSIMD()) return UADDLP_advsimd(ctx, dec); // -> UADDLP_asimdmisc_P
 	if(U && opcode==3 && HasAdvSIMD()) return USQADD_advsimd(ctx, dec); // -> USQADD_asimdmisc_R
@@ -2807,15 +2804,15 @@ int decode_iclass_asimdmisc(context *ctx, Instruction *dec)
 	if(U && opcode==7 && HasAdvSIMD()) return SQNEG_advsimd(ctx, dec); // -> SQNEG_asimdmisc_R
 	if(U && opcode==8 && HasAdvSIMD()) return CMGE_advsimd_zero(ctx, dec); // -> CMGE_asimdmisc_Z
 	if(U && opcode==9 && HasAdvSIMD()) return CMLE_advsimd(ctx, dec); // -> CMLE_asimdmisc_Z
-	if(U && opcode==10) UNALLOCATED(ENC_UNALLOCATED_1213_ASIMDMISC);
+	if(U && opcode==10) UNALLOCATED(ENC_UNALLOCATED_1215_ASIMDMISC);
 	if(U && opcode==11 && HasAdvSIMD()) return NEG_advsimd(ctx, dec); // -> NEG_asimdmisc_R
 	if(U && opcode==0x12 && HasAdvSIMD()) return SQXTUN_advsimd(ctx, dec); // -> SQXTUN_asimdmisc_N
 	if(U && opcode==0x13 && HasAdvSIMD()) return SHLL_advsimd(ctx, dec); // -> SHLL_asimdmisc_S
 	if(U && opcode==0x14 && HasAdvSIMD()) return UQXTN_advsimd(ctx, dec); // -> UQXTN_asimdmisc_N
-	if(U && (size&2)==2 && (opcode&0x1b)==1) UNALLOCATED(ENC_UNALLOCATED_1212_ASIMDMISC);
-	if(opcode==0x15) UNALLOCATED(ENC_UNALLOCATED_1210_ASIMDMISC);
-	if((opcode&0x1e)==0x10) UNALLOCATED(ENC_UNALLOCATED_1209_ASIMDMISC);
-	if(!(size&2) && (opcode&0x1c)==12) UNALLOCATED(ENC_UNALLOCATED_1208_ASIMDMISC);
+	if(U && (size&2)==2 && (opcode&0x1b)==1) UNALLOCATED(ENC_UNALLOCATED_1214_ASIMDMISC);
+	if(opcode==0x15) UNALLOCATED(ENC_UNALLOCATED_1211_ASIMDMISC);
+	if((opcode&0x1e)==0x10) UNALLOCATED(ENC_UNALLOCATED_1210_ASIMDMISC);
+	if(!(size&2) && (opcode&0x1c)==12) UNALLOCATED(ENC_UNALLOCATED_1209_ASIMDMISC);
 	UNMATCHED;
 }
 
@@ -2846,19 +2843,19 @@ int decode_iclass_asimdmiscfp16(context *ctx, Instruction *dec)
 	if(U && a && opcode==12 && HasAdvSIMD() && HasFP16()) return FCMGE_advsimd_zero(ctx, dec); // -> FCMGE_asimdmiscfp16_FZ
 	if(U && a && opcode==13 && HasAdvSIMD() && HasFP16()) return FCMLE_advsimd(ctx, dec); // -> FCMLE_asimdmiscfp16_FZ
 	if(U && a && opcode==15 && HasAdvSIMD() && HasFP16()) return FNEG_advsimd(ctx, dec); // -> FNEG_asimdmiscfp16_R
-	if(U && a && opcode==0x18) UNALLOCATED(ENC_UNALLOCATED_1228_ASIMDMISCFP16);
+	if(U && a && opcode==0x18) UNALLOCATED(ENC_UNALLOCATED_1229_ASIMDMISCFP16);
 	if(U && a && opcode==0x19 && HasAdvSIMD() && HasFP16()) return FRINTI_advsimd(ctx, dec); // -> FRINTI_asimdmiscfp16_R
 	if(U && a && opcode==0x1a && HasAdvSIMD() && HasFP16()) return FCVTPU_advsimd(ctx, dec); // -> FCVTPU_asimdmiscfp16_R
 	if(U && a && opcode==0x1b && HasAdvSIMD() && HasFP16()) return FCVTZU_advsimd_int(ctx, dec); // -> FCVTZU_asimdmiscfp16_R
 	if(U && a && opcode==0x1d && HasAdvSIMD() && HasFP16()) return FRSQRTE_advsimd(ctx, dec); // -> FRSQRTE_asimdmiscfp16_R
 	if(U && a && opcode==0x1f && HasAdvSIMD() && HasFP16()) return FSQRT_advsimd(ctx, dec); // -> FSQRT_asimdmiscfp16_R
-	if(a && opcode==0x1c) UNALLOCATED(ENC_UNALLOCATED_1227_ASIMDMISCFP16);
-	if(!U && a && (opcode&0x1e)==0x1e) UNALLOCATED(ENC_UNALLOCATED_1225_ASIMDMISCFP16);
-	if(U && a && (opcode&15)==14) UNALLOCATED(ENC_UNALLOCATED_1226_ASIMDMISCFP16);
-	if(!a && (opcode&0x1e)==0x1e) UNALLOCATED(ENC_UNALLOCATED_1224_ASIMDMISCFP16);
-	if(a && (opcode&0x1c)==8) UNALLOCATED(ENC_UNALLOCATED_1223_ASIMDMISCFP16);
-	if(!a && (opcode&0x18)==8) UNALLOCATED(ENC_UNALLOCATED_1222_ASIMDMISCFP16);
-	if(!(opcode&8)) UNALLOCATED(ENC_UNALLOCATED_1221_ASIMDMISCFP16);
+	if(a && opcode==0x1c) UNALLOCATED(ENC_UNALLOCATED_1228_ASIMDMISCFP16);
+	if(!U && a && (opcode&0x1e)==0x1e) UNALLOCATED(ENC_UNALLOCATED_1226_ASIMDMISCFP16);
+	if(U && a && (opcode&15)==14) UNALLOCATED(ENC_UNALLOCATED_1227_ASIMDMISCFP16);
+	if(!a && (opcode&0x1e)==0x1e) UNALLOCATED(ENC_UNALLOCATED_1225_ASIMDMISCFP16);
+	if(a && (opcode&0x1c)==8) UNALLOCATED(ENC_UNALLOCATED_1224_ASIMDMISCFP16);
+	if(!a && (opcode&0x18)==8) UNALLOCATED(ENC_UNALLOCATED_1223_ASIMDMISCFP16);
+	if(!(opcode&8)) UNALLOCATED(ENC_UNALLOCATED_1222_ASIMDMISCFP16);
 	UNMATCHED;
 }
 
@@ -2877,23 +2874,24 @@ int decode_iclass_asimdelem(context *ctx, Instruction *dec)
 	if(!U && !size && opcode==9 && HasAdvSIMD() && HasFP16()) return FMUL_advsimd_elt(ctx, dec); // -> FMUL_asimdelem_RH_H
 	if(!U && !size && opcode==15 && HasI8MM()) return SUDOT_advsimd_elt(ctx, dec); // -> SUDOT_asimdelem_D
 	if(!U && size==1 && !opcode && HasFP8DOT2()) return FDOT_advsimd_2wayelem(ctx, dec); // -> FDOT_asimdelem_G
+	if(!U && size==1 && opcode==9 && HasF16F32DOT()) return FDOT_advsimd_elt_fp16fp32(ctx, dec); // -> FDOT_asimdelem_FP16FP32
 	if(!U && size==1 && opcode==15 && HasBF16()) return BFDOT_advsimd_elt(ctx, dec); // -> BFDOT_asimdelem_E
 	if(!U && size==2 && !opcode && HasFHM()) return FMLAL_advsimd_elt(ctx, dec); // -> FMLAL_asimdelem_LH
 	if(!U && size==2 && opcode==4 && HasFHM()) return FMLSL_advsimd_elt(ctx, dec); // -> FMLSL_asimdelem_LH
 	if(!U && size==2 && opcode==15 && HasI8MM()) return USDOT_advsimd_elt(ctx, dec); // -> USDOT_asimdelem_D
 	if(!U && size==3 && opcode==15 && HasBF16()) return BFMLAL_advsimd_elt(ctx, dec); // -> BFMLAL_asimdelem_F
-	if(!U && size!=2 && opcode==4) UNALLOCATED(ENC_UNALLOCATED_1231_ASIMDELEM);
+	if(!U && size!=2 && opcode==4) UNALLOCATED(ENC_UNALLOCATED_1232_ASIMDELEM);
 	if(U && !size && opcode==9 && HasAdvSIMD() && HasFP16()) return FMULX_advsimd_elt(ctx, dec); // -> FMULX_asimdelem_RH_H
+	if(U && size==1 && opcode==9) UNALLOCATED(ENC_UNALLOCATED_1235_ASIMDELEM);
 	if(U && size==2 && opcode==8 && HasFHM()) return FMLAL_advsimd_elt(ctx, dec); // -> FMLAL2_asimdelem_LH
 	if(U && size==2 && opcode==12 && HasFHM()) return FMLSL_advsimd_elt(ctx, dec); // -> FMLSL2_asimdelem_LH
-	if(size==1 && opcode==9) UNALLOCATED(ENC_UNALLOCATED_1234_ASIMDELEM);
-	if(!U && size==1 && (opcode&11)==1) UNALLOCATED(ENC_UNALLOCATED_1230_ASIMDELEM);
+	if(!U && size==1 && (opcode&11)==1) UNALLOCATED(ENC_UNALLOCATED_1231_ASIMDELEM);
 	if(!U && (size&2)==2 && opcode==1 && HasAdvSIMD()) return FMLA_advsimd_elt(ctx, dec); // -> FMLA_asimdelem_R_SD
 	if(!U && (size&2)==2 && opcode==5 && HasAdvSIMD()) return FMLS_advsimd_elt(ctx, dec); // -> FMLS_asimdelem_R_SD
 	if(!U && (size&2)==2 && opcode==9 && HasAdvSIMD()) return FMUL_advsimd_elt(ctx, dec); // -> FMUL_asimdelem_R_SD
-	if(U && !(size&2) && opcode==12) UNALLOCATED(ENC_UNALLOCATED_1232_ASIMDELEM);
+	if(U && !(size&2) && opcode==12) UNALLOCATED(ENC_UNALLOCATED_1233_ASIMDELEM);
 	if(U && (size&2)==2 && opcode==9 && HasAdvSIMD()) return FMULX_advsimd_elt(ctx, dec); // -> FMULX_asimdelem_R_SD
-	if(U && size==3 && (opcode&11)==8) UNALLOCATED(ENC_UNALLOCATED_1233_ASIMDELEM);
+	if(U && size==3 && (opcode&11)==8) UNALLOCATED(ENC_UNALLOCATED_1234_ASIMDELEM);
 	if(!U && opcode==2 && HasAdvSIMD()) return SMLAL_advsimd_elt(ctx, dec); // -> SMLAL_asimdelem_L
 	if(!U && opcode==3 && HasAdvSIMD()) return SQDMLAL_advsimd_elt(ctx, dec); // -> SQDMLAL_asimdelem_L
 	if(!U && opcode==6 && HasAdvSIMD()) return SMLSL_advsimd_elt(ctx, dec); // -> SMLSL_asimdelem_L
@@ -2909,7 +2907,7 @@ int decode_iclass_asimdelem(context *ctx, Instruction *dec)
 	if(U && opcode==4 && HasAdvSIMD()) return MLS_advsimd_elt(ctx, dec); // -> MLS_asimdelem_R
 	if(U && opcode==6 && HasAdvSIMD()) return UMLSL_advsimd_elt(ctx, dec); // -> UMLSL_asimdelem_L
 	if(U && opcode==10 && HasAdvSIMD()) return UMULL_advsimd_elt(ctx, dec); // -> UMULL_asimdelem_L
-	if(U && opcode==11) UNALLOCATED(ENC_UNALLOCATED_1229_ASIMDELEM);
+	if(U && opcode==11) UNALLOCATED(ENC_UNALLOCATED_1230_ASIMDELEM);
 	if(U && opcode==13 && HasRDM()) return SQRDMLAH_advsimd_elt(ctx, dec); // -> SQRDMLAH_asimdelem_R
 	if(U && opcode==14 && HasDotProd()) return UDOT_advsimd_elt(ctx, dec); // -> UDOT_asimdelem_D
 	if(U && opcode==15 && HasRDM()) return SQRDMLSH_advsimd_elt(ctx, dec); // -> SQRDMLSH_asimdelem_R
@@ -2944,12 +2942,12 @@ int decode_iclass_float2fix(context *ctx, Instruction *dec)
 	if(sf && !S && ftype==3 && !rmode && opcode==3 && HasFP16()) return UCVTF_float_fix(ctx, dec); // -> UCVTF_H64_float2fix
 	if(sf && !S && ftype==3 && rmode==3 && !opcode && HasFP16()) return FCVTZS_float_fix(ctx, dec); // -> FCVTZS_64H_float2fix
 	if(sf && !S && ftype==3 && rmode==3 && opcode==1 && HasFP16()) return FCVTZU_float_fix(ctx, dec); // -> FCVTZU_64H_float2fix
-	if(!S && ftype!=2 && rmode&1 && (opcode&6)==2) UNALLOCATED(ENC_UNALLOCATED_1240_FLOAT2FIX);
-	if(!S && ftype!=2 && !(rmode&2) && !(opcode&6)) UNALLOCATED(ENC_UNALLOCATED_1238_FLOAT2FIX);
-	if(!S && ftype!=2 && rmode==2 && !(opcode&4)) UNALLOCATED(ENC_UNALLOCATED_1239_FLOAT2FIX);
-	if(!S && ftype==2 && !(opcode&4)) UNALLOCATED(ENC_UNALLOCATED_1237_FLOAT2FIX);
-	if(!S && (opcode&4)==4) UNALLOCATED(ENC_UNALLOCATED_1236_FLOAT2FIX);
-	if(S) UNALLOCATED(ENC_UNALLOCATED_1235_FLOAT2FIX);
+	if(!S && ftype!=2 && rmode&1 && (opcode&6)==2) UNALLOCATED(ENC_UNALLOCATED_1241_FLOAT2FIX);
+	if(!S && ftype!=2 && !(rmode&2) && !(opcode&6)) UNALLOCATED(ENC_UNALLOCATED_1239_FLOAT2FIX);
+	if(!S && ftype!=2 && rmode==2 && !(opcode&4)) UNALLOCATED(ENC_UNALLOCATED_1240_FLOAT2FIX);
+	if(!S && ftype==2 && !(opcode&4)) UNALLOCATED(ENC_UNALLOCATED_1238_FLOAT2FIX);
+	if(!S && (opcode&4)==4) UNALLOCATED(ENC_UNALLOCATED_1237_FLOAT2FIX);
+	if(S) UNALLOCATED(ENC_UNALLOCATED_1236_FLOAT2FIX);
 	UNMATCHED;
 }
 
@@ -2995,7 +2993,7 @@ int decode_iclass_float2int(context *ctx, Instruction *dec)
 	if(!sf && !S && ftype==1 && rmode==3 && opcode==4 && HasFPRCVT()) return SCVTF_sisd(ctx, dec); // -> SCVTF_sisd_32D
 	if(!sf && !S && ftype==1 && rmode==3 && opcode==5 && HasFPRCVT()) return UCVTF_sisd(ctx, dec); // -> UCVTF_sisd_32D
 	if(!sf && !S && ftype==1 && rmode==3 && opcode==6 && HasJSCVT()) return FJCVTZS(ctx, dec); // -> FJCVTZS_32D_float2int
-	if(!sf && !S && ftype==1 && rmode==3 && opcode==7) UNALLOCATED(ENC_UNALLOCATED_1255_FLOAT2INT);
+	if(!sf && !S && ftype==1 && rmode==3 && opcode==7) UNALLOCATED(ENC_UNALLOCATED_1258_FLOAT2INT);
 	if(!sf && !S && ftype==3 && !rmode && !opcode && HasFP16()) return FCVTNS_float(ctx, dec); // -> FCVTNS_32H_float2int
 	if(!sf && !S && ftype==3 && !rmode && opcode==1 && HasFP16()) return FCVTNU_float(ctx, dec); // -> FCVTNU_32H_float2int
 	if(!sf && !S && ftype==3 && !rmode && opcode==2 && HasFP16()) return SCVTF_float_int(ctx, dec); // -> SCVTF_H32_float2int
@@ -3088,22 +3086,22 @@ int decode_iclass_float2int(context *ctx, Instruction *dec)
 	if(sf && !S && ftype==3 && rmode==3 && opcode==3 && HasFPRCVT()) return FCVTAU_sisd(ctx, dec); // -> FCVTAU_sisd_64H
 	if(sf && !S && ftype==3 && rmode==3 && opcode==4 && HasFPRCVT()) return SCVTF_sisd(ctx, dec); // -> SCVTF_sisd_64H
 	if(sf && !S && ftype==3 && rmode==3 && opcode==5 && HasFPRCVT()) return UCVTF_sisd(ctx, dec); // -> UCVTF_sisd_64H
-	if(!sf && !S && !ftype && rmode && (opcode&6)==2) UNALLOCATED(ENC_UNALLOCATED_1247_FLOAT2INT);
-	if(!sf && !S && ftype==2 && rmode==3 && (opcode&6)==6) UNALLOCATED(ENC_UNALLOCATED_1246_FLOAT2INT);
+	if(!sf && !S && !ftype && rmode && (opcode&6)==2) UNALLOCATED(ENC_UNALLOCATED_1250_FLOAT2INT);
+	if(!sf && !S && ftype==2 && rmode==3 && (opcode&6)==6) UNALLOCATED(ENC_UNALLOCATED_1257_FLOAT2INT);
 	if(!S && ftype!=2 && rmode==1 && (opcode&6)==4) UNALLOCATED(ENC_UNALLOCATED_1249_FLOAT2INT);
-	if(!sf && !S && !(ftype&1) && rmode==1 && (opcode&6)==6) UNALLOCATED(ENC_UNALLOCATED_1248_FLOAT2INT);
-	if(!sf && !S && ftype==1 && !(rmode&2) && (opcode&6)==6) UNALLOCATED(ENC_UNALLOCATED_1256_FLOAT2INT);
-	if(sf && !S && !(ftype&1) && rmode==3 && (opcode&6)==6) UNALLOCATED(ENC_UNALLOCATED_1254_FLOAT2INT);
-	if(sf && !S && !ftype && !(rmode&2) && (opcode&6)==6) UNALLOCATED(ENC_UNALLOCATED_1257_FLOAT2INT);
-	if(sf && !S && ftype==1 && rmode==1 && (opcode&2)==2) UNALLOCATED(ENC_UNALLOCATED_1252_FLOAT2INT);
-	if(sf && !S && ftype==1 && (rmode&2)==2 && (opcode&6)==2) UNALLOCATED(ENC_UNALLOCATED_1251_FLOAT2INT);
-	if(!S && ftype==2 && rmode&1 && (opcode&6)==4) UNALLOCATED(ENC_UNALLOCATED_1244_FLOAT2INT);
-	if(!S && ftype==3 && rmode&1 && (opcode&6)==6) UNALLOCATED(ENC_UNALLOCATED_1253_FLOAT2INT);
+	if(!sf && !S && !(ftype&1) && rmode==1 && (opcode&6)==6) UNALLOCATED(ENC_UNALLOCATED_1252_FLOAT2INT);
+	if(!sf && !S && ftype==1 && !(rmode&2) && (opcode&6)==6) UNALLOCATED(ENC_UNALLOCATED_1251_FLOAT2INT);
+	if(sf && !S && !(ftype&1) && rmode==3 && (opcode&6)==6) UNALLOCATED(ENC_UNALLOCATED_1256_FLOAT2INT);
+	if(sf && !S && !ftype && !(rmode&2) && (opcode&6)==6) UNALLOCATED(ENC_UNALLOCATED_1253_FLOAT2INT);
+	if(sf && !S && ftype==1 && rmode==1 && (opcode&2)==2) UNALLOCATED(ENC_UNALLOCATED_1254_FLOAT2INT);
+	if(sf && !S && ftype==1 && (rmode&2)==2 && (opcode&6)==2) UNALLOCATED(ENC_UNALLOCATED_1255_FLOAT2INT);
+	if(!S && ftype==2 && rmode&1 && (opcode&6)==4) UNALLOCATED(ENC_UNALLOCATED_1247_FLOAT2INT);
+	if(!S && ftype==3 && rmode&1 && (opcode&6)==6) UNALLOCATED(ENC_UNALLOCATED_1248_FLOAT2INT);
 	if(!sf && !S && !ftype && (rmode&2)==2 && (opcode&4)==4) UNALLOCATED(ENC_UNALLOCATED_1245_FLOAT2INT);
-	if(sf && !S && ftype==1 && (rmode&2)==2 && (opcode&4)==4) UNALLOCATED(ENC_UNALLOCATED_1250_FLOAT2INT);
-	if(!S && ftype==2 && rmode&1 && !(opcode&4)) UNALLOCATED(ENC_UNALLOCATED_1243_FLOAT2INT);
-	if(!S && ftype==2 && !(rmode&1)) UNALLOCATED(ENC_UNALLOCATED_1242_FLOAT2INT);
-	if(S) UNALLOCATED(ENC_UNALLOCATED_1241_FLOAT2INT);
+	if(sf && !S && ftype==1 && (rmode&2)==2 && (opcode&4)==4) UNALLOCATED(ENC_UNALLOCATED_1246_FLOAT2INT);
+	if(!S && ftype==2 && rmode&1 && !(opcode&4)) UNALLOCATED(ENC_UNALLOCATED_1244_FLOAT2INT);
+	if(!S && ftype==2 && !(rmode&1)) UNALLOCATED(ENC_UNALLOCATED_1243_FLOAT2INT);
+	if(S) UNALLOCATED(ENC_UNALLOCATED_1242_FLOAT2INT);
 	UNMATCHED;
 }
 
@@ -3114,10 +3112,10 @@ int decode_iclass_cryptoaes(context *ctx, Instruction *dec)
 	if(!size && opcode==5 && HasAES()) return AESD_advsimd(ctx, dec); // -> AESD_B_cryptoaes
 	if(!size && opcode==6 && HasAES()) return AESMC_advsimd(ctx, dec); // -> AESMC_B_cryptoaes
 	if(!size && opcode==7 && HasAES()) return AESIMC_advsimd(ctx, dec); // -> AESIMC_B_cryptoaes
-	if(!size && !(opcode&0x1c)) UNALLOCATED(ENC_UNALLOCATED_1261_CRYPTOAES);
-	if(!size && (opcode&0x18)==8) UNALLOCATED(ENC_UNALLOCATED_1260_CRYPTOAES);
-	if(!size && (opcode&0x10)==0x10) UNALLOCATED(ENC_UNALLOCATED_1259_CRYPTOAES);
-	if(size) UNALLOCATED(ENC_UNALLOCATED_1258_CRYPTOAES);
+	if(!size && !(opcode&0x1c)) UNALLOCATED(ENC_UNALLOCATED_1262_CRYPTOAES);
+	if(!size && (opcode&0x18)==8) UNALLOCATED(ENC_UNALLOCATED_1261_CRYPTOAES);
+	if(!size && (opcode&0x10)==0x10) UNALLOCATED(ENC_UNALLOCATED_1260_CRYPTOAES);
+	if(size) UNALLOCATED(ENC_UNALLOCATED_1259_CRYPTOAES);
 	UNMATCHED;
 }
 
@@ -3127,7 +3125,7 @@ int decode_iclass_crypto4(context *ctx, Instruction *dec)
 	if(!Op0 && HasSHA3()) return EOR3_advsimd(ctx, dec); // -> EOR3_VVV16_crypto4
 	if(Op0==1 && HasSHA3()) return BCAX_advsimd(ctx, dec); // -> BCAX_VVV16_crypto4
 	if(Op0==2 && HasSM3()) return SM3SS1_advsimd(ctx, dec); // -> SM3SS1_VVV4_crypto4
-	if(Op0==3) UNALLOCATED(ENC_UNALLOCATED_1262_CRYPTO4);
+	if(Op0==3) UNALLOCATED(ENC_UNALLOCATED_1263_CRYPTO4);
 	UNMATCHED;
 }
 
@@ -3141,8 +3139,8 @@ int decode_iclass_cryptosha3(context *ctx, Instruction *dec)
 	if(!size && opcode==4 && HasSHA256()) return SHA256H_advsimd(ctx, dec); // -> SHA256H_QQV_cryptosha3
 	if(!size && opcode==5 && HasSHA256()) return SHA256H2_advsimd(ctx, dec); // -> SHA256H2_QQV_cryptosha3
 	if(!size && opcode==6 && HasSHA256()) return SHA256SU1_advsimd(ctx, dec); // -> SHA256SU1_VVV_cryptosha3
-	if(!size && opcode==7) UNALLOCATED(ENC_UNALLOCATED_1264_CRYPTOSHA3);
-	if(size) UNALLOCATED(ENC_UNALLOCATED_1263_CRYPTOSHA3);
+	if(!size && opcode==7) UNALLOCATED(ENC_UNALLOCATED_1265_CRYPTOSHA3);
+	if(size) UNALLOCATED(ENC_UNALLOCATED_1264_CRYPTOSHA3);
 	UNMATCHED;
 }
 
@@ -3156,7 +3154,7 @@ int decode_iclass_cryptosha512_3(context *ctx, Instruction *dec)
 	if(O && !opcode && HasSM3()) return SM3PARTW1_advsimd(ctx, dec); // -> SM3PARTW1_VVV4_cryptosha512_3
 	if(O && opcode==1 && HasSM3()) return SM3PARTW2_advsimd(ctx, dec); // -> SM3PARTW2_VVV4_cryptosha512_3
 	if(O && opcode==2 && HasSM4()) return SM4EKEY_advsimd(ctx, dec); // -> SM4EKEY_VVV4_cryptosha512_3
-	if(O && opcode==3) UNALLOCATED(ENC_UNALLOCATED_1265_CRYPTOSHA512_3);
+	if(O && opcode==3) UNALLOCATED(ENC_UNALLOCATED_1266_CRYPTOSHA512_3);
 	UNMATCHED;
 }
 
@@ -3181,11 +3179,11 @@ int decode_iclass_cryptosha2(context *ctx, Instruction *dec)
 	if(!size && !opcode && HasSHA1()) return SHA1H_advsimd(ctx, dec); // -> SHA1H_SS_cryptosha2
 	if(!size && opcode==1 && HasSHA1()) return SHA1SU1_advsimd(ctx, dec); // -> SHA1SU1_VV_cryptosha2
 	if(!size && opcode==2 && HasSHA256()) return SHA256SU0_advsimd(ctx, dec); // -> SHA256SU0_VV_cryptosha2
-	if(!size && opcode==3) UNALLOCATED(ENC_UNALLOCATED_1270_CRYPTOSHA2);
-	if(!size && (opcode&0x1c)==4) UNALLOCATED(ENC_UNALLOCATED_1269_CRYPTOSHA2);
-	if(!size && (opcode&0x18)==8) UNALLOCATED(ENC_UNALLOCATED_1268_CRYPTOSHA2);
-	if(!size && (opcode&0x10)==0x10) UNALLOCATED(ENC_UNALLOCATED_1267_CRYPTOSHA2);
-	if(size) UNALLOCATED(ENC_UNALLOCATED_1266_CRYPTOSHA2);
+	if(!size && opcode==3) UNALLOCATED(ENC_UNALLOCATED_1271_CRYPTOSHA2);
+	if(!size && (opcode&0x1c)==4) UNALLOCATED(ENC_UNALLOCATED_1270_CRYPTOSHA2);
+	if(!size && (opcode&0x18)==8) UNALLOCATED(ENC_UNALLOCATED_1269_CRYPTOSHA2);
+	if(!size && (opcode&0x10)==0x10) UNALLOCATED(ENC_UNALLOCATED_1268_CRYPTOSHA2);
+	if(size) UNALLOCATED(ENC_UNALLOCATED_1267_CRYPTOSHA2);
 	UNMATCHED;
 }
 
@@ -3194,7 +3192,7 @@ int decode_iclass_cryptosha512_2(context *ctx, Instruction *dec)
 	uint32_t opcode=(INSWORD>>10)&3;
 	if(!opcode && HasSHA512()) return SHA512SU0_advsimd(ctx, dec); // -> SHA512SU0_VV2_cryptosha512_2
 	if(opcode==1 && HasSM4()) return SM4E_advsimd(ctx, dec); // -> SM4E_VV4_cryptosha512_2
-	if((opcode&2)==2) UNALLOCATED(ENC_UNALLOCATED_1271_CRYPTOSHA512_2);
+	if((opcode&2)==2) UNALLOCATED(ENC_UNALLOCATED_1272_CRYPTOSHA512_2);
 	UNMATCHED;
 }
 
@@ -3213,13 +3211,13 @@ int decode_iclass_floatcmp(context *ctx, Instruction *dec)
 	if(!M && !S && ftype==3 && !op && opcode2==8 && HasFP16()) return FCMP_float(ctx, dec); // -> FCMP_HZ_floatcmp
 	if(!M && !S && ftype==3 && !op && opcode2==0x10 && HasFP16()) return FCMPE_float(ctx, dec); // -> FCMPE_H_floatcmp
 	if(!M && !S && ftype==3 && !op && opcode2==0x18 && HasFP16()) return FCMPE_float(ctx, dec); // -> FCMPE_HZ_floatcmp
-	if(!M && !S && ftype==2 && !op && !(opcode2&7)) UNALLOCATED(ENC_UNALLOCATED_1278_FLOATCMP);
-	if(!M && !S && !op && (opcode2&7)==1) UNALLOCATED(ENC_UNALLOCATED_1277_FLOATCMP);
-	if(!M && !S && !op && (opcode2&6)==2) UNALLOCATED(ENC_UNALLOCATED_1276_FLOATCMP);
-	if(!M && !S && !op && (opcode2&4)==4) UNALLOCATED(ENC_UNALLOCATED_1275_FLOATCMP);
-	if(!M && !S && op) UNALLOCATED(ENC_UNALLOCATED_1274_FLOATCMP);
-	if(!M && S) UNALLOCATED(ENC_UNALLOCATED_1273_FLOATCMP);
-	if(M) UNALLOCATED(ENC_UNALLOCATED_1272_FLOATCMP);
+	if(!M && !S && ftype==2 && !op && !(opcode2&7)) UNALLOCATED(ENC_UNALLOCATED_1279_FLOATCMP);
+	if(!M && !S && !op && (opcode2&7)==1) UNALLOCATED(ENC_UNALLOCATED_1278_FLOATCMP);
+	if(!M && !S && !op && (opcode2&6)==2) UNALLOCATED(ENC_UNALLOCATED_1277_FLOATCMP);
+	if(!M && !S && !op && (opcode2&4)==4) UNALLOCATED(ENC_UNALLOCATED_1276_FLOATCMP);
+	if(!M && !S && op) UNALLOCATED(ENC_UNALLOCATED_1275_FLOATCMP);
+	if(!M && S) UNALLOCATED(ENC_UNALLOCATED_1274_FLOATCMP);
+	if(M) UNALLOCATED(ENC_UNALLOCATED_1273_FLOATCMP);
 	UNMATCHED;
 }
 
@@ -3232,9 +3230,9 @@ int decode_iclass_floatccmp(context *ctx, Instruction *dec)
 	if(!M && !S && ftype==1 && op && HasFP()) return FCCMPE_float(ctx, dec); // -> FCCMPE_D_floatccmp
 	if(!M && !S && ftype==3 && !op && HasFP16()) return FCCMP_float(ctx, dec); // -> FCCMP_H_floatccmp
 	if(!M && !S && ftype==3 && op && HasFP16()) return FCCMPE_float(ctx, dec); // -> FCCMPE_H_floatccmp
-	if(!M && !S && ftype==2) UNALLOCATED(ENC_UNALLOCATED_1281_FLOATCCMP);
-	if(!M && S) UNALLOCATED(ENC_UNALLOCATED_1280_FLOATCCMP);
-	if(M) UNALLOCATED(ENC_UNALLOCATED_1279_FLOATCCMP);
+	if(!M && !S && ftype==2) UNALLOCATED(ENC_UNALLOCATED_1282_FLOATCCMP);
+	if(!M && S) UNALLOCATED(ENC_UNALLOCATED_1281_FLOATCCMP);
+	if(M) UNALLOCATED(ENC_UNALLOCATED_1280_FLOATCCMP);
 	UNMATCHED;
 }
 
@@ -3243,10 +3241,10 @@ int decode_iclass_floatsel(context *ctx, Instruction *dec)
 	uint32_t M=INSWORD>>31, S=(INSWORD>>29)&1, ftype=(INSWORD>>22)&3;
 	if(!M && !S && !ftype && HasFP()) return FCSEL_float(ctx, dec); // -> FCSEL_S_floatsel
 	if(!M && !S && ftype==1 && HasFP()) return FCSEL_float(ctx, dec); // -> FCSEL_D_floatsel
-	if(!M && !S && ftype==2) UNALLOCATED(ENC_UNALLOCATED_1284_FLOATSEL);
+	if(!M && !S && ftype==2) UNALLOCATED(ENC_UNALLOCATED_1285_FLOATSEL);
 	if(!M && !S && ftype==3 && HasFP16()) return FCSEL_float(ctx, dec); // -> FCSEL_H_floatsel
-	if(!M && S) UNALLOCATED(ENC_UNALLOCATED_1283_FLOATSEL);
-	if(M) UNALLOCATED(ENC_UNALLOCATED_1282_FLOATSEL);
+	if(!M && S) UNALLOCATED(ENC_UNALLOCATED_1284_FLOATSEL);
+	if(M) UNALLOCATED(ENC_UNALLOCATED_1283_FLOATSEL);
 	UNMATCHED;
 }
 
@@ -3275,7 +3273,7 @@ int decode_iclass_floatdp1(context *ctx, Instruction *dec)
 	if(!M && !S && ftype==1 && opcode==2 && HasFP()) return FNEG_float(ctx, dec); // -> FNEG_D_floatdp1
 	if(!M && !S && ftype==1 && opcode==3 && HasFP()) return FSQRT_float(ctx, dec); // -> FSQRT_D_floatdp1
 	if(!M && !S && ftype==1 && opcode==4 && HasFP()) return FCVT_float(ctx, dec); // -> FCVT_SD_floatdp1
-	if(!M && !S && ftype==1 && opcode==5) UNALLOCATED(ENC_UNALLOCATED_1295_FLOATDP1);
+	if(!M && !S && ftype==1 && opcode==5) UNALLOCATED(ENC_UNALLOCATED_1296_FLOATDP1);
 	if(!M && !S && ftype==1 && opcode==6 && HasBF16()) return BFCVT_float(ctx, dec); // -> BFCVT_BS_floatdp1
 	if(!M && !S && ftype==1 && opcode==7 && HasFP()) return FCVT_float(ctx, dec); // -> FCVT_HD_floatdp1
 	if(!M && !S && ftype==1 && opcode==8 && HasFP()) return FRINTN_float(ctx, dec); // -> FRINTN_D_floatdp1
@@ -3302,16 +3300,16 @@ int decode_iclass_floatdp1(context *ctx, Instruction *dec)
 	if(!M && !S && ftype==3 && opcode==12 && HasFP16()) return FRINTA_float(ctx, dec); // -> FRINTA_H_floatdp1
 	if(!M && !S && ftype==3 && opcode==14 && HasFP16()) return FRINTX_float(ctx, dec); // -> FRINTX_H_floatdp1
 	if(!M && !S && ftype==3 && opcode==15 && HasFP16()) return FRINTI_float(ctx, dec); // -> FRINTI_H_floatdp1
-	if(!M && !S && ftype!=2 && opcode==13) UNALLOCATED(ENC_UNALLOCATED_1294_FLOATDP1);
+	if(!M && !S && ftype!=2 && opcode==13) UNALLOCATED(ENC_UNALLOCATED_1295_FLOATDP1);
 	if(!M && !S && !ftype && (opcode&0x3d)==4) UNALLOCATED(ENC_UNALLOCATED_1293_FLOATDP1);
-	if(!M && !S && ftype==3 && (opcode&0x3e)==6) UNALLOCATED(ENC_UNALLOCATED_1292_FLOATDP1);
-	if(!M && !S && !(ftype&2) && (opcode&0x3c)==0x14) UNALLOCATED(ENC_UNALLOCATED_1291_FLOATDP1);
+	if(!M && !S && ftype==3 && (opcode&0x3e)==6) UNALLOCATED(ENC_UNALLOCATED_1294_FLOATDP1);
+	if(!M && !S && !(ftype&2) && (opcode&0x3c)==0x14) UNALLOCATED(ENC_UNALLOCATED_1292_FLOATDP1);
 	if(!M && !S && !(ftype&2) && (opcode&0x38)==0x18) UNALLOCATED(ENC_UNALLOCATED_1290_FLOATDP1);
-	if(!M && !S && ftype==3 && (opcode&0x30)==0x10) UNALLOCATED(ENC_UNALLOCATED_1289_FLOATDP1);
-	if(!M && !S && ftype==2 && !(opcode&0x20)) UNALLOCATED(ENC_UNALLOCATED_1288_FLOATDP1);
-	if(!M && !S && (opcode&0x20)==0x20) UNALLOCATED(ENC_UNALLOCATED_1287_FLOATDP1);
-	if(!M && S) UNALLOCATED(ENC_UNALLOCATED_1286_FLOATDP1);
-	if(M) UNALLOCATED(ENC_UNALLOCATED_1285_FLOATDP1);
+	if(!M && !S && ftype==3 && (opcode&0x30)==0x10) UNALLOCATED(ENC_UNALLOCATED_1291_FLOATDP1);
+	if(!M && !S && ftype==2 && !(opcode&0x20)) UNALLOCATED(ENC_UNALLOCATED_1289_FLOATDP1);
+	if(!M && !S && (opcode&0x20)==0x20) UNALLOCATED(ENC_UNALLOCATED_1288_FLOATDP1);
+	if(!M && S) UNALLOCATED(ENC_UNALLOCATED_1287_FLOATDP1);
+	if(M) UNALLOCATED(ENC_UNALLOCATED_1286_FLOATDP1);
 	UNMATCHED;
 }
 
@@ -3345,12 +3343,12 @@ int decode_iclass_floatdp2(context *ctx, Instruction *dec)
 	if(!M && !S && ftype==3 && opcode==6 && HasFP16()) return FMAXNM_float(ctx, dec); // -> FMAXNM_H_floatdp2
 	if(!M && !S && ftype==3 && opcode==7 && HasFP16()) return FMINNM_float(ctx, dec); // -> FMINNM_H_floatdp2
 	if(!M && !S && ftype==3 && opcode==8 && HasFP16()) return FNMUL_float(ctx, dec); // -> FNMUL_H_floatdp2
-	if(!M && !S && ftype!=2 && opcode==9) UNALLOCATED(ENC_UNALLOCATED_1301_FLOATDP2);
-	if(!M && !S && ftype!=2 && (opcode&14)==10) UNALLOCATED(ENC_UNALLOCATED_1300_FLOATDP2);
-	if(!M && !S && ftype!=2 && (opcode&12)==12) UNALLOCATED(ENC_UNALLOCATED_1299_FLOATDP2);
-	if(!M && !S && ftype==2) UNALLOCATED(ENC_UNALLOCATED_1298_FLOATDP2);
-	if(!M && S) UNALLOCATED(ENC_UNALLOCATED_1297_FLOATDP2);
-	if(M) UNALLOCATED(ENC_UNALLOCATED_1296_FLOATDP2);
+	if(!M && !S && ftype!=2 && opcode==9) UNALLOCATED(ENC_UNALLOCATED_1302_FLOATDP2);
+	if(!M && !S && ftype!=2 && (opcode&14)==10) UNALLOCATED(ENC_UNALLOCATED_1301_FLOATDP2);
+	if(!M && !S && ftype!=2 && (opcode&12)==12) UNALLOCATED(ENC_UNALLOCATED_1300_FLOATDP2);
+	if(!M && !S && ftype==2) UNALLOCATED(ENC_UNALLOCATED_1299_FLOATDP2);
+	if(!M && S) UNALLOCATED(ENC_UNALLOCATED_1298_FLOATDP2);
+	if(M) UNALLOCATED(ENC_UNALLOCATED_1297_FLOATDP2);
 	UNMATCHED;
 }
 
@@ -3369,9 +3367,9 @@ int decode_iclass_floatdp3(context *ctx, Instruction *dec)
 	if(!M && !S && ftype==3 && !o1 && o0 && HasFP16()) return FMSUB_float(ctx, dec); // -> FMSUB_H_floatdp3
 	if(!M && !S && ftype==3 && o1 && !o0 && HasFP16()) return FNMADD_float(ctx, dec); // -> FNMADD_H_floatdp3
 	if(!M && !S && ftype==3 && o1 && o0 && HasFP16()) return FNMSUB_float(ctx, dec); // -> FNMSUB_H_floatdp3
-	if(!M && !S && ftype==2) UNALLOCATED(ENC_UNALLOCATED_1304_FLOATDP3);
-	if(!M && S) UNALLOCATED(ENC_UNALLOCATED_1303_FLOATDP3);
-	if(M) UNALLOCATED(ENC_UNALLOCATED_1302_FLOATDP3);
+	if(!M && !S && ftype==2) UNALLOCATED(ENC_UNALLOCATED_1305_FLOATDP3);
+	if(!M && S) UNALLOCATED(ENC_UNALLOCATED_1304_FLOATDP3);
+	if(M) UNALLOCATED(ENC_UNALLOCATED_1303_FLOATDP3);
 	UNMATCHED;
 }
 
@@ -3380,11 +3378,11 @@ int decode_iclass_floatimm(context *ctx, Instruction *dec)
 	uint32_t M=INSWORD>>31, S=(INSWORD>>29)&1, ftype=(INSWORD>>22)&3, imm5=(INSWORD>>5)&0x1f;
 	if(!M && !S && !ftype && !imm5 && HasFP()) return FMOV_float_imm(ctx, dec); // -> FMOV_S_floatimm
 	if(!M && !S && ftype==1 && !imm5 && HasFP()) return FMOV_float_imm(ctx, dec); // -> FMOV_D_floatimm
-	if(!M && !S && ftype==2 && !imm5) UNALLOCATED(ENC_UNALLOCATED_1308_FLOATIMM);
+	if(!M && !S && ftype==2 && !imm5) UNALLOCATED(ENC_UNALLOCATED_1309_FLOATIMM);
 	if(!M && !S && ftype==3 && !imm5 && HasFP16()) return FMOV_float_imm(ctx, dec); // -> FMOV_H_floatimm
-	if(!M && !S && imm5) UNALLOCATED(ENC_UNALLOCATED_1307_FLOATIMM);
-	if(!M && S) UNALLOCATED(ENC_UNALLOCATED_1306_FLOATIMM);
-	if(M) UNALLOCATED(ENC_UNALLOCATED_1305_FLOATIMM);
+	if(!M && !S && imm5) UNALLOCATED(ENC_UNALLOCATED_1308_FLOATIMM);
+	if(!M && S) UNALLOCATED(ENC_UNALLOCATED_1307_FLOATIMM);
+	if(M) UNALLOCATED(ENC_UNALLOCATED_1306_FLOATIMM);
 	UNMATCHED;
 }
 
@@ -3398,7 +3396,7 @@ int decode_iclass_mortlach_addhv(context *ctx, Instruction *dec)
 	uint32_t op=(INSWORD>>22)&1, V=(INSWORD>>16)&1, opc2=INSWORD&7;
 	if(!op && !V && !(opc2&4) && HasSME()) return addha_za_pp_z(ctx, dec); // -> addha_za_pp_z_32
 	if(!op && V && !(opc2&4) && HasSME()) return addva_za_pp_z(ctx, dec); // -> addva_za_pp_z_32
-	if(!op && (opc2&4)==4) UNALLOCATED(ENC_UNALLOCATED_693_MORTLACH_ADDHV);
+	if(!op && (opc2&4)==4) UNALLOCATED(ENC_UNALLOCATED_697_MORTLACH_ADDHV);
 	if(op && !V && HasSME_I16I64()) return addha_za_pp_z(ctx, dec); // -> addha_za_pp_z_64
 	if(op && V && HasSME_I16I64()) return addva_za_pp_z(ctx, dec); // -> addva_za_pp_z_64
 	UNMATCHED;
@@ -3490,12 +3488,12 @@ int decode_iclass_mortlach_zt_ldst(context *ctx, Instruction *dec)
 	uint32_t opc=(INSWORD>>16)&0x3f, opc2=INSWORD&3;
 	if(opc==0x1f && !opc2 && HasSME2()) return ldr_zt_br(ctx, dec); // -> ldr_zt_br_
 	if(opc==0x3f && !opc2 && HasSME2()) return str_zt_br(ctx, dec); // -> str_zt_br_
-	if((opc&0x1f)==0x1f && opc2) UNALLOCATED(ENC_UNALLOCATED_699_MORTLACH_ZT_LDST);
-	if((opc&0x1f)==0x1e) UNALLOCATED(ENC_UNALLOCATED_698_MORTLACH_ZT_LDST);
-	if((opc&0x1e)==0x1c) UNALLOCATED(ENC_UNALLOCATED_697_MORTLACH_ZT_LDST);
-	if((opc&0x1c)==0x18) UNALLOCATED(ENC_UNALLOCATED_696_MORTLACH_ZT_LDST);
-	if((opc&0x18)==0x10) UNALLOCATED(ENC_UNALLOCATED_695_MORTLACH_ZT_LDST);
-	if(!(opc&0x10)) UNALLOCATED(ENC_UNALLOCATED_694_MORTLACH_ZT_LDST);
+	if((opc&0x1f)==0x1f && opc2) UNALLOCATED(ENC_UNALLOCATED_703_MORTLACH_ZT_LDST);
+	if((opc&0x1f)==0x1e) UNALLOCATED(ENC_UNALLOCATED_702_MORTLACH_ZT_LDST);
+	if((opc&0x1e)==0x1c) UNALLOCATED(ENC_UNALLOCATED_701_MORTLACH_ZT_LDST);
+	if((opc&0x1c)==0x18) UNALLOCATED(ENC_UNALLOCATED_700_MORTLACH_ZT_LDST);
+	if((opc&0x18)==0x10) UNALLOCATED(ENC_UNALLOCATED_699_MORTLACH_ZT_LDST);
+	if(!(opc&0x10)) UNALLOCATED(ENC_UNALLOCATED_698_MORTLACH_ZT_LDST);
 	UNMATCHED;
 }
 
@@ -3517,7 +3515,7 @@ int decode_iclass_mortlach_extract_pred(context *ctx, Instruction *dec)
 	if(size==2 && !Q && HasSME()) return mova_z_p_rza(ctx, dec); // -> mova_z_p_rza_w
 	if(size==3 && !Q && HasSME()) return mova_z_p_rza(ctx, dec); // -> mova_z_p_rza_d
 	if(size==3 && Q && HasSME()) return mova_z_p_rza(ctx, dec); // -> mova_z_p_rza_q
-	if(size!=3 && Q) UNALLOCATED(ENC_UNALLOCATED_700_MORTLACH_EXTRACT_PRED);
+	if(size!=3 && Q) UNALLOCATED(ENC_UNALLOCATED_704_MORTLACH_EXTRACT_PRED);
 	UNMATCHED;
 }
 
@@ -3537,7 +3535,7 @@ int decode_iclass_mortlach_multi4_extract_ctg(context *ctx, Instruction *dec)
 	if(!size && !(opc&4) && HasSME2()) return mova_mz4_za(ctx, dec); // -> mova_mz4_za_b1
 	if(size==1 && !(opc&4) && HasSME2()) return mova_mz4_za(ctx, dec); // -> mova_mz4_za_h1
 	if(size==2 && !(opc&4) && HasSME2()) return mova_mz4_za(ctx, dec); // -> mova_mz4_za_w1
-	if(size!=3 && (opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_701_MORTLACH_MULTI4_EXTRACT_CTG);
+	if(size!=3 && (opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_705_MORTLACH_MULTI4_EXTRACT_CTG);
 	if(size==3 && HasSME2()) return mova_mz4_za(ctx, dec); // -> mova_mz4_za_d1
 	UNMATCHED;
 }
@@ -3560,7 +3558,7 @@ int decode_iclass_mortlach_extract_zero(context *ctx, Instruction *dec)
 	if(size==2 && !Q && HasSME2p1()) return movaz_z_rza(ctx, dec); // -> movaz_z_rza_w
 	if(size==3 && !Q && HasSME2p1()) return movaz_z_rza(ctx, dec); // -> movaz_z_rza_d
 	if(size==3 && Q && HasSME2p1()) return movaz_z_rza(ctx, dec); // -> movaz_z_rza_q
-	if(size!=3 && Q) UNALLOCATED(ENC_UNALLOCATED_702_MORTLACH_EXTRACT_ZERO);
+	if(size!=3 && Q) UNALLOCATED(ENC_UNALLOCATED_706_MORTLACH_EXTRACT_ZERO);
 	UNMATCHED;
 }
 
@@ -3580,7 +3578,7 @@ int decode_iclass_mortlach_multi4_extract_zero(context *ctx, Instruction *dec)
 	if(!size && !(opc&4) && HasSME2p1()) return movaz_mz4_za(ctx, dec); // -> movaz_mz4_za_b1
 	if(size==1 && !(opc&4) && HasSME2p1()) return movaz_mz4_za(ctx, dec); // -> movaz_mz4_za_h1
 	if(size==2 && !(opc&4) && HasSME2p1()) return movaz_mz4_za(ctx, dec); // -> movaz_mz4_za_w1
-	if(size!=3 && (opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_703_MORTLACH_MULTI4_EXTRACT_ZERO);
+	if(size!=3 && (opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_707_MORTLACH_MULTI4_EXTRACT_ZERO);
 	if(size==3 && HasSME2p1()) return movaz_mz4_za(ctx, dec); // -> movaz_mz4_za_d1
 	UNMATCHED;
 }
@@ -3603,7 +3601,7 @@ int decode_iclass_mortlach_insert_pred(context *ctx, Instruction *dec)
 	if(size==2 && !Q && HasSME()) return mova_za_p_rz(ctx, dec); // -> mova_za_p_rz_w
 	if(size==3 && !Q && HasSME()) return mova_za_p_rz(ctx, dec); // -> mova_za_p_rz_d
 	if(size==3 && Q && HasSME()) return mova_za_p_rz(ctx, dec); // -> mova_za_p_rz_q
-	if(size!=3 && Q) UNALLOCATED(ENC_UNALLOCATED_704_MORTLACH_INSERT_PRED);
+	if(size!=3 && Q) UNALLOCATED(ENC_UNALLOCATED_708_MORTLACH_INSERT_PRED);
 	UNMATCHED;
 }
 
@@ -3623,7 +3621,7 @@ int decode_iclass_mortlach_multi4_insert_ctg(context *ctx, Instruction *dec)
 	if(!size && !(opc&4) && HasSME2()) return mova_za4_z(ctx, dec); // -> mova_za4_z_b1
 	if(size==1 && !(opc&4) && HasSME2()) return mova_za4_z(ctx, dec); // -> mova_za4_z_h1
 	if(size==2 && !(opc&4) && HasSME2()) return mova_za4_z(ctx, dec); // -> mova_za4_z_w1
-	if(size!=3 && (opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_705_MORTLACH_MULTI4_INSERT_CTG);
+	if(size!=3 && (opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_709_MORTLACH_MULTI4_INSERT_CTG);
 	if(size==3 && HasSME2()) return mova_za4_z(ctx, dec); // -> mova_za4_z_d1
 	UNMATCHED;
 }
@@ -3668,30 +3666,34 @@ int decode_iclass_mortlach_zero(context *ctx, Instruction *dec)
 int decode_iclass_mortlach_expand_2dst_ctg(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>15)&15, opc2=(INSWORD>>10)&3;
-	if(!(opc&12) && !opc2) UNALLOCATED(ENC_UNALLOCATED_707_MORTLACH_EXPAND_2DST_CTG);
+	if(!(opc&12) && !opc2) UNALLOCATED(ENC_UNALLOCATED_711_MORTLACH_EXPAND_2DST_CTG);
 	if((opc&12)==4 && !opc2 && HasSME2()) return luti4_mz2_ztz(ctx, dec); // -> luti4_mz2_ztz_1
 	if((opc&8)==8 && !opc2 && HasSME2()) return luti2_mz2_ztz(ctx, dec); // -> luti2_mz2_ztz_1
-	if(opc2) UNALLOCATED(ENC_UNALLOCATED_706_MORTLACH_EXPAND_2DST_CTG);
+	if(opc2) UNALLOCATED(ENC_UNALLOCATED_710_MORTLACH_EXPAND_2DST_CTG);
 	UNMATCHED;
 }
 
 int decode_iclass_mortlach_expand_4dst_ctg(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>16)&7, opc2=(INSWORD>>10)&3;
-	if(!(opc&6) && !opc2) UNALLOCATED(ENC_UNALLOCATED_709_MORTLACH_EXPAND_4DST_CTG);
+	if(!(opc&6) && !opc2) UNALLOCATED(ENC_UNALLOCATED_713_MORTLACH_EXPAND_4DST_CTG);
 	if((opc&6)==2 && !opc2 && HasSME2()) return luti4_mz4_ztz(ctx, dec); // -> luti4_mz4_ztz_1
 	if((opc&4)==4 && !opc2 && HasSME2()) return luti2_mz4_ztz(ctx, dec); // -> luti2_mz4_ztz_1
-	if(opc2) UNALLOCATED(ENC_UNALLOCATED_708_MORTLACH_EXPAND_4DST_CTG);
+	if(opc2) UNALLOCATED(ENC_UNALLOCATED_712_MORTLACH_EXPAND_4DST_CTG);
 	UNMATCHED;
 }
 
 int decode_iclass_mortlach_expand_1dst(context *ctx, Instruction *dec)
 {
-	uint32_t opc=(INSWORD>>14)&0x1f, opc2=(INSWORD>>10)&3;
-	if(!(opc&0x18) && !opc2) UNALLOCATED(ENC_UNALLOCATED_711_MORTLACH_EXPAND_1DST);
+	uint32_t opc=(INSWORD>>14)&0x1f, size=(INSWORD>>12)&3, opc2=(INSWORD>>10)&3;
+	if(opc==1 && !size && !opc2 && HasSME2p3()) return luti6_z_ztz(ctx, dec); // -> luti6_z_ztz_
+	if(opc==1 && size && !opc2) UNALLOCATED(ENC_UNALLOCATED_718_MORTLACH_EXPAND_1DST);
+	if(!opc && !opc2) UNALLOCATED(ENC_UNALLOCATED_717_MORTLACH_EXPAND_1DST);
+	if((opc&0x1e)==2 && !opc2) UNALLOCATED(ENC_UNALLOCATED_716_MORTLACH_EXPAND_1DST);
+	if((opc&0x1c)==4 && !opc2) UNALLOCATED(ENC_UNALLOCATED_715_MORTLACH_EXPAND_1DST);
 	if((opc&0x18)==8 && !opc2 && HasSME2()) return luti4_z_ztz(ctx, dec); // -> luti4_z_ztz_
 	if((opc&0x10)==0x10 && !opc2 && HasSME2()) return luti2_z_ztz(ctx, dec); // -> luti2_z_ztz_
-	if(opc2) UNALLOCATED(ENC_UNALLOCATED_710_MORTLACH_EXPAND_1DST);
+	if(opc2) UNALLOCATED(ENC_UNALLOCATED_714_MORTLACH_EXPAND_1DST);
 	UNMATCHED;
 }
 
@@ -3699,27 +3701,36 @@ int decode_iclass_mortlach_expand_4dst2src_ctg(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>10)&3;
 	if(!opc && HasSME_LUTv2()) return luti4_mz4_ztmz2(ctx, dec); // -> luti4_mz4_ztmz2_1
-	if(opc) UNALLOCATED(ENC_UNALLOCATED_712_MORTLACH_EXPAND_4DST2SRC_CTG);
+	if(opc) UNALLOCATED(ENC_UNALLOCATED_719_MORTLACH_EXPAND_4DST2SRC_CTG);
+	UNMATCHED;
+}
+
+int decode_iclass_mortlach_expand_4dst3src_ctg(context *ctx, Instruction *dec)
+{
+	uint32_t size=(INSWORD>>12)&3, opc=(INSWORD>>10)&3;
+	if(!size && !opc && HasSME2p3()) return luti6_mz4_ztz(ctx, dec); // -> luti6_mz4_ztmz3_1
+	if(!size && opc) UNALLOCATED(ENC_UNALLOCATED_721_MORTLACH_EXPAND_4DST3SRC_CTG);
+	if(size) UNALLOCATED(ENC_UNALLOCATED_720_MORTLACH_EXPAND_4DST3SRC_CTG);
 	UNMATCHED;
 }
 
 int decode_iclass_mortlach_expand_2dst_nctg(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>15)&15, opc2=(INSWORD>>10)&3;
-	if(!(opc&12) && !opc2) UNALLOCATED(ENC_UNALLOCATED_714_MORTLACH_EXPAND_2DST_NCTG);
+	if(!(opc&12) && !opc2) UNALLOCATED(ENC_UNALLOCATED_723_MORTLACH_EXPAND_2DST_NCTG);
 	if((opc&12)==4 && !opc2 && HasSME2p1()) return luti4_mz2_ztz(ctx, dec); // -> luti4_mz2_ztz_8
 	if((opc&8)==8 && !opc2 && HasSME2p1()) return luti2_mz2_ztz(ctx, dec); // -> luti2_mz2_ztz_8
-	if(opc2) UNALLOCATED(ENC_UNALLOCATED_713_MORTLACH_EXPAND_2DST_NCTG);
+	if(opc2) UNALLOCATED(ENC_UNALLOCATED_722_MORTLACH_EXPAND_2DST_NCTG);
 	UNMATCHED;
 }
 
 int decode_iclass_mortlach_expand_4dst_nctg(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>16)&7, opc2=(INSWORD>>10)&3;
-	if(!(opc&6) && !opc2) UNALLOCATED(ENC_UNALLOCATED_716_MORTLACH_EXPAND_4DST_NCTG);
+	if(!(opc&6) && !opc2) UNALLOCATED(ENC_UNALLOCATED_725_MORTLACH_EXPAND_4DST_NCTG);
 	if((opc&6)==2 && !opc2 && HasSME2p1()) return luti4_mz4_ztz(ctx, dec); // -> luti4_mz4_ztz_4
 	if((opc&4)==4 && !opc2 && HasSME2p1()) return luti2_mz4_ztz(ctx, dec); // -> luti2_mz4_ztz_4
-	if(opc2) UNALLOCATED(ENC_UNALLOCATED_715_MORTLACH_EXPAND_4DST_NCTG);
+	if(opc2) UNALLOCATED(ENC_UNALLOCATED_724_MORTLACH_EXPAND_4DST_NCTG);
 	UNMATCHED;
 }
 
@@ -3727,7 +3738,16 @@ int decode_iclass_mortlach_expand_4dst2src_nctg(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>10)&3;
 	if(!opc && HasSME2p1() && HasSME_LUTv2()) return luti4_mz4_ztmz2(ctx, dec); // -> luti4_mz4_ztmz2_4
-	if(opc) UNALLOCATED(ENC_UNALLOCATED_717_MORTLACH_EXPAND_4DST2SRC_NCTG);
+	if(opc) UNALLOCATED(ENC_UNALLOCATED_726_MORTLACH_EXPAND_4DST2SRC_NCTG);
+	UNMATCHED;
+}
+
+int decode_iclass_mortlach_expand_4dst3src_nctg(context *ctx, Instruction *dec)
+{
+	uint32_t size=(INSWORD>>12)&3, opc=(INSWORD>>10)&3;
+	if(!size && !opc && HasSME2p3()) return luti6_mz4_ztz(ctx, dec); // -> luti6_mz4_ztmz3_4
+	if(!size && opc) UNALLOCATED(ENC_UNALLOCATED_728_MORTLACH_EXPAND_4DST3SRC_NCTG);
+	if(size) UNALLOCATED(ENC_UNALLOCATED_727_MORTLACH_EXPAND_4DST3SRC_NCTG);
 	UNMATCHED;
 }
 
@@ -3735,7 +3755,7 @@ int decode_iclass_mortlach_extract_zt(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>5)&0x7f;
 	if(opc==0x1f && HasSME2()) return movt_r_zt(ctx, dec); // -> movt_r_zt_
-	if(opc!=0x1f) UNALLOCATED(ENC_UNALLOCATED_718_MORTLACH_EXTRACT_ZT);
+	if(opc!=0x1f) UNALLOCATED(ENC_UNALLOCATED_729_MORTLACH_EXTRACT_ZT);
 	UNMATCHED;
 }
 
@@ -3743,7 +3763,7 @@ int decode_iclass_mortlach_insert_zt(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>5)&0x7f;
 	if(opc==0x1f && HasSME2()) return movt_zt_r(ctx, dec); // -> movt_zt_r_
-	if(opc!=0x1f) UNALLOCATED(ENC_UNALLOCATED_719_MORTLACH_INSERT_ZT);
+	if(opc!=0x1f) UNALLOCATED(ENC_UNALLOCATED_730_MORTLACH_INSERT_ZT);
 	UNMATCHED;
 }
 
@@ -3751,7 +3771,7 @@ int decode_iclass_mortlach_move_to_zt(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>5)&0x7f;
 	if(opc==0x1f && HasSME_LUTv2()) return movt_zt_z(ctx, dec); // -> movt_zt_z_
-	if(opc!=0x1f) UNALLOCATED(ENC_UNALLOCATED_720_MORTLACH_MOVE_TO_ZT);
+	if(opc!=0x1f) UNALLOCATED(ENC_UNALLOCATED_731_MORTLACH_MOVE_TO_ZT);
 	UNMATCHED;
 }
 
@@ -3780,7 +3800,7 @@ int decode_iclass_mortlach_multi4_mla_long_long_idx_s(context *ctx, Instruction 
 	if(!op && U && S && HasSME2()) return umlsll_za_zzi(ctx, dec); // -> umlsll_za_zzi_s4xi
 	if(op && !U && !S && HasSME2()) return usmlall_za_zzi(ctx, dec); // -> usmlall_za_zzi_s4xi
 	if(op && U && !S && HasSME2()) return sumlall_za_zzi(ctx, dec); // -> sumlall_za_zzi_s4xi
-	if(op && S) UNALLOCATED(ENC_UNALLOCATED_721_MORTLACH_MULTI4_MLA_LONG_LONG_IDX_S);
+	if(op && S) UNALLOCATED(ENC_UNALLOCATED_732_MORTLACH_MULTI4_MLA_LONG_LONG_IDX_S);
 	UNMATCHED;
 }
 
@@ -3810,7 +3830,7 @@ int decode_iclass_mortlach_multi4_zza_idx_s(context *ctx, Instruction *dec)
 	if(!op && !opc2 && HasSME2()) return fmla_za_zzi(ctx, dec); // -> fmla_za_zzi_s4xi
 	if(!op && opc2==1 && HasSME_F8F32()) return fdot_za32_z8z8i(ctx, dec); // -> fdot_za32_z8z8i_4xi
 	if(!op && opc2==2 && HasSME2()) return fmls_za_zzi(ctx, dec); // -> fmls_za_zzi_s4xi
-	if(!op && opc2==3) UNALLOCATED(ENC_UNALLOCATED_722_MORTLACH_MULTI4_ZZA_IDX_S);
+	if(!op && opc2==3) UNALLOCATED(ENC_UNALLOCATED_733_MORTLACH_MULTI4_ZZA_IDX_S);
 	if(!op && opc2==4 && HasSME2()) return svdot_za_zzi(ctx, dec); // -> svdot_za_zzi_s4xi
 	if(!op && opc2==5 && HasSME2()) return usvdot_za_zzi(ctx, dec); // -> usvdot_za_zzi_s4xi
 	if(!op && opc2==6 && HasSME2()) return uvdot_za_zzi(ctx, dec); // -> uvdot_za_zzi_s4xi
@@ -3860,7 +3880,7 @@ int decode_iclass_mortlach_multi4_zza_idx_d(context *ctx, Instruction *dec)
 	if(!op && opc2==3 && HasSME2() && HasSME_I16I64()) return udot_za_zzi(ctx, dec); // -> udot_za_zzi_d4xi
 	if(op && opc2==1 && HasSME2() && HasSME_I16I64()) return svdot_za_zzi(ctx, dec); // -> svdot_za_zzi_d4xi
 	if(op && opc2==3 && HasSME2() && HasSME_I16I64()) return uvdot_za_zzi(ctx, dec); // -> uvdot_za_zzi_d4xi
-	if(op && !(opc2&1)) UNALLOCATED(ENC_UNALLOCATED_723_MORTLACH_MULTI4_ZZA_IDX_D);
+	if(op && !(opc2&1)) UNALLOCATED(ENC_UNALLOCATED_734_MORTLACH_MULTI4_ZZA_IDX_D);
 	UNMATCHED;
 }
 
@@ -3883,7 +3903,7 @@ int decode_iclass_mortlach_multi1_mla_long_long_idx_s(context *ctx, Instruction 
 	if(U && !S && !op && HasSME2()) return umlall_za_zzi(ctx, dec); // -> umlall_za_zzi_s
 	if(U && !S && op && HasSME2()) return sumlall_za_zzi(ctx, dec); // -> sumlall_za_zzi_s
 	if(U && S && !op && HasSME2()) return umlsll_za_zzi(ctx, dec); // -> umlsll_za_zzi_s
-	if(S && op) UNALLOCATED(ENC_UNALLOCATED_724_MORTLACH_MULTI1_MLA_LONG_LONG_IDX_S);
+	if(S && op) UNALLOCATED(ENC_UNALLOCATED_735_MORTLACH_MULTI1_MLA_LONG_LONG_IDX_S);
 	UNMATCHED;
 }
 
@@ -3936,7 +3956,7 @@ int decode_iclass_mortlach_multi2_mla_long_long_idx_s(context *ctx, Instruction 
 	if(!op && U && S && HasSME2()) return umlsll_za_zzi(ctx, dec); // -> umlsll_za_zzi_s2xi
 	if(op && !U && !S && HasSME2()) return usmlall_za_zzi(ctx, dec); // -> usmlall_za_zzi_s2xi
 	if(op && U && !S && HasSME2()) return sumlall_za_zzi(ctx, dec); // -> sumlall_za_zzi_s2xi
-	if(op && S) UNALLOCATED(ENC_UNALLOCATED_725_MORTLACH_MULTI2_MLA_LONG_LONG_IDX_S);
+	if(op && S) UNALLOCATED(ENC_UNALLOCATED_736_MORTLACH_MULTI2_MLA_LONG_LONG_IDX_S);
 	UNMATCHED;
 }
 
@@ -3958,7 +3978,7 @@ int decode_iclass_mortlach_multi2_zza_idx_s(context *ctx, Instruction *dec)
 	if(!op && opc2==2 && HasSME2()) return fmls_za_zzi(ctx, dec); // -> fmls_za_zzi_s2xi
 	if(!op && opc2==3 && HasSME2()) return bfvdot_za_zzi(ctx, dec); // -> bfvdot_za_zzi_2xi
 	if(!op && opc2==4 && HasSME2()) return svdot_za32_zzi(ctx, dec); // -> svdot_za32_zzi_2xi
-	if(!op && opc2==5) UNALLOCATED(ENC_UNALLOCATED_726_MORTLACH_MULTI2_ZZA_IDX_S);
+	if(!op && opc2==5) UNALLOCATED(ENC_UNALLOCATED_737_MORTLACH_MULTI2_ZZA_IDX_S);
 	if(!op && opc2==6 && HasSME2()) return uvdot_za32_zzi(ctx, dec); // -> uvdot_za32_zzi_2xi
 	if(!op && opc2==7 && HasSME_F8F32()) return fdot_za32_z8z8i(ctx, dec); // -> fdot_za32_z8z8i_2xi
 	if(op && !opc2 && HasSME2()) return sdot_za32_zzi(ctx, dec); // -> sdot_za32_zzi_2xi
@@ -4036,6 +4056,16 @@ int decode_iclass_mortlach_multi2_fp8_fdot_idx(context *ctx, Instruction *dec)
 	if(!op && HasSME_F8F16()) return fdot_za_z8z8i(ctx, dec); // -> fdot_za_z8z8i_2xi
 	if(op && HasSME_F8F16()) return fvdot_za_z8z8i(ctx, dec); // -> fvdot_za_z8z8i_2xi
 	UNMATCHED;
+}
+
+int decode_iclass_mortlach_multi4_lut6_16_ctg(context *ctx, Instruction *dec)
+{
+	return luti6_mz4_zmz2(ctx, dec);
+}
+
+int decode_iclass_mortlach_multi4_lut6_16_nctg(context *ctx, Instruction *dec)
+{
+	return luti6_mz4_zmz2(ctx, dec);
 }
 
 int decode_iclass_mortlach_multi2_cld_cldnt_ss_ctg(context *ctx, Instruction *dec)
@@ -4266,13 +4296,13 @@ int decode_iclass_mortlach_multi4_zz_za_mla_long_long_mm(context *ctx, Instructi
 {
 	uint32_t sz=(INSWORD>>22)&1, U=(INSWORD>>4)&1, S=(INSWORD>>3)&1, op=(INSWORD>>2)&1;
 	if(!sz && !U && !S && op && HasSME2()) return usmlall_za_zzw(ctx, dec); // -> usmlall_za_zzw_s4x4
-	if(!sz && !U && S && op) UNALLOCATED(ENC_UNALLOCATED_729_MORTLACH_MULTI4_ZZ_ZA_MLA_LONG_LONG_MM);
+	if(!sz && !U && S && op) UNALLOCATED(ENC_UNALLOCATED_740_MORTLACH_MULTI4_ZZ_ZA_MLA_LONG_LONG_MM);
 	if(!U && !S && !op && HasSME2()) return smlall_za_zzw(ctx, dec); // -> smlall_za_zzw_4x4
 	if(!U && S && !op && HasSME2()) return smlsll_za_zzw(ctx, dec); // -> smlsll_za_zzw_4x4
 	if(U && !S && !op && HasSME2()) return umlall_za_zzw(ctx, dec); // -> umlall_za_zzw_4x4
 	if(U && S && !op && HasSME2()) return umlsll_za_zzw(ctx, dec); // -> umlsll_za_zzw_4x4
-	if(!sz && U && op) UNALLOCATED(ENC_UNALLOCATED_728_MORTLACH_MULTI4_ZZ_ZA_MLA_LONG_LONG_MM);
-	if(sz && op) UNALLOCATED(ENC_UNALLOCATED_727_MORTLACH_MULTI4_ZZ_ZA_MLA_LONG_LONG_MM);
+	if(!sz && U && op) UNALLOCATED(ENC_UNALLOCATED_739_MORTLACH_MULTI4_ZZ_ZA_MLA_LONG_LONG_MM);
+	if(sz && op) UNALLOCATED(ENC_UNALLOCATED_738_MORTLACH_MULTI4_ZZ_ZA_MLA_LONG_LONG_MM);
 	UNMATCHED;
 }
 
@@ -4393,13 +4423,13 @@ int decode_iclass_mortlach_multi2_zz_za_mla_long_long_mm(context *ctx, Instructi
 {
 	uint32_t sz=(INSWORD>>22)&1, U=(INSWORD>>4)&1, S=(INSWORD>>3)&1, op=(INSWORD>>2)&1;
 	if(!sz && !U && !S && op && HasSME2()) return usmlall_za_zzw(ctx, dec); // -> usmlall_za_zzw_s2x2
-	if(!sz && !U && S && op) UNALLOCATED(ENC_UNALLOCATED_732_MORTLACH_MULTI2_ZZ_ZA_MLA_LONG_LONG_MM);
+	if(!sz && !U && S && op) UNALLOCATED(ENC_UNALLOCATED_743_MORTLACH_MULTI2_ZZ_ZA_MLA_LONG_LONG_MM);
 	if(!U && !S && !op && HasSME2()) return smlall_za_zzw(ctx, dec); // -> smlall_za_zzw_2x2
 	if(!U && S && !op && HasSME2()) return smlsll_za_zzw(ctx, dec); // -> smlsll_za_zzw_2x2
 	if(U && !S && !op && HasSME2()) return umlall_za_zzw(ctx, dec); // -> umlall_za_zzw_2x2
 	if(U && S && !op && HasSME2()) return umlsll_za_zzw(ctx, dec); // -> umlsll_za_zzw_2x2
-	if(!sz && U && op) UNALLOCATED(ENC_UNALLOCATED_731_MORTLACH_MULTI2_ZZ_ZA_MLA_LONG_LONG_MM);
-	if(sz && op) UNALLOCATED(ENC_UNALLOCATED_730_MORTLACH_MULTI2_ZZ_ZA_MLA_LONG_LONG_MM);
+	if(!sz && U && op) UNALLOCATED(ENC_UNALLOCATED_742_MORTLACH_MULTI2_ZZ_ZA_MLA_LONG_LONG_MM);
+	if(sz && op) UNALLOCATED(ENC_UNALLOCATED_741_MORTLACH_MULTI2_ZZ_ZA_MLA_LONG_LONG_MM);
 	UNMATCHED;
 }
 
@@ -4523,7 +4553,7 @@ int decode_iclass_mortlach_multi4_z_z_minmax_mm(context *ctx, Instruction *dec)
 	if(!opc && U && HasSME2()) return umax_mz_zzw(ctx, dec); // -> umax_mz_zzw_4x4
 	if(opc==1 && !U && HasSME2()) return smin_mz_zzw(ctx, dec); // -> smin_mz_zzw_4x4
 	if(opc==1 && U && HasSME2()) return umin_mz_zzw(ctx, dec); // -> umin_mz_zzw_4x4
-	if((opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_733_MORTLACH_MULTI4_Z_Z_MINMAX_MM);
+	if((opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_744_MORTLACH_MULTI4_Z_Z_MINMAX_MM);
 	UNMATCHED;
 }
 
@@ -4540,7 +4570,7 @@ int decode_iclass_mortlach_multi4_z_z_fminmax_mm(context *ctx, Instruction *dec)
 	if(size && opc==1 && o2 && HasSME2()) return fminnm_mz_zzw(ctx, dec); // -> fminnm_mz_zzw_4x4
 	if(opc==2 && !o2 && HasSME2() && HasFAMINMAX()) return famax_mz_zzw(ctx, dec); // -> famax_mz_zzw_4x4
 	if(opc==2 && o2 && HasSME2() && HasFAMINMAX()) return famin_mz_zzw(ctx, dec); // -> famin_mz_zzw_4x4
-	if(opc==3) UNALLOCATED(ENC_UNALLOCATED_734_MORTLACH_MULTI4_Z_Z_FMINMAX_MM);
+	if(opc==3) UNALLOCATED(ENC_UNALLOCATED_745_MORTLACH_MULTI4_Z_Z_FMINMAX_MM);
 	UNMATCHED;
 }
 
@@ -4549,8 +4579,8 @@ int decode_iclass_mortlach_multi4_z_z_fscale_mm(context *ctx, Instruction *dec)
 	uint32_t size=(INSWORD>>22)&3, opc=(INSWORD>>5)&3, o2=INSWORD&1;
 	if(!size && !opc && !o2 && HasSME2() && HasSVE_BFSCALE()) return bfscale_mz_zzw(ctx, dec); // -> bfscale_mz_zzw_4x4
 	if(size && !opc && !o2 && HasSME2() && HasFP8()) return fscale_mz_zzw(ctx, dec); // -> fscale_mz_zzw_4x4
-	if(!opc && o2) UNALLOCATED(ENC_UNALLOCATED_736_MORTLACH_MULTI4_Z_Z_FSCALE_MM);
-	if(opc) UNALLOCATED(ENC_UNALLOCATED_735_MORTLACH_MULTI4_Z_Z_FSCALE_MM);
+	if(!opc && o2) UNALLOCATED(ENC_UNALLOCATED_747_MORTLACH_MULTI4_Z_Z_FSCALE_MM);
+	if(opc) UNALLOCATED(ENC_UNALLOCATED_746_MORTLACH_MULTI4_Z_Z_FSCALE_MM);
 	UNMATCHED;
 }
 
@@ -4559,7 +4589,7 @@ int decode_iclass_mortlach_multi4_z_z_shift_mm(context *ctx, Instruction *dec)
 	uint32_t opc=(INSWORD>>5)&7, U=INSWORD&1;
 	if(opc==1 && !U && HasSME2()) return srshl_mz_zzw(ctx, dec); // -> srshl_mz_zzw_4x4
 	if(opc==1 && U && HasSME2()) return urshl_mz_zzw(ctx, dec); // -> urshl_mz_zzw_4x4
-	if(opc!=1) UNALLOCATED(ENC_UNALLOCATED_737_MORTLACH_MULTI4_Z_Z_SHIFT_MM);
+	if(opc!=1) UNALLOCATED(ENC_UNALLOCATED_748_MORTLACH_MULTI4_Z_Z_SHIFT_MM);
 	UNMATCHED;
 }
 
@@ -4570,7 +4600,7 @@ int decode_iclass_mortlach_multi2_z_z_minmax_mm(context *ctx, Instruction *dec)
 	if(!opc && U && HasSME2()) return umax_mz_zzw(ctx, dec); // -> umax_mz_zzw_2x2
 	if(opc==1 && !U && HasSME2()) return smin_mz_zzw(ctx, dec); // -> smin_mz_zzw_2x2
 	if(opc==1 && U && HasSME2()) return umin_mz_zzw(ctx, dec); // -> umin_mz_zzw_2x2
-	if((opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_738_MORTLACH_MULTI2_Z_Z_MINMAX_MM);
+	if((opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_749_MORTLACH_MULTI2_Z_Z_MINMAX_MM);
 	UNMATCHED;
 }
 
@@ -4587,7 +4617,7 @@ int decode_iclass_mortlach_multi2_z_z_fminmax_mm(context *ctx, Instruction *dec)
 	if(size && opc==1 && o2 && HasSME2()) return fminnm_mz_zzw(ctx, dec); // -> fminnm_mz_zzw_2x2
 	if(opc==2 && !o2 && HasSME2() && HasFAMINMAX()) return famax_mz_zzw(ctx, dec); // -> famax_mz_zzw_2x2
 	if(opc==2 && o2 && HasSME2() && HasFAMINMAX()) return famin_mz_zzw(ctx, dec); // -> famin_mz_zzw_2x2
-	if(opc==3) UNALLOCATED(ENC_UNALLOCATED_739_MORTLACH_MULTI2_Z_Z_FMINMAX_MM);
+	if(opc==3) UNALLOCATED(ENC_UNALLOCATED_750_MORTLACH_MULTI2_Z_Z_FMINMAX_MM);
 	UNMATCHED;
 }
 
@@ -4596,8 +4626,8 @@ int decode_iclass_mortlach_multi2_z_z_fscale_mm(context *ctx, Instruction *dec)
 	uint32_t size=(INSWORD>>22)&3, opc=(INSWORD>>5)&3, o2=INSWORD&1;
 	if(!size && !opc && !o2 && HasSME2() && HasSVE_BFSCALE()) return bfscale_mz_zzw(ctx, dec); // -> bfscale_mz_zzw_2x2
 	if(size && !opc && !o2 && HasSME2() && HasFP8()) return fscale_mz_zzw(ctx, dec); // -> fscale_mz_zzw_2x2
-	if(!opc && o2) UNALLOCATED(ENC_UNALLOCATED_741_MORTLACH_MULTI2_Z_Z_FSCALE_MM);
-	if(opc) UNALLOCATED(ENC_UNALLOCATED_740_MORTLACH_MULTI2_Z_Z_FSCALE_MM);
+	if(!opc && o2) UNALLOCATED(ENC_UNALLOCATED_752_MORTLACH_MULTI2_Z_Z_FSCALE_MM);
+	if(opc) UNALLOCATED(ENC_UNALLOCATED_751_MORTLACH_MULTI2_Z_Z_FSCALE_MM);
 	UNMATCHED;
 }
 
@@ -4606,7 +4636,7 @@ int decode_iclass_mortlach_multi2_z_z_shift_mm(context *ctx, Instruction *dec)
 	uint32_t opc=(INSWORD>>5)&7, U=INSWORD&1;
 	if(opc==1 && !U && HasSME2()) return srshl_mz_zzw(ctx, dec); // -> srshl_mz_zzw_2x2
 	if(opc==1 && U && HasSME2()) return urshl_mz_zzw(ctx, dec); // -> urshl_mz_zzw_2x2
-	if(opc!=1) UNALLOCATED(ENC_UNALLOCATED_742_MORTLACH_MULTI2_Z_Z_SHIFT_MM);
+	if(opc!=1) UNALLOCATED(ENC_UNALLOCATED_753_MORTLACH_MULTI2_Z_Z_SHIFT_MM);
 	UNMATCHED;
 }
 
@@ -4614,7 +4644,7 @@ int decode_iclass_mortlach_multi4_z_z_sqdmulh_mm(context *ctx, Instruction *dec)
 {
 	uint32_t op=INSWORD&1;
 	if(!op && HasSME2()) return sqdmulh_mz_zzw(ctx, dec); // -> sqdmulh_mz_zzw_4x4
-	if(op) UNALLOCATED(ENC_UNALLOCATED_743_MORTLACH_MULTI4_Z_Z_SQDMULH_MM);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_754_MORTLACH_MULTI4_Z_Z_SQDMULH_MM);
 	UNMATCHED;
 }
 
@@ -4622,7 +4652,7 @@ int decode_iclass_mortlach_multi2_z_z_sqdmulh_mm(context *ctx, Instruction *dec)
 {
 	uint32_t op=INSWORD&1;
 	if(!op && HasSME2()) return sqdmulh_mz_zzw(ctx, dec); // -> sqdmulh_mz_zzw_2x2
-	if(op) UNALLOCATED(ENC_UNALLOCATED_744_MORTLACH_MULTI2_Z_Z_SQDMULH_MM);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_755_MORTLACH_MULTI2_Z_Z_SQDMULH_MM);
 	UNMATCHED;
 }
 
@@ -4635,8 +4665,8 @@ int decode_iclass_mortlach_multi4_zz_za_mla_long_long_sm(context *ctx, Instructi
 	if(!U && S && !op && HasSME2()) return smlsll_za_zzv(ctx, dec); // -> smlsll_za_zzv_4x1
 	if(U && !S && !op && HasSME2()) return umlall_za_zzv(ctx, dec); // -> umlall_za_zzv_4x1
 	if(U && S && !op && HasSME2()) return umlsll_za_zzv(ctx, dec); // -> umlsll_za_zzv_4x1
-	if(!sz && S && op) UNALLOCATED(ENC_UNALLOCATED_746_MORTLACH_MULTI4_ZZ_ZA_MLA_LONG_LONG_SM);
-	if(sz && op) UNALLOCATED(ENC_UNALLOCATED_745_MORTLACH_MULTI4_ZZ_ZA_MLA_LONG_LONG_SM);
+	if(!sz && S && op) UNALLOCATED(ENC_UNALLOCATED_757_MORTLACH_MULTI4_ZZ_ZA_MLA_LONG_LONG_SM);
+	if(sz && op) UNALLOCATED(ENC_UNALLOCATED_756_MORTLACH_MULTI4_ZZ_ZA_MLA_LONG_LONG_SM);
 	UNMATCHED;
 }
 
@@ -4656,10 +4686,10 @@ int decode_iclass_mortlach_multi4_zz_za_fma_long_sm(context *ctx, Instruction *d
 	if(!op && !S && !o2 && HasSME2()) return fmlal_za_zzv(ctx, dec); // -> fmlal_za_zzv_4x1
 	if(!op && !S && o2 && HasSME_F8F16()) return fmlal_za_z8z8v(ctx, dec); // -> fmlal_za_z8z8v_4x1
 	if(!op && S && !o2 && HasSME2()) return fmlsl_za_zzv(ctx, dec); // -> fmlsl_za_zzv_4x1
-	if(!op && S && o2) UNALLOCATED(ENC_UNALLOCATED_748_MORTLACH_MULTI4_ZZ_ZA_FMA_LONG_SM);
+	if(!op && S && o2) UNALLOCATED(ENC_UNALLOCATED_759_MORTLACH_MULTI4_ZZ_ZA_FMA_LONG_SM);
 	if(op && !S && !o2 && HasSME2()) return bfmlal_za_zzv(ctx, dec); // -> bfmlal_za_zzv_4x1
 	if(op && S && !o2 && HasSME2()) return bfmlsl_za_zzv(ctx, dec); // -> bfmlsl_za_zzv_4x1
-	if(op && o2) UNALLOCATED(ENC_UNALLOCATED_747_MORTLACH_MULTI4_ZZ_ZA_FMA_LONG_SM);
+	if(op && o2) UNALLOCATED(ENC_UNALLOCATED_758_MORTLACH_MULTI4_ZZ_ZA_FMA_LONG_SM);
 	UNMATCHED;
 }
 
@@ -4670,7 +4700,7 @@ int decode_iclass_mortlach_multi4_zz_za_mla_long_sm(context *ctx, Instruction *d
 	if(!U && S && !op && HasSME2()) return smlsl_za_zzv(ctx, dec); // -> smlsl_za_zzv_4x1
 	if(U && !S && !op && HasSME2()) return umlal_za_zzv(ctx, dec); // -> umlal_za_zzv_4x1
 	if(U && S && !op && HasSME2()) return umlsl_za_zzv(ctx, dec); // -> umlsl_za_zzv_4x1
-	if(op) UNALLOCATED(ENC_UNALLOCATED_749_MORTLACH_MULTI4_ZZ_ZA_MLA_LONG_SM);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_760_MORTLACH_MULTI4_ZZ_ZA_MLA_LONG_SM);
 	UNMATCHED;
 }
 
@@ -4748,8 +4778,8 @@ int decode_iclass_mortlach_multi2_zz_za_mla_long_long_sm(context *ctx, Instructi
 	if(!U && S && !op && HasSME2()) return smlsll_za_zzv(ctx, dec); // -> smlsll_za_zzv_2x1
 	if(U && !S && !op && HasSME2()) return umlall_za_zzv(ctx, dec); // -> umlall_za_zzv_2x1
 	if(U && S && !op && HasSME2()) return umlsll_za_zzv(ctx, dec); // -> umlsll_za_zzv_2x1
-	if(!sz && S && op) UNALLOCATED(ENC_UNALLOCATED_751_MORTLACH_MULTI2_ZZ_ZA_MLA_LONG_LONG_SM);
-	if(sz && op) UNALLOCATED(ENC_UNALLOCATED_750_MORTLACH_MULTI2_ZZ_ZA_MLA_LONG_LONG_SM);
+	if(!sz && S && op) UNALLOCATED(ENC_UNALLOCATED_762_MORTLACH_MULTI2_ZZ_ZA_MLA_LONG_LONG_SM);
+	if(sz && op) UNALLOCATED(ENC_UNALLOCATED_761_MORTLACH_MULTI2_ZZ_ZA_MLA_LONG_LONG_SM);
 	UNMATCHED;
 }
 
@@ -4762,13 +4792,13 @@ int decode_iclass_mortlach_multi1_zz_za_mla_long_long_sm(context *ctx, Instructi
 {
 	uint32_t sz=(INSWORD>>22)&1, U=(INSWORD>>4)&1, S=(INSWORD>>3)&1, op=(INSWORD>>2)&1;
 	if(!sz && !U && !S && op && HasSME2()) return usmlall_za_zzv(ctx, dec); // -> usmlall_za_zzv_s
-	if(!sz && !U && S && op) UNALLOCATED(ENC_UNALLOCATED_754_MORTLACH_MULTI1_ZZ_ZA_MLA_LONG_LONG_SM);
+	if(!sz && !U && S && op) UNALLOCATED(ENC_UNALLOCATED_765_MORTLACH_MULTI1_ZZ_ZA_MLA_LONG_LONG_SM);
 	if(!U && !S && !op && HasSME2()) return smlall_za_zzv(ctx, dec); // -> smlall_za_zzv_1
 	if(!U && S && !op && HasSME2()) return smlsll_za_zzv(ctx, dec); // -> smlsll_za_zzv_1
 	if(U && !S && !op && HasSME2()) return umlall_za_zzv(ctx, dec); // -> umlall_za_zzv_1
 	if(U && S && !op && HasSME2()) return umlsll_za_zzv(ctx, dec); // -> umlsll_za_zzv_1
-	if(!sz && U && op) UNALLOCATED(ENC_UNALLOCATED_753_MORTLACH_MULTI1_ZZ_ZA_MLA_LONG_LONG_SM);
-	if(sz && op) UNALLOCATED(ENC_UNALLOCATED_752_MORTLACH_MULTI1_ZZ_ZA_MLA_LONG_LONG_SM);
+	if(!sz && U && op) UNALLOCATED(ENC_UNALLOCATED_764_MORTLACH_MULTI1_ZZ_ZA_MLA_LONG_LONG_SM);
+	if(sz && op) UNALLOCATED(ENC_UNALLOCATED_763_MORTLACH_MULTI1_ZZ_ZA_MLA_LONG_LONG_SM);
 	UNMATCHED;
 }
 
@@ -4778,10 +4808,10 @@ int decode_iclass_mortlach_multi2_zz_za_fma_long_sm(context *ctx, Instruction *d
 	if(!op && !S && !o2 && HasSME2()) return fmlal_za_zzv(ctx, dec); // -> fmlal_za_zzv_2x1
 	if(!op && !S && o2 && HasSME_F8F16()) return fmlal_za_z8z8v(ctx, dec); // -> fmlal_za_z8z8v_2x1
 	if(!op && S && !o2 && HasSME2()) return fmlsl_za_zzv(ctx, dec); // -> fmlsl_za_zzv_2x1
-	if(!op && S && o2) UNALLOCATED(ENC_UNALLOCATED_756_MORTLACH_MULTI2_ZZ_ZA_FMA_LONG_SM);
+	if(!op && S && o2) UNALLOCATED(ENC_UNALLOCATED_767_MORTLACH_MULTI2_ZZ_ZA_FMA_LONG_SM);
 	if(op && !S && !o2 && HasSME2()) return bfmlal_za_zzv(ctx, dec); // -> bfmlal_za_zzv_2x1
 	if(op && S && !o2 && HasSME2()) return bfmlsl_za_zzv(ctx, dec); // -> bfmlsl_za_zzv_2x1
-	if(op && o2) UNALLOCATED(ENC_UNALLOCATED_755_MORTLACH_MULTI2_ZZ_ZA_FMA_LONG_SM);
+	if(op && o2) UNALLOCATED(ENC_UNALLOCATED_766_MORTLACH_MULTI2_ZZ_ZA_FMA_LONG_SM);
 	UNMATCHED;
 }
 
@@ -4792,7 +4822,7 @@ int decode_iclass_mortlach_multi2_zz_za_mla_long_sm(context *ctx, Instruction *d
 	if(!U && S && !op && HasSME2()) return smlsl_za_zzv(ctx, dec); // -> smlsl_za_zzv_2x1
 	if(U && !S && !op && HasSME2()) return umlal_za_zzv(ctx, dec); // -> umlal_za_zzv_2x1
 	if(U && S && !op && HasSME2()) return umlsl_za_zzv(ctx, dec); // -> umlsl_za_zzv_2x1
-	if(op) UNALLOCATED(ENC_UNALLOCATED_757_MORTLACH_MULTI2_ZZ_ZA_MLA_LONG_SM);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_768_MORTLACH_MULTI2_ZZ_ZA_MLA_LONG_SM);
 	UNMATCHED;
 }
 
@@ -4905,7 +4935,7 @@ int decode_iclass_mortlach_multi4_z_z_fscale_sm(context *ctx, Instruction *dec)
 	uint32_t size=(INSWORD>>22)&3, op=INSWORD&1;
 	if(!size && !op && HasSME2() && HasSVE_BFSCALE()) return bfscale_mz_zzv(ctx, dec); // -> bfscale_mz_zzv_4x1
 	if(size && !op && HasSME2() && HasFP8()) return fscale_mz_zzv(ctx, dec); // -> fscale_mz_zzv_4x1
-	if(op) UNALLOCATED(ENC_UNALLOCATED_758_MORTLACH_MULTI4_Z_Z_FSCALE_SM);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_769_MORTLACH_MULTI4_Z_Z_FSCALE_SM);
 	UNMATCHED;
 }
 
@@ -4914,7 +4944,7 @@ int decode_iclass_mortlach_multi4_z_z_shift_sm(context *ctx, Instruction *dec)
 	uint32_t opc=(INSWORD>>5)&7, U=INSWORD&1;
 	if(opc==1 && !U && HasSME2()) return srshl_mz_zzv(ctx, dec); // -> srshl_mz_zzv_4x1
 	if(opc==1 && U && HasSME2()) return urshl_mz_zzv(ctx, dec); // -> urshl_mz_zzv_4x1
-	if(opc!=1) UNALLOCATED(ENC_UNALLOCATED_759_MORTLACH_MULTI4_Z_Z_SHIFT_SM);
+	if(opc!=1) UNALLOCATED(ENC_UNALLOCATED_770_MORTLACH_MULTI4_Z_Z_SHIFT_SM);
 	UNMATCHED;
 }
 
@@ -4922,7 +4952,7 @@ int decode_iclass_mortlach_multi4_z_z_add_sm(context *ctx, Instruction *dec)
 {
 	uint32_t op=INSWORD&1;
 	if(!op && HasSME2()) return add_mz_zzv(ctx, dec); // -> add_mz_zzv_4x1
-	if(op) UNALLOCATED(ENC_UNALLOCATED_760_MORTLACH_MULTI4_Z_Z_ADD_SM);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_771_MORTLACH_MULTI4_Z_Z_ADD_SM);
 	UNMATCHED;
 }
 
@@ -4930,7 +4960,7 @@ int decode_iclass_mortlach_multi4_z_z_sqdmulh_sm(context *ctx, Instruction *dec)
 {
 	uint32_t op=INSWORD&1;
 	if(!op && HasSME2()) return sqdmulh_mz_zzv(ctx, dec); // -> sqdmulh_mz_zzv_4x1
-	if(op) UNALLOCATED(ENC_UNALLOCATED_761_MORTLACH_MULTI4_Z_Z_SQDMULH_SM);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_772_MORTLACH_MULTI4_Z_Z_SQDMULH_SM);
 	UNMATCHED;
 }
 
@@ -4963,7 +4993,7 @@ int decode_iclass_mortlach_multi2_z_z_fscale_sm(context *ctx, Instruction *dec)
 	uint32_t size=(INSWORD>>22)&3, op=INSWORD&1;
 	if(!size && !op && HasSME2() && HasSVE_BFSCALE()) return bfscale_mz_zzv(ctx, dec); // -> bfscale_mz_zzv_2x1
 	if(size && !op && HasSME2() && HasFP8()) return fscale_mz_zzv(ctx, dec); // -> fscale_mz_zzv_2x1
-	if(op) UNALLOCATED(ENC_UNALLOCATED_762_MORTLACH_MULTI2_Z_Z_FSCALE_SM);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_773_MORTLACH_MULTI2_Z_Z_FSCALE_SM);
 	UNMATCHED;
 }
 
@@ -4972,7 +5002,7 @@ int decode_iclass_mortlach_multi2_z_z_shift_sm(context *ctx, Instruction *dec)
 	uint32_t opc=(INSWORD>>5)&7, U=INSWORD&1;
 	if(opc==1 && !U && HasSME2()) return srshl_mz_zzv(ctx, dec); // -> srshl_mz_zzv_2x1
 	if(opc==1 && U && HasSME2()) return urshl_mz_zzv(ctx, dec); // -> urshl_mz_zzv_2x1
-	if(opc!=1) UNALLOCATED(ENC_UNALLOCATED_763_MORTLACH_MULTI2_Z_Z_SHIFT_SM);
+	if(opc!=1) UNALLOCATED(ENC_UNALLOCATED_774_MORTLACH_MULTI2_Z_Z_SHIFT_SM);
 	UNMATCHED;
 }
 
@@ -4980,7 +5010,7 @@ int decode_iclass_mortlach_multi2_z_z_add_sm(context *ctx, Instruction *dec)
 {
 	uint32_t op=INSWORD&1;
 	if(!op && HasSME2()) return add_mz_zzv(ctx, dec); // -> add_mz_zzv_2x1
-	if(op) UNALLOCATED(ENC_UNALLOCATED_764_MORTLACH_MULTI2_Z_Z_ADD_SM);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_775_MORTLACH_MULTI2_Z_Z_ADD_SM);
 	UNMATCHED;
 }
 
@@ -4988,7 +5018,7 @@ int decode_iclass_mortlach_multi2_z_z_sqdmulh_sm(context *ctx, Instruction *dec)
 {
 	uint32_t op=INSWORD&1;
 	if(!op && HasSME2()) return sqdmulh_mz_zzv(ctx, dec); // -> sqdmulh_mz_zzv_2x1
-	if(op) UNALLOCATED(ENC_UNALLOCATED_765_MORTLACH_MULTI2_Z_Z_SQDMULH_SM);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_776_MORTLACH_MULTI2_Z_Z_SQDMULH_SM);
 	UNMATCHED;
 }
 
@@ -4997,7 +5027,7 @@ int decode_iclass_mortlach_multi2_fclamp(context *ctx, Instruction *dec)
 	uint32_t size=(INSWORD>>22)&3, op=INSWORD&1;
 	if(!size && !op && HasSME2() && HasSVE_B16B16()) return bfclamp_mz_zz(ctx, dec); // -> bfclamp_mz_zz_2
 	if(size && !op && HasSME2()) return fclamp_mz_zz(ctx, dec); // -> fclamp_mz_zz_2
-	if(op) UNALLOCATED(ENC_UNALLOCATED_766_MORTLACH_MULTI2_FCLAMP);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_777_MORTLACH_MULTI2_FCLAMP);
 	UNMATCHED;
 }
 
@@ -5014,7 +5044,7 @@ int decode_iclass_mortlach_multi4_fclamp(context *ctx, Instruction *dec)
 	uint32_t size=(INSWORD>>22)&3, op=INSWORD&1;
 	if(!size && !op && HasSME2() && HasSVE_B16B16()) return bfclamp_mz_zz(ctx, dec); // -> bfclamp_mz_zz_4
 	if(size && !op && HasSME2()) return fclamp_mz_zz(ctx, dec); // -> fclamp_mz_zz_4
-	if(op) UNALLOCATED(ENC_UNALLOCATED_767_MORTLACH_MULTI4_FCLAMP);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_778_MORTLACH_MULTI4_FCLAMP);
 	UNMATCHED;
 }
 
@@ -5048,7 +5078,7 @@ int decode_iclass_mortlach_multi2_qrshr(context *ctx, Instruction *dec)
 	if(!op && !U && HasSME2()) return sqrshr_z_mz2(ctx, dec); // -> sqrshr_z_mz2_
 	if(!op && U && HasSME2()) return uqrshr_z_mz2(ctx, dec); // -> uqrshr_z_mz2_
 	if(op && !U && HasSME2()) return sqrshru_z_mz2(ctx, dec); // -> sqrshru_z_mz2_
-	if(op && U) UNALLOCATED(ENC_UNALLOCATED_768_MORTLACH_MULTI2_QRSHR);
+	if(op && U) UNALLOCATED(ENC_UNALLOCATED_779_MORTLACH_MULTI2_QRSHR);
 	UNMATCHED;
 }
 
@@ -5061,7 +5091,7 @@ int decode_iclass_mortlach_multi4_qrshr(context *ctx, Instruction *dec)
 	if(N && !op && !U && HasSME2()) return sqrshrn_z_mz4(ctx, dec); // -> sqrshrn_z_mz4_
 	if(N && !op && U && HasSME2()) return uqrshrn_z_mz4(ctx, dec); // -> uqrshrn_z_mz4_
 	if(N && op && !U && HasSME2()) return sqrshrun_z_mz4(ctx, dec); // -> sqrshrun_z_mz4_
-	if(op && U) UNALLOCATED(ENC_UNALLOCATED_769_MORTLACH_MULTI4_QRSHR);
+	if(op && U) UNALLOCATED(ENC_UNALLOCATED_780_MORTLACH_MULTI4_QRSHR);
 	UNMATCHED;
 }
 
@@ -5097,7 +5127,7 @@ int decode_iclass_mortlach_multi2_narrow_int_cvrt(context *ctx, Instruction *dec
 	if(!op && !U && HasSME2()) return sqcvt_z_mz2(ctx, dec); // -> sqcvt_z_mz2_
 	if(!op && U && HasSME2()) return uqcvt_z_mz2(ctx, dec); // -> uqcvt_z_mz2_
 	if(op && !U && HasSME2()) return sqcvtu_z_mz2(ctx, dec); // -> sqcvtu_z_mz2_
-	if(op && U) UNALLOCATED(ENC_UNALLOCATED_770_MORTLACH_MULTI2_NARROW_INT_CVRT);
+	if(op && U) UNALLOCATED(ENC_UNALLOCATED_781_MORTLACH_MULTI2_NARROW_INT_CVRT);
 	UNMATCHED;
 }
 
@@ -5137,11 +5167,11 @@ int decode_iclass_mortlach_multi2_frint(context *ctx, Instruction *dec)
 	if(size==2 && !opc && HasSME2()) return frintn_mz_z(ctx, dec); // -> frintn_mz_z_2
 	if(size==2 && opc==1 && HasSME2()) return frintp_mz_z(ctx, dec); // -> frintp_mz_z_2
 	if(size==2 && opc==2 && HasSME2()) return frintm_mz_z(ctx, dec); // -> frintm_mz_z_2
-	if(size==2 && opc==3) UNALLOCATED(ENC_UNALLOCATED_774_MORTLACH_MULTI2_FRINT);
+	if(size==2 && opc==3) UNALLOCATED(ENC_UNALLOCATED_784_MORTLACH_MULTI2_FRINT);
 	if(size==2 && opc==4 && HasSME2()) return frinta_mz_z(ctx, dec); // -> frinta_mz_z_2
-	if(size==2 && opc==5) UNALLOCATED(ENC_UNALLOCATED_773_MORTLACH_MULTI2_FRINT);
-	if(size==2 && (opc&6)==6) UNALLOCATED(ENC_UNALLOCATED_772_MORTLACH_MULTI2_FRINT);
-	if(size!=2) UNALLOCATED(ENC_UNALLOCATED_771_MORTLACH_MULTI2_FRINT);
+	if(size==2 && opc==5) UNALLOCATED(ENC_UNALLOCATED_785_MORTLACH_MULTI2_FRINT);
+	if(size==2 && (opc&6)==6) UNALLOCATED(ENC_UNALLOCATED_783_MORTLACH_MULTI2_FRINT);
+	if(size!=2) UNALLOCATED(ENC_UNALLOCATED_782_MORTLACH_MULTI2_FRINT);
 	UNMATCHED;
 }
 
@@ -5178,7 +5208,7 @@ int decode_iclass_mortlach_multi4_narrow_int_cvrt(context *ctx, Instruction *dec
 	if(!op && N && U && HasSME2()) return uqcvtn_z_mz4(ctx, dec); // -> uqcvtn_z_mz4_
 	if(op && !N && !U && HasSME2()) return sqcvtu_z_mz4(ctx, dec); // -> sqcvtu_z_mz4_
 	if(op && N && !U && HasSME2()) return sqcvtun_z_mz4(ctx, dec); // -> sqcvtun_z_mz4_
-	if(op && U) UNALLOCATED(ENC_UNALLOCATED_775_MORTLACH_MULTI4_NARROW_INT_CVRT);
+	if(op && U) UNALLOCATED(ENC_UNALLOCATED_786_MORTLACH_MULTI4_NARROW_INT_CVRT);
 	UNMATCHED;
 }
 
@@ -5220,11 +5250,11 @@ int decode_iclass_mortlach_multi4_frint(context *ctx, Instruction *dec)
 	if(size==2 && !opc && HasSME2()) return frintn_mz_z(ctx, dec); // -> frintn_mz_z_4
 	if(size==2 && opc==1 && HasSME2()) return frintp_mz_z(ctx, dec); // -> frintp_mz_z_4
 	if(size==2 && opc==2 && HasSME2()) return frintm_mz_z(ctx, dec); // -> frintm_mz_z_4
-	if(size==2 && opc==3) UNALLOCATED(ENC_UNALLOCATED_779_MORTLACH_MULTI4_FRINT);
+	if(size==2 && opc==3) UNALLOCATED(ENC_UNALLOCATED_789_MORTLACH_MULTI4_FRINT);
 	if(size==2 && opc==4 && HasSME2()) return frinta_mz_z(ctx, dec); // -> frinta_mz_z_4
-	if(size==2 && opc==5) UNALLOCATED(ENC_UNALLOCATED_778_MORTLACH_MULTI4_FRINT);
-	if(size==2 && (opc&6)==6) UNALLOCATED(ENC_UNALLOCATED_777_MORTLACH_MULTI4_FRINT);
-	if(size!=2) UNALLOCATED(ENC_UNALLOCATED_776_MORTLACH_MULTI4_FRINT);
+	if(size==2 && opc==5) UNALLOCATED(ENC_UNALLOCATED_790_MORTLACH_MULTI4_FRINT);
+	if(size==2 && (opc&6)==6) UNALLOCATED(ENC_UNALLOCATED_788_MORTLACH_MULTI4_FRINT);
+	if(size!=2) UNALLOCATED(ENC_UNALLOCATED_787_MORTLACH_MULTI4_FRINT);
 	UNMATCHED;
 }
 
@@ -5246,12 +5276,12 @@ int decode_iclass_mortlach_multi_zero(context *ctx, Instruction *dec)
 	if(opc==2 && !(opc2&4) && HasSME2p1()) return zero_za2_ri(ctx, dec); // -> zero_za2_ri_2
 	if(opc==3 && !(opc2&4) && HasSME2p1()) return zero_za2_ri(ctx, dec); // -> zero_za2_ri_4
 	if(opc==5 && !(opc2&4) && HasSME2p1()) return zero_za4_ri(ctx, dec); // -> zero_za4_ri_1
-	if(opc==5 && (opc2&4)==4) UNALLOCATED(ENC_UNALLOCATED_782_MORTLACH_MULTI_ZERO);
-	if((opc&6)==6 && (opc2&6)==2) UNALLOCATED(ENC_UNALLOCATED_781_MORTLACH_MULTI_ZERO);
+	if(opc==5 && (opc2&4)==4) UNALLOCATED(ENC_UNALLOCATED_792_MORTLACH_MULTI_ZERO);
+	if((opc&6)==6 && (opc2&6)==2) UNALLOCATED(ENC_UNALLOCATED_793_MORTLACH_MULTI_ZERO);
 	if(!opc && HasSME2p1()) return zero_za1_ri(ctx, dec); // -> zero_za1_ri_2
 	if(opc==1 && HasSME2p1()) return zero_za2_ri(ctx, dec); // -> zero_za2_ri_1
 	if(opc==4 && HasSME2p1()) return zero_za1_ri(ctx, dec); // -> zero_za1_ri_4
-	if((opc&2)==2 && (opc2&4)==4) UNALLOCATED(ENC_UNALLOCATED_780_MORTLACH_MULTI_ZERO);
+	if((opc&2)==2 && (opc2&4)==4) UNALLOCATED(ENC_UNALLOCATED_791_MORTLACH_MULTI_ZERO);
 	UNMATCHED;
 }
 
@@ -5559,8 +5589,8 @@ int decode_iclass_mortlach_zero_zt(context *ctx, Instruction *dec)
 {
 	uint32_t op0=(INSWORD>>4)&0x3fff, opc=INSWORD&15;
 	if(!op0 && opc==1 && HasSME2()) return zero_zt_i(ctx, dec); // -> zero_zt_i_
-	if(!op0 && opc!=1) UNALLOCATED(ENC_UNALLOCATED_784_MORTLACH_ZERO_ZT);
-	if(op0) UNALLOCATED(ENC_UNALLOCATED_783_MORTLACH_ZERO_ZT);
+	if(!op0 && opc!=1) UNALLOCATED(ENC_UNALLOCATED_795_MORTLACH_ZERO_ZT);
+	if(op0) UNALLOCATED(ENC_UNALLOCATED_794_MORTLACH_ZERO_ZT);
 	UNMATCHED;
 }
 
@@ -5611,7 +5641,7 @@ int decode_iclass_sve_int_tern_log(context *ctx, Instruction *dec)
 	if(opc==1 && o2 && HasSVE2() && HasSME()) return bsl1n_z_zzz(ctx, dec); // -> bsl1n_z_zzz_
 	if(opc==2 && o2 && HasSVE2() && HasSME()) return bsl2n_z_zzz(ctx, dec); // -> bsl2n_z_zzz_
 	if(opc==3 && o2 && HasSVE2() && HasSME()) return nbsl_z_zzz(ctx, dec); // -> nbsl_z_zzz_
-	if((opc&2)==2 && !o2) UNALLOCATED(ENC_UNALLOCATED_481_SVE_INT_TERN_LOG);
+	if((opc&2)==2 && !o2) UNALLOCATED(ENC_UNALLOCATED_487_SVE_INT_TERN_LOG);
 	UNMATCHED;
 }
 
@@ -5620,17 +5650,17 @@ int decode_iclass_sve_int_bin_pred_shift_0(context *ctx, Instruction *dec)
 	uint32_t opc=(INSWORD>>18)&3, L=(INSWORD>>17)&1, U=(INSWORD>>16)&1;
 	if(!opc && !L && !U && HasSVE() && HasSME()) return asr_z_p_zi(ctx, dec); // -> asr_z_p_zi_
 	if(!opc && !L && U && HasSVE() && HasSME()) return lsr_z_p_zi(ctx, dec); // -> lsr_z_p_zi_
-	if(!opc && L && !U) UNALLOCATED(ENC_UNALLOCATED_484_SVE_INT_BIN_PRED_SHIFT_0);
+	if(!opc && L && !U) UNALLOCATED(ENC_UNALLOCATED_489_SVE_INT_BIN_PRED_SHIFT_0);
 	if(!opc && L && U && HasSVE() && HasSME()) return lsl_z_p_zi(ctx, dec); // -> lsl_z_p_zi_
 	if(opc==1 && !L && !U && HasSVE() && HasSME()) return asrd_z_p_zi(ctx, dec); // -> asrd_z_p_zi_
-	if(opc==1 && !L && U) UNALLOCATED(ENC_UNALLOCATED_485_SVE_INT_BIN_PRED_SHIFT_0);
+	if(opc==1 && !L && U) UNALLOCATED(ENC_UNALLOCATED_490_SVE_INT_BIN_PRED_SHIFT_0);
 	if(opc==1 && L && !U && HasSVE2() && HasSME()) return sqshl_z_p_zi(ctx, dec); // -> sqshl_z_p_zi_
 	if(opc==1 && L && U && HasSVE2() && HasSME()) return uqshl_z_p_zi(ctx, dec); // -> uqshl_z_p_zi_
 	if(opc==3 && !L && !U && HasSVE2() && HasSME()) return srshr_z_p_zi(ctx, dec); // -> srshr_z_p_zi_
 	if(opc==3 && !L && U && HasSVE2() && HasSME()) return urshr_z_p_zi(ctx, dec); // -> urshr_z_p_zi_
-	if(opc==3 && L && !U) UNALLOCATED(ENC_UNALLOCATED_483_SVE_INT_BIN_PRED_SHIFT_0);
+	if(opc==3 && L && !U) UNALLOCATED(ENC_UNALLOCATED_491_SVE_INT_BIN_PRED_SHIFT_0);
 	if(opc==3 && L && U && HasSVE2() && HasSME()) return sqshlu_z_p_zi(ctx, dec); // -> sqshlu_z_p_zi_
-	if(opc==2) UNALLOCATED(ENC_UNALLOCATED_482_SVE_INT_BIN_PRED_SHIFT_0);
+	if(opc==2) UNALLOCATED(ENC_UNALLOCATED_488_SVE_INT_BIN_PRED_SHIFT_0);
 	UNMATCHED;
 }
 
@@ -5643,7 +5673,7 @@ int decode_iclass_sve_int_bin_pred_shift_1(context *ctx, Instruction *dec)
 	if(R && !L && !U && HasSVE() && HasSME()) return asrr_z_p_zz(ctx, dec); // -> asrr_z_p_zz_
 	if(R && !L && U && HasSVE() && HasSME()) return lsrr_z_p_zz(ctx, dec); // -> lsrr_z_p_zz_
 	if(R && L && U && HasSVE() && HasSME()) return lslr_z_p_zz(ctx, dec); // -> lslr_z_p_zz_
-	if(L && !U) UNALLOCATED(ENC_UNALLOCATED_486_SVE_INT_BIN_PRED_SHIFT_1);
+	if(L && !U) UNALLOCATED(ENC_UNALLOCATED_492_SVE_INT_BIN_PRED_SHIFT_1);
 	UNMATCHED;
 }
 
@@ -5652,9 +5682,9 @@ int decode_iclass_sve_int_bin_pred_shift_2(context *ctx, Instruction *dec)
 	uint32_t R=(INSWORD>>18)&1, L=(INSWORD>>17)&1, U=(INSWORD>>16)&1;
 	if(!R && !L && !U && HasSVE() && HasSME()) return asr_z_p_zw(ctx, dec); // -> asr_z_p_zw_
 	if(!R && !L && U && HasSVE() && HasSME()) return lsr_z_p_zw(ctx, dec); // -> lsr_z_p_zw_
-	if(!R && L && !U) UNALLOCATED(ENC_UNALLOCATED_488_SVE_INT_BIN_PRED_SHIFT_2);
+	if(!R && L && !U) UNALLOCATED(ENC_UNALLOCATED_494_SVE_INT_BIN_PRED_SHIFT_2);
 	if(!R && L && U && HasSVE() && HasSME()) return lsl_z_p_zw(ctx, dec); // -> lsl_z_p_zw_
-	if(R) UNALLOCATED(ENC_UNALLOCATED_487_SVE_INT_BIN_PRED_SHIFT_2);
+	if(R) UNALLOCATED(ENC_UNALLOCATED_493_SVE_INT_BIN_PRED_SHIFT_2);
 	UNMATCHED;
 }
 
@@ -5663,7 +5693,7 @@ int decode_iclass_sve_int_bin_cons_shift_a(context *ctx, Instruction *dec)
 	uint32_t opc=(INSWORD>>10)&3;
 	if(!opc && HasSVE() && HasSME()) return asr_z_zw(ctx, dec); // -> asr_z_zw_
 	if(opc==1 && HasSVE() && HasSME()) return lsr_z_zw(ctx, dec); // -> lsr_z_zw_
-	if(opc==2) UNALLOCATED(ENC_UNALLOCATED_489_SVE_INT_BIN_CONS_SHIFT_A);
+	if(opc==2) UNALLOCATED(ENC_UNALLOCATED_495_SVE_INT_BIN_CONS_SHIFT_A);
 	if(opc==3 && HasSVE() && HasSME()) return lsl_z_zw(ctx, dec); // -> lsl_z_zw_
 	UNMATCHED;
 }
@@ -5673,7 +5703,7 @@ int decode_iclass_sve_int_bin_cons_shift_b(context *ctx, Instruction *dec)
 	uint32_t opc=(INSWORD>>10)&3;
 	if(!opc && HasSVE() && HasSME()) return asr_z_zi(ctx, dec); // -> asr_z_zi_
 	if(opc==1 && HasSVE() && HasSME()) return lsr_z_zi(ctx, dec); // -> lsr_z_zi_
-	if(opc==2) UNALLOCATED(ENC_UNALLOCATED_490_SVE_INT_BIN_CONS_SHIFT_B);
+	if(opc==2) UNALLOCATED(ENC_UNALLOCATED_496_SVE_INT_BIN_CONS_SHIFT_B);
 	if(opc==3 && HasSVE() && HasSME()) return lsl_z_zi(ctx, dec); // -> lsl_z_zi_
 	UNMATCHED;
 }
@@ -5693,7 +5723,7 @@ int decode_iclass_sve_int_countvlv0(context *ctx, Instruction *dec)
 	if(size==3 && !D && U && HasSVE() && HasSME()) return uqincd_z_zs(ctx, dec); // -> uqincd_z_zs_
 	if(size==3 && D && !U && HasSVE() && HasSME()) return sqdecd_z_zs(ctx, dec); // -> sqdecd_z_zs_
 	if(size==3 && D && U && HasSVE() && HasSME()) return uqdecd_z_zs(ctx, dec); // -> uqdecd_z_zs_
-	if(!size) UNALLOCATED(ENC_UNALLOCATED_491_SVE_INT_COUNTVLV0);
+	if(!size) UNALLOCATED(ENC_UNALLOCATED_497_SVE_INT_COUNTVLV0);
 	UNMATCHED;
 }
 
@@ -5706,7 +5736,7 @@ int decode_iclass_sve_int_countvlv1(context *ctx, Instruction *dec)
 	if(size==2 && D && HasSVE() && HasSME()) return decd_z_zs(ctx, dec); // -> decw_z_zs_
 	if(size==3 && !D && HasSVE() && HasSME()) return incd_z_zs(ctx, dec); // -> incd_z_zs_
 	if(size==3 && D && HasSVE() && HasSME()) return decd_z_zs(ctx, dec); // -> decd_z_zs_
-	if(!size) UNALLOCATED(ENC_UNALLOCATED_492_SVE_INT_COUNTVLV1);
+	if(!size) UNALLOCATED(ENC_UNALLOCATED_498_SVE_INT_COUNTVLV1);
 	UNMATCHED;
 }
 
@@ -5717,7 +5747,7 @@ int decode_iclass_sve_int_count(context *ctx, Instruction *dec)
 	if(size==1 && !op && HasSVE() && HasSME()) return cntb_r_s(ctx, dec); // -> cnth_r_s_
 	if(size==2 && !op && HasSVE() && HasSME()) return cntb_r_s(ctx, dec); // -> cntw_r_s_
 	if(size==3 && !op && HasSVE() && HasSME()) return cntb_r_s(ctx, dec); // -> cntd_r_s_
-	if(op) UNALLOCATED(ENC_UNALLOCATED_493_SVE_INT_COUNT);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_499_SVE_INT_COUNT);
 	UNMATCHED;
 }
 
@@ -5788,7 +5818,7 @@ int decode_iclass_sve_int_count_v_sat(context *ctx, Instruction *dec)
 	if(!D && U && !opc && HasSVE() && HasSME()) return uqincp_z_p_z(ctx, dec); // -> uqincp_z_p_z_
 	if(D && !U && !opc && HasSVE() && HasSME()) return sqdecp_z_p_z(ctx, dec); // -> sqdecp_z_p_z_
 	if(D && U && !opc && HasSVE() && HasSME()) return uqdecp_z_p_z(ctx, dec); // -> uqdecp_z_p_z_
-	if(opc) UNALLOCATED(ENC_UNALLOCATED_494_SVE_INT_COUNT_V_SAT);
+	if(opc) UNALLOCATED(ENC_UNALLOCATED_500_SVE_INT_COUNT_V_SAT);
 	UNMATCHED;
 }
 
@@ -5797,8 +5827,8 @@ int decode_iclass_sve_int_count_v(context *ctx, Instruction *dec)
 	uint32_t op=(INSWORD>>17)&1, D=(INSWORD>>16)&1, opc2=(INSWORD>>9)&3;
 	if(!op && !D && !opc2 && HasSVE() && HasSME()) return incp_z_p_z(ctx, dec); // -> incp_z_p_z_
 	if(!op && D && !opc2 && HasSVE() && HasSME()) return decp_z_p_z(ctx, dec); // -> decp_z_p_z_
-	if(!op && opc2) UNALLOCATED(ENC_UNALLOCATED_496_SVE_INT_COUNT_V);
-	if(op) UNALLOCATED(ENC_UNALLOCATED_495_SVE_INT_COUNT_V);
+	if(!op && opc2) UNALLOCATED(ENC_UNALLOCATED_502_SVE_INT_COUNT_V);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_501_SVE_INT_COUNT_V);
 	UNMATCHED;
 }
 
@@ -5813,7 +5843,7 @@ int decode_iclass_sve_int_count_r_sat(context *ctx, Instruction *dec)
 	if(D && !U && sf && !op && HasSVE() && HasSME()) return sqdecp_r_p_r(ctx, dec); // -> sqdecp_r_p_r_x
 	if(D && U && !sf && !op && HasSVE() && HasSME()) return uqdecp_r_p_r(ctx, dec); // -> uqdecp_r_p_r_uw
 	if(D && U && sf && !op && HasSVE() && HasSME()) return uqdecp_r_p_r(ctx, dec); // -> uqdecp_r_p_r_x
-	if(op) UNALLOCATED(ENC_UNALLOCATED_497_SVE_INT_COUNT_R_SAT);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_503_SVE_INT_COUNT_R_SAT);
 	UNMATCHED;
 }
 
@@ -5822,8 +5852,8 @@ int decode_iclass_sve_int_count_r(context *ctx, Instruction *dec)
 	uint32_t op=(INSWORD>>17)&1, D=(INSWORD>>16)&1, opc2=(INSWORD>>9)&3;
 	if(!op && !D && !opc2 && HasSVE() && HasSME()) return incp_r_p_r(ctx, dec); // -> incp_r_p_r_
 	if(!op && D && !opc2 && HasSVE() && HasSME()) return decp_r_p_r(ctx, dec); // -> decp_r_p_r_
-	if(!op && opc2) UNALLOCATED(ENC_UNALLOCATED_499_SVE_INT_COUNT_R);
-	if(op) UNALLOCATED(ENC_UNALLOCATED_498_SVE_INT_COUNT_R);
+	if(!op && opc2) UNALLOCATED(ENC_UNALLOCATED_505_SVE_INT_COUNT_R);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_504_SVE_INT_COUNT_R);
 	UNMATCHED;
 }
 
@@ -5852,7 +5882,7 @@ int decode_iclass_sve_int_bin_cons_arit_0(context *ctx, Instruction *dec)
 	uint32_t size=(INSWORD>>22)&3, opc=(INSWORD>>10)&7;
 	if(size==3 && opc==2 && HasSVE() && HasCPA()) return addpt_z_zz(ctx, dec); // -> addpt_z_zz_
 	if(size==3 && opc==3 && HasSVE() && HasCPA()) return subpt_z_zz(ctx, dec); // -> subpt_z_zz_
-	if(size!=3 && (opc&6)==2) UNALLOCATED(ENC_UNALLOCATED_500_SVE_INT_BIN_CONS_ARIT_0);
+	if(size!=3 && (opc&6)==2) UNALLOCATED(ENC_UNALLOCATED_506_SVE_INT_BIN_CONS_ARIT_0);
 	if(!opc && HasSVE() && HasSME()) return add_z_zz(ctx, dec); // -> add_z_zz_
 	if(opc==1 && HasSVE() && HasSME()) return sub_z_zz(ctx, dec); // -> sub_z_zz_
 	if(opc==4 && HasSVE() && HasSME()) return sqadd_z_zz(ctx, dec); // -> sqadd_z_zz_
@@ -5867,12 +5897,12 @@ int decode_iclass_sve_int_bin_pred_arit_0(context *ctx, Instruction *dec)
 	uint32_t size=(INSWORD>>22)&3, opc=(INSWORD>>16)&7;
 	if(size==3 && opc==4 && HasSVE() && HasCPA()) return addpt_z_p_zz(ctx, dec); // -> addpt_z_p_zz_
 	if(size==3 && opc==5 && HasSVE() && HasCPA()) return subpt_z_p_zz(ctx, dec); // -> subpt_z_p_zz_
-	if(size==3 && (opc&6)==6) UNALLOCATED(ENC_UNALLOCATED_502_SVE_INT_BIN_PRED_ARIT_0);
+	if(size==3 && (opc&6)==6) UNALLOCATED(ENC_UNALLOCATED_509_SVE_INT_BIN_PRED_ARIT_0);
 	if(!opc && HasSVE() && HasSME()) return add_z_p_zz(ctx, dec); // -> add_z_p_zz_
 	if(opc==1 && HasSVE() && HasSME()) return sub_z_p_zz(ctx, dec); // -> sub_z_p_zz_
-	if(opc==2) UNALLOCATED(ENC_UNALLOCATED_503_SVE_INT_BIN_PRED_ARIT_0);
+	if(opc==2) UNALLOCATED(ENC_UNALLOCATED_508_SVE_INT_BIN_PRED_ARIT_0);
 	if(opc==3 && HasSVE() && HasSME()) return subr_z_p_zz(ctx, dec); // -> subr_z_p_zz_
-	if(size!=3 && (opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_501_SVE_INT_BIN_PRED_ARIT_0);
+	if(size!=3 && (opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_507_SVE_INT_BIN_PRED_ARIT_0);
 	UNMATCHED;
 }
 
@@ -5885,7 +5915,7 @@ int decode_iclass_sve_int_bin_pred_arit_1(context *ctx, Instruction *dec)
 	if(opc==1 && U && HasSVE() && HasSME()) return umin_z_p_zz(ctx, dec); // -> umin_z_p_zz_
 	if(opc==2 && !U && HasSVE() && HasSME()) return sabd_z_p_zz(ctx, dec); // -> sabd_z_p_zz_
 	if(opc==2 && U && HasSVE() && HasSME()) return uabd_z_p_zz(ctx, dec); // -> uabd_z_p_zz_
-	if(opc==3) UNALLOCATED(ENC_UNALLOCATED_504_SVE_INT_BIN_PRED_ARIT_1);
+	if(opc==3) UNALLOCATED(ENC_UNALLOCATED_510_SVE_INT_BIN_PRED_ARIT_1);
 	UNMATCHED;
 }
 
@@ -5893,7 +5923,7 @@ int decode_iclass_sve_int_bin_pred_arit_2(context *ctx, Instruction *dec)
 {
 	uint32_t H=(INSWORD>>17)&1, U=(INSWORD>>16)&1;
 	if(!H && !U && HasSVE() && HasSME()) return mul_z_p_zz(ctx, dec); // -> mul_z_p_zz_
-	if(!H && U) UNALLOCATED(ENC_UNALLOCATED_505_SVE_INT_BIN_PRED_ARIT_2);
+	if(!H && U) UNALLOCATED(ENC_UNALLOCATED_511_SVE_INT_BIN_PRED_ARIT_2);
 	if(H && !U && HasSVE() && HasSME()) return smulh_z_p_zz(ctx, dec); // -> smulh_z_p_zz_
 	if(H && U && HasSVE() && HasSME()) return umulh_z_p_zz(ctx, dec); // -> umulh_z_p_zz_
 	UNMATCHED;
@@ -5916,7 +5946,7 @@ int decode_iclass_sve_int_bin_pred_log(context *ctx, Instruction *dec)
 	if(opc==1 && HasSVE() && HasSME()) return eor_z_p_zz(ctx, dec); // -> eor_z_p_zz_
 	if(opc==2 && HasSVE() && HasSME()) return and_z_p_zz(ctx, dec); // -> and_z_p_zz_
 	if(opc==3 && HasSVE() && HasSME()) return bic_z_p_zz(ctx, dec); // -> bic_z_p_zz_
-	if((opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_506_SVE_INT_BIN_PRED_LOG);
+	if((opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_512_SVE_INT_BIN_PRED_LOG);
 	UNMATCHED;
 }
 
@@ -5939,7 +5969,7 @@ int decode_iclass_sve_int_cterm(context *ctx, Instruction *dec)
 	uint32_t op=(INSWORD>>23)&1, ne=(INSWORD>>4)&1;
 	if(op && !ne && HasSVE() && HasSME()) return ctermeq_rr(ctx, dec); // -> ctermeq_rr_
 	if(op && ne && HasSVE() && HasSME()) return ctermeq_rr(ctx, dec); // -> ctermne_rr_
-	if(!op) UNALLOCATED(ENC_UNALLOCATED_507_SVE_INT_CTERM);
+	if(!op) UNALLOCATED(ENC_UNALLOCATED_513_SVE_INT_CTERM);
 	UNMATCHED;
 }
 
@@ -5960,7 +5990,7 @@ int decode_iclass_sve_int_scmp_vi(context *ctx, Instruction *dec)
 	if(!op && o2 && ne && HasSVE() && HasSME()) return cmpeq_p_p_zi(ctx, dec); // -> cmple_p_p_zi_
 	if(op && !o2 && !ne && HasSVE() && HasSME()) return cmpeq_p_p_zi(ctx, dec); // -> cmpeq_p_p_zi_
 	if(op && !o2 && ne && HasSVE() && HasSME()) return cmpeq_p_p_zi(ctx, dec); // -> cmpne_p_p_zi_
-	if(op && o2) UNALLOCATED(ENC_UNALLOCATED_508_SVE_INT_SCMP_VI);
+	if(op && o2) UNALLOCATED(ENC_UNALLOCATED_514_SVE_INT_SCMP_VI);
 	UNMATCHED;
 }
 
@@ -6006,7 +6036,7 @@ int decode_iclass_sve_int_bin_cons_misc_0_b(context *ctx, Instruction *dec)
 {
 	uint32_t op=(INSWORD>>10)&1;
 	if(!op && HasSVE()) return ftssel_z_zz(ctx, dec); // -> ftssel_z_zz_
-	if(op) UNALLOCATED(ENC_UNALLOCATED_509_SVE_INT_BIN_CONS_MISC_0_B);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_515_SVE_INT_BIN_CONS_MISC_0_B);
 	UNMATCHED;
 }
 
@@ -6014,7 +6044,7 @@ int decode_iclass_sve_int_bin_cons_misc_0_c(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>16)&0x1f;
 	if(!opc && HasSVE() && HasSSVE_FEXPA()) return fexpa_z_z(ctx, dec); // -> fexpa_z_z_
-	if(opc) UNALLOCATED(ENC_UNALLOCATED_510_SVE_INT_BIN_CONS_MISC_0_C);
+	if(opc) UNALLOCATED(ENC_UNALLOCATED_516_SVE_INT_BIN_CONS_MISC_0_C);
 	UNMATCHED;
 }
 
@@ -6022,8 +6052,8 @@ int decode_iclass_sve_int_bin_cons_misc_0_d(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>22)&3, opc2=(INSWORD>>16)&0x1f;
 	if(!opc && !opc2 && HasSVE() && HasSME()) return movprfx_z_z(ctx, dec); // -> movprfx_z_z_
-	if(!opc && opc2) UNALLOCATED(ENC_UNALLOCATED_512_SVE_INT_BIN_CONS_MISC_0_D);
-	if(opc) UNALLOCATED(ENC_UNALLOCATED_511_SVE_INT_BIN_CONS_MISC_0_D);
+	if(!opc && opc2) UNALLOCATED(ENC_UNALLOCATED_518_SVE_INT_BIN_CONS_MISC_0_D);
+	if(opc) UNALLOCATED(ENC_UNALLOCATED_517_SVE_INT_BIN_CONS_MISC_0_D);
 	UNMATCHED;
 }
 
@@ -6046,9 +6076,11 @@ int decode_iclass_sve_int_mladdsub_vvv_pred(context *ctx, Instruction *dec)
 int decode_iclass_sve_intx_dot(context *ctx, Instruction *dec)
 {
 	uint32_t size=(INSWORD>>22)&3, U=(INSWORD>>10)&1;
+	if(size==1 && !U && HasSVE2p3() && HasSME2p3()) return sdot_z32_zzz(ctx, dec); // -> sdot_z16_zzz_h
+	if(size==1 && U && HasSVE2p3() && HasSME2p3()) return udot_z32_zzz(ctx, dec); // -> udot_z16_zzz_h
+	if(!size) UNALLOCATED(ENC_UNALLOCATED_519_SVE_INTX_DOT);
 	if((size&2)==2 && !U && HasSVE() && HasSME()) return sdot_z_zzz(ctx, dec); // -> sdot_z_zzz_
 	if((size&2)==2 && U && HasSVE() && HasSME()) return udot_z_zzz(ctx, dec); // -> udot_z_zzz_
-	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_513_SVE_INTX_DOT);
 	UNMATCHED;
 }
 
@@ -6109,7 +6141,7 @@ int decode_iclass_sve_intx_mixed_dot(context *ctx, Instruction *dec)
 {
 	uint32_t size=(INSWORD>>22)&3;
 	if(size==2 && HasSVE() && HasI8MM() && HasSME() && HasI8MM()) return usdot_z_zzz(ctx, dec); // -> usdot_z_zzz_s
-	if(size!=2) UNALLOCATED(ENC_UNALLOCATED_514_SVE_INTX_MIXED_DOT);
+	if(size!=2) UNALLOCATED(ENC_UNALLOCATED_520_SVE_INTX_MIXED_DOT);
 	UNMATCHED;
 }
 
@@ -6118,16 +6150,16 @@ int decode_iclass_sve_int_reduce_0(context *ctx, Instruction *dec)
 	uint32_t op=(INSWORD>>17)&1, U=(INSWORD>>16)&1;
 	if(!op && !U && HasSVE() && HasSME()) return saddv_r_p_z(ctx, dec); // -> saddv_r_p_z_
 	if(!op && U && HasSVE() && HasSME()) return uaddv_r_p_z(ctx, dec); // -> uaddv_r_p_z_
-	if(op) UNALLOCATED(ENC_UNALLOCATED_515_SVE_INT_REDUCE_0);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_521_SVE_INT_REDUCE_0);
 	UNMATCHED;
 }
 
 int decode_iclass_sve_int_reduce_0q(context *ctx, Instruction *dec)
 {
 	uint32_t op=(INSWORD>>17)&1, U=(INSWORD>>16)&1;
-	if(!op && !U) UNALLOCATED(ENC_UNALLOCATED_517_SVE_INT_REDUCE_0Q);
+	if(!op && !U) UNALLOCATED(ENC_UNALLOCATED_523_SVE_INT_REDUCE_0Q);
 	if(!op && U && HasSVE2p1() && HasSME2p1()) return addqv_z_p_z(ctx, dec); // -> addqv_z_p_z_
-	if(op) UNALLOCATED(ENC_UNALLOCATED_516_SVE_INT_REDUCE_0Q);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_522_SVE_INT_REDUCE_0Q);
 	UNMATCHED;
 }
 
@@ -6155,7 +6187,7 @@ int decode_iclass_sve_int_movprfx_pred(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>17)&3;
 	if(!opc && HasSVE() && HasSME()) return movprfx_z_p_z(ctx, dec); // -> movprfx_z_p_z_
-	if(opc) UNALLOCATED(ENC_UNALLOCATED_518_SVE_INT_MOVPRFX_PRED);
+	if(opc) UNALLOCATED(ENC_UNALLOCATED_524_SVE_INT_MOVPRFX_PRED);
 	UNMATCHED;
 }
 
@@ -6165,7 +6197,7 @@ int decode_iclass_sve_int_reduce_2(context *ctx, Instruction *dec)
 	if(!opc && HasSVE() && HasSME()) return orv_r_p_z(ctx, dec); // -> orv_r_p_z_
 	if(opc==1 && HasSVE() && HasSME()) return eorv_r_p_z(ctx, dec); // -> eorv_r_p_z_
 	if(opc==2 && HasSVE() && HasSME()) return andv_r_p_z(ctx, dec); // -> andv_r_p_z_
-	if(opc==3) UNALLOCATED(ENC_UNALLOCATED_519_SVE_INT_REDUCE_2);
+	if(opc==3) UNALLOCATED(ENC_UNALLOCATED_525_SVE_INT_REDUCE_2);
 	UNMATCHED;
 }
 
@@ -6175,7 +6207,7 @@ int decode_iclass_sve_int_reduce_2q(context *ctx, Instruction *dec)
 	if(!opc && HasSVE2p1() && HasSME2p1()) return orqv_z_p_z(ctx, dec); // -> orqv_z_p_z_
 	if(opc==1 && HasSVE2p1() && HasSME2p1()) return eorqv_z_p_z(ctx, dec); // -> eorqv_z_p_z_
 	if(opc==2 && HasSVE2p1() && HasSME2p1()) return andqv_z_p_z(ctx, dec); // -> andqv_z_p_z_
-	if(opc==3) UNALLOCATED(ENC_UNALLOCATED_520_SVE_INT_REDUCE_2Q);
+	if(opc==3) UNALLOCATED(ENC_UNALLOCATED_526_SVE_INT_REDUCE_2Q);
 	UNMATCHED;
 }
 
@@ -6218,7 +6250,7 @@ int decode_iclass_sve_int_un_pred_arit_1(context *ctx, Instruction *dec)
 	if(M && opc==4 && HasSVE() && HasSME()) return fabs_z_p_z(ctx, dec); // -> fabs_z_p_z_m
 	if(M && opc==5 && HasSVE() && HasSME()) return fneg_z_p_z(ctx, dec); // -> fneg_z_p_z_m
 	if(M && opc==6 && HasSVE() && HasSME()) return not_z_p_z(ctx, dec); // -> not_z_p_z_m
-	if(opc==7) UNALLOCATED(ENC_UNALLOCATED_521_SVE_INT_UN_PRED_ARIT_1);
+	if(opc==7) UNALLOCATED(ENC_UNALLOCATED_527_SVE_INT_UN_PRED_ARIT_1);
 	UNMATCHED;
 }
 
@@ -6240,7 +6272,7 @@ int decode_iclass_sve_int_arith_imm0(context *ctx, Instruction *dec)
 	uint32_t opc=(INSWORD>>16)&7;
 	if(!opc && HasSVE() && HasSME()) return add_z_zi(ctx, dec); // -> add_z_zi_
 	if(opc==1 && HasSVE() && HasSME()) return sub_z_zi(ctx, dec); // -> sub_z_zi_
-	if(opc==2) UNALLOCATED(ENC_UNALLOCATED_522_SVE_INT_ARITH_IMM0);
+	if(opc==2) UNALLOCATED(ENC_UNALLOCATED_528_SVE_INT_ARITH_IMM0);
 	if(opc==3 && HasSVE() && HasSME()) return subr_z_zi(ctx, dec); // -> subr_z_zi_
 	if(opc==4 && HasSVE() && HasSME()) return sqadd_z_zi(ctx, dec); // -> sqadd_z_zi_
 	if(opc==5 && HasSVE() && HasSME()) return uqadd_z_zi(ctx, dec); // -> uqadd_z_zi_
@@ -6256,8 +6288,8 @@ int decode_iclass_sve_int_arith_imm1(context *ctx, Instruction *dec)
 	if(opc==1 && !o2 && HasSVE() && HasSME()) return umax_z_zi(ctx, dec); // -> umax_z_zi_
 	if(opc==2 && !o2 && HasSVE() && HasSME()) return smin_z_zi(ctx, dec); // -> smin_z_zi_
 	if(opc==3 && !o2 && HasSVE() && HasSME()) return umin_z_zi(ctx, dec); // -> umin_z_zi_
-	if(!(opc&4) && o2) UNALLOCATED(ENC_UNALLOCATED_524_SVE_INT_ARITH_IMM1);
-	if((opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_523_SVE_INT_ARITH_IMM1);
+	if(!(opc&4) && o2) UNALLOCATED(ENC_UNALLOCATED_530_SVE_INT_ARITH_IMM1);
+	if((opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_529_SVE_INT_ARITH_IMM1);
 	UNMATCHED;
 }
 
@@ -6265,8 +6297,8 @@ int decode_iclass_sve_int_arith_imm2(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>16)&7, o2=(INSWORD>>13)&1;
 	if(!opc && !o2 && HasSVE() && HasSME()) return mul_z_zi(ctx, dec); // -> mul_z_zi_
-	if(!opc && o2) UNALLOCATED(ENC_UNALLOCATED_526_SVE_INT_ARITH_IMM2);
-	if(opc) UNALLOCATED(ENC_UNALLOCATED_525_SVE_INT_ARITH_IMM2);
+	if(!opc && o2) UNALLOCATED(ENC_UNALLOCATED_532_SVE_INT_ARITH_IMM2);
+	if(opc) UNALLOCATED(ENC_UNALLOCATED_531_SVE_INT_ARITH_IMM2);
 	UNMATCHED;
 }
 
@@ -6274,7 +6306,7 @@ int decode_iclass_sve_int_dup_imm(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>17)&3;
 	if(!opc && HasSVE() && HasSME()) return dup_z_i(ctx, dec); // -> dup_z_i_
-	if(opc) UNALLOCATED(ENC_UNALLOCATED_527_SVE_INT_DUP_IMM);
+	if(opc) UNALLOCATED(ENC_UNALLOCATED_533_SVE_INT_DUP_IMM);
 	UNMATCHED;
 }
 
@@ -6282,8 +6314,8 @@ int decode_iclass_sve_int_dup_fpimm(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>17)&3, o2=(INSWORD>>13)&1;
 	if(!opc && !o2 && HasSVE() && HasSME()) return fdup_z_i(ctx, dec); // -> fdup_z_i_
-	if(!opc && o2) UNALLOCATED(ENC_UNALLOCATED_529_SVE_INT_DUP_FPIMM);
-	if(opc) UNALLOCATED(ENC_UNALLOCATED_528_SVE_INT_DUP_FPIMM);
+	if(!opc && o2) UNALLOCATED(ENC_UNALLOCATED_535_SVE_INT_DUP_FPIMM);
+	if(opc) UNALLOCATED(ENC_UNALLOCATED_534_SVE_INT_DUP_FPIMM);
 	UNMATCHED;
 }
 
@@ -6300,7 +6332,7 @@ int decode_iclass_sve_mem_32b_gld_vs(context *ctx, Instruction *dec)
 	if(opc==1 && U && ff && HasSVE()) return ldff1h_z_p_bz(ctx, dec); // -> ldff1h_z_p_bz_s_x32_unscaled
 	if(opc==2 && U && !ff && HasSVE()) return ld1w_z_p_bz(ctx, dec); // -> ld1w_z_p_bz_s_x32_unscaled
 	if(opc==2 && U && ff && HasSVE()) return ldff1w_z_p_bz(ctx, dec); // -> ldff1w_z_p_bz_s_x32_unscaled
-	if(opc==2 && !U) UNALLOCATED(ENC_UNALLOCATED_530_SVE_MEM_32B_GLD_VS);
+	if(opc==2 && !U) UNALLOCATED(ENC_UNALLOCATED_536_SVE_MEM_32B_GLD_VS);
 	UNMATCHED;
 }
 
@@ -6329,7 +6361,7 @@ int decode_iclass_sve_mem_32b_gld_sv_b(context *ctx, Instruction *dec)
 	uint32_t U=(INSWORD>>14)&1, ff=(INSWORD>>13)&1;
 	if(U && !ff && HasSVE()) return ld1w_z_p_bz(ctx, dec); // -> ld1w_z_p_bz_s_x32_scaled
 	if(U && ff && HasSVE()) return ldff1w_z_p_bz(ctx, dec); // -> ldff1w_z_p_bz_s_x32_scaled
-	if(!U) UNALLOCATED(ENC_UNALLOCATED_531_SVE_MEM_32B_GLD_SV_B);
+	if(!U) UNALLOCATED(ENC_UNALLOCATED_537_SVE_MEM_32B_GLD_SV_B);
 	UNMATCHED;
 }
 
@@ -6360,9 +6392,9 @@ int decode_iclass_sve_mem_32b_gldnt_vs(context *ctx, Instruction *dec)
 	if(!msz && U && HasSVE2()) return ldnt1b_z_p_ar(ctx, dec); // -> ldnt1b_z_p_ar_s_x32_unscaled
 	if(msz==1 && !U && HasSVE2()) return ldnt1sh_z_p_ar(ctx, dec); // -> ldnt1sh_z_p_ar_s_x32_unscaled
 	if(msz==1 && U && HasSVE2()) return ldnt1h_z_p_ar(ctx, dec); // -> ldnt1h_z_p_ar_s_x32_unscaled
-	if(msz==2 && !U) UNALLOCATED(ENC_UNALLOCATED_533_SVE_MEM_32B_GLDNT_VS);
+	if(msz==2 && !U) UNALLOCATED(ENC_UNALLOCATED_539_SVE_MEM_32B_GLDNT_VS);
 	if(msz==2 && U && HasSVE2()) return ldnt1w_z_p_ar(ctx, dec); // -> ldnt1w_z_p_ar_s_x32_unscaled
-	if(msz==3) UNALLOCATED(ENC_UNALLOCATED_532_SVE_MEM_32B_GLDNT_VS);
+	if(msz==3) UNALLOCATED(ENC_UNALLOCATED_538_SVE_MEM_32B_GLDNT_VS);
 	UNMATCHED;
 }
 
@@ -6373,7 +6405,7 @@ int decode_iclass_sve_mem_prfm_ss(context *ctx, Instruction *dec)
 	if(msz==1 && Rm!=0x1f && HasSVE() && HasSME()) return prfh_i_p_br(ctx, dec); // -> prfh_i_p_br_s
 	if(msz==2 && Rm!=0x1f && HasSVE() && HasSME()) return prfw_i_p_br(ctx, dec); // -> prfw_i_p_br_s
 	if(msz==3 && Rm!=0x1f && HasSVE() && HasSME()) return prfd_i_p_br(ctx, dec); // -> prfd_i_p_br_s
-	if(Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_534_SVE_MEM_PRFM_SS);
+	if(Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_540_SVE_MEM_PRFM_SS);
 	UNMATCHED;
 }
 
@@ -6400,8 +6432,8 @@ int decode_iclass_sve_mem_32b_gld_vi(context *ctx, Instruction *dec)
 	if(msz==1 && U && ff && HasSVE()) return ldff1h_z_p_ai(ctx, dec); // -> ldff1h_z_p_ai_s
 	if(msz==2 && U && !ff && HasSVE()) return ld1w_z_p_ai(ctx, dec); // -> ld1w_z_p_ai_s
 	if(msz==2 && U && ff && HasSVE()) return ldff1w_z_p_ai(ctx, dec); // -> ldff1w_z_p_ai_s
-	if(msz==2 && !U) UNALLOCATED(ENC_UNALLOCATED_536_SVE_MEM_32B_GLD_VI);
-	if(msz==3) UNALLOCATED(ENC_UNALLOCATED_535_SVE_MEM_32B_GLD_VI);
+	if(msz==2 && !U) UNALLOCATED(ENC_UNALLOCATED_542_SVE_MEM_32B_GLD_VI);
+	if(msz==3) UNALLOCATED(ENC_UNALLOCATED_541_SVE_MEM_32B_GLD_VI);
 	UNMATCHED;
 }
 
@@ -6444,7 +6476,7 @@ int decode_iclass_sve_mem_64b_gld_vs(context *ctx, Instruction *dec)
 	if(msz==2 && U && ff && HasSVE()) return ldff1w_z_p_bz(ctx, dec); // -> ldff1w_z_p_bz_d_x32_unscaled
 	if(msz==3 && U && !ff && HasSVE()) return ld1d_z_p_bz(ctx, dec); // -> ld1d_z_p_bz_d_x32_unscaled
 	if(msz==3 && U && ff && HasSVE()) return ldff1d_z_p_bz(ctx, dec); // -> ldff1d_z_p_bz_d_x32_unscaled
-	if(msz==3 && !U) UNALLOCATED(ENC_UNALLOCATED_537_SVE_MEM_64B_GLD_VS);
+	if(msz==3 && !U) UNALLOCATED(ENC_UNALLOCATED_543_SVE_MEM_64B_GLD_VS);
 	UNMATCHED;
 }
 
@@ -6471,7 +6503,7 @@ int decode_iclass_sve_mem_64b_gld_sv(context *ctx, Instruction *dec)
 	if(opc==2 && U && ff && HasSVE()) return ldff1w_z_p_bz(ctx, dec); // -> ldff1w_z_p_bz_d_x32_scaled
 	if(opc==3 && U && !ff && HasSVE()) return ld1d_z_p_bz(ctx, dec); // -> ld1d_z_p_bz_d_x32_scaled
 	if(opc==3 && U && ff && HasSVE()) return ldff1d_z_p_bz(ctx, dec); // -> ldff1d_z_p_bz_d_x32_scaled
-	if(opc==3 && !U) UNALLOCATED(ENC_UNALLOCATED_538_SVE_MEM_64B_GLD_SV);
+	if(opc==3 && !U) UNALLOCATED(ENC_UNALLOCATED_544_SVE_MEM_64B_GLD_SV);
 	UNMATCHED;
 }
 
@@ -6484,7 +6516,7 @@ int decode_iclass_sve_mem_64b_gldnt_vs(context *ctx, Instruction *dec)
 	if(msz==1 && U && HasSVE2()) return ldnt1h_z_p_ar(ctx, dec); // -> ldnt1h_z_p_ar_d_64_unscaled
 	if(msz==2 && !U && HasSVE2()) return ldnt1sw_z_p_ar(ctx, dec); // -> ldnt1sw_z_p_ar_d_64_unscaled
 	if(msz==2 && U && HasSVE2()) return ldnt1w_z_p_ar(ctx, dec); // -> ldnt1w_z_p_ar_d_64_unscaled
-	if(msz==3 && !U) UNALLOCATED(ENC_UNALLOCATED_539_SVE_MEM_64B_GLDNT_VS);
+	if(msz==3 && !U) UNALLOCATED(ENC_UNALLOCATED_545_SVE_MEM_64B_GLDNT_VS);
 	if(msz==3 && U && HasSVE2()) return ldnt1d_z_p_ar(ctx, dec); // -> ldnt1d_z_p_ar_d_64_unscaled
 	UNMATCHED;
 }
@@ -6521,7 +6553,7 @@ int decode_iclass_sve_mem_64b_gld_vi(context *ctx, Instruction *dec)
 	if(msz==2 && U && ff && HasSVE()) return ldff1w_z_p_ai(ctx, dec); // -> ldff1w_z_p_ai_d
 	if(msz==3 && U && !ff && HasSVE()) return ld1d_z_p_ai(ctx, dec); // -> ld1d_z_p_ai_d
 	if(msz==3 && U && ff && HasSVE()) return ldff1d_z_p_ai(ctx, dec); // -> ldff1d_z_p_ai_d
-	if(msz==3 && !U) UNALLOCATED(ENC_UNALLOCATED_540_SVE_MEM_64B_GLD_VI);
+	if(msz==3 && !U) UNALLOCATED(ENC_UNALLOCATED_546_SVE_MEM_64B_GLD_VI);
 	UNMATCHED;
 }
 
@@ -6542,7 +6574,7 @@ int decode_iclass_sve_mem_64b_gld_vs2(context *ctx, Instruction *dec)
 	if(msz==2 && U && ff && HasSVE()) return ldff1w_z_p_bz(ctx, dec); // -> ldff1w_z_p_bz_d_64_unscaled
 	if(msz==3 && U && !ff && HasSVE()) return ld1d_z_p_bz(ctx, dec); // -> ld1d_z_p_bz_d_64_unscaled
 	if(msz==3 && U && ff && HasSVE()) return ldff1d_z_p_bz(ctx, dec); // -> ldff1d_z_p_bz_d_64_unscaled
-	if(msz==3 && !U) UNALLOCATED(ENC_UNALLOCATED_541_SVE_MEM_64B_GLD_VS2);
+	if(msz==3 && !U) UNALLOCATED(ENC_UNALLOCATED_547_SVE_MEM_64B_GLD_VS2);
 	UNMATCHED;
 }
 
@@ -6569,7 +6601,7 @@ int decode_iclass_sve_mem_64b_gld_sv2(context *ctx, Instruction *dec)
 	if(opc==2 && U && ff && HasSVE()) return ldff1w_z_p_bz(ctx, dec); // -> ldff1w_z_p_bz_d_64_scaled
 	if(opc==3 && U && !ff && HasSVE()) return ld1d_z_p_bz(ctx, dec); // -> ld1d_z_p_bz_d_64_scaled
 	if(opc==3 && U && ff && HasSVE()) return ldff1d_z_p_bz(ctx, dec); // -> ldff1d_z_p_bz_d_64_scaled
-	if(opc==3 && !U) UNALLOCATED(ENC_UNALLOCATED_542_SVE_MEM_64B_GLD_SV2);
+	if(opc==3 && !U) UNALLOCATED(ENC_UNALLOCATED_548_SVE_MEM_64B_GLD_SV2);
 	UNMATCHED;
 }
 
@@ -6584,8 +6616,8 @@ int decode_iclass_sve_mem_ldqr_ss(context *ctx, Instruction *dec)
 	if(msz==2 && ssz==1 && Rm!=0x1f && HasF64MM()) return ld1row_z_p_br(ctx, dec); // -> ld1row_z_p_br_contiguous
 	if(msz==3 && !ssz && Rm!=0x1f && HasSVE() && HasSME()) return ld1rqd_z_p_br(ctx, dec); // -> ld1rqd_z_p_br_contiguous
 	if(msz==3 && ssz==1 && Rm!=0x1f && HasF64MM()) return ld1rod_z_p_br(ctx, dec); // -> ld1rod_z_p_br_contiguous
-	if(!(ssz&2) && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_544_SVE_MEM_LDQR_SS);
-	if((ssz&2)==2) UNALLOCATED(ENC_UNALLOCATED_543_SVE_MEM_LDQR_SS);
+	if(!(ssz&2) && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_550_SVE_MEM_LDQR_SS);
+	if((ssz&2)==2) UNALLOCATED(ENC_UNALLOCATED_549_SVE_MEM_LDQR_SS);
 	UNMATCHED;
 }
 
@@ -6600,7 +6632,7 @@ int decode_iclass_sve_mem_ldqr_si(context *ctx, Instruction *dec)
 	if(msz==2 && ssz==1 && HasF64MM()) return ld1row_z_p_bi(ctx, dec); // -> ld1row_z_p_bi_u32
 	if(msz==3 && !ssz && HasSVE() && HasSME()) return ld1rqd_z_p_bi(ctx, dec); // -> ld1rqd_z_p_bi_u64
 	if(msz==3 && ssz==1 && HasF64MM()) return ld1rod_z_p_bi(ctx, dec); // -> ld1rod_z_p_bi_u64
-	if((ssz&2)==2) UNALLOCATED(ENC_UNALLOCATED_545_SVE_MEM_LDQR_SI);
+	if((ssz&2)==2) UNALLOCATED(ENC_UNALLOCATED_551_SVE_MEM_LDQR_SI);
 	UNMATCHED;
 }
 
@@ -6609,7 +6641,7 @@ int decode_iclass_sve_mem_cld_si_q(context *ctx, Instruction *dec)
 	uint32_t dtype=(INSWORD>>23)&3;
 	if(dtype==2 && HasSVE2p1()) return ld1w_z_p_bi(ctx, dec); // -> ld1w_z_p_bi_u128
 	if(dtype==3 && HasSVE2p1()) return ld1d_z_p_bi(ctx, dec); // -> ld1d_z_p_bi_u128
-	if(!(dtype&2)) UNALLOCATED(ENC_UNALLOCATED_546_SVE_MEM_CLD_SI_Q);
+	if(!(dtype&2)) UNALLOCATED(ENC_UNALLOCATED_552_SVE_MEM_CLD_SI_Q);
 	UNMATCHED;
 }
 
@@ -6632,7 +6664,7 @@ int decode_iclass_sve_mem_cld_ss(context *ctx, Instruction *dec)
 	if(dtype==13 && Rm!=0x1f && HasSVE() && HasSME()) return ld1sb_z_p_br(ctx, dec); // -> ld1sb_z_p_br_s32
 	if(dtype==14 && Rm!=0x1f && HasSVE() && HasSME()) return ld1sb_z_p_br(ctx, dec); // -> ld1sb_z_p_br_s16
 	if(dtype==15 && Rm!=0x1f && HasSVE() && HasSME()) return ld1d_z_p_br(ctx, dec); // -> ld1d_z_p_br_u64
-	if(Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_547_SVE_MEM_CLD_SS);
+	if(Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_553_SVE_MEM_CLD_SS);
 	UNMATCHED;
 }
 
@@ -6663,8 +6695,8 @@ int decode_iclass_sve_mem_cld_ss_q(context *ctx, Instruction *dec)
 	uint32_t dtype=(INSWORD>>23)&3, Rm=(INSWORD>>16)&0x1f;
 	if(dtype==2 && Rm!=0x1f && HasSVE2p1()) return ld1w_z_p_br(ctx, dec); // -> ld1w_z_p_br_u128
 	if(dtype==3 && Rm!=0x1f && HasSVE2p1()) return ld1d_z_p_br(ctx, dec); // -> ld1d_z_p_br_u128
-	if((dtype&2)==2 && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_549_SVE_MEM_CLD_SS_Q);
-	if(!(dtype&2)) UNALLOCATED(ENC_UNALLOCATED_548_SVE_MEM_CLD_SS_Q);
+	if((dtype&2)==2 && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_555_SVE_MEM_CLD_SS_Q);
+	if(!(dtype&2)) UNALLOCATED(ENC_UNALLOCATED_554_SVE_MEM_CLD_SS_Q);
 	UNMATCHED;
 }
 
@@ -6674,8 +6706,8 @@ int decode_iclass_sve_mem_eldq_ss(context *ctx, Instruction *dec)
 	if(num==1 && Rm!=0x1f && HasSVE2p1() && HasSME2p1()) return ld2q_z_p_br(ctx, dec); // -> ld2q_z_p_br_contiguous
 	if(num==2 && Rm!=0x1f && HasSVE2p1() && HasSME2p1()) return ld3q_z_p_br(ctx, dec); // -> ld3q_z_p_br_contiguous
 	if(num==3 && Rm!=0x1f && HasSVE2p1() && HasSME2p1()) return ld4q_z_p_br(ctx, dec); // -> ld4q_z_p_br_contiguous
-	if(num && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_551_SVE_MEM_ELDQ_SS);
-	if(!num) UNALLOCATED(ENC_UNALLOCATED_550_SVE_MEM_ELDQ_SS);
+	if(num && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_557_SVE_MEM_ELDQ_SS);
+	if(!num) UNALLOCATED(ENC_UNALLOCATED_556_SVE_MEM_ELDQ_SS);
 	UNMATCHED;
 }
 
@@ -6730,7 +6762,7 @@ int decode_iclass_sve_mem_cldnt_ss(context *ctx, Instruction *dec)
 	if(msz==1 && Rm!=0x1f && HasSVE() && HasSME()) return ldnt1h_z_p_br(ctx, dec); // -> ldnt1h_z_p_br_contiguous
 	if(msz==2 && Rm!=0x1f && HasSVE() && HasSME()) return ldnt1w_z_p_br(ctx, dec); // -> ldnt1w_z_p_br_contiguous
 	if(msz==3 && Rm!=0x1f && HasSVE() && HasSME()) return ldnt1d_z_p_br(ctx, dec); // -> ldnt1d_z_p_br_contiguous
-	if(Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_552_SVE_MEM_CLDNT_SS);
+	if(Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_558_SVE_MEM_CLDNT_SS);
 	UNMATCHED;
 }
 
@@ -6749,7 +6781,7 @@ int decode_iclass_sve_mem_eld_ss(context *ctx, Instruction *dec)
 	if(msz==3 && opc==1 && Rm!=0x1f && HasSVE() && HasSME()) return ld2d_z_p_br(ctx, dec); // -> ld2d_z_p_br_contiguous
 	if(msz==3 && opc==2 && Rm!=0x1f && HasSVE() && HasSME()) return ld3d_z_p_br(ctx, dec); // -> ld3d_z_p_br_contiguous
 	if(msz==3 && opc==3 && Rm!=0x1f && HasSVE() && HasSME()) return ld4d_z_p_br(ctx, dec); // -> ld4d_z_p_br_contiguous
-	if(opc && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_553_SVE_MEM_ELD_SS);
+	if(opc && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_559_SVE_MEM_ELD_SS);
 	UNMATCHED;
 }
 
@@ -6784,7 +6816,7 @@ int decode_iclass_sve_mem_eld_si(context *ctx, Instruction *dec)
 int decode_iclass_sve_mem_eldq_si(context *ctx, Instruction *dec)
 {
 	uint32_t num=(INSWORD>>23)&3;
-	if(!num) UNALLOCATED(ENC_UNALLOCATED_554_SVE_MEM_ELDQ_SI);
+	if(!num) UNALLOCATED(ENC_UNALLOCATED_560_SVE_MEM_ELDQ_SI);
 	if(num==1 && HasSVE2p1() && HasSME2p1()) return ld2q_z_p_bi(ctx, dec); // -> ld2q_z_p_bi_contiguous
 	if(num==2 && HasSVE2p1() && HasSME2p1()) return ld3q_z_p_bi(ctx, dec); // -> ld3q_z_p_bi_contiguous
 	if(num==3 && HasSVE2p1() && HasSME2p1()) return ld4q_z_p_bi(ctx, dec); // -> ld4q_z_p_bi_contiguous
@@ -6794,7 +6826,7 @@ int decode_iclass_sve_mem_eldq_si(context *ctx, Instruction *dec)
 int decode_iclass_sve_mem_estq_si(context *ctx, Instruction *dec)
 {
 	uint32_t num=(INSWORD>>22)&3;
-	if(!num) UNALLOCATED(ENC_UNALLOCATED_555_SVE_MEM_ESTQ_SI);
+	if(!num) UNALLOCATED(ENC_UNALLOCATED_561_SVE_MEM_ESTQ_SI);
 	if(num==1 && HasSVE2p1() && HasSME2p1()) return st2q_z_p_bi(ctx, dec); // -> st2q_z_p_bi_contiguous
 	if(num==2 && HasSVE2p1() && HasSME2p1()) return st3q_z_p_bi(ctx, dec); // -> st3q_z_p_bi_contiguous
 	if(num==3 && HasSVE2p1() && HasSME2p1()) return st4q_z_p_bi(ctx, dec); // -> st4q_z_p_bi_contiguous
@@ -6807,8 +6839,8 @@ int decode_iclass_sve_mem_estq_ss(context *ctx, Instruction *dec)
 	if(num==1 && Rm!=0x1f && HasSVE2p1() && HasSME2p1()) return st2q_z_p_br(ctx, dec); // -> st2q_z_p_br_contiguous
 	if(num==2 && Rm!=0x1f && HasSVE2p1() && HasSME2p1()) return st3q_z_p_br(ctx, dec); // -> st3q_z_p_br_contiguous
 	if(num==3 && Rm!=0x1f && HasSVE2p1() && HasSME2p1()) return st4q_z_p_br(ctx, dec); // -> st4q_z_p_br_contiguous
-	if(num && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_557_SVE_MEM_ESTQ_SS);
-	if(!num) UNALLOCATED(ENC_UNALLOCATED_556_SVE_MEM_ESTQ_SS);
+	if(num && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_563_SVE_MEM_ESTQ_SS);
+	if(!num) UNALLOCATED(ENC_UNALLOCATED_562_SVE_MEM_ESTQ_SS);
 	UNMATCHED;
 }
 
@@ -6820,17 +6852,16 @@ int decode_iclass_sve_mem_pspill(context *ctx, Instruction *dec)
 int decode_iclass_sve_mem_cst_ss(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>22)&7, o2=(INSWORD>>21)&1, Rm=(INSWORD>>16)&0x1f;
+	if(opc==4 && !o2 && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_567_SVE_MEM_CST_SS);
 	if(opc==4 && !o2 && Rm!=0x1f && HasSVE2p1()) return st1w_z_p_br(ctx, dec); // -> st1w_z_p_br_u128
-	if(opc==5 && o2 && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_561_SVE_MEM_CST_SS);
 	if(opc==7 && !o2 && Rm!=0x1f && HasSVE2p1()) return st1d_z_p_br(ctx, dec); // -> st1d_z_p_br_u128
 	if(opc==7 && o2 && Rm!=0x1f && HasSVE() && HasSME()) return st1d_z_p_br(ctx, dec); // -> st1d_z_p_br_
-	if((opc&6)==4 && !o2 && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_560_SVE_MEM_CST_SS);
 	if(opc==5 && Rm!=0x1f && HasSVE() && HasSME()) return st1w_z_p_br(ctx, dec); // -> st1w_z_p_br_
-	if(opc==7 && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_562_SVE_MEM_CST_SS);
+	if(!(opc&5) && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_566_SVE_MEM_CST_SS);
 	if(!(opc&6) && Rm!=0x1f && HasSVE() && HasSME()) return st1b_z_p_br(ctx, dec); // -> st1b_z_p_br_
 	if((opc&6)==2 && Rm!=0x1f && HasSVE() && HasSME()) return st1h_z_p_br(ctx, dec); // -> st1h_z_p_br_
-	if(!(opc&4) && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_559_SVE_MEM_CST_SS);
-	if(opc==4 && o2) UNALLOCATED(ENC_UNALLOCATED_558_SVE_MEM_CST_SS);
+	if(opc&1 && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_565_SVE_MEM_CST_SS);
+	if(opc==4 && o2) UNALLOCATED(ENC_UNALLOCATED_564_SVE_MEM_CST_SS);
 	UNMATCHED;
 }
 
@@ -6843,11 +6874,11 @@ int decode_iclass_sve_mem_cst_si(context *ctx, Instruction *dec)
 {
 	uint32_t msz=(INSWORD>>23)&3, opc=(INSWORD>>21)&3;
 	if(msz==2 && !opc && HasSVE2p1()) return st1w_z_p_bi(ctx, dec); // -> st1w_z_p_bi_u128
-	if(msz==2 && opc==1) UNALLOCATED(ENC_UNALLOCATED_564_SVE_MEM_CST_SI);
+	if(msz==2 && opc==1) UNALLOCATED(ENC_UNALLOCATED_569_SVE_MEM_CST_SI);
 	if(msz==3 && opc==2 && HasSVE2p1()) return st1d_z_p_bi(ctx, dec); // -> st1d_z_p_bi_u128
 	if(msz==3 && opc==3 && HasSVE() && HasSME()) return st1d_z_p_bi(ctx, dec); // -> st1d_z_p_bi_
 	if(msz==2 && (opc&2)==2 && HasSVE() && HasSME()) return st1w_z_p_bi(ctx, dec); // -> st1w_z_p_bi_
-	if(msz==3 && !(opc&2)) UNALLOCATED(ENC_UNALLOCATED_563_SVE_MEM_CST_SI);
+	if(msz==3 && !(opc&2)) UNALLOCATED(ENC_UNALLOCATED_568_SVE_MEM_CST_SI);
 	if(!msz && HasSVE() && HasSME()) return st1b_z_p_bi(ctx, dec); // -> st1b_z_p_bi_
 	if(msz==1 && HasSVE() && HasSME()) return st1h_z_p_bi(ctx, dec); // -> st1h_z_p_bi_
 	UNMATCHED;
@@ -6888,7 +6919,7 @@ int decode_iclass_sve_mem_cstnt_ss(context *ctx, Instruction *dec)
 	if(msz==1 && Rm!=0x1f && HasSVE() && HasSME()) return stnt1h_z_p_br(ctx, dec); // -> stnt1h_z_p_br_contiguous
 	if(msz==2 && Rm!=0x1f && HasSVE() && HasSME()) return stnt1w_z_p_br(ctx, dec); // -> stnt1w_z_p_br_contiguous
 	if(msz==3 && Rm!=0x1f && HasSVE() && HasSME()) return stnt1d_z_p_br(ctx, dec); // -> stnt1d_z_p_br_contiguous
-	if(Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_565_SVE_MEM_CSTNT_SS);
+	if(Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_570_SVE_MEM_CSTNT_SS);
 	UNMATCHED;
 }
 
@@ -6907,7 +6938,7 @@ int decode_iclass_sve_mem_est_ss(context *ctx, Instruction *dec)
 	if(msz==3 && opc==1 && Rm!=0x1f && HasSVE() && HasSME()) return st2d_z_p_br(ctx, dec); // -> st2d_z_p_br_contiguous
 	if(msz==3 && opc==2 && Rm!=0x1f && HasSVE() && HasSME()) return st3d_z_p_br(ctx, dec); // -> st3d_z_p_br_contiguous
 	if(msz==3 && opc==3 && Rm!=0x1f && HasSVE() && HasSME()) return st4d_z_p_br(ctx, dec); // -> st4d_z_p_br_contiguous
-	if(opc && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_566_SVE_MEM_EST_SS);
+	if(opc && Rm==0x1f) UNALLOCATED(ENC_UNALLOCATED_571_SVE_MEM_EST_SS);
 	UNMATCHED;
 }
 
@@ -6927,7 +6958,7 @@ int decode_iclass_sve_mem_sstnt_32b_vs(context *ctx, Instruction *dec)
 	if(!msz && HasSVE2()) return stnt1b_z_p_ar(ctx, dec); // -> stnt1b_z_p_ar_s_x32_unscaled
 	if(msz==1 && HasSVE2()) return stnt1h_z_p_ar(ctx, dec); // -> stnt1h_z_p_ar_s_x32_unscaled
 	if(msz==2 && HasSVE2()) return stnt1w_z_p_ar(ctx, dec); // -> stnt1w_z_p_ar_s_x32_unscaled
-	if(msz==3) UNALLOCATED(ENC_UNALLOCATED_567_SVE_MEM_SSTNT_32B_VS);
+	if(msz==3) UNALLOCATED(ENC_UNALLOCATED_572_SVE_MEM_SSTNT_32B_VS);
 	UNMATCHED;
 }
 
@@ -6949,7 +6980,7 @@ int decode_iclass_sve_mem_sst_vs2(context *ctx, Instruction *dec)
 int decode_iclass_sve_mem_sst_sv2(context *ctx, Instruction *dec)
 {
 	uint32_t msz=(INSWORD>>23)&3;
-	if(!msz) UNALLOCATED(ENC_UNALLOCATED_568_SVE_MEM_SST_SV2);
+	if(!msz) UNALLOCATED(ENC_UNALLOCATED_573_SVE_MEM_SST_SV2);
 	if(msz==1 && HasSVE()) return st1h_z_p_bz(ctx, dec); // -> st1h_z_p_bz_d_64_scaled
 	if(msz==2 && HasSVE()) return st1w_z_p_bz(ctx, dec); // -> st1w_z_p_bz_d_64_scaled
 	if(msz==3 && HasSVE()) return st1d_z_p_bz(ctx, dec); // -> st1d_z_p_bz_d_64_scaled
@@ -6972,7 +7003,7 @@ int decode_iclass_sve_mem_sst_vi_b(context *ctx, Instruction *dec)
 	if(!msz && HasSVE()) return st1b_z_p_ai(ctx, dec); // -> st1b_z_p_ai_s
 	if(msz==1 && HasSVE()) return st1h_z_p_ai(ctx, dec); // -> st1h_z_p_ai_s
 	if(msz==2 && HasSVE()) return st1w_z_p_ai(ctx, dec); // -> st1w_z_p_ai_s
-	if(msz==3) UNALLOCATED(ENC_UNALLOCATED_569_SVE_MEM_SST_VI_B);
+	if(msz==3) UNALLOCATED(ENC_UNALLOCATED_574_SVE_MEM_SST_VI_B);
 	UNMATCHED;
 }
 
@@ -6992,14 +7023,14 @@ int decode_iclass_sve_mem_sst_vs_b(context *ctx, Instruction *dec)
 	if(!msz && HasSVE()) return st1b_z_p_bz(ctx, dec); // -> st1b_z_p_bz_s_x32_unscaled
 	if(msz==1 && HasSVE()) return st1h_z_p_bz(ctx, dec); // -> st1h_z_p_bz_s_x32_unscaled
 	if(msz==2 && HasSVE()) return st1w_z_p_bz(ctx, dec); // -> st1w_z_p_bz_s_x32_unscaled
-	if(msz==3) UNALLOCATED(ENC_UNALLOCATED_570_SVE_MEM_SST_VS_B);
+	if(msz==3) UNALLOCATED(ENC_UNALLOCATED_575_SVE_MEM_SST_VS_B);
 	UNMATCHED;
 }
 
 int decode_iclass_sve_mem_sst_sv_a(context *ctx, Instruction *dec)
 {
 	uint32_t msz=(INSWORD>>23)&3;
-	if(!msz) UNALLOCATED(ENC_UNALLOCATED_571_SVE_MEM_SST_SV_A);
+	if(!msz) UNALLOCATED(ENC_UNALLOCATED_576_SVE_MEM_SST_SV_A);
 	if(msz==1 && HasSVE()) return st1h_z_p_bz(ctx, dec); // -> st1h_z_p_bz_d_x32_scaled
 	if(msz==2 && HasSVE()) return st1w_z_p_bz(ctx, dec); // -> st1w_z_p_bz_d_x32_scaled
 	if(msz==3 && HasSVE()) return st1d_z_p_bz(ctx, dec); // -> st1d_z_p_bz_d_x32_scaled
@@ -7009,10 +7040,10 @@ int decode_iclass_sve_mem_sst_sv_a(context *ctx, Instruction *dec)
 int decode_iclass_sve_mem_sst_sv_b(context *ctx, Instruction *dec)
 {
 	uint32_t msz=(INSWORD>>23)&3;
-	if(!msz) UNALLOCATED(ENC_UNALLOCATED_572_SVE_MEM_SST_SV_B);
+	if(!msz) UNALLOCATED(ENC_UNALLOCATED_577_SVE_MEM_SST_SV_B);
 	if(msz==1 && HasSVE()) return st1h_z_p_bz(ctx, dec); // -> st1h_z_p_bz_s_x32_scaled
 	if(msz==2 && HasSVE()) return st1w_z_p_bz(ctx, dec); // -> st1w_z_p_bz_s_x32_scaled
-	if(msz==3) UNALLOCATED(ENC_UNALLOCATED_573_SVE_MEM_SST_SV_B);
+	if(msz==3) UNALLOCATED(ENC_UNALLOCATED_578_SVE_MEM_SST_SV_B);
 	UNMATCHED;
 }
 
@@ -7020,7 +7051,7 @@ int decode_iclass_sve_intx_clong(context *ctx, Instruction *dec)
 {
 	uint32_t S=(INSWORD>>11)&1, tb=(INSWORD>>10)&1;
 	if(!S && !tb && HasSVE2() && HasSME()) return saddlbt_z_zz(ctx, dec); // -> saddlbt_z_zz_
-	if(!S && tb) UNALLOCATED(ENC_UNALLOCATED_574_SVE_INTX_CLONG);
+	if(!S && tb) UNALLOCATED(ENC_UNALLOCATED_579_SVE_INTX_CLONG);
 	if(S && !tb && HasSVE2() && HasSME()) return ssublbt_z_zz(ctx, dec); // -> ssublbt_z_zz_
 	if(S && tb && HasSVE2() && HasSME()) return ssubltb_z_zz(ctx, dec); // -> ssubltb_z_zz_
 	UNMATCHED;
@@ -7038,7 +7069,7 @@ int decode_iclass_sve_intx_mmla(context *ctx, Instruction *dec)
 {
 	uint32_t uns=(INSWORD>>22)&3;
 	if(!uns && HasSVE() && HasI8MM()) return smmla_z_zzz(ctx, dec); // -> smmla_z_zzz_
-	if(uns==1) UNALLOCATED(ENC_UNALLOCATED_575_SVE_INTX_MMLA);
+	if(uns==1) UNALLOCATED(ENC_UNALLOCATED_580_SVE_INTX_MMLA);
 	if(uns==2 && HasSVE() && HasI8MM()) return usmmla_z_zzz(ctx, dec); // -> usmmla_z_zzz_
 	if(uns==3 && HasSVE() && HasI8MM()) return ummla_z_zzz(ctx, dec); // -> ummla_z_zzz_
 	UNMATCHED;
@@ -7060,7 +7091,7 @@ int decode_iclass_sve_intx_perm_bit(context *ctx, Instruction *dec)
 	if(!opc && HasSVE_BitPerm()) return bext_z_zz(ctx, dec); // -> bext_z_zz_
 	if(opc==1 && HasSVE_BitPerm()) return bdep_z_zz(ctx, dec); // -> bdep_z_zz_
 	if(opc==2 && HasSVE_BitPerm()) return bgrp_z_zz(ctx, dec); // -> bgrp_z_zz_
-	if(opc==3) UNALLOCATED(ENC_UNALLOCATED_576_SVE_INTX_PERM_BIT);
+	if(opc==3) UNALLOCATED(ENC_UNALLOCATED_581_SVE_INTX_PERM_BIT);
 	UNMATCHED;
 }
 
@@ -7071,7 +7102,8 @@ int decode_iclass_sve_intx_dot_by_indexed_elem(context *ctx, Instruction *dec)
 	if(size==2 && U && HasSVE() && HasSME()) return udot_z_zzzi(ctx, dec); // -> udot_z_zzzi_s
 	if(size==3 && !U && HasSVE() && HasSME()) return sdot_z_zzzi(ctx, dec); // -> sdot_z_zzzi_d
 	if(size==3 && U && HasSVE() && HasSME()) return udot_z_zzzi(ctx, dec); // -> udot_z_zzzi_d
-	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_577_SVE_INTX_DOT_BY_INDEXED_ELEM);
+	if(!(size&2) && !U && HasSVE2p3() && HasSME2p3()) return sdot_z32_zzzi(ctx, dec); // -> sdot_z16_zzzi_h
+	if(!(size&2) && U && HasSVE2p3() && HasSME2p3()) return udot_z32_zzzi(ctx, dec); // -> udot_z16_zzzi_h
 	UNMATCHED;
 }
 
@@ -7104,7 +7136,7 @@ int decode_iclass_sve_intx_mixed_dot_by_indexed_elem(context *ctx, Instruction *
 	uint32_t size=(INSWORD>>22)&3, U=(INSWORD>>10)&1;
 	if(size==2 && !U && HasSVE() && HasI8MM() && HasSME() && HasI8MM()) return usdot_z_zzzi(ctx, dec); // -> usdot_z_zzzi_s
 	if(size==2 && U && HasSVE() && HasI8MM() && HasSME() && HasI8MM()) return sudot_z_zzzi(ctx, dec); // -> sudot_z_zzzi_s
-	if(size!=2) UNALLOCATED(ENC_UNALLOCATED_578_SVE_INTX_MIXED_DOT_BY_INDEXED_ELEM);
+	if(size!=2) UNALLOCATED(ENC_UNALLOCATED_582_SVE_INTX_MIXED_DOT_BY_INDEXED_ELEM);
 	UNMATCHED;
 }
 
@@ -7119,7 +7151,7 @@ int decode_iclass_sve_intx_qdmla_long_by_indexed_elem(context *ctx, Instruction 
 	if(size==3 && !S && T && HasSVE2() && HasSME()) return sqdmlalt_z_zzzi(ctx, dec); // -> sqdmlalt_z_zzzi_d
 	if(size==3 && S && !T && HasSVE2() && HasSME()) return sqdmlslb_z_zzzi(ctx, dec); // -> sqdmlslb_z_zzzi_d
 	if(size==3 && S && T && HasSVE2() && HasSME()) return sqdmlslt_z_zzzi(ctx, dec); // -> sqdmlslt_z_zzzi_d
-	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_579_SVE_INTX_QDMLA_LONG_BY_INDEXED_ELEM);
+	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_583_SVE_INTX_QDMLA_LONG_BY_INDEXED_ELEM);
 	UNMATCHED;
 }
 
@@ -7128,7 +7160,7 @@ int decode_iclass_sve_intx_cdot_by_indexed_elem(context *ctx, Instruction *dec)
 	uint32_t size=(INSWORD>>22)&3;
 	if(size==2 && HasSVE2() && HasSME()) return cdot_z_zzzi(ctx, dec); // -> cdot_z_zzzi_s
 	if(size==3 && HasSVE2() && HasSME()) return cdot_z_zzzi(ctx, dec); // -> cdot_z_zzzi_d
-	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_580_SVE_INTX_CDOT_BY_INDEXED_ELEM);
+	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_584_SVE_INTX_CDOT_BY_INDEXED_ELEM);
 	UNMATCHED;
 }
 
@@ -7137,7 +7169,7 @@ int decode_iclass_sve_intx_cmla_by_indexed_elem(context *ctx, Instruction *dec)
 	uint32_t size=(INSWORD>>22)&3;
 	if(size==2 && HasSVE2() && HasSME()) return cmla_z_zzzi(ctx, dec); // -> cmla_z_zzzi_h
 	if(size==3 && HasSVE2() && HasSME()) return cmla_z_zzzi(ctx, dec); // -> cmla_z_zzzi_s
-	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_581_SVE_INTX_CMLA_BY_INDEXED_ELEM);
+	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_585_SVE_INTX_CMLA_BY_INDEXED_ELEM);
 	UNMATCHED;
 }
 
@@ -7146,7 +7178,7 @@ int decode_iclass_sve_intx_qrdcmla_by_indexed_elem(context *ctx, Instruction *de
 	uint32_t size=(INSWORD>>22)&3;
 	if(size==2 && HasSVE2() && HasSME()) return sqrdcmlah_z_zzzi(ctx, dec); // -> sqrdcmlah_z_zzzi_h
 	if(size==3 && HasSVE2() && HasSME()) return sqrdcmlah_z_zzzi(ctx, dec); // -> sqrdcmlah_z_zzzi_s
-	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_582_SVE_INTX_QRDCMLA_BY_INDEXED_ELEM);
+	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_586_SVE_INTX_QRDCMLA_BY_INDEXED_ELEM);
 	UNMATCHED;
 }
 
@@ -7169,7 +7201,7 @@ int decode_iclass_sve_intx_mla_long_by_indexed_elem(context *ctx, Instruction *d
 	if(size==3 && S && !U && T && HasSVE2() && HasSME()) return smlslt_z_zzzi(ctx, dec); // -> smlslt_z_zzzi_d
 	if(size==3 && S && U && !T && HasSVE2() && HasSME()) return umlslb_z_zzzi(ctx, dec); // -> umlslb_z_zzzi_d
 	if(size==3 && S && U && T && HasSVE2() && HasSME()) return umlslt_z_zzzi(ctx, dec); // -> umlslt_z_zzzi_d
-	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_583_SVE_INTX_MLA_LONG_BY_INDEXED_ELEM);
+	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_587_SVE_INTX_MLA_LONG_BY_INDEXED_ELEM);
 	UNMATCHED;
 }
 
@@ -7184,7 +7216,7 @@ int decode_iclass_sve_intx_mul_long_by_indexed_elem(context *ctx, Instruction *d
 	if(size==3 && !U && T && HasSVE2() && HasSME()) return smullt_z_zzi(ctx, dec); // -> smullt_z_zzi_d
 	if(size==3 && U && !T && HasSVE2() && HasSME()) return umullb_z_zzi(ctx, dec); // -> umullb_z_zzi_d
 	if(size==3 && U && T && HasSVE2() && HasSME()) return umullt_z_zzi(ctx, dec); // -> umullt_z_zzi_d
-	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_584_SVE_INTX_MUL_LONG_BY_INDEXED_ELEM);
+	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_588_SVE_INTX_MUL_LONG_BY_INDEXED_ELEM);
 	UNMATCHED;
 }
 
@@ -7195,7 +7227,7 @@ int decode_iclass_sve_intx_qdmul_long_by_indexed_elem(context *ctx, Instruction 
 	if(size==2 && T && HasSVE2() && HasSME()) return sqdmullt_z_zzi(ctx, dec); // -> sqdmullt_z_zzi_s
 	if(size==3 && !T && HasSVE2() && HasSME()) return sqdmullb_z_zzi(ctx, dec); // -> sqdmullb_z_zzi_d
 	if(size==3 && T && HasSVE2() && HasSME()) return sqdmullt_z_zzi(ctx, dec); // -> sqdmullt_z_zzi_d
-	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_585_SVE_INTX_QDMUL_LONG_BY_INDEXED_ELEM);
+	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_589_SVE_INTX_QDMUL_LONG_BY_INDEXED_ELEM);
 	UNMATCHED;
 }
 
@@ -7225,7 +7257,7 @@ int decode_iclass_sve_int_break(context *ctx, Instruction *dec)
 	uint32_t B=(INSWORD>>23)&1, S=(INSWORD>>22)&1, M=(INSWORD>>4)&1;
 	if(!B && S && !M && HasSVE() && HasSME()) return brkas_p_p_p(ctx, dec); // -> brkas_p_p_p_z
 	if(B && S && !M && HasSVE() && HasSME()) return brkbs_p_p_p(ctx, dec); // -> brkbs_p_p_p_z
-	if(S && M) UNALLOCATED(ENC_UNALLOCATED_586_SVE_INT_BREAK);
+	if(S && M) UNALLOCATED(ENC_UNALLOCATED_590_SVE_INT_BREAK);
 	if(!B && !S && HasSVE() && HasSME()) return brka_p_p_p(ctx, dec); // -> brka_p_p_p_
 	if(B && !S && HasSVE() && HasSME()) return brkb_p_p_p(ctx, dec); // -> brkb_p_p_p_
 	UNMATCHED;
@@ -7248,7 +7280,7 @@ int decode_iclass_sve_int_perm_bin_perm_pp(context *ctx, Instruction *dec)
 	if(opc==1 && H && HasSVE() && HasSME()) return uzp1_p_pp(ctx, dec); // -> uzp2_p_pp_
 	if(opc==2 && !H && HasSVE() && HasSME()) return trn1_p_pp(ctx, dec); // -> trn1_p_pp_
 	if(opc==2 && H && HasSVE() && HasSME()) return trn1_p_pp(ctx, dec); // -> trn2_p_pp_
-	if(opc==3) UNALLOCATED(ENC_UNALLOCATED_587_SVE_INT_PERM_BIN_PERM_PP);
+	if(opc==3) UNALLOCATED(ENC_UNALLOCATED_591_SVE_INT_PERM_BIN_PERM_PP);
 	UNMATCHED;
 }
 
@@ -7289,7 +7321,7 @@ int decode_iclass_sve_int_perm_bin_perm_zz(context *ctx, Instruction *dec)
 	if(opc==3 && HasSVE() && HasSME()) return uzp1_z_zz(ctx, dec); // -> uzp2_z_zz_
 	if(opc==4 && HasSVE() && HasSME()) return trn1_z_zz(ctx, dec); // -> trn1_z_zz_
 	if(opc==5 && HasSVE() && HasSME()) return trn1_z_zz(ctx, dec); // -> trn2_z_zz_
-	if((opc&6)==6) UNALLOCATED(ENC_UNALLOCATED_588_SVE_INT_PERM_BIN_PERM_ZZ);
+	if((opc&6)==6) UNALLOCATED(ENC_UNALLOCATED_592_SVE_INT_PERM_BIN_PERM_ZZ);
 	UNMATCHED;
 }
 
@@ -7390,7 +7422,7 @@ int decode_iclass_sve_int_perm_revd(context *ctx, Instruction *dec)
 	uint32_t size=(INSWORD>>22)&3, Z=(INSWORD>>13)&1;
 	if(!size && !Z && HasSME() && HasSVE2p1()) return revd_z_p_z(ctx, dec); // -> revd_z_p_z_m
 	if(!size && Z && HasSVE2p2() && HasSME2p2()) return revd_z_p_z(ctx, dec); // -> revd_z_p_z_z
-	if(size) UNALLOCATED(ENC_UNALLOCATED_589_SVE_INT_PERM_REVD);
+	if(size) UNALLOCATED(ENC_UNALLOCATED_593_SVE_INT_PERM_REVD);
 	UNMATCHED;
 }
 
@@ -7408,7 +7440,7 @@ int decode_iclass_sve_int_perm_bin_long_perm_zz(context *ctx, Instruction *dec)
 	if(opc==1 && H && HasF64MM()) return uzp1_z_zz(ctx, dec); // -> uzp2_z_zz_q
 	if(opc==3 && !H && HasF64MM()) return trn1_z_zz(ctx, dec); // -> trn1_z_zz_q
 	if(opc==3 && H && HasF64MM()) return trn1_z_zz(ctx, dec); // -> trn2_z_zz_q
-	if(opc==2) UNALLOCATED(ENC_UNALLOCATED_590_SVE_INT_PERM_BIN_LONG_PERM_ZZ);
+	if(opc==2) UNALLOCATED(ENC_UNALLOCATED_594_SVE_INT_PERM_BIN_LONG_PERM_ZZ);
 	UNMATCHED;
 }
 
@@ -7433,8 +7465,8 @@ int decode_iclass_sve_int_perm_binquads(context *ctx, Instruction *dec)
 	if(opc==2 && HasSVE2p1() && HasSME2p1()) return uzpq1_z_zz(ctx, dec); // -> uzpq1_z_zz_
 	if(opc==3 && HasSVE2p1() && HasSME2p1()) return uzpq2_z_zz(ctx, dec); // -> uzpq2_z_zz_
 	if(opc==6 && HasSVE2p1() && HasSME2p1()) return tblq_z_zz(ctx, dec); // -> tblq_z_zz_
-	if(opc==7) UNALLOCATED(ENC_UNALLOCATED_592_SVE_INT_PERM_BINQUADS);
-	if((opc&6)==4) UNALLOCATED(ENC_UNALLOCATED_591_SVE_INT_PERM_BINQUADS);
+	if(opc==7) UNALLOCATED(ENC_UNALLOCATED_596_SVE_INT_PERM_BINQUADS);
+	if((opc&6)==4) UNALLOCATED(ENC_UNALLOCATED_595_SVE_INT_PERM_BINQUADS);
 	UNMATCHED;
 }
 
@@ -7456,7 +7488,7 @@ int decode_iclass_sve_int_perm_insrs(context *ctx, Instruction *dec)
 int decode_iclass_sve_int_mov_v2p(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>22)&3, opc2=(INSWORD>>17)&3;
-	if(!opc && !opc2) UNALLOCATED(ENC_UNALLOCATED_593_SVE_INT_MOV_V2P);
+	if(!opc && !opc2) UNALLOCATED(ENC_UNALLOCATED_597_SVE_INT_MOV_V2P);
 	if(!opc && opc2==1 && HasSVE2p1() && HasSME2p1()) return pmov_p_zi(ctx, dec); // -> pmov_p_zi_b
 	if(!opc && (opc2&2)==2 && HasSVE2p1() && HasSME2p1()) return pmov_p_zi(ctx, dec); // -> pmov_p_zi_h
 	if(opc==1 && HasSVE2p1() && HasSME2p1()) return pmov_p_zi(ctx, dec); // -> pmov_p_zi_s
@@ -7467,7 +7499,7 @@ int decode_iclass_sve_int_mov_v2p(context *ctx, Instruction *dec)
 int decode_iclass_sve_int_mov_p2v(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>22)&3, opc2=(INSWORD>>17)&3;
-	if(!opc && !opc2) UNALLOCATED(ENC_UNALLOCATED_594_SVE_INT_MOV_P2V);
+	if(!opc && !opc2) UNALLOCATED(ENC_UNALLOCATED_598_SVE_INT_MOV_P2V);
 	if(!opc && opc2==1 && HasSVE2p1() && HasSME2p1()) return pmov_z_pi(ctx, dec); // -> pmov_z_pi_b
 	if(!opc && (opc2&2)==2 && HasSVE2p1() && HasSME2p1()) return pmov_z_pi(ctx, dec); // -> pmov_z_pi_h
 	if(opc==1 && HasSVE2p1() && HasSME2p1()) return pmov_z_pi(ctx, dec); // -> pmov_z_pi_s
@@ -7501,8 +7533,8 @@ int decode_iclass_sve_int_pcount_pred(context *ctx, Instruction *dec)
 	if(!opc && HasSVE() && HasSME()) return cntp_r_p_p(ctx, dec); // -> cntp_r_p_p_
 	if(opc==1 && HasSVE2p2() && HasSME2p2()) return firstp_r_p_p(ctx, dec); // -> firstp_r_p_p_
 	if(opc==2 && HasSVE2p2() && HasSME2p2()) return lastp_r_p_p(ctx, dec); // -> lastp_r_p_p_
-	if(opc==3) UNALLOCATED(ENC_UNALLOCATED_596_SVE_INT_PCOUNT_PRED);
-	if((opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_595_SVE_INT_PCOUNT_PRED);
+	if(opc==3) UNALLOCATED(ENC_UNALLOCATED_600_SVE_INT_PCOUNT_PRED);
+	if((opc&4)==4) UNALLOCATED(ENC_UNALLOCATED_599_SVE_INT_PCOUNT_PRED);
 	UNMATCHED;
 }
 
@@ -7510,7 +7542,7 @@ int decode_iclass_sve_int_pcount_pn(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>16)&7;
 	if(!opc && HasSME2() && HasSVE2p1()) return cntp_r_pn(ctx, dec); // -> cntp_r_pn_
-	if(opc) UNALLOCATED(ENC_UNALLOCATED_597_SVE_INT_PCOUNT_PN);
+	if(opc) UNALLOCATED(ENC_UNALLOCATED_601_SVE_INT_PCOUNT_PN);
 	UNMATCHED;
 }
 
@@ -7524,7 +7556,7 @@ int decode_iclass_sve_int_pred_log(context *ctx, Instruction *dec)
 	if(!op && S && !o2 && !o3 && HasSVE() && HasSME()) return ands_p_p_pp(ctx, dec); // -> ands_p_p_pp_z
 	if(!op && S && !o2 && o3 && HasSVE() && HasSME()) return bics_p_p_pp(ctx, dec); // -> bics_p_p_pp_z
 	if(!op && S && o2 && !o3 && HasSVE() && HasSME()) return eors_p_p_pp(ctx, dec); // -> eors_p_p_pp_z
-	if(!op && S && o2 && o3) UNALLOCATED(ENC_UNALLOCATED_598_SVE_INT_PRED_LOG);
+	if(!op && S && o2 && o3) UNALLOCATED(ENC_UNALLOCATED_602_SVE_INT_PRED_LOG);
 	if(op && !S && !o2 && !o3 && HasSVE() && HasSME()) return orr_p_p_pp(ctx, dec); // -> orr_p_p_pp_z
 	if(op && !S && !o2 && o3 && HasSVE() && HasSME()) return orn_p_p_pp(ctx, dec); // -> orn_p_p_pp_z
 	if(op && !S && o2 && !o3 && HasSVE() && HasSME()) return nor_p_p_pp(ctx, dec); // -> nor_p_p_pp_z
@@ -7540,18 +7572,18 @@ int decode_iclass_sve_int_ptest(context *ctx, Instruction *dec)
 {
 	uint32_t op=(INSWORD>>23)&1, S=(INSWORD>>22)&1, opc2=INSWORD&15;
 	if(!op && S && !opc2 && HasSVE() && HasSME()) return ptest_p_p(ctx, dec); // -> ptest__p_p_
-	if(!op && S && opc2) UNALLOCATED(ENC_UNALLOCATED_601_SVE_INT_PTEST);
-	if(!op && !S) UNALLOCATED(ENC_UNALLOCATED_600_SVE_INT_PTEST);
-	if(op) UNALLOCATED(ENC_UNALLOCATED_599_SVE_INT_PTEST);
+	if(!op && S && opc2) UNALLOCATED(ENC_UNALLOCATED_605_SVE_INT_PTEST);
+	if(!op && !S) UNALLOCATED(ENC_UNALLOCATED_604_SVE_INT_PTEST);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_603_SVE_INT_PTEST);
 	UNMATCHED;
 }
 
 int decode_iclass_sve_int_pfirst(context *ctx, Instruction *dec)
 {
 	uint32_t op=(INSWORD>>23)&1, S=(INSWORD>>22)&1;
-	if(!op && !S) UNALLOCATED(ENC_UNALLOCATED_603_SVE_INT_PFIRST);
+	if(!op && !S) UNALLOCATED(ENC_UNALLOCATED_607_SVE_INT_PFIRST);
 	if(!op && S && HasSVE() && HasSME()) return pfirst_p_p_p(ctx, dec); // -> pfirst_p_p_p_
-	if(op) UNALLOCATED(ENC_UNALLOCATED_602_SVE_INT_PFIRST);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_606_SVE_INT_PFIRST);
 	UNMATCHED;
 }
 
@@ -7572,8 +7604,8 @@ int decode_iclass_sve_int_pfalse(context *ctx, Instruction *dec)
 {
 	uint32_t op=(INSWORD>>23)&1, S=(INSWORD>>22)&1;
 	if(!op && !S && HasSVE() && HasSME()) return pfalse_p(ctx, dec); // -> pfalse_p_
-	if(!op && S) UNALLOCATED(ENC_UNALLOCATED_605_SVE_INT_PFALSE);
-	if(op) UNALLOCATED(ENC_UNALLOCATED_604_SVE_INT_PFALSE);
+	if(!op && S) UNALLOCATED(ENC_UNALLOCATED_609_SVE_INT_PFALSE);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_608_SVE_INT_PFALSE);
 	UNMATCHED;
 }
 
@@ -7582,7 +7614,7 @@ int decode_iclass_sve_int_rdffr(context *ctx, Instruction *dec)
 	uint32_t op=(INSWORD>>23)&1, S=(INSWORD>>22)&1;
 	if(!op && !S && HasSVE()) return rdffr_p_p_f(ctx, dec); // -> rdffr_p_p_f_
 	if(!op && S && HasSVE()) return rdffrs_p_p_f(ctx, dec); // -> rdffrs_p_p_f_
-	if(op) UNALLOCATED(ENC_UNALLOCATED_606_SVE_INT_RDFFR);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_610_SVE_INT_RDFFR);
 	UNMATCHED;
 }
 
@@ -7590,8 +7622,8 @@ int decode_iclass_sve_int_rdffr_2(context *ctx, Instruction *dec)
 {
 	uint32_t op=(INSWORD>>23)&1, S=(INSWORD>>22)&1;
 	if(!op && !S && HasSVE()) return rdffr_p_f(ctx, dec); // -> rdffr_p_f_
-	if(!op && S) UNALLOCATED(ENC_UNALLOCATED_608_SVE_INT_RDFFR_2);
-	if(op) UNALLOCATED(ENC_UNALLOCATED_607_SVE_INT_RDFFR_2);
+	if(!op && S) UNALLOCATED(ENC_UNALLOCATED_612_SVE_INT_RDFFR_2);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_611_SVE_INT_RDFFR_2);
 	UNMATCHED;
 }
 
@@ -7599,7 +7631,7 @@ int decode_iclass_sve_int_pred_dup(context *ctx, Instruction *dec)
 {
 	uint32_t S=(INSWORD>>9)&1;
 	if(!S && HasSME() && HasSVE2p1()) return psel_p_ppi(ctx, dec); // -> psel_p_ppi_
-	if(S) UNALLOCATED(ENC_UNALLOCATED_609_SVE_INT_PRED_DUP);
+	if(S) UNALLOCATED(ENC_UNALLOCATED_613_SVE_INT_PRED_DUP);
 	UNMATCHED;
 }
 
@@ -7610,7 +7642,7 @@ int decode_iclass_sve_int_brkp(context *ctx, Instruction *dec)
 	if(!op && !S && B && HasSVE() && HasSME()) return brkpb_p_p_pp(ctx, dec); // -> brkpb_p_p_pp_
 	if(!op && S && !B && HasSVE() && HasSME()) return brkpas_p_p_pp(ctx, dec); // -> brkpas_p_p_pp_
 	if(!op && S && B && HasSVE() && HasSME()) return brkpbs_p_p_pp(ctx, dec); // -> brkpbs_p_p_pp_
-	if(op) UNALLOCATED(ENC_UNALLOCATED_610_SVE_INT_BRKP);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_614_SVE_INT_BRKP);
 	UNMATCHED;
 }
 
@@ -7646,7 +7678,7 @@ int decode_iclass_sve_int_ctr_to_mask(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>8)&7;
 	if((opc&6)==4 && HasSME2() && HasSVE2p1()) return pext_pp_rr(ctx, dec); // -> pext_pp_rr_
-	if((opc&6)==6) UNALLOCATED(ENC_UNALLOCATED_611_SVE_INT_CTR_TO_MASK);
+	if((opc&6)==6) UNALLOCATED(ENC_UNALLOCATED_615_SVE_INT_CTR_TO_MASK);
 	if(!(opc&4) && HasSME2() && HasSVE2p1()) return pext_pn_rr(ctx, dec); // -> pext_pn_rr_
 	UNMATCHED;
 }
@@ -7676,8 +7708,8 @@ int decode_iclass_sve_int_read_vl_a(context *ctx, Instruction *dec)
 {
 	uint32_t op=(INSWORD>>22)&1, opc2=(INSWORD>>16)&0x1f;
 	if(!op && opc2==0x1f && HasSVE() && HasSME()) return rdvl_r_i(ctx, dec); // -> rdvl_r_i_
-	if(!op && opc2!=0x1f) UNALLOCATED(ENC_UNALLOCATED_613_SVE_INT_READ_VL_A);
-	if(op) UNALLOCATED(ENC_UNALLOCATED_612_SVE_INT_READ_VL_A);
+	if(!op && opc2!=0x1f) UNALLOCATED(ENC_UNALLOCATED_617_SVE_INT_READ_VL_A);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_616_SVE_INT_READ_VL_A);
 	UNMATCHED;
 }
 
@@ -7685,8 +7717,8 @@ int decode_iclass_sve_int_read_svl_a(context *ctx, Instruction *dec)
 {
 	uint32_t op=(INSWORD>>22)&1, opc2=(INSWORD>>16)&0x1f;
 	if(!op && opc2==0x1f && HasSME()) return rdsvl_r_i(ctx, dec); // -> rdsvl_r_i_
-	if(!op && opc2!=0x1f) UNALLOCATED(ENC_UNALLOCATED_615_SVE_INT_READ_SVL_A);
-	if(op) UNALLOCATED(ENC_UNALLOCATED_614_SVE_INT_READ_SVL_A);
+	if(!op && opc2!=0x1f) UNALLOCATED(ENC_UNALLOCATED_619_SVE_INT_READ_SVL_A);
+	if(op) UNALLOCATED(ENC_UNALLOCATED_618_SVE_INT_READ_SVL_A);
 	UNMATCHED;
 }
 
@@ -7699,7 +7731,7 @@ int decode_iclass_sve_int_wrffr(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>22)&3;
 	if(!opc && HasSVE()) return wrffr_f_p(ctx, dec); // -> wrffr_f_p_
-	if(opc) UNALLOCATED(ENC_UNALLOCATED_616_SVE_INT_WRFFR);
+	if(opc) UNALLOCATED(ENC_UNALLOCATED_620_SVE_INT_WRFFR);
 	UNMATCHED;
 }
 
@@ -7707,7 +7739,7 @@ int decode_iclass_sve_int_setffr(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>22)&3;
 	if(!opc && HasSVE()) return setffr_f(ctx, dec); // -> setffr_f_
-	if(opc) UNALLOCATED(ENC_UNALLOCATED_617_SVE_INT_SETFFR);
+	if(opc) UNALLOCATED(ENC_UNALLOCATED_621_SVE_INT_SETFFR);
 	UNMATCHED;
 }
 
@@ -7715,7 +7747,7 @@ int decode_iclass_sve_fp_2op_p_vd(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>16)&3;
 	if(!opc && HasSVE()) return fadda_v_p_z(ctx, dec); // -> fadda_v_p_z_
-	if(opc) UNALLOCATED(ENC_UNALLOCATED_618_SVE_FP_2OP_P_VD);
+	if(opc) UNALLOCATED(ENC_UNALLOCATED_622_SVE_FP_2OP_P_VD);
 	UNMATCHED;
 }
 
@@ -7741,7 +7773,7 @@ int decode_iclass_sve_fp_2op_p_zds(context *ctx, Instruction *dec)
 	if(opc==3 && HasSVE() && HasSME()) return fsubr_z_p_zz(ctx, dec); // -> fsubr_z_p_zz_
 	if(opc==8 && HasSVE() && HasSME()) return fabd_z_p_zz(ctx, dec); // -> fabd_z_p_zz_
 	if(opc==10 && HasSVE() && HasSME()) return fmulx_z_p_zz(ctx, dec); // -> fmulx_z_p_zz_
-	if(opc==11) UNALLOCATED(ENC_UNALLOCATED_619_SVE_FP_2OP_P_ZDS);
+	if(opc==11) UNALLOCATED(ENC_UNALLOCATED_623_SVE_FP_2OP_P_ZDS);
 	if(opc==12 && HasSVE() && HasSME()) return fdivr_z_p_zz(ctx, dec); // -> fdivr_z_p_zz_
 	if(opc==13 && HasSVE() && HasSME()) return fdiv_z_p_zz(ctx, dec); // -> fdiv_z_p_zz_
 	if(opc==14 && HasSVE2() && HasFAMINMAX() && HasSME2() && HasFAMINMAX()) return famax_z_p_zz(ctx, dec); // -> famax_z_p_zz_
@@ -7780,7 +7812,7 @@ int decode_iclass_sve_fp_3op_u_zd(context *ctx, Instruction *dec)
 	if(opc==3 && HasSVE()) return ftsmul_z_zz(ctx, dec); // -> ftsmul_z_zz_
 	if(opc==6 && HasSVE() && HasSME()) return frecps_z_zz(ctx, dec); // -> frecps_z_zz_
 	if(opc==7 && HasSVE() && HasSME()) return frsqrts_z_zz(ctx, dec); // -> frsqrts_z_zz_
-	if((opc&6)==4) UNALLOCATED(ENC_UNALLOCATED_620_SVE_FP_3OP_U_ZD);
+	if((opc&6)==4) UNALLOCATED(ENC_UNALLOCATED_624_SVE_FP_3OP_U_ZD);
 	UNMATCHED;
 }
 
@@ -7793,7 +7825,7 @@ int decode_iclass_sve_fp_3op_p_pd(context *ctx, Instruction *dec)
 	if(!op && o2 && o3 && HasSVE() && HasSME()) return fcmeq_p_p_zz(ctx, dec); // -> fcmne_p_p_zz_
 	if(op && !o2 && !o3 && HasSVE() && HasSME()) return fcmeq_p_p_zz(ctx, dec); // -> fcmuo_p_p_zz_
 	if(op && !o2 && o3 && HasSVE() && HasSME()) return facge_p_p_zz(ctx, dec); // -> facge_p_p_zz_
-	if(op && o2 && !o3) UNALLOCATED(ENC_UNALLOCATED_621_SVE_FP_3OP_P_PD);
+	if(op && o2 && !o3) UNALLOCATED(ENC_UNALLOCATED_625_SVE_FP_3OP_P_PD);
 	if(op && o2 && o3 && HasSVE() && HasSME()) return facge_p_p_zz(ctx, dec); // -> facgt_p_p_zz_
 	UNMATCHED;
 }
@@ -7807,7 +7839,7 @@ int decode_iclass_sve_fp_2op_p_pd(context *ctx, Instruction *dec)
 	if(!eq && lt && ne && HasSVE() && HasSME()) return fcmeq_p_p_z0(ctx, dec); // -> fcmle_p_p_z0_
 	if(eq && !lt && !ne && HasSVE() && HasSME()) return fcmeq_p_p_z0(ctx, dec); // -> fcmeq_p_p_z0_
 	if(eq && lt && !ne && HasSVE() && HasSME()) return fcmeq_p_p_z0(ctx, dec); // -> fcmne_p_p_z0_
-	if(eq && ne) UNALLOCATED(ENC_UNALLOCATED_622_SVE_FP_2OP_P_PD);
+	if(eq && ne) UNALLOCATED(ENC_UNALLOCATED_626_SVE_FP_2OP_P_PD);
 	UNMATCHED;
 }
 
@@ -7821,7 +7853,7 @@ int decode_iclass_sve_fp_fcmla_by_indexed_elem(context *ctx, Instruction *dec)
 	uint32_t size=(INSWORD>>22)&3;
 	if(size==2 && HasSVE() && HasSME()) return fcmla_z_zzzi(ctx, dec); // -> fcmla_z_zzzi_h
 	if(size==3 && HasSVE() && HasSME()) return fcmla_z_zzzi(ctx, dec); // -> fcmla_z_zzzi_s
-	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_623_SVE_FP_FCMLA_BY_INDEXED_ELEM);
+	if(!(size&2)) UNALLOCATED(ENC_UNALLOCATED_627_SVE_FP_FCMLA_BY_INDEXED_ELEM);
 	UNMATCHED;
 }
 
@@ -7839,10 +7871,10 @@ int decode_iclass_sve_fp_fcvt2z(context *ctx, Instruction *dec)
 	if(opc==2 && opc2==2 && HasSVE2p2() && HasSME2p2()) return bfcvtnt_z_p_z(ctx, dec); // -> bfcvtnt_z_p_z_s2bfz
 	if(opc==3 && opc2==2 && HasSVE2p2() && HasSME2p2()) return fcvtnt_z_p_z(ctx, dec); // -> fcvtnt_z_p_z_d2sz
 	if(opc==3 && opc2==3 && HasSVE2p2() && HasSME2p2()) return fcvtlt_z_p_z(ctx, dec); // -> fcvtlt_z_p_z_s2dz
-	if(!(opc&1) && opc2==3) UNALLOCATED(ENC_UNALLOCATED_627_SVE_FP_FCVT2Z);
-	if(!opc && !(opc2&2)) UNALLOCATED(ENC_UNALLOCATED_625_SVE_FP_FCVT2Z);
-	if(opc==3 && !(opc2&2)) UNALLOCATED(ENC_UNALLOCATED_626_SVE_FP_FCVT2Z);
-	if(opc==1) UNALLOCATED(ENC_UNALLOCATED_624_SVE_FP_FCVT2Z);
+	if(!(opc&1) && opc2==3) UNALLOCATED(ENC_UNALLOCATED_631_SVE_FP_FCVT2Z);
+	if(!opc && !(opc2&2)) UNALLOCATED(ENC_UNALLOCATED_629_SVE_FP_FCVT2Z);
+	if(opc==3 && !(opc2&2)) UNALLOCATED(ENC_UNALLOCATED_630_SVE_FP_FCVT2Z);
+	if(opc==1) UNALLOCATED(ENC_UNALLOCATED_628_SVE_FP_FCVT2Z);
 	UNMATCHED;
 }
 
@@ -7855,10 +7887,10 @@ int decode_iclass_sve_fp_fcvt2(context *ctx, Instruction *dec)
 	if(opc==2 && opc2==2 && HasSVE() && HasBF16() && HasSME() && HasBF16()) return bfcvtnt_z_p_z(ctx, dec); // -> bfcvtnt_z_p_z_s2bf
 	if(opc==3 && opc2==2 && HasSVE2() && HasSME()) return fcvtnt_z_p_z(ctx, dec); // -> fcvtnt_z_p_z_d2s
 	if(opc==3 && opc2==3 && HasSVE2() && HasSME()) return fcvtlt_z_p_z(ctx, dec); // -> fcvtlt_z_p_z_s2d
-	if(!(opc&1) && opc2==3) UNALLOCATED(ENC_UNALLOCATED_631_SVE_FP_FCVT2);
-	if(!opc && !(opc2&2)) UNALLOCATED(ENC_UNALLOCATED_629_SVE_FP_FCVT2);
-	if(opc==3 && !(opc2&2)) UNALLOCATED(ENC_UNALLOCATED_630_SVE_FP_FCVT2);
-	if(opc==1) UNALLOCATED(ENC_UNALLOCATED_628_SVE_FP_FCVT2);
+	if(!(opc&1) && opc2==3) UNALLOCATED(ENC_UNALLOCATED_635_SVE_FP_FCVT2);
+	if(!opc && !(opc2&2)) UNALLOCATED(ENC_UNALLOCATED_633_SVE_FP_FCVT2);
+	if(opc==3 && !(opc2&2)) UNALLOCATED(ENC_UNALLOCATED_634_SVE_FP_FCVT2);
+	if(opc==1) UNALLOCATED(ENC_UNALLOCATED_632_SVE_FP_FCVT2);
 	UNMATCHED;
 }
 
@@ -7866,12 +7898,12 @@ int decode_iclass_sve_fp_fast_red(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>16)&7;
 	if(!opc && HasSVE() && HasSME()) return faddv_v_p_z(ctx, dec); // -> faddv_v_p_z_
-	if(opc==1) UNALLOCATED(ENC_UNALLOCATED_633_SVE_FP_FAST_RED);
+	if(opc==1) UNALLOCATED(ENC_UNALLOCATED_637_SVE_FP_FAST_RED);
 	if(opc==4 && HasSVE() && HasSME()) return fmaxnmv_v_p_z(ctx, dec); // -> fmaxnmv_v_p_z_
 	if(opc==5 && HasSVE() && HasSME()) return fminnmv_v_p_z(ctx, dec); // -> fminnmv_v_p_z_
 	if(opc==6 && HasSVE() && HasSME()) return fmaxv_v_p_z(ctx, dec); // -> fmaxv_v_p_z_
 	if(opc==7 && HasSVE() && HasSME()) return fminv_v_p_z(ctx, dec); // -> fminv_v_p_z_
-	if((opc&6)==2) UNALLOCATED(ENC_UNALLOCATED_632_SVE_FP_FAST_RED);
+	if((opc&6)==2) UNALLOCATED(ENC_UNALLOCATED_636_SVE_FP_FAST_RED);
 	UNMATCHED;
 }
 
@@ -7879,12 +7911,12 @@ int decode_iclass_sve_fp_fast_redq(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>16)&7;
 	if(!opc && HasSVE2p1() && HasSME2p1()) return faddqv_z_p_z(ctx, dec); // -> faddqv_z_p_z_
-	if(opc==1) UNALLOCATED(ENC_UNALLOCATED_635_SVE_FP_FAST_REDQ);
+	if(opc==1) UNALLOCATED(ENC_UNALLOCATED_639_SVE_FP_FAST_REDQ);
 	if(opc==4 && HasSVE2p1() && HasSME2p1()) return fmaxnmqv_z_p_z(ctx, dec); // -> fmaxnmqv_z_p_z_
 	if(opc==5 && HasSVE2p1() && HasSME2p1()) return fminnmqv_z_p_z(ctx, dec); // -> fminnmqv_z_p_z_
 	if(opc==6 && HasSVE2p1() && HasSME2p1()) return fmaxqv_z_p_z(ctx, dec); // -> fmaxqv_z_p_z_
 	if(opc==7 && HasSVE2p1() && HasSME2p1()) return fminqv_z_p_z(ctx, dec); // -> fminqv_z_p_z_
-	if((opc&6)==2) UNALLOCATED(ENC_UNALLOCATED_634_SVE_FP_FAST_REDQ);
+	if((opc&6)==2) UNALLOCATED(ENC_UNALLOCATED_638_SVE_FP_FAST_REDQ);
 	UNMATCHED;
 }
 
@@ -7905,7 +7937,7 @@ int decode_iclass_sve_fp_fmul_by_indexed_elem(context *ctx, Instruction *dec)
 	if(size==3 && !o2 && HasSVE() && HasSME()) return fmul_z_zzi(ctx, dec); // -> fmul_z_zzi_d
 	if(!(size&2) && !o2 && HasSVE() && HasSME()) return fmul_z_zzi(ctx, dec); // -> fmul_z_zzi_h
 	if(!(size&2) && o2 && HasSVE_B16B16()) return bfmul_z_zzi(ctx, dec); // -> bfmul_z_zzi_h
-	if((size&2)==2 && o2) UNALLOCATED(ENC_UNALLOCATED_636_SVE_FP_FMUL_BY_INDEXED_ELEM);
+	if((size&2)==2 && o2) UNALLOCATED(ENC_UNALLOCATED_640_SVE_FP_FMUL_BY_INDEXED_ELEM);
 	UNMATCHED;
 }
 
@@ -7918,7 +7950,7 @@ int decode_iclass_sve_fp_3op_p_zds_a(context *ctx, Instruction *dec)
 	if(size && opc==1 && HasSVE() && HasSME()) return fmls_z_p_zzz(ctx, dec); // -> fmls_z_p_zzz_
 	if(size && opc==2 && HasSVE() && HasSME()) return fnmla_z_p_zzz(ctx, dec); // -> fnmla_z_p_zzz_
 	if(size && opc==3 && HasSVE() && HasSME()) return fnmls_z_p_zzz(ctx, dec); // -> fnmls_z_p_zzz_
-	if(!size && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_637_SVE_FP_3OP_P_ZDS_A);
+	if(!size && (opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_641_SVE_FP_3OP_P_ZDS_A);
 	UNMATCHED;
 }
 
@@ -7943,7 +7975,7 @@ int decode_iclass_sve_fp_fma_by_indexed_elem(context *ctx, Instruction *dec)
 	if(!(size&2) && !o2 && op && HasSVE() && HasSME()) return fmls_z_zzzi(ctx, dec); // -> fmls_z_zzzi_h
 	if(!(size&2) && o2 && !op && HasSVE_B16B16()) return bfmla_z_zzzi(ctx, dec); // -> bfmla_z_zzzi_h
 	if(!(size&2) && o2 && op && HasSVE_B16B16()) return bfmls_z_zzzi(ctx, dec); // -> bfmls_z_zzzi_h
-	if((size&2)==2 && o2) UNALLOCATED(ENC_UNALLOCATED_638_SVE_FP_FMA_BY_INDEXED_ELEM);
+	if((size&2)==2 && o2) UNALLOCATED(ENC_UNALLOCATED_642_SVE_FP_FMA_BY_INDEXED_ELEM);
 	UNMATCHED;
 }
 
@@ -7955,7 +7987,7 @@ int decode_iclass_sve_fp_2op_p_zd_a(context *ctx, Instruction *dec)
 	if(opc==2 && HasSVE() && HasSME()) return frinta_z_p_z(ctx, dec); // -> frintm_z_p_z_m
 	if(opc==3 && HasSVE() && HasSME()) return frinta_z_p_z(ctx, dec); // -> frintz_z_p_z_m
 	if(opc==4 && HasSVE() && HasSME()) return frinta_z_p_z(ctx, dec); // -> frinta_z_p_z_m
-	if(opc==5) UNALLOCATED(ENC_UNALLOCATED_639_SVE_FP_2OP_P_ZD_A);
+	if(opc==5) UNALLOCATED(ENC_UNALLOCATED_643_SVE_FP_2OP_P_ZD_A);
 	if(opc==6 && HasSVE() && HasSME()) return frinta_z_p_z(ctx, dec); // -> frintx_z_p_z_m
 	if(opc==7 && HasSVE() && HasSME()) return frinta_z_p_z(ctx, dec); // -> frinti_z_p_z_m
 	UNMATCHED;
@@ -7972,9 +8004,9 @@ int decode_iclass_sve_fp_2op_p_zd_b_0(context *ctx, Instruction *dec)
 	if(opc==3 && opc2==1 && HasSVE() && HasSME()) return fcvt_z_p_z(ctx, dec); // -> fcvt_z_p_z_h2d
 	if(opc==3 && opc2==2 && HasSVE() && HasSME()) return fcvt_z_p_z(ctx, dec); // -> fcvt_z_p_z_d2s
 	if(opc==3 && opc2==3 && HasSVE() && HasSME()) return fcvt_z_p_z(ctx, dec); // -> fcvt_z_p_z_s2d
-	if(!(opc&1) && opc2==3) UNALLOCATED(ENC_UNALLOCATED_642_SVE_FP_2OP_P_ZD_B_0);
-	if(!opc && !(opc2&2)) UNALLOCATED(ENC_UNALLOCATED_641_SVE_FP_2OP_P_ZD_B_0);
-	if(opc==1) UNALLOCATED(ENC_UNALLOCATED_640_SVE_FP_2OP_P_ZD_B_0);
+	if(!(opc&1) && opc2==3) UNALLOCATED(ENC_UNALLOCATED_646_SVE_FP_2OP_P_ZD_B_0);
+	if(!opc && !(opc2&2)) UNALLOCATED(ENC_UNALLOCATED_645_SVE_FP_2OP_P_ZD_B_0);
+	if(opc==1) UNALLOCATED(ENC_UNALLOCATED_644_SVE_FP_2OP_P_ZD_B_0);
 	UNMATCHED;
 }
 
@@ -7983,7 +8015,7 @@ int decode_iclass_sve_fp_2op_p_zd_b_1(context *ctx, Instruction *dec)
 	uint32_t opc=(INSWORD>>16)&3;
 	if(!opc && HasSVE() && HasSME()) return frecpx_z_p_z(ctx, dec); // -> frecpx_z_p_z_m
 	if(opc==1 && HasSVE() && HasSME()) return fsqrt_z_p_z(ctx, dec); // -> fsqrt_z_p_z_m
-	if((opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_643_SVE_FP_2OP_P_ZD_B_1);
+	if((opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_647_SVE_FP_2OP_P_ZD_B_1);
 	UNMATCHED;
 }
 
@@ -8008,9 +8040,9 @@ int decode_iclass_sve_fp_2op_p_zd_c(context *ctx, Instruction *dec)
 	if(!opc && !(opc2&2) && U && HasSVE2p2() && HasSME2p2()) return frint32x_z_p_z(ctx, dec); // -> frint32x_z_p_z_m
 	if(!opc && (opc2&2)==2 && !U && HasSVE2p2() && HasSME2p2()) return frint64z_z_p_z(ctx, dec); // -> frint64z_z_p_z_m
 	if(!opc && (opc2&2)==2 && U && HasSVE2p2() && HasSME2p2()) return frint64x_z_p_z(ctx, dec); // -> frint64x_z_p_z_m
-	if(opc==1 && !opc2) UNALLOCATED(ENC_UNALLOCATED_646_SVE_FP_2OP_P_ZD_C);
-	if(opc==2 && opc2!=2) UNALLOCATED(ENC_UNALLOCATED_644_SVE_FP_2OP_P_ZD_C);
-	if(opc==3 && opc2==1) UNALLOCATED(ENC_UNALLOCATED_645_SVE_FP_2OP_P_ZD_C);
+	if(opc==1 && !opc2) UNALLOCATED(ENC_UNALLOCATED_649_SVE_FP_2OP_P_ZD_C);
+	if(opc==2 && opc2!=2) UNALLOCATED(ENC_UNALLOCATED_648_SVE_FP_2OP_P_ZD_C);
+	if(opc==3 && opc2==1) UNALLOCATED(ENC_UNALLOCATED_650_SVE_FP_2OP_P_ZD_C);
 	UNMATCHED;
 }
 
@@ -8031,11 +8063,11 @@ int decode_iclass_sve_fp_2op_p_zd_d(context *ctx, Instruction *dec)
 	if(opc==3 && opc2==2 && U && HasSVE() && HasSME()) return fcvtzu_z_p_z(ctx, dec); // -> fcvtzu_z_p_z_s2x
 	if(opc==3 && opc2==3 && !U && HasSVE() && HasSME()) return fcvtzs_z_p_z(ctx, dec); // -> fcvtzs_z_p_z_d2x
 	if(opc==3 && opc2==3 && U && HasSVE() && HasSME()) return fcvtzu_z_p_z(ctx, dec); // -> fcvtzu_z_p_z_d2x
-	if(opc==1 && !opc2) UNALLOCATED(ENC_UNALLOCATED_650_SVE_FP_2OP_P_ZD_D);
-	if(opc==2 && opc2!=2) UNALLOCATED(ENC_UNALLOCATED_648_SVE_FP_2OP_P_ZD_D);
-	if(opc==3 && opc2==1) UNALLOCATED(ENC_UNALLOCATED_649_SVE_FP_2OP_P_ZD_D);
+	if(opc==1 && !opc2) UNALLOCATED(ENC_UNALLOCATED_653_SVE_FP_2OP_P_ZD_D);
+	if(opc==2 && opc2!=2) UNALLOCATED(ENC_UNALLOCATED_652_SVE_FP_2OP_P_ZD_D);
+	if(opc==3 && opc2==1) UNALLOCATED(ENC_UNALLOCATED_654_SVE_FP_2OP_P_ZD_D);
 	if(!opc && !U && HasSVE2() && HasSME()) return flogb_z_p_z(ctx, dec); // -> flogb_z_p_z_m
-	if(!opc && U) UNALLOCATED(ENC_UNALLOCATED_647_SVE_FP_2OP_P_ZD_D);
+	if(!opc && U) UNALLOCATED(ENC_UNALLOCATED_651_SVE_FP_2OP_P_ZD_D);
 	UNMATCHED;
 }
 
@@ -8060,6 +8092,24 @@ int decode_iclass_sve_fp8_fcvt_narrow(context *ctx, Instruction *dec)
 	if(opc==1 && HasSVE2() && HasFP8() && HasSME2() && HasFP8()) return fcvtnb_z8_mz2(ctx, dec); // -> fcvtnb_z8_mz2_s2b
 	if(opc==2 && HasSVE2() && HasFP8() && HasSME2() && HasFP8()) return bfcvtn_z8_mz2(ctx, dec); // -> bfcvtn_z8_mz2_bf2b
 	if(opc==3 && HasSVE2() && HasFP8() && HasSME2() && HasFP8()) return fcvtnt_z8_mz2(ctx, dec); // -> fcvtnt_z8_mz2_s2b
+	UNMATCHED;
+}
+
+int decode_iclass_sve_fp_ucvtf_wide(context *ctx, Instruction *dec)
+{
+	uint32_t opc=(INSWORD>>10)&3;
+	if(!opc && HasSVE2p3() && HasSME2p3()) return scvtf_z_z(ctx, dec); // -> scvtf_z_z_
+	if(opc==1 && HasSVE2p3() && HasSME2p3()) return ucvtf_z_z(ctx, dec); // -> ucvtf_z_z_
+	if(opc==2 && HasSVE2p3() && HasSME2p3()) return scvtflt_z_z(ctx, dec); // -> scvtflt_z_z_
+	if(opc==3 && HasSVE2p3() && HasSME2p3()) return ucvtflt_z_z(ctx, dec); // -> ucvtflt_z_z_
+	UNMATCHED;
+}
+
+int decode_iclass_sve_fp_fcvtzu_narrow(context *ctx, Instruction *dec)
+{
+	uint32_t op=(INSWORD>>10)&1;
+	if(!op && HasSVE2p3() && HasSME2p3()) return fcvtzsn_z_mz2(ctx, dec); // -> fcvtzsn_z_mz2_
+	if(op && HasSVE2p3() && HasSME2p3()) return fcvtzun_z_mz2(ctx, dec); // -> fcvtzun_z_mz2_
 	UNMATCHED;
 }
 
@@ -8099,11 +8149,11 @@ int decode_iclass_sve_fp_fdot_by_indexed_elem(context *ctx, Instruction *dec)
 {
 	uint32_t op=(INSWORD>>22)&1, opc2=(INSWORD>>10)&3;
 	if(!op && !opc2 && HasSME2() && HasSVE2p1()) return fdot_z_zzzi(ctx, dec); // -> fdot_z_zzzi_
-	if(!op && opc2==2) UNALLOCATED(ENC_UNALLOCATED_652_SVE_FP_FDOT_BY_INDEXED_ELEM);
+	if(!op && opc2==2) UNALLOCATED(ENC_UNALLOCATED_656_SVE_FP_FDOT_BY_INDEXED_ELEM);
 	if(op && !opc2 && HasSVE() && HasBF16() && HasSME() && HasBF16()) return bfdot_z_zzzi(ctx, dec); // -> bfdot_z_zzzi_
 	if(op && opc2==1 && HasSSVE_FP8DOT4() && HasSVE2() && HasFP8DOT4()) return fdot_z32_zz8z8i(ctx, dec); // -> fdot_z32_zz8z8i_
 	if(!op && opc2&1 && HasSSVE_FP8DOT2() && HasSVE2() && HasFP8DOT2()) return fdot_z_zz8z8i(ctx, dec); // -> fdot_z_zz8z8i_
-	if(op && (opc2&2)==2) UNALLOCATED(ENC_UNALLOCATED_651_SVE_FP_FDOT_BY_INDEXED_ELEM);
+	if(op && (opc2&2)==2) UNALLOCATED(ENC_UNALLOCATED_655_SVE_FP_FDOT_BY_INDEXED_ELEM);
 	UNMATCHED;
 }
 
@@ -8204,7 +8254,7 @@ int decode_iclass_sve_crypto_unary(context *ctx, Instruction *dec)
 	uint32_t size=(INSWORD>>22)&3, op=(INSWORD>>10)&1;
 	if(!size && !op && HasSVE_AES()) return aesmc_z_z(ctx, dec); // -> aesmc_z_z_
 	if(!size && op && HasSVE_AES()) return aesimc_z_z(ctx, dec); // -> aesimc_z_z_
-	if(size) UNALLOCATED(ENC_UNALLOCATED_653_SVE_CRYPTO_UNARY);
+	if(size) UNALLOCATED(ENC_UNALLOCATED_657_SVE_CRYPTO_UNARY);
 	UNMATCHED;
 }
 
@@ -8214,8 +8264,8 @@ int decode_iclass_sve_crypto_binary_dest(context *ctx, Instruction *dec)
 	if(!size && !op && !o2 && HasSVE_AES()) return aese_z_zz(ctx, dec); // -> aese_z_zz_
 	if(!size && !op && o2 && HasSVE_AES()) return aesd_z_zz(ctx, dec); // -> aesd_z_zz_
 	if(!size && op && !o2 && HasSVE_SM4()) return sm4e_z_zz(ctx, dec); // -> sm4e_z_zz_
-	if(!size && op && o2) UNALLOCATED(ENC_UNALLOCATED_655_SVE_CRYPTO_BINARY_DEST);
-	if(size) UNALLOCATED(ENC_UNALLOCATED_654_SVE_CRYPTO_BINARY_DEST);
+	if(!size && op && o2) UNALLOCATED(ENC_UNALLOCATED_659_SVE_CRYPTO_BINARY_DEST);
+	if(size) UNALLOCATED(ENC_UNALLOCATED_658_SVE_CRYPTO_BINARY_DEST);
 	UNMATCHED;
 }
 
@@ -8226,8 +8276,8 @@ int decode_iclass_sve_crypto_binary_multi2(context *ctx, Instruction *dec)
 	if(!size && !op && o2 && !o3 && HasSVE_AES2()) return aesd_mz_zzi(ctx, dec); // -> aesd_mz_zzi_2x1
 	if(!size && op && !o2 && !o3 && HasSVE_AES2()) return aesemc_mz_zzi(ctx, dec); // -> aesemc_mz_zzi_2x1
 	if(!size && op && o2 && !o3 && HasSVE_AES2()) return aesdimc_mz_zzi(ctx, dec); // -> aesdimc_mz_zzi_2x1
-	if(!size && o3) UNALLOCATED(ENC_UNALLOCATED_657_SVE_CRYPTO_BINARY_MULTI2);
-	if(size) UNALLOCATED(ENC_UNALLOCATED_656_SVE_CRYPTO_BINARY_MULTI2);
+	if(!size && o3) UNALLOCATED(ENC_UNALLOCATED_661_SVE_CRYPTO_BINARY_MULTI2);
+	if(size) UNALLOCATED(ENC_UNALLOCATED_660_SVE_CRYPTO_BINARY_MULTI2);
 	UNMATCHED;
 }
 
@@ -8238,8 +8288,8 @@ int decode_iclass_sve_crypto_binary_multi4(context *ctx, Instruction *dec)
 	if(!size && !op && o2 && !opc3 && HasSVE_AES2()) return aesd_mz_zzi(ctx, dec); // -> aesd_mz_zzi_4x1
 	if(!size && op && !o2 && !opc3 && HasSVE_AES2()) return aesemc_mz_zzi(ctx, dec); // -> aesemc_mz_zzi_4x1
 	if(!size && op && o2 && !opc3 && HasSVE_AES2()) return aesdimc_mz_zzi(ctx, dec); // -> aesdimc_mz_zzi_4x1
-	if(!size && opc3) UNALLOCATED(ENC_UNALLOCATED_659_SVE_CRYPTO_BINARY_MULTI4);
-	if(size) UNALLOCATED(ENC_UNALLOCATED_658_SVE_CRYPTO_BINARY_MULTI4);
+	if(!size && opc3) UNALLOCATED(ENC_UNALLOCATED_663_SVE_CRYPTO_BINARY_MULTI4);
+	if(size) UNALLOCATED(ENC_UNALLOCATED_662_SVE_CRYPTO_BINARY_MULTI4);
 	UNMATCHED;
 }
 
@@ -8248,7 +8298,7 @@ int decode_iclass_sve_crypto_binary_const(context *ctx, Instruction *dec)
 	uint32_t size=(INSWORD>>22)&3, op=(INSWORD>>10)&1;
 	if(!size && !op && HasSVE_SM4()) return sm4ekey_z_zz(ctx, dec); // -> sm4ekey_z_zz_
 	if(!size && op && HasSVE_SHA3()) return rax1_z_zz(ctx, dec); // -> rax1_z_zz_
-	if(size) UNALLOCATED(ENC_UNALLOCATED_660_SVE_CRYPTO_BINARY_CONST);
+	if(size) UNALLOCATED(ENC_UNALLOCATED_664_SVE_CRYPTO_BINARY_CONST);
 	UNMATCHED;
 }
 
@@ -8256,7 +8306,7 @@ int decode_iclass_sve_crypto_pmull_multi(context *ctx, Instruction *dec)
 {
 	uint32_t size=(INSWORD>>22)&3;
 	if(!size && HasSVE_AES2()) return pmull_mz_zzw(ctx, dec); // -> pmull_mz_zzw_1x2
-	if(size) UNALLOCATED(ENC_UNALLOCATED_661_SVE_CRYPTO_PMULL_MULTI);
+	if(size) UNALLOCATED(ENC_UNALLOCATED_665_SVE_CRYPTO_PMULL_MULTI);
 	UNMATCHED;
 }
 
@@ -8264,7 +8314,7 @@ int decode_iclass_sve_crypto_pmlal_multi(context *ctx, Instruction *dec)
 {
 	uint32_t size=(INSWORD>>22)&3;
 	if(!size && HasSVE_AES2()) return pmlal_mz_zzzw(ctx, dec); // -> pmlal_mz_zzzw_1x2
-	if(size) UNALLOCATED(ENC_UNALLOCATED_662_SVE_CRYPTO_PMLAL_MULTI);
+	if(size) UNALLOCATED(ENC_UNALLOCATED_666_SVE_CRYPTO_PMLAL_MULTI);
 	UNMATCHED;
 }
 
@@ -8340,6 +8390,16 @@ int decode_iclass_sve_intx_lut4_16(context *ctx, Instruction *dec)
 	UNMATCHED;
 }
 
+int decode_iclass_sve_intx_lut6_8(context *ctx, Instruction *dec)
+{
+	return luti6_z_zzz(ctx, dec);
+}
+
+int decode_iclass_sve_intx_lut6_16(context *ctx, Instruction *dec)
+{
+	return luti6_z_z2zz(ctx, dec);
+}
+
 int decode_iclass_sve_intx_bin_pred_shift_sat_round(context *ctx, Instruction *dec)
 {
 	uint32_t Q=(INSWORD>>19)&1, R=(INSWORD>>18)&1, N=(INSWORD>>17)&1, U=(INSWORD>>16)&1;
@@ -8355,7 +8415,7 @@ int decode_iclass_sve_intx_bin_pred_shift_sat_round(context *ctx, Instruction *d
 	if(Q && R && !N && U && HasSVE2() && HasSME()) return uqshlr_z_p_zz(ctx, dec); // -> uqshlr_z_p_zz_
 	if(Q && R && N && !U && HasSVE2() && HasSME()) return sqrshlr_z_p_zz(ctx, dec); // -> sqrshlr_z_p_zz_
 	if(Q && R && N && U && HasSVE2() && HasSME()) return uqrshlr_z_p_zz(ctx, dec); // -> uqrshlr_z_p_zz_
-	if(!Q && !N) UNALLOCATED(ENC_UNALLOCATED_663_SVE_INTX_BIN_PRED_SHIFT_SAT_ROUND);
+	if(!Q && !N) UNALLOCATED(ENC_UNALLOCATED_667_SVE_INTX_BIN_PRED_SHIFT_SAT_ROUND);
 	UNMATCHED;
 }
 
@@ -8398,13 +8458,13 @@ int decode_iclass_sve_intx_pred_arith_binary(context *ctx, Instruction *dec)
 int decode_iclass_sve_intx_arith_binary_pairs(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>17)&3, U=(INSWORD>>16)&1;
-	if(!opc && !U) UNALLOCATED(ENC_UNALLOCATED_665_SVE_INTX_ARITH_BINARY_PAIRS);
+	if(!opc && !U && HasSVE2p3() && HasSME2p3()) return subp_z_p_zz(ctx, dec); // -> subp_z_p_zz_
 	if(!opc && U && HasSVE2() && HasSME()) return addp_z_p_zz(ctx, dec); // -> addp_z_p_zz_
 	if(opc==2 && !U && HasSVE2() && HasSME()) return smaxp_z_p_zz(ctx, dec); // -> smaxp_z_p_zz_
 	if(opc==2 && U && HasSVE2() && HasSME()) return umaxp_z_p_zz(ctx, dec); // -> umaxp_z_p_zz_
 	if(opc==3 && !U && HasSVE2() && HasSME()) return sminp_z_p_zz(ctx, dec); // -> sminp_z_p_zz_
 	if(opc==3 && U && HasSVE2() && HasSME()) return uminp_z_p_zz(ctx, dec); // -> uminp_z_p_zz_
-	if(opc==1) UNALLOCATED(ENC_UNALLOCATED_664_SVE_INTX_ARITH_BINARY_PAIRS);
+	if(opc==1) UNALLOCATED(ENC_UNALLOCATED_668_SVE_INTX_ARITH_BINARY_PAIRS);
 	UNMATCHED;
 }
 
@@ -8426,7 +8486,7 @@ int decode_iclass_sve_int_mul_b(context *ctx, Instruction *dec)
 {
 	uint32_t size=(INSWORD>>22)&3, opc=(INSWORD>>10)&3;
 	if(!size && opc==1 && HasSVE2() && HasSME()) return pmul_z_zz(ctx, dec); // -> pmul_z_zz_
-	if(size && opc==1) UNALLOCATED(ENC_UNALLOCATED_666_SVE_INT_MUL_B);
+	if(size && opc==1) UNALLOCATED(ENC_UNALLOCATED_669_SVE_INT_MUL_B);
 	if(!opc && HasSVE2() && HasSME()) return mul_z_zz(ctx, dec); // -> mul_z_zz_
 	if(opc==2 && HasSVE2() && HasSME()) return smulh_z_zz(ctx, dec); // -> smulh_z_zz_
 	if(opc==3 && HasSVE2() && HasSME()) return umulh_z_zz(ctx, dec); // -> umulh_z_zz_
@@ -8439,6 +8499,16 @@ int decode_iclass_sve_int_sqdmulh(context *ctx, Instruction *dec)
 	if(!R && HasSVE2() && HasSME()) return sqdmulh_z_zz(ctx, dec); // -> sqdmulh_z_zz_
 	if(R && HasSVE2() && HasSME()) return sqrdmulh_z_zz(ctx, dec); // -> sqrdmulh_z_zz_
 	UNMATCHED;
+}
+
+int decode_iclass_sve_int_addqp(context *ctx, Instruction *dec)
+{
+	return addqp_z_zz(ctx, dec);
+}
+
+int decode_iclass_sve_int_addsubp(context *ctx, Instruction *dec)
+{
+	return addsubp_z_zz(ctx, dec);
 }
 
 int decode_iclass_sve_intx_shift_narrow(context *ctx, Instruction *dec)
@@ -8466,13 +8536,20 @@ int decode_iclass_sve_intx_shift_narrow(context *ctx, Instruction *dec)
 int decode_iclass_sve_intx_multi_shift_narrow(context *ctx, Instruction *dec)
 {
 	uint32_t op0=(INSWORD>>22)&1, opc=(INSWORD>>16)&0x1f, op1=(INSWORD>>13)&1, U=(INSWORD>>12)&1, R=(INSWORD>>11)&1;
+	if(!op0 && (opc&0x18)==8 && !op1 && !U && R && HasSVE2p3() && HasSME2p3()) return sqrshrun_z_mz2(ctx, dec); // -> sqrshrun_z_mz2_b
+	if(!op0 && (opc&0x18)==8 && op1 && !U && R && HasSVE2p3() && HasSME2p3()) return sqrshrn_z_mz2(ctx, dec); // -> sqrshrn_z_mz2_b
+	if(!op0 && (opc&0x18)==8 && op1 && U && R && HasSVE2p3() && HasSME2p3()) return uqrshrn_z_mz2(ctx, dec); // -> uqrshrn_z_mz2_b
+	if(!op0 && (opc&0x18)==0x10 && !op1 && U && R) UNALLOCATED(ENC_UNALLOCATED_674_SVE_INTX_MULTI_SHIFT_NARROW);
+	if(!op0 && (opc&8)==8 && !op1 && U && R) UNALLOCATED(ENC_UNALLOCATED_673_SVE_INTX_MULTI_SHIFT_NARROW);
 	if(!op0 && (opc&0x10)==0x10 && !op1 && !U && R && HasSME2() && HasSVE2p1()) return sqrshrun_z_mz2(ctx, dec); // -> sqrshrun_z_mz2_
-	if(!op0 && (opc&0x10)==0x10 && !op1 && U && R) UNALLOCATED(ENC_UNALLOCATED_670_SVE_INTX_MULTI_SHIFT_NARROW);
 	if(!op0 && (opc&0x10)==0x10 && op1 && !U && R && HasSME2() && HasSVE2p1()) return sqrshrn_z_mz2(ctx, dec); // -> sqrshrn_z_mz2_
 	if(!op0 && (opc&0x10)==0x10 && op1 && U && R && HasSME2() && HasSVE2p1()) return uqrshrn_z_mz2(ctx, dec); // -> uqrshrn_z_mz2_
-	if(!op0 && (opc&0x10)==0x10 && !R) UNALLOCATED(ENC_UNALLOCATED_669_SVE_INTX_MULTI_SHIFT_NARROW);
-	if(!op0 && !(opc&0x10)) UNALLOCATED(ENC_UNALLOCATED_668_SVE_INTX_MULTI_SHIFT_NARROW);
-	if(op0) UNALLOCATED(ENC_UNALLOCATED_667_SVE_INTX_MULTI_SHIFT_NARROW);
+	if(!op0 && !op1 && !U && !R && HasSVE2p3() && HasSME2p3()) return sqshrn_z_mz2(ctx, dec); // -> sqshrn_z_mz2_
+	if(!op0 && !op1 && U && !R && HasSVE2p3() && HasSME2p3()) return uqshrn_z_mz2(ctx, dec); // -> uqshrn_z_mz2_
+	if(!op0 && op1 && !U && !R && HasSVE2p3() && HasSME2p3()) return sqshrun_z_mz2(ctx, dec); // -> sqshrun_z_mz2_
+	if(!op0 && op1 && U && !R) UNALLOCATED(ENC_UNALLOCATED_672_SVE_INTX_MULTI_SHIFT_NARROW);
+	if(!op0 && !(opc&0x18) && R) UNALLOCATED(ENC_UNALLOCATED_671_SVE_INTX_MULTI_SHIFT_NARROW);
+	if(op0) UNALLOCATED(ENC_UNALLOCATED_670_SVE_INTX_MULTI_SHIFT_NARROW);
 	UNMATCHED;
 }
 
@@ -8485,7 +8562,7 @@ int decode_iclass_sve_intx_extract_narrow(context *ctx, Instruction *dec)
 	if(opc==1 && T && HasSVE2() && HasSME()) return uqxtnt_z_zz(ctx, dec); // -> uqxtnt_z_zz_
 	if(opc==2 && !T && HasSVE2() && HasSME()) return sqxtunb_z_zz(ctx, dec); // -> sqxtunb_z_zz_
 	if(opc==2 && T && HasSVE2() && HasSME()) return sqxtunt_z_zz(ctx, dec); // -> sqxtunt_z_zz_
-	if(opc==3) UNALLOCATED(ENC_UNALLOCATED_671_SVE_INTX_EXTRACT_NARROW);
+	if(opc==3) UNALLOCATED(ENC_UNALLOCATED_675_SVE_INTX_EXTRACT_NARROW);
 	UNMATCHED;
 }
 
@@ -8495,9 +8572,9 @@ int decode_iclass_sve_intx_multi_extract_narrow(context *ctx, Instruction *dec)
 	if(!tszh && tszl==2 && !opc && HasSME2() && HasSVE2p1()) return sqcvtn_z_mz2(ctx, dec); // -> sqcvtn_z_mz2_
 	if(!tszh && tszl==2 && opc==1 && HasSME2() && HasSVE2p1()) return uqcvtn_z_mz2(ctx, dec); // -> uqcvtn_z_mz2_
 	if(!tszh && tszl==2 && opc==2 && HasSME2() && HasSVE2p1()) return sqcvtun_z_mz2(ctx, dec); // -> sqcvtun_z_mz2_
-	if(!tszh && tszl==2 && opc==3) UNALLOCATED(ENC_UNALLOCATED_674_SVE_INTX_MULTI_EXTRACT_NARROW);
-	if(!tszh && tszl!=2) UNALLOCATED(ENC_UNALLOCATED_673_SVE_INTX_MULTI_EXTRACT_NARROW);
-	if(tszh) UNALLOCATED(ENC_UNALLOCATED_672_SVE_INTX_MULTI_EXTRACT_NARROW);
+	if(!tszh && tszl==2 && opc==3) UNALLOCATED(ENC_UNALLOCATED_678_SVE_INTX_MULTI_EXTRACT_NARROW);
+	if(!tszh && tszl!=2) UNALLOCATED(ENC_UNALLOCATED_677_SVE_INTX_MULTI_EXTRACT_NARROW);
+	if(tszh) UNALLOCATED(ENC_UNALLOCATED_676_SVE_INTX_MULTI_EXTRACT_NARROW);
 	UNMATCHED;
 }
 
@@ -8538,7 +8615,7 @@ int decode_iclass_sve_intx_cons_arith_long(context *ctx, Instruction *dec)
 	if(op && S && !U && T && HasSVE2() && HasSME()) return sabdlt_z_zz(ctx, dec); // -> sabdlt_z_zz_
 	if(op && S && U && !T && HasSVE2() && HasSME()) return uabdlb_z_zz(ctx, dec); // -> uabdlb_z_zz_
 	if(op && S && U && T && HasSVE2() && HasSME()) return uabdlt_z_zz(ctx, dec); // -> uabdlt_z_zz_
-	if(op && !S) UNALLOCATED(ENC_UNALLOCATED_675_SVE_INTX_CONS_ARITH_LONG);
+	if(op && !S) UNALLOCATED(ENC_UNALLOCATED_679_SVE_INTX_CONS_ARITH_LONG);
 	UNMATCHED;
 }
 
@@ -8572,16 +8649,32 @@ int decode_iclass_sve_intx_cons_mul_long(context *ctx, Instruction *dec)
 	UNMATCHED;
 }
 
+int decode_iclass_sve_abal(context *ctx, Instruction *dec)
+{
+	uint32_t U=(INSWORD>>11)&1;
+	if(!U && HasSVE2p3() && HasSME2p3()) return sabal_z_zzz(ctx, dec); // -> sabal_z_zz_
+	if(U && HasSVE2p3() && HasSME2p3()) return uabal_z_zzz(ctx, dec); // -> uabal_z_zz_
+	UNMATCHED;
+}
+
+int decode_iclass_sve_fp_fmmla_nw(context *ctx, Instruction *dec)
+{
+	uint32_t op=(INSWORD>>22)&1;
+	if(!op && HasSVE2p2() && HasF16MM()) return fmmla_z_zzz(ctx, dec); // -> fmmla_z_zzz_h
+	if(op && HasSVE_B16MM()) return bfmmla_z16_zzz(ctx, dec); // -> bfmmla_z_zzz_h
+	UNMATCHED;
+}
+
 int decode_iclass_sve_fp_pairwise(context *ctx, Instruction *dec)
 {
 	uint32_t opc=(INSWORD>>16)&7;
 	if(!opc && HasSVE2() && HasSME()) return faddp_z_p_zz(ctx, dec); // -> faddp_z_p_zz_
-	if(opc==1) UNALLOCATED(ENC_UNALLOCATED_677_SVE_FP_PAIRWISE);
+	if(opc==1) UNALLOCATED(ENC_UNALLOCATED_681_SVE_FP_PAIRWISE);
 	if(opc==4 && HasSVE2() && HasSME()) return fmaxnmp_z_p_zz(ctx, dec); // -> fmaxnmp_z_p_zz_
 	if(opc==5 && HasSVE2() && HasSME()) return fminnmp_z_p_zz(ctx, dec); // -> fminnmp_z_p_zz_
 	if(opc==6 && HasSVE2() && HasSME()) return fmaxp_z_p_zz(ctx, dec); // -> fmaxp_z_p_zz_
 	if(opc==7 && HasSVE2() && HasSME()) return fminp_z_p_zz(ctx, dec); // -> fminp_z_p_zz_
-	if((opc&6)==2) UNALLOCATED(ENC_UNALLOCATED_676_SVE_FP_PAIRWISE);
+	if((opc&6)==2) UNALLOCATED(ENC_UNALLOCATED_680_SVE_FP_PAIRWISE);
 	UNMATCHED;
 }
 
@@ -8593,7 +8686,7 @@ int decode_iclass_sve_fp_z2op_p_zd_a(context *ctx, Instruction *dec)
 	if(!op && opc2==2 && HasSVE2p2() && HasSME2p2()) return frinta_z_p_z(ctx, dec); // -> frintm_z_p_z_z
 	if(!op && opc2==3 && HasSVE2p2() && HasSME2p2()) return frinta_z_p_z(ctx, dec); // -> frintz_z_p_z_z
 	if(op && !opc2 && HasSVE2p2() && HasSME2p2()) return frinta_z_p_z(ctx, dec); // -> frinta_z_p_z_z
-	if(op && opc2==1) UNALLOCATED(ENC_UNALLOCATED_678_SVE_FP_Z2OP_P_ZD_A);
+	if(op && opc2==1) UNALLOCATED(ENC_UNALLOCATED_682_SVE_FP_Z2OP_P_ZD_A);
 	if(op && opc2==2 && HasSVE2p2() && HasSME2p2()) return frinta_z_p_z(ctx, dec); // -> frintx_z_p_z_z
 	if(op && opc2==3 && HasSVE2p2() && HasSME2p2()) return frinta_z_p_z(ctx, dec); // -> frinti_z_p_z_z
 	UNMATCHED;
@@ -8610,9 +8703,9 @@ int decode_iclass_sve_fp_z2op_p_zd_b_0(context *ctx, Instruction *dec)
 	if(opc==3 && opc2==1 && HasSVE2p2() && HasSME2p2()) return fcvt_z_p_z(ctx, dec); // -> fcvt_z_p_z_h2dz
 	if(opc==3 && opc2==2 && HasSVE2p2() && HasSME2p2()) return fcvt_z_p_z(ctx, dec); // -> fcvt_z_p_z_d2sz
 	if(opc==3 && opc2==3 && HasSVE2p2() && HasSME2p2()) return fcvt_z_p_z(ctx, dec); // -> fcvt_z_p_z_s2dz
-	if(!(opc&1) && opc2==3) UNALLOCATED(ENC_UNALLOCATED_681_SVE_FP_Z2OP_P_ZD_B_0);
-	if(!opc && !(opc2&2)) UNALLOCATED(ENC_UNALLOCATED_680_SVE_FP_Z2OP_P_ZD_B_0);
-	if(opc==1) UNALLOCATED(ENC_UNALLOCATED_679_SVE_FP_Z2OP_P_ZD_B_0);
+	if(!(opc&1) && opc2==3) UNALLOCATED(ENC_UNALLOCATED_685_SVE_FP_Z2OP_P_ZD_B_0);
+	if(!opc && !(opc2&2)) UNALLOCATED(ENC_UNALLOCATED_684_SVE_FP_Z2OP_P_ZD_B_0);
+	if(opc==1) UNALLOCATED(ENC_UNALLOCATED_683_SVE_FP_Z2OP_P_ZD_B_0);
 	UNMATCHED;
 }
 
@@ -8621,7 +8714,7 @@ int decode_iclass_sve_fp_z2op_p_zd_b_1(context *ctx, Instruction *dec)
 	uint32_t opc=(INSWORD>>13)&3;
 	if(!opc && HasSVE2p2() && HasSME2p2()) return frecpx_z_p_z(ctx, dec); // -> frecpx_z_p_z_z
 	if(opc==1 && HasSVE2p2() && HasSME2p2()) return fsqrt_z_p_z(ctx, dec); // -> fsqrt_z_p_z_z
-	if((opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_682_SVE_FP_Z2OP_P_ZD_B_1);
+	if((opc&2)==2) UNALLOCATED(ENC_UNALLOCATED_686_SVE_FP_Z2OP_P_ZD_B_1);
 	UNMATCHED;
 }
 
@@ -8646,10 +8739,10 @@ int decode_iclass_sve_fp_z2op_p_zd_c(context *ctx, Instruction *dec)
 	if(!opc && !o2 && U && HasSVE2p2() && HasSME2p2()) return frint32x_z_p_z(ctx, dec); // -> frint32x_z_p_z_z
 	if(!opc && o2 && !U && HasSVE2p2() && HasSME2p2()) return frint64z_z_p_z(ctx, dec); // -> frint64z_z_p_z_z
 	if(!opc && o2 && U && HasSVE2p2() && HasSME2p2()) return frint64x_z_p_z(ctx, dec); // -> frint64x_z_p_z_z
-	if(opc==1 && !o2 && !o3) UNALLOCATED(ENC_UNALLOCATED_686_SVE_FP_Z2OP_P_ZD_C);
-	if(opc==2 && o2 && o3) UNALLOCATED(ENC_UNALLOCATED_684_SVE_FP_Z2OP_P_ZD_C);
-	if(opc==3 && !o2 && o3) UNALLOCATED(ENC_UNALLOCATED_685_SVE_FP_Z2OP_P_ZD_C);
-	if(opc==2 && !o2) UNALLOCATED(ENC_UNALLOCATED_683_SVE_FP_Z2OP_P_ZD_C);
+	if(opc==1 && !o2 && !o3) UNALLOCATED(ENC_UNALLOCATED_688_SVE_FP_Z2OP_P_ZD_C);
+	if(opc==2 && o2 && o3) UNALLOCATED(ENC_UNALLOCATED_689_SVE_FP_Z2OP_P_ZD_C);
+	if(opc==3 && !o2 && o3) UNALLOCATED(ENC_UNALLOCATED_690_SVE_FP_Z2OP_P_ZD_C);
+	if(opc==2 && !o2) UNALLOCATED(ENC_UNALLOCATED_687_SVE_FP_Z2OP_P_ZD_C);
 	UNMATCHED;
 }
 
@@ -8670,12 +8763,12 @@ int decode_iclass_sve_fp_z2op_p_zd_d(context *ctx, Instruction *dec)
 	if(opc==3 && o2 && !o3 && U && HasSVE2p2() && HasSME2p2()) return fcvtzu_z_p_z(ctx, dec); // -> fcvtzu_z_p_z_s2xz
 	if(opc==3 && o2 && o3 && !U && HasSVE2p2() && HasSME2p2()) return fcvtzs_z_p_z(ctx, dec); // -> fcvtzs_z_p_z_d2xz
 	if(opc==3 && o2 && o3 && U && HasSVE2p2() && HasSME2p2()) return fcvtzu_z_p_z(ctx, dec); // -> fcvtzu_z_p_z_d2xz
-	if(opc==1 && !o2 && !o3) UNALLOCATED(ENC_UNALLOCATED_691_SVE_FP_Z2OP_P_ZD_D);
-	if(opc==2 && o2 && o3) UNALLOCATED(ENC_UNALLOCATED_690_SVE_FP_Z2OP_P_ZD_D);
-	if(opc==3 && !o2 && o3) UNALLOCATED(ENC_UNALLOCATED_689_SVE_FP_Z2OP_P_ZD_D);
+	if(opc==1 && !o2 && !o3) UNALLOCATED(ENC_UNALLOCATED_693_SVE_FP_Z2OP_P_ZD_D);
+	if(opc==2 && o2 && o3) UNALLOCATED(ENC_UNALLOCATED_694_SVE_FP_Z2OP_P_ZD_D);
+	if(opc==3 && !o2 && o3) UNALLOCATED(ENC_UNALLOCATED_695_SVE_FP_Z2OP_P_ZD_D);
 	if(!opc && !o2 && HasSVE2p2() && HasSME2p2()) return flogb_z_p_z(ctx, dec); // -> flogb_z_p_z_z
-	if(!opc && o2) UNALLOCATED(ENC_UNALLOCATED_687_SVE_FP_Z2OP_P_ZD_D);
-	if(opc==2 && !o2) UNALLOCATED(ENC_UNALLOCATED_688_SVE_FP_Z2OP_P_ZD_D);
+	if(!opc && o2) UNALLOCATED(ENC_UNALLOCATED_691_SVE_FP_Z2OP_P_ZD_D);
+	if(opc==2 && !o2) UNALLOCATED(ENC_UNALLOCATED_692_SVE_FP_Z2OP_P_ZD_D);
 	UNMATCHED;
 }
 
@@ -8689,7 +8782,7 @@ int decode_iclass_sve_ptr_muladd_unpred(context *ctx, Instruction *dec)
 	uint32_t opc=(INSWORD>>22)&3, o2=(INSWORD>>11)&1;
 	if(opc==3 && !o2 && HasSVE() && HasCPA()) return mlapt_z_zzz(ctx, dec); // -> mlapt_z_zzz_
 	if(opc==3 && o2 && HasSVE() && HasCPA()) return madpt_z_zzz(ctx, dec); // -> madpt_z_zzz_
-	if(opc!=3) UNALLOCATED(ENC_UNALLOCATED_692_SVE_PTR_MULADD_UNPRED);
+	if(opc!=3) UNALLOCATED(ENC_UNALLOCATED_696_SVE_PTR_MULADD_UNPRED);
 	UNMATCHED;
 }
 

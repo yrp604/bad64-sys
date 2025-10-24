@@ -25,7 +25,13 @@ inline int CountTrailingZeros(uint64_t value)
 }
 #endif
 
-BNSegmentFlag SegmentFlagsFromMachOProtections(int initProt, int maxProt);
+namespace BinaryNinja {
+	struct segment_command_64;
+	struct section_64;
+}
+
+uint32_t SegmentFlagsForSegment(const BinaryNinja::segment_command_64& segment);
+uint32_t SectionSemanticsForSection(const BinaryNinja::section_64& section);
 
 int64_t readSLEB128(const uint8_t*& current, const uint8_t* end);
 

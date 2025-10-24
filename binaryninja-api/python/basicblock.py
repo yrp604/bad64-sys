@@ -20,7 +20,7 @@
 
 import ctypes
 from dataclasses import dataclass
-from typing import Generator, Optional, List, Tuple
+from typing import Generator, Optional, List, Tuple, Union
 
 # Binary Ninja components
 import binaryninja
@@ -106,7 +106,7 @@ class BasicBlock:
 			core.BNFreeBasicBlock(self.handle)
 
 	@classmethod
-	def _from_core_block(cls, block: core.BNBasicBlockHandle) -> Optional['BasicBlock']:
+	def _from_core_block(cls, block: core.BNBasicBlockHandle) -> Optional[Union['BasicBlock', 'binaryninja.lowlevelil.LowLevelILBasicBlock', 'binaryninja.mediumlevelil.MediumLevelILBasicBlock', 'binaryninja.highlevelil.HighLevelILBasicBlock']]:
 		"""From a BNBasicBlockHandle, get a BasicBlock or one of the IL subclasses (takes ref)"""
 		func_handle = core.BNGetBasicBlockFunction(block)
 		if not func_handle:
@@ -674,8 +674,8 @@ class BasicBlock:
 		Dominance frontier for this basic block (read-only)
 
 		The dominance frontier of a basic block B is the set of blocks that are not strictly dominated by B,
-		but are immediately control-dependent on B. In other words, it contains the blocks where B's dominance 
-		"stops" - the blocks that have at least one predecessor not dominated by B, while having another 
+		but are immediately control-dependent on B. In other words, it contains the blocks where B's dominance
+		"stops" - the blocks that have at least one predecessor not dominated by B, while having another
 		predecessor that is dominated by B.
 		"""
 		count = ctypes.c_ulonglong()

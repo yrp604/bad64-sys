@@ -7,6 +7,9 @@ license = "Apache-2.0"
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+demo = []
+
 [dependencies]
 dwarfreader = { path = "../shared/" }
 binaryninja.workspace = true
@@ -17,3 +20,4 @@ iset = "0.2.2"
 cpp_demangle = "0.4.3"
 regex = "1"
 indexmap = "2.5.0"
+object = "0.36"

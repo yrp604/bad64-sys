@@ -15,12 +15,9 @@ TransformContext::~TransformContext()
 }
 
 
-string TransformContext::GetTransformName() const
+Ref<BinaryView> TransformContext::GetInput() const
 {
-	char* name = BNTransformContextGetTransformName(m_object);
-	string result = name;
-	BNFreeString(name);
-	return result;
+	return new BinaryView(BNTransformContextGetInput(m_object));
 }
 
 
@@ -33,9 +30,67 @@ string TransformContext::GetFileName() const
 }
 
 
-Ref<BinaryView> TransformContext::GetInput() const
+string TransformContext::GetTransformName() const
 {
-	return new BinaryView(BNTransformContextGetInput(m_object));
+	char* name = BNTransformContextGetTransformName(m_object);
+	string result = name;
+	BNFreeString(name);
+	return result;
+}
+
+
+void TransformContext::SetTransformParameters(const map<string, DataBuffer>& params)
+{
+	BNTransformParameter* list = new BNTransformParameter[params.size()];
+	size_t idx = 0;
+	for (const auto& param : params)
+	{
+		list[idx].name = param.first.c_str();
+		list[idx].value = param.second.GetBufferObject();
+		idx++;
+	}
+
+	BNTransformContextSetTransformParameters(m_object, list, params.size());
+	delete[] list;
+}
+
+
+void TransformContext::SetTransformParameter(const string& name, const DataBuffer& data)
+{
+	BNTransformContextSetTransformParameter(m_object, name.c_str(), data.GetBufferObject());
+}
+
+
+bool TransformContext::HasTransformParameter(const string& name) const
+{
+	return BNTransformContextHasTransformParameter(m_object, name.c_str());
+}
+
+
+void TransformContext::ClearTransformParameter(const string& name)
+{
+	BNTransformContextClearTransformParameter(m_object, name.c_str());
+}
+
+
+string TransformContext::GetExtractionMessage() const
+{
+	char* message = BNTransformContextGetExtractionMessage(m_object);
+	string result = message;
+	BNFreeString(message);
+	return result;
+}
+
+
+BNTransformResult TransformContext::GetExtractionResult() const
+{
+	return BNTransformContextGetExtractionResult(m_object);
+}
+
+
+BNTransformResult TransformContext::GetTransformResult() const
+{
+	return BNTransformContextGetTransformResult(m_object);
 }
 
 
@@ -50,7 +105,7 @@ Ref<TransformContext> TransformContext::GetParent() const
 	BNTransformContext* parent = BNTransformContextGetParent(m_object);
 	if (!parent)
 		return nullptr;
-	return new TransformContext(BNNewTransformContextReference(parent));
+	return new TransformContext(parent);
 }
 
 
@@ -81,16 +136,16 @@ Ref<TransformContext> TransformContext::GetChild(const string& filename) const
 	BNTransformContext* child = BNTransformContextGetChild(m_object, filename.c_str());
 	if (!child)
 		return nullptr;
-	return new TransformContext(BNNewTransformContextReference(child));
+	return new TransformContext(child);
 }
 
 
-Ref<TransformContext> TransformContext::CreateChild(const DataBuffer& data, const string& filename)
+Ref<TransformContext> TransformContext::SetChild(const DataBuffer& data, const string& filename, BNTransformResult result, const std::string& message)
 {
-	BNTransformContext* child = BNTransformContextCreateChild(m_object, data.GetBufferObject(), filename.c_str());
+	BNTransformContext* child = BNTransformContextSetChild(m_object, data.GetBufferObject(), filename.c_str(), result, message.c_str());
 	if (!child)
 		return nullptr;
-	return new TransformContext(BNNewTransformContextReference(child));
+	return new TransformContext(child);
 }
 
 

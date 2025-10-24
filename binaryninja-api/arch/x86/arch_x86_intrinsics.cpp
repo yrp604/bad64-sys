@@ -5124,6 +5124,14 @@ vector<uint32_t> X86CommonArchitecture::GetAllIntrinsics()
 
 vector<NameAndType> X86CommonArchitecture::GetIntrinsicInputs(uint32_t intrinsic)
 {
+    static const vector<NameAndType> singleFloat10 { NameAndType(Type::FloatType(10)->SetIgnored(true)) };
+    static const vector<NameAndType> singleInt10 { NameAndType(Type::IntegerType(10, false)->SetIgnored(true)) };
+    static const vector<NameAndType> namedDoubleFloat10 { NameAndType("x", Type::FloatType(10)->SetIgnored(true)), NameAndType("y", Type::FloatType(10)->SetIgnored(true)) };
+    static const vector<NameAndType> doubleFloat10 { NameAndType(Type::FloatType(10)->SetIgnored(true)), NameAndType(Type::FloatType(10)->SetIgnored(true)) };
+    static const vector<NameAndType> singleInt8 { NameAndType(Type::IntegerType(8, false)->SetIgnored(true)) };
+    static const vector<NameAndType> singleInt4 { NameAndType(Type::IntegerType(4, false)->SetIgnored(true)) };
+    static const vector<NameAndType> singleInt2 { NameAndType(Type::IntegerType(2, false)->SetIgnored(true)) };
+
     switch (intrinsic)
     {
     case INTRINSIC_F2XM1:
@@ -5134,37 +5142,37 @@ vector<NameAndType> X86CommonArchitecture::GetIntrinsicInputs(uint32_t intrinsic
     case INTRINSIC_FPTAN:
     case INTRINSIC_FXAM:
     case INTRINSIC_FXTRACT:
-        return vector<NameAndType> { NameAndType(Type::FloatType(10)) };
+        return singleFloat10;
     case INTRINSIC_FBLD:
-        return vector<NameAndType> { NameAndType(Type::IntegerType(10, false)) };
+        return singleInt10;
     case INTRINSIC_FPATAN:
     case INTRINSIC_FYL2X:
     case INTRINSIC_FYL2XP1:
-        return vector<NameAndType> { NameAndType("x", Type::FloatType(10)), NameAndType("y", Type::FloatType(10)) };
+        return namedDoubleFloat10;
     case INTRINSIC_FPREM:
     case INTRINSIC_FPREM1:
     case INTRINSIC_FSCALE:
-        return vector<NameAndType> { NameAndType(Type::FloatType(10)), NameAndType(Type::FloatType(10)) };
+        return doubleFloat10;
     case INTRINSIC_XED_IFORM_TZCNT_GPR64_GPRMEM64:
-        return vector<NameAndType> { NameAndType(Type::IntegerType(8, false)) };
+        return singleInt8;
     case INTRINSIC_XED_IFORM_TZCNT_GPR32_GPRMEM32:
-        return vector<NameAndType> { NameAndType(Type::IntegerType(4, false)) };
+        return singleInt4;
     case INTRINSIC_XED_IFORM_TZCNT_GPR16_GPRMEM16:
-        return vector<NameAndType> { NameAndType(Type::IntegerType(2, false)) };
+        return singleInt2;
 
     case INTRINSIC_XED_IFORM_LZCNT_GPR64_GPRMEM64:
-        return vector<NameAndType> { NameAndType(Type::IntegerType(8, false)) };
+        return singleInt8;
     case INTRINSIC_XED_IFORM_LZCNT_GPR32_GPRMEM32:
-        return vector<NameAndType> { NameAndType(Type::IntegerType(4, false)) };
+        return singleInt4;
     case INTRINSIC_XED_IFORM_LZCNT_GPR16_GPRMEM16:
-        return vector<NameAndType> { NameAndType(Type::IntegerType(2, false)) };
+        return singleInt2;
 
     case INTRINSIC_XED_IFORM_POPCNT_GPR64_GPRMEM64:
-        return vector<NameAndType> { NameAndType(Type::IntegerType(8, false)) };
+        return singleInt8;
     case INTRINSIC_XED_IFORM_POPCNT_GPR32_GPRMEM32:
-        return vector<NameAndType> { NameAndType(Type::IntegerType(4, false)) };
+        return singleInt4;
     case INTRINSIC_XED_IFORM_POPCNT_GPR16_GPRMEM16:
-        return vector<NameAndType> { NameAndType(Type::IntegerType(2, false)) };
+        return singleInt2;
 
     #include "x86_intrinsic_input_type.include"
 
@@ -5175,6 +5183,17 @@ vector<NameAndType> X86CommonArchitecture::GetIntrinsicInputs(uint32_t intrinsic
 
 vector<Confidence<Ref<Type>>> X86CommonArchitecture::GetIntrinsicOutputs(uint32_t intrinsic)
 {
+    static const vector<Confidence<Ref<Type>>> singleFloat10 { Type::FloatType(10)->SetIgnored(true) };
+    static const vector<Confidence<Ref<Type>>> singleInt10 { Type::IntegerType(10, false)->SetIgnored(true) };
+    static const vector<Confidence<Ref<Type>>> float10Bool { Type::FloatType(10)->SetIgnored(true), Type::BoolType()->SetIgnored(true) };
+    static const vector<Confidence<Ref<Type>>> doubleFloat10Bool { Type::FloatType(10)->SetIgnored(true), Type::FloatType(10)->SetIgnored(true), Type::BoolType()->SetIgnored(true) };
+    static const vector<Confidence<Ref<Type>>> float10BoolInt1 { Type::FloatType(10)->SetIgnored(true), Type::BoolType()->SetIgnored(true), Type::IntegerType(1, false)->SetIgnored(true) };
+    static const vector<Confidence<Ref<Type>>> quadBool { Type::BoolType()->SetIgnored(true), Type::BoolType()->SetIgnored(true), Type::BoolType()->SetIgnored(true), Type::BoolType()->SetIgnored(true) };
+    static const vector<Confidence<Ref<Type>>> doubleFloat10 { Type::FloatType(10)->SetIgnored(true), Type::FloatType(10)->SetIgnored(true) };
+    static const vector<Confidence<Ref<Type>>> singleInt8 { Type::IntegerType(8, false)->SetIgnored(true) };
+    static const vector<Confidence<Ref<Type>>> singleInt4 { Type::IntegerType(4, false)->SetIgnored(true) };
+    static const vector<Confidence<Ref<Type>>> singleInt2 { Type::IntegerType(2, false)->SetIgnored(true) };
+
     switch (intrinsic)
     {
     case INTRINSIC_F2XM1:
@@ -5183,43 +5202,43 @@ vector<Confidence<Ref<Type>>> X86CommonArchitecture::GetIntrinsicOutputs(uint32_
     case INTRINSIC_FSCALE:
     case INTRINSIC_FYL2X:
     case INTRINSIC_FYL2XP1:
-        return vector<Confidence<Ref<Type>>> { Type::FloatType(10) };
+        return singleFloat10;
     case INTRINSIC_FBST:
-        return vector<Confidence<Ref<Type>>> { Type::IntegerType(10, false) };
+        return singleInt10;
     case INTRINSIC_FSIN:
     case INTRINSIC_FCOS:
     case INTRINSIC_FPTAN:
-        return vector<Confidence<Ref<Type>>> { Type::FloatType(10), Type::BoolType() };
+        return float10Bool;
     case INTRINSIC_FSINCOS:
-        return vector<Confidence<Ref<Type>>> { Type::FloatType(10), Type::FloatType(10), Type::BoolType() };
+        return doubleFloat10Bool;
     case INTRINSIC_FPREM:
     case INTRINSIC_FPREM1:
-        return vector<Confidence<Ref<Type>>> { Type::FloatType(10), Type::BoolType(), Type::IntegerType(1, false) };
+        return float10BoolInt1;
     case INTRINSIC_FXAM:
-        return vector<Confidence<Ref<Type>>> { Type::BoolType(), Type::BoolType(), Type::BoolType(), Type::BoolType() };
+        return quadBool;
     case INTRINSIC_FXTRACT:
-        return vector<Confidence<Ref<Type>>> { Type::FloatType(10), Type::FloatType(10) };
+        return doubleFloat10;
 
     case INTRINSIC_XED_IFORM_TZCNT_GPR64_GPRMEM64:
-        return vector<Confidence<Ref<Type>>> { Type::IntegerType(8, false)};
+        return singleInt8;
     case INTRINSIC_XED_IFORM_TZCNT_GPR32_GPRMEM32:
-        return vector<Confidence<Ref<Type>>> { Type::IntegerType(4, false)};
+        return singleInt4;
     case INTRINSIC_XED_IFORM_TZCNT_GPR16_GPRMEM16:
-        return vector<Confidence<Ref<Type>>> { Type::IntegerType(2, false)};
+        return singleInt2;
 
     case INTRINSIC_XED_IFORM_LZCNT_GPR64_GPRMEM64:
-        return vector<Confidence<Ref<Type>>> { Type::IntegerType(8, false)};
+        return singleInt8;
     case INTRINSIC_XED_IFORM_LZCNT_GPR32_GPRMEM32:
-        return vector<Confidence<Ref<Type>>> { Type::IntegerType(4, false)};
+        return singleInt4;
     case INTRINSIC_XED_IFORM_LZCNT_GPR16_GPRMEM16:
-        return vector<Confidence<Ref<Type>>> { Type::IntegerType(2, false)};
+        return singleInt2;
 
     case INTRINSIC_XED_IFORM_POPCNT_GPR64_GPRMEM64:
-        return vector<Confidence<Ref<Type>>> { Type::IntegerType(8, false)};
+        return singleInt8;
     case INTRINSIC_XED_IFORM_POPCNT_GPR32_GPRMEM32:
-        return vector<Confidence<Ref<Type>>> { Type::IntegerType(4, false)};
+        return singleInt4;
     case INTRINSIC_XED_IFORM_POPCNT_GPR16_GPRMEM16:
-        return vector<Confidence<Ref<Type>>> { Type::IntegerType(2, false)};
+        return singleInt2;
 
     #include "x86_intrinsic_output_type.include"
 

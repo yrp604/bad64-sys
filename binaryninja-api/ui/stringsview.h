@@ -18,6 +18,36 @@
  	\ingroup uiapi
 */
 
+class StringsListItem
+{
+	std::variant<BNStringReference, BinaryNinja::DerivedString> m_contents;
+
+public:
+	StringsListItem(const BNStringReference& ref): m_contents(ref) {}
+	StringsListItem(const BinaryNinja::DerivedString& str): m_contents(str) {}
+
+	bool IsStringReference() const { return std::holds_alternative<BNStringReference>(m_contents); }
+	bool IsDerivedString() const { return std::holds_alternative<BinaryNinja::DerivedString>(m_contents); }
+	std::optional<BNStringReference> GetStringReference() const;
+	std::optional<BinaryNinja::DerivedString> GetDerivedString() const;
+
+	std::optional<uint64_t> GetStartAddress() const;
+	BNDerivedStringLocationType GetLocationType() const;
+	uint64_t GetDataLength() const;
+	size_t GetCharacterLength() const;
+	std::optional<BNStringType> GetStringType() const;
+	QString GetStringTypeName() const;
+	std::optional<BinaryNinja::StringRef> GetStringRef() const;
+
+	QString GetString(BinaryViewRef data, bool simplified) const;
+
+	std::optional<uint64_t> GetReferenceCount(const std::map<uint64_t, uint64_t>& refs,
+		const std::map<BinaryNinja::DerivedString, uint64_t>& derivedRefs) const;
+
+	bool operator==(const StringsListItem& other) const;
+	bool operator!=(const StringsListItem& other) const;
+};
+
 /*!
 
     \ingroup stringsview
@@ -28,15 +58,16 @@ class BINARYNINJAUIAPI StringsListModel : public QAbstractItemModel, public Bina
 
 	struct StringUpdateEvent
 	{
-		BNStringReference ref;
+		StringsListItem item;
 		bool added;
 	};
 
 	QWidget* m_stringsList;
 	BinaryViewRef m_data;
-	std::vector<BNStringReference> m_allStrings;
-	std::vector<BNStringReference> m_strings;
+	std::vector<StringsListItem> m_allStrings;
+	std::vector<StringsListItem> m_strings;
 	std::map<uint64_t, uint64_t> m_refCounts;
+	std::map<BinaryNinja::DerivedString, uint64_t> m_derivedRefCounts;
 	std::string m_filter;
 
 	size_t m_filteredByOptions;
@@ -48,8 +79,8 @@ class BINARYNINJAUIAPI StringsListModel : public QAbstractItemModel, public Bina
 	bool m_includeOnlyReferenced;
 	bool m_includeOnlyFromCurrentFunction;
 
-	static bool stringComparison(const BNStringReference& a, const BNStringReference& b);
-	bool matchString(const BNStringReference& stringRef);
+	static bool stringComparison(const StringsListItem& a, const StringsListItem& b);
+	bool matchString(const StringsListItem& item);
 
 	std::vector<StringUpdateEvent> getQueuedStringUpdates();
 
@@ -74,11 +105,13 @@ class BINARYNINJAUIAPI StringsListModel : public QAbstractItemModel, public Bina
 	virtual QVariant data(const QModelIndex& i, int role) const override;
 	virtual QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
 
-	BNStringReference getStringAt(const QModelIndex& i);
-	QModelIndex findString(const BNStringReference& ref);
+	StringsListItem getStringAt(const QModelIndex& i);
+	QModelIndex findString(const StringsListItem& item);
 
 	virtual void OnStringFound(BinaryNinja::BinaryView* data, BNStringType type, uint64_t offset, size_t len) override;
 	virtual void OnStringRemoved(BinaryNinja::BinaryView* data, BNStringType type, uint64_t offset, size_t len) override;
+	virtual void OnDerivedStringFound(BinaryNinja::BinaryView* data, const BinaryNinja::DerivedString& str) override;
+	virtual void OnDerivedStringRemoved(BinaryNinja::BinaryView* data, const BinaryNinja::DerivedString& str) override;
 	void updateStrings();
 
 	virtual void sort(int col, Qt::SortOrder order) override;
@@ -145,8 +178,10 @@ class BINARYNINJAUIAPI StringsView : public QTableView, public View, public Filt
 	StringsListModel* m_list;
 	StringItemDelegate* m_itemDelegate;
 
+	bool m_selectionAddrValid = false;
 	uint64_t m_selectionBegin, m_selectionEnd;
 	uint64_t m_currentlySelectedDataAddress;
+	std::optional<BinaryNinja::DerivedString> m_derivedString;
 
   public:
 	StringsView(BinaryViewRef data, StringsContainer* container);
@@ -154,6 +189,7 @@ class BINARYNINJAUIAPI StringsView : public QTableView, public View, public Filt
 	virtual BinaryViewRef getData() override { return m_data; }
 	virtual uint64_t getCurrentOffset() override;
 	virtual BNAddressRange getSelectionOffsets() override;
+	virtual SelectionInfoForXref getSelectionForXref() override;
 	virtual void setSelectionOffsets(BNAddressRange range) override;
 	virtual bool navigate(uint64_t offset) override;
 
@@ -209,6 +245,7 @@ class BINARYNINJAUIAPI StringsContainer : public QWidget, public ViewContainer
 	FilteredView* m_filter;
 	FilterEdit* m_separateEdit = nullptr;
 	StringsViewSidebarWidget* m_widget;
+	UIActionHandler m_actionHandler;
 
   public:
 	StringsContainer(BinaryViewRef data, StringsViewSidebarWidget* parent, bool separateEdit = false);
@@ -220,6 +257,11 @@ class BINARYNINJAUIAPI StringsContainer : public QWidget, public ViewContainer
 
   protected:
 	virtual void focusInEvent(QFocusEvent* event) override;
+
+  private:
+	void bindNavigationShortcuts();
+	void navigateBack();
+	void navigateForward();
 };
 
 /*!

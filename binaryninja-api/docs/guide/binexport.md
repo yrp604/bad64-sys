@@ -4,12 +4,6 @@ BinExport is a [plugin written by Google](https://github.com/google/binexport) (
 
 ## Usage
 
-### Enable the Experimental Plugin
-
-![BinExport Setting >](../img/binexport-setting.png "BinExport Setting"){ width="400" }
-
-The initial release of this plugin is **EXPERIMENTAL** due to being finished too close to a stable release for better testing. As such, it is disabled by default. To enable it, search settings for "binexport", enable the plugin, and restart Binary Ninja.
-
 ### Activation
 
 ![BinExport Success >](../img/binexport-success.png "BinExport Success"){ width="300" }
@@ -42,6 +36,10 @@ The resulting `.BinDiff` file can either be opened in the BinDiff Java GUI, or d
 
 ![BD Viewer](../img/binexport-bdviewer.png "BD Viewer"){ width="800" }
 _BD Viewer Plugin_
+
+### Disabling
+
+If desired, the plugin can be disabled from loading using the `corePlugins.binexport` setting.
 
 ## Changes / Fork
 

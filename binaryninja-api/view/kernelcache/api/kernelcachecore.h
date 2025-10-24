@@ -14,7 +14,7 @@ extern "C"
 	#endif  // KERNELCACHE_LIBRARY
 #else       // __GNUC__
 	#ifdef _MSC_VER
-		#ifndef DEMO_VERSION
+		#ifndef DEMO_EDITION
 			#ifdef KERNELCACHE_LIBRARY
 				#define KERNELCACHE_FFI_API __declspec(dllexport)
 			#else  // KERNELCACHE_LIBRARY

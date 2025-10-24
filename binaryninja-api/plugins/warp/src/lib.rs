@@ -58,6 +58,14 @@ fn get_warp_include_tag_type(view: &BinaryView) -> Ref<TagType> {
         .unwrap_or_else(|| view.create_tag_type(INCLUDE_TAG_NAME, INCLUDE_TAG_ICON))
 }
 
+const IGNORE_TAG_ICON: &str = "🧊";
+const IGNORE_TAG_NAME: &str = "WARP: Ignored Function";
+
+fn get_warp_ignore_tag_type(view: &BinaryView) -> Ref<TagType> {
+    view.tag_type_by_name(IGNORE_TAG_NAME)
+        .unwrap_or_else(|| view.create_tag_type(IGNORE_TAG_NAME, IGNORE_TAG_ICON))
+}
+
 pub fn core_signature_dir() -> PathBuf {
     // Get core signatures for the given platform
     let install_dir = binaryninja::install_directory();

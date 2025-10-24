@@ -19,12 +19,31 @@ class ContainerTreeModel : public QAbstractItemModel
 {
 	Q_OBJECT
 
+	struct Node
+	{
+		QString displayName;          // GetFileName() (or synthesized for root)
+		QString type;                 // GetTransformName() or "Leaf"/"Root"
+		QString breadcrumb;           // human-readable path "a ▸ b ▸ c"
+		QStringList pathSegments;     // list of filenames from root to this node
+		QString size;
+		TransformContextRef ctx;
+		Node* parent = nullptr;
+		std::vector<std::unique_ptr<Node>> children;
+	};
+
+	TransformSessionRef m_session;
+	std::unique_ptr<Node> m_root;
+	QLocale m_locale;
+
+	const Node* nodeFromIndex(const QModelIndex& index) const;
+	static QString joinBreadcrumb(const QStringList& segments);
+	void createChildren(Node* parentNode, const std::vector<TransformContextRef>& children, const QStringList& parentSegments = {});
+
 public:
 	enum Columns { ColName, ColType, ColSize, ColPath, ColCount };
 
-	explicit ContainerTreeModel(TransformSessionRef session, QObject* parent = nullptr);
+	ContainerTreeModel(TransformSessionRef session, QObject* parent = nullptr);
 
-	// QAbstractItemModel interface
 	int columnCount(const QModelIndex& parent = {}) const override;
 	QModelIndex index(int row, int column, const QModelIndex& parent = {}) const override;
 	QModelIndex parent(const QModelIndex& child) const override;
@@ -33,33 +52,12 @@ public:
 	QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
 	Qt::ItemFlags flags(const QModelIndex& index) const override;
 
-	// Public helpers for the dialog
-	bool isLeaf(const QModelIndex& index) const;
+	QString getDisplayName(const QModelIndex& index) const;
+	TransformContextRef getTransformContext(const QModelIndex& index) const;
+
 	QStringList pathFor(const QModelIndex& index) const;
 	void selectNode(const QModelIndex& index);
 	void rebuild();
-
-private:
-	struct Node
-	{
-		QString displayName;          // GetFileName() (or synthesized for root)
-		QString type;                 // GetTransformName() or "Leaf"/"Root"
-		QString breadcrumb;           // human-readable path "a ▸ b ▸ c"
-		QStringList pathSegments;     // list of filenames from root to this node
-		quint64 size = 0;             // not exposed (kept for future metadata)
-		bool isLeaf = false;
-		bool selectable = true;      // we allow selection only on leaves
-		TransformContextRef ctx;
-		Node* parent = nullptr;
-		std::vector<std::unique_ptr<Node>> children;
-	};
-
-	const Node* nodeFromIndex(const QModelIndex& index) const;
-	static QString joinBreadcrumb(const QStringList& segments);
-	void buildChildren(Node* parentNode, const TransformContextRef& ctx, const QStringList& parentSegments);
-
-	TransformSessionRef m_session;
-	std::unique_ptr<Node> m_root;
 };
 
 
@@ -87,15 +85,22 @@ class BINARYNINJAUIAPI ContainerBrowser : public QDialog
 	QTreeView* m_tree = nullptr;
 	QPlainTextEdit* m_preview = nullptr;
 	QLabel* m_status = nullptr;
+	QLabel* m_extractionStatus = nullptr;
 	QDialogButtonBox* m_buttons = nullptr;
 	AllColumnsFilterProxyModel* m_proxy = nullptr;
 
+	QStringList m_pendingSelectionPath;
 	QStringList m_selectedPaths;
 
 	void connectSignals();
-	void loadRoot();
 	void updatePreviewForIndex(const QModelIndex& proxyIndex);
+	bool requiresPassword(TransformContextRef context);
+	bool requiresExtraction(TransformContextRef context);
+	void extractItem(TransformContextRef context);
+	void promptForPassword(TransformContextRef context, bool tryCachedPassword = false);
+	void showContextMenu(const QPoint& position);
 	static QString toHexDump(const QByteArray& data, int bytesPerLine = 16);
+	QModelIndex findNodeByPath(const QStringList& path);
 
 public:
 	ContainerBrowser(TransformSessionRef session, QWidget* parent = nullptr);

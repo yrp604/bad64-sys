@@ -667,6 +667,11 @@ bool BTypeCompatible_BTI(uint8_t hintcode, uint8_t pstate_btype)
 
 bool BTypeCompatible_PACIXSP(void)
 {
+	return BTypeCompatible_PAC(PACIxSP);
+}
+
+bool BTypeCompatible_PAC(enum PACInstType pacinst)
+{
 	// TODO: determine if filling this in is necessary
 	return true;
 }

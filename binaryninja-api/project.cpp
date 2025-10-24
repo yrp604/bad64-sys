@@ -304,9 +304,9 @@ std::string Project::GetName() const
 }
 
 
-void Project::SetName(const std::string& name)
+bool Project::SetName(const std::string& name)
 {
-	BNProjectSetName(m_object, name.c_str());
+	return BNProjectSetName(m_object, name.c_str());
 }
 
 
@@ -319,9 +319,9 @@ std::string Project::GetDescription() const
 }
 
 
-void Project::SetDescription(const std::string& description)
+bool Project::SetDescription(const std::string& description)
 {
-	BNProjectSetDescription(m_object, description.c_str());
+	return BNProjectSetDescription(m_object, description.c_str());
 }
 
 
@@ -340,9 +340,9 @@ bool Project::StoreMetadata(const std::string& key, Ref<Metadata> value)
 }
 
 
-void Project::RemoveMetadata(const std::string& key)
+bool Project::RemoveMetadata(const std::string& key)
 {
-	BNProjectRemoveMetadata(m_object, key.c_str());
+	return BNProjectRemoveMetadata(m_object, key.c_str());
 }
 
 
@@ -402,9 +402,9 @@ Ref<ProjectFolder> Project::GetFolderById(const std::string& id) const
 }
 
 
-void Project::PushFolder(Ref<ProjectFolder> folder)
+bool Project::PushFolder(Ref<ProjectFolder> folder)
 {
-	BNProjectPushFolder(m_object, folder->m_object);
+	return BNProjectPushFolder(m_object, folder->m_object);
 }
 
 
@@ -514,9 +514,9 @@ std::vector<Ref<ProjectFile>> Project::GetFilesByPathInProject(
 }
 
 
-void Project::PushFile(Ref<ProjectFile> file)
+bool Project::PushFile(Ref<ProjectFile> file)
 {
-	BNProjectPushFile(m_object, file->m_object);
+	return BNProjectPushFile(m_object, file->m_object);
 }
 
 
@@ -538,15 +538,15 @@ void Project::UnregisterNotification(ProjectNotification* notify)
 }
 
 
-void Project::BeginBulkOperation()
+bool Project::BeginBulkOperation()
 {
-	BNProjectBeginBulkOperation(m_object);
+	return BNProjectBeginBulkOperation(m_object);
 }
 
 
-void Project::EndBulkOperation()
+bool Project::EndBulkOperation()
 {
-	BNProjectEndBulkOperation(m_object);
+	return BNProjectEndBulkOperation(m_object);
 }
 
 
@@ -613,15 +613,15 @@ std::string ProjectFile::GetDescription() const
 }
 
 
-void ProjectFile::SetName(const std::string& name)
+bool ProjectFile::SetName(const std::string& name)
 {
-	BNProjectFileSetName(m_object, name.c_str());
+	return BNProjectFileSetName(m_object, name.c_str());
 }
 
 
-void ProjectFile::SetDescription(const std::string& description)
+bool ProjectFile::SetDescription(const std::string& description)
 {
-	BNProjectFileSetDescription(m_object, description.c_str());
+	return BNProjectFileSetDescription(m_object, description.c_str());
 }
 
 
@@ -643,9 +643,9 @@ Ref<ProjectFolder> ProjectFile::GetFolder() const
 }
 
 
-void ProjectFile::SetFolder(Ref<ProjectFolder> folder)
+bool ProjectFile::SetFolder(Ref<ProjectFolder> folder)
 {
-	BNProjectFileSetFolder(m_object, folder ? folder->m_object : nullptr);
+	return BNProjectFileSetFolder(m_object, folder ? folder->m_object : nullptr);
 }
 
 
@@ -700,15 +700,15 @@ std::string ProjectFolder::GetDescription() const
 }
 
 
-void ProjectFolder::SetName(const std::string& name)
+bool ProjectFolder::SetName(const std::string& name)
 {
-	BNProjectFolderSetName(m_object, name.c_str());
+	return BNProjectFolderSetName(m_object, name.c_str());
 }
 
 
-void ProjectFolder::SetDescription(const std::string& description)
+bool ProjectFolder::SetDescription(const std::string& description)
 {
-	BNProjectFolderSetDescription(m_object, description.c_str());
+	return BNProjectFolderSetDescription(m_object, description.c_str());
 }
 
 
@@ -721,9 +721,9 @@ Ref<ProjectFolder> ProjectFolder::GetParent() const
 }
 
 
-void ProjectFolder::SetParent(Ref<ProjectFolder> parent)
+bool ProjectFolder::SetParent(Ref<ProjectFolder> parent)
 {
-	BNProjectFolderSetParent(m_object, parent ? parent->m_object : nullptr);
+	return BNProjectFolderSetParent(m_object, parent ? parent->m_object : nullptr);
 }
 
 

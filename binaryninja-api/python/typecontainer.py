@@ -329,6 +329,14 @@ class TypeContainer:
 		core.BNFreeStringList(result_ids, result_count.value)
 		return result
 
+	@property
+	def type_count(self) -> int:
+		"""
+		Get the number of types in a Type Container.
+		:return: Number of types in the container
+		"""
+		return core.BNTypeContainerGetTypeCount(self.handle)
+
 	def parse_type_string(
 			self, source: str, import_dependencies: bool = True
 	) -> Tuple[Optional[Tuple['_types.QualifiedNameType', '_types.Type']], List['typeparser.TypeParserError']]:

@@ -79,7 +79,7 @@ def classlist(module):
 	return ((name, member) for (name, member) in members if not name[0].startswith("_") and in_mod(member))
 
 def fnlist(module):
-	return [x for x in inspect.getmembers(module, inspect.isfunction) if x[1].__module__ == module]
+	return [x for x in inspect.getmembers(module, inspect.isfunction) if x[1].__module__ == module.__name__]
 
 def setup(app):
 	app.add_css_file('css/other.css')
@@ -188,24 +188,75 @@ Full Class List
 				doc = inspect.getdoc(classref)
 				summary = ""
 				if doc and doc.strip():
-					first_line = doc.split('\n')[0].strip()
+					# Split by double newline to get first paragraph only,
+					# avoiding :param, :return, etc. sections
+					first_paragraph = doc.split('\n\n')[0].strip()
+					# Join lines within the first paragraph to handle multi-line sentences
+					first_paragraph = ' '.join(first_paragraph.split('\n')).strip()
+
 					# Only use the description if it's actual documentation (not just prototype/signature)
-					if first_line and not first_line.startswith(classname + "("):
-						summary = first_line
-						if len(summary) > 100:
-							# Find a good break point to avoid cutting off Sphinx directives
-							truncate_at = 97
-							# Look for space before truncation to avoid breaking words
-							if ' ' in summary[80:97]:
-								space_pos = summary.rfind(' ', 80, 97)
-								if space_pos > 80:
-									truncate_at = space_pos
-							# Check if we're in the middle of a Sphinx directive
-							if ':py:' in summary[truncate_at-10:truncate_at+10]:
-								directive_start = summary.rfind(':py:', 0, truncate_at)
-								if directive_start != -1:
-									truncate_at = directive_start
-							summary = summary[:truncate_at] + "..."
+					if first_paragraph and not first_paragraph.startswith(classname + "("):
+						# If first paragraph fits within 100 chars, use it all
+						if len(first_paragraph) <= 100:
+							summary = first_paragraph
+						else:
+							# Paragraph is too long, use as much as possible with truncation
+							# Split by '. ' (period + space) to avoid splitting on code refs like `bv.symbols`
+							if '. ' in first_paragraph:
+								# Try to include complete sentences, or truncate mid-sentence if needed
+								sentences = first_paragraph.split('. ')
+								summary = sentences[0] + '.'
+								# Try to add more sentences if they fit
+								for i in range(1, len(sentences)):
+									next_sentence = sentences[i]
+									if i < len(sentences) - 1:
+										next_sentence += '.'
+									potential = summary + ' ' + next_sentence
+									if len(potential) <= 100:
+										summary = potential
+									elif len(summary + ' ' + next_sentence[:20]) <= 100:
+										# Can't fit the whole sentence, but try to fit part of it with truncation
+										summary = summary + ' ' + next_sentence
+										break
+									else:
+										break
+
+								# If summary is still too long, truncate it
+								if len(summary) > 100:
+									truncate_at = 97
+									# Look for space before truncation to avoid breaking words
+									if ' ' in summary[80:97]:
+										space_pos = summary.rfind(' ', 80, 97)
+										if space_pos > 80:
+											truncate_at = space_pos
+									# Check if we're in the middle of a Sphinx directive or backtick
+									if ':py:' in summary[truncate_at-10:truncate_at+10]:
+										directive_start = summary.rfind(':py:', 0, truncate_at)
+										if directive_start != -1:
+											truncate_at = directive_start
+									# Check for unclosed backticks
+									if summary[:truncate_at].count('`') % 2 != 0:
+										last_backtick = summary.rfind('`', 0, truncate_at)
+										if last_backtick > 0:
+											truncate_at = summary.rfind(' ', 0, last_backtick)
+									summary = summary[:truncate_at] + "..."
+							else:
+								# No sentence boundary, just truncate the paragraph
+								summary = first_paragraph
+								truncate_at = 97
+								if ' ' in summary[80:97]:
+									space_pos = summary.rfind(' ', 80, 97)
+									if space_pos > 80:
+										truncate_at = space_pos
+								if ':py:' in summary[truncate_at-10:truncate_at+10]:
+									directive_start = summary.rfind(':py:', 0, truncate_at)
+									if directive_start != -1:
+										truncate_at = directive_start
+								if summary[:truncate_at].count('`') % 2 != 0:
+									last_backtick = summary.rfind('`', 0, truncate_at)
+									if last_backtick > 0:
+										truncate_at = summary.rfind(' ', 0, last_backtick)
+								summary = summary[:truncate_at] + "..."
 				
 				modulefile.write(f"   * - :{role}:`{inspect.getmodule(classref).__name__}.{classname}`\n")
 				modulefile.write(f"     - {summary}\n")

@@ -193,7 +193,7 @@ class ProjectFile:
 	def get_path_on_disk(self) -> Optional[str]:
 		"""
 		Get this file's path on disk
-		
+
 		:return: The path on disk of the file or None
 		"""
 		return core.BNProjectFileGetPathOnDisk(self._handle)
@@ -427,13 +427,13 @@ class Project:
 		return core.BNProjectGetName(self._handle) # type: ignore
 
 	@name.setter
-	def name(self, new_name: str):
+	def name(self, new_name: str) -> bool:
 		"""
 		Set the name of the project
 
 		:param new_name: Desired name
 		"""
-		core.BNProjectSetName(self._handle, new_name)
+		return core.BNProjectSetName(self._handle, new_name)
 
 	@property
 	def description(self) -> str:
@@ -445,13 +445,13 @@ class Project:
 		return core.BNProjectGetDescription(self._handle) # type: ignore
 
 	@description.setter
-	def description(self, new_description: str):
+	def description(self, new_description: str) -> bool:
 		"""
 		Set the description of the project
 
 		:param new_description: Desired description
 		"""
-		core.BNProjectSetDescription(self._handle, new_description)
+		return core.BNProjectSetDescription(self._handle, new_description)
 
 	def query_metadata(self, key: str) -> MetadataValueType:
 		"""
@@ -464,7 +464,7 @@ class Project:
 			raise KeyError(key)
 		return Metadata(handle=md_handle).value
 
-	def store_metadata(self, key: str, value: MetadataValueType):
+	def store_metadata(self, key: str, value: MetadataValueType) -> bool:
 		"""
 		Stores metadata within the project
 
@@ -474,15 +474,15 @@ class Project:
 		_val = value
 		if not isinstance(_val, Metadata):
 			_val = Metadata(_val)
-		core.BNProjectStoreMetadata(self._handle, key, _val.handle)
+		return core.BNProjectStoreMetadata(self._handle, key, _val.handle)
 
-	def remove_metadata(self, key: str):
+	def remove_metadata(self, key: str) -> bool:
 		"""
 		Removes the metadata associated with this key from the project
 
 		:param str key: Key associated with the metadata object to remove
 		"""
-		core.BNProjectRemoveMetadata(self._handle, key)
+		return core.BNProjectRemoveMetadata(self._handle, key)
 
 	def create_folder_from_path(self, path: Union[PathLike, str], parent: Optional[ProjectFolder] = None, description: str = "", progress_func: ProgressFuncType = _nop) -> ProjectFolder:
 		"""

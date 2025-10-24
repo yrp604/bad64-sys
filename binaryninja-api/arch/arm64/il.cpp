@@ -1307,6 +1307,13 @@ bool GetLowLevelILForInstruction(
 	LowLevelILLabel trueLabel, falseLabel;
 	switch (instr.operation)
 	{
+	case ARM64_ABS:
+	{
+		ExprId src = ILREG_O(operand2);
+		GenIfElse(il, il.CompareSignedLessThan(REGSZ_O(operand2), src, il.Const(REGSZ_O(operand2), 0)),
+			ILSETREG_O(operand1, il.Neg(REGSZ_O(operand2), src)), ILSETREG_O(operand1, src));
+		break;
+	}
 	case ARM64_ADD:
 		switch (instr.encoding)
 		{
@@ -1322,6 +1329,10 @@ bool GetLowLevelILForInstruction(
 		il.AddInstruction(
 		    ILSETREG_O(operand1, il.Add(REGSZ_O(operand1), ILREG_O(operand2),
 		                             ReadILOperand(il, operand3, REGSZ_O(operand1)), SETFLAGS)));
+		break;
+	case ARM64_ADDG:
+		il.AddInstruction(il.Intrinsic({RegisterOrFlag::Register(REG_O(operand1))}, ARM64_INTRIN_ADDG,
+			{ILREG_O(operand2), il.Const(REGSZ_O(operand2), IMM_O(operand3)), il.Const(1, IMM_O(operand4))}));
 		break;
 	case ARM64_ADC:
 	case ARM64_ADCS:
@@ -1662,6 +1673,12 @@ bool GetLowLevelILForInstruction(
 		il.AddInstruction(il.Sub(REGSZ_O(operand1), ILREG_O(operand1),
 		    ReadILOperand(il, operand2, REGSZ_O(operand1)), SETFLAGS));
 		break;
+	case ARM64_CMPP:
+		il.AddInstruction(il.Intrinsic(
+			{RegisterOrFlag::Flag(IL_FLAG_N), RegisterOrFlag::Flag(IL_FLAG_Z), RegisterOrFlag::Flag(IL_FLAG_C),
+				RegisterOrFlag::Flag(IL_FLAG_V)},
+			ARM64_INTRIN_CMPP, {ILREG_O(operand1), ILREG_O(operand2)}));
+		break;
 	case ARM64_CCMP:
 	{
 		LowLevelILLabel trueCode, falseCode, done;
@@ -1732,6 +1749,14 @@ bool GetLowLevelILForInstruction(
 	case ARM64_CLZ:
 		il.AddInstruction(il.Intrinsic(
 		    {RegisterOrFlag::Register(REG_O(operand1))}, ARM64_INTRIN_CLZ, {ILREG_O(operand2)}));
+		break;
+	case ARM64_CNT:
+		il.AddInstruction(
+			il.Intrinsic({RegisterOrFlag::Register(REG_O(operand1))}, ARM64_INTRIN_CNT, {ILREG_O(operand2)}));
+		break;
+	case ARM64_CTZ:
+		il.AddInstruction(
+			il.Intrinsic({RegisterOrFlag::Register(REG_O(operand1))}, ARM64_INTRIN_CTZ, {ILREG_O(operand2)}));
 		break;
 	case ARM64_DC:
 		// il.AddInstruction(
@@ -2192,6 +2217,17 @@ bool GetLowLevelILForInstruction(
 		il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_ERET, {}));
 		il.AddInstruction(il.Trap(0));
 		return false;
+	case ARM64_GMI:
+		il.AddInstruction(il.Intrinsic(
+			{RegisterOrFlag::Register(REG_O(operand1))}, ARM64_INTRIN_GMI, {ILREG_O(operand2), ILREG_O(operand3)}));
+		break;
+	case ARM64_IRG:
+		il.AddInstruction(il.Intrinsic({RegisterOrFlag::Register(REG_O(operand1))}, ARM64_INTRIN_IRG,
+			{
+				ILREG_O(operand2),
+				operand3.operandClass == NONE ? il.Const(REGSZ_O(operand2), 0) : ILREG_O(operand3),
+			}));
+		break;
 	case ARM64_ISB:
 		il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_ISB, {}));
 		break;
@@ -2235,6 +2271,14 @@ bool GetLowLevelILForInstruction(
 		LoadStoreOperand(il, true, instr.operands[0], instr.operands[1], 0);
 		if (SetPacAttr)
 			ApplyAttributeToLastInstruction(il, SrcInstructionUsesPointerAuth);
+		break;
+	case ARM64_LDG:
+		il.AddInstruction(il.Intrinsic({RegisterOrFlag::Register(REG_O(operand1))}, ARM64_INTRIN_LDG,
+			{GetILOperandEffectiveAddress(il, operand2, 8, operand2.operandClass, 0)}));
+		break;
+	case ARM64_LDGM:
+		il.AddInstruction(
+			il.Intrinsic({RegisterOrFlag::Register(REG_O(operand1))}, ARM64_INTRIN_LDGM, {ILREG_O(operand2)}));
 		break;
 	case ARM64_LDRB:
 	case ARM64_LDURB:
@@ -3391,6 +3435,120 @@ bool GetLowLevelILForInstruction(
 	case ARM64_STNP:
 		LoadStoreOperandPair(il, false, instr.operands[0], instr.operands[1], instr.operands[2]);
 		break;
+	case ARM64_ST2G:
+		switch (operand2.operandClass)
+		{
+		case MEM_POST_IDX:
+			il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_ST2G, {ILREG_O(operand1), ILREG_O(operand2)}));
+			if (IMM_O(operand2) != 0)
+				il.AddInstruction(ILSETREG_O(operand2,
+					il.Add(REGSZ_O(operand2), ILREG_O(operand2), il.Const(REGSZ_O(operand2), IMM_O(operand2)))));
+			break;
+		case MEM_PRE_IDX:
+			if (IMM_O(operand2) != 0)
+				il.AddInstruction(ILSETREG_O(operand2,
+					il.Add(REGSZ_O(operand2), ILREG_O(operand2), il.Const(REGSZ_O(operand2), IMM_O(operand2)))));
+			il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_ST2G, {ILREG_O(operand1), ILREG_O(operand2)}));
+			break;
+		default:
+			il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_ST2G,
+				{ILREG_O(operand1), GetILOperandEffectiveAddress(il, operand2, 8, operand2.operandClass, 0)}));
+			break;
+		}
+		break;
+	case ARM64_STG:
+		switch (operand2.operandClass)
+		{
+		case MEM_POST_IDX:
+			il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_STG, {ILREG_O(operand1), ILREG_O(operand2)}));
+			if (IMM_O(operand2) != 0)
+				il.AddInstruction(ILSETREG_O(operand2,
+					il.Add(REGSZ_O(operand2), ILREG_O(operand2), il.Const(REGSZ_O(operand2), IMM_O(operand2)))));
+			break;
+		case MEM_PRE_IDX:
+			if (IMM_O(operand2) != 0)
+				il.AddInstruction(ILSETREG_O(operand2,
+					il.Add(REGSZ_O(operand2), ILREG_O(operand2), il.Const(REGSZ_O(operand2), IMM_O(operand2)))));
+			il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_STG, {ILREG_O(operand1), ILREG_O(operand2)}));
+			break;
+		default:
+			il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_STG,
+				{ILREG_O(operand1), GetILOperandEffectiveAddress(il, operand2, 8, operand2.operandClass, 0)}));
+			break;
+		}
+		break;
+	case ARM64_STGM:
+		il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_STGM, {ILREG_O(operand1), ILREG_O(operand2)}));
+		break;
+	case ARM64_STGP:
+		switch (operand3.operandClass)
+		{
+		case MEM_POST_IDX:
+			il.AddInstruction(
+				il.Intrinsic({}, ARM64_INTRIN_STGP, {ILREG_O(operand1), ILREG_O(operand2), ILREG_O(operand3)}));
+			if (IMM_O(operand3) != 0)
+				il.AddInstruction(ILSETREG_O(operand3,
+					il.Add(REGSZ_O(operand3), ILREG_O(operand3), il.Const(REGSZ_O(operand3), IMM_O(operand3)))));
+			break;
+		case MEM_PRE_IDX:
+			if (IMM_O(operand3) != 0)
+				il.AddInstruction(ILSETREG_O(operand3,
+					il.Add(REGSZ_O(operand3), ILREG_O(operand3), il.Const(REGSZ_O(operand3), IMM_O(operand3)))));
+			il.AddInstruction(
+				il.Intrinsic({}, ARM64_INTRIN_STGP, {ILREG_O(operand1), ILREG_O(operand2), ILREG_O(operand3)}));
+			break;
+		default:
+			il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_STGP,
+				{ILREG_O(operand1), ILREG_O(operand2),
+					GetILOperandEffectiveAddress(il, operand3, 8, operand3.operandClass, 0)}));
+			break;
+		}
+		break;
+	case ARM64_STZ2G:
+		switch (operand2.operandClass)
+		{
+		case MEM_POST_IDX:
+			il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_STZ2G, {ILREG_O(operand1), ILREG_O(operand2)}));
+			if (IMM_O(operand2) != 0)
+				il.AddInstruction(ILSETREG_O(operand2,
+					il.Add(REGSZ_O(operand2), ILREG_O(operand2), il.Const(REGSZ_O(operand2), IMM_O(operand2)))));
+			break;
+		case MEM_PRE_IDX:
+			if (IMM_O(operand2) != 0)
+				il.AddInstruction(ILSETREG_O(operand2,
+					il.Add(REGSZ_O(operand2), ILREG_O(operand2), il.Const(REGSZ_O(operand2), IMM_O(operand2)))));
+			il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_STZ2G, {ILREG_O(operand1), ILREG_O(operand2)}));
+			break;
+		default:
+			il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_STZ2G,
+				{ILREG_O(operand1), GetILOperandEffectiveAddress(il, operand2, 8, operand2.operandClass, 0)}));
+			break;
+		}
+		break;
+	case ARM64_STZG:
+		switch (operand2.operandClass)
+		{
+		case MEM_POST_IDX:
+			il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_STZG, {ILREG_O(operand1), ILREG_O(operand2)}));
+			if (IMM_O(operand2) != 0)
+				il.AddInstruction(ILSETREG_O(operand2,
+					il.Add(REGSZ_O(operand2), ILREG_O(operand2), il.Const(REGSZ_O(operand2), IMM_O(operand2)))));
+			break;
+		case MEM_PRE_IDX:
+			if (IMM_O(operand2) != 0)
+				il.AddInstruction(ILSETREG_O(operand2,
+					il.Add(REGSZ_O(operand2), ILREG_O(operand2), il.Const(REGSZ_O(operand2), IMM_O(operand2)))));
+			il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_STZG, {ILREG_O(operand1), ILREG_O(operand2)}));
+			break;
+		default:
+			il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_STZG,
+				{ILREG_O(operand1), GetILOperandEffectiveAddress(il, operand2, 8, operand2.operandClass, 0)}));
+			break;
+		}
+		break;
+	case ARM64_STZGM:
+		il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_STZGM, {ILREG_O(operand1), ILREG_O(operand2)}));
+		break;
 	case ARM64_STR:
 		switch (instr.encoding)
 		{
@@ -3434,6 +3592,20 @@ bool GetLowLevelILForInstruction(
 		il.AddInstruction(ILSETREG_O(
 		    operand1, il.Sub(REGSZ_O(operand1), ILREG_O(operand2),
 		                  ReadILOperand(il, instr.operands[2], REGSZ_O(operand1)), SETFLAGS)));
+		break;
+	case ARM64_SUBG:
+		il.AddInstruction(il.Intrinsic({RegisterOrFlag::Register(REG_O(operand1))}, ARM64_INTRIN_SUBG,
+			{ILREG_O(operand2), il.Const(REGSZ_O(operand2), IMM_O(operand3)), il.Const(1, IMM_O(operand4))}));
+		break;
+	case ARM64_SUBP:
+		il.AddInstruction(il.Intrinsic(
+			{RegisterOrFlag::Register(REG_O(operand1))}, ARM64_INTRIN_SUBP, {ILREG_O(operand2), ILREG_O(operand3)}));
+		break;
+	case ARM64_SUBPS:
+		il.AddInstruction(il.Intrinsic(
+			{RegisterOrFlag::Register(REG_O(operand1)), RegisterOrFlag::Flag(IL_FLAG_N),
+				RegisterOrFlag::Flag(IL_FLAG_Z), RegisterOrFlag::Flag(IL_FLAG_C), RegisterOrFlag::Flag(IL_FLAG_V)},
+			ARM64_INTRIN_SUBPS, {ILREG_O(operand2), ILREG_O(operand3)}));
 		break;
 	case ARM64_SVC:
 	case ARM64_HVC:
@@ -3730,6 +3902,54 @@ bool GetLowLevelILForInstruction(
 						il.MultDoublePrecSigned(REGSZ_O(operand1), ILREG_O(operand2), ILREG_O(operand3)),
 						il.Const(1, 64))))));
 		break;
+	case ARM64_SMAX:
+	{
+		ExprId op2 = ILREG_O(operand2);
+		ExprId op3;
+
+		switch (instr.encoding)
+		{
+		case ENC_SMAX_32_MINMAX_IMM:
+		case ENC_SMAX_64_MINMAX_IMM:
+			op3 = il.Const(REGSZ_O(operand2), operand3.immediate);
+			break;
+		case ENC_SMAX_32_DP_2SRC:
+		case ENC_SMAX_64_DP_2SRC:
+			op3 = ILREG_O(operand3);
+			break;
+		default:
+			il.AddInstruction(il.Unimplemented());
+			return true;
+		}
+
+		GenIfElse(il, il.CompareSignedGreaterThan(REGSZ_O(operand2), op2, op3), ILSETREG_O(operand1, op2),
+			ILSETREG_O(operand1, op3));
+		break;
+	}
+	case ARM64_SMIN:
+	{
+		ExprId op2 = ILREG_O(operand2);
+		ExprId op3;
+
+		switch (instr.encoding)
+		{
+		case ENC_SMIN_32_MINMAX_IMM:
+		case ENC_SMIN_64_MINMAX_IMM:
+			op3 = il.Const(REGSZ_O(operand2), operand3.immediate);
+			break;
+		case ENC_SMIN_32_DP_2SRC:
+		case ENC_SMIN_64_DP_2SRC:
+			op3 = ILREG_O(operand3);
+			break;
+		default:
+			il.AddInstruction(il.Unimplemented());
+			return true;
+		}
+
+		GenIfElse(il, il.CompareSignedLessThan(REGSZ_O(operand2), op2, op3), ILSETREG_O(operand1, op2),
+			ILSETREG_O(operand1, op3));
+		break;
+	}
 	case ARM64_UDIV:
 		switch (instr.encoding)
 		{
@@ -3742,6 +3962,54 @@ bool GetLowLevelILForInstruction(
 		il.AddInstruction(ILSETREG_O(
 		    operand1, il.DivUnsigned(REGSZ_O(operand2), ILREG_O(operand2), ILREG_O(operand3))));
 		break;
+	case ARM64_UMAX:
+	{
+		ExprId op2 = ILREG_O(operand2);
+		ExprId op3;
+
+		switch (instr.encoding)
+		{
+		case ENC_UMAX_32U_MINMAX_IMM:
+		case ENC_UMAX_64U_MINMAX_IMM:
+			op3 = il.Const(REGSZ_O(operand2), operand3.immediate);
+			break;
+		case ENC_UMAX_32_DP_2SRC:
+		case ENC_UMAX_64_DP_2SRC:
+			op3 = ILREG_O(operand3);
+			break;
+		default:
+			il.AddInstruction(il.Unimplemented());
+			return true;
+		}
+
+		GenIfElse(il, il.CompareUnsignedGreaterThan(REGSZ_O(operand2), op2, op3), ILSETREG_O(operand1, op2),
+			ILSETREG_O(operand1, op3));
+		break;
+	}
+	case ARM64_UMIN:
+	{
+		ExprId op2 = ILREG_O(operand2);
+		ExprId op3;
+
+		switch (instr.encoding)
+		{
+		case ENC_UMIN_32U_MINMAX_IMM:
+		case ENC_UMIN_64U_MINMAX_IMM:
+			op3 = il.Const(REGSZ_O(operand2), operand3.immediate);
+			break;
+		case ENC_UMIN_32_DP_2SRC:
+		case ENC_UMIN_64_DP_2SRC:
+			op3 = ILREG_O(operand3);
+			break;
+		default:
+			il.AddInstruction(il.Unimplemented());
+			return true;
+		}
+
+		GenIfElse(il, il.CompareUnsignedLessThan(REGSZ_O(operand2), op2, op3), ILSETREG_O(operand1, op2),
+			ILSETREG_O(operand1, op3));
+		break;
+	}
 	case ARM64_UBFIZ:
 		il.AddInstruction(
 		    ILSETREG_O(operand1, il.ZeroExtend(REGSZ_O(operand1),

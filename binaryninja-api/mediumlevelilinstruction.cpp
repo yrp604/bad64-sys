@@ -307,47 +307,6 @@ unordered_map<BNMediumLevelILOperation, unordered_map<MediumLevelILOperandUsage,
     MediumLevelILInstructionBase::operationOperandIndex = GetOperandIndexForOperandUsages();
 
 
-SSAVariable::SSAVariable() : version(0) {}
-
-
-SSAVariable::SSAVariable(const Variable& v, size_t i) : var(v), version(i) {}
-
-
-SSAVariable::SSAVariable(const SSAVariable& v) : var(v.var), version(v.version) {}
-
-
-SSAVariable& SSAVariable::operator=(const SSAVariable& v)
-{
-	var = v.var;
-	version = v.version;
-	return *this;
-}
-
-
-bool SSAVariable::operator==(const SSAVariable& v) const
-{
-	if (var != v.var)
-		return false;
-	return version == v.version;
-}
-
-
-bool SSAVariable::operator!=(const SSAVariable& v) const
-{
-	return !((*this) == v);
-}
-
-
-bool SSAVariable::operator<(const SSAVariable& v) const
-{
-	if (var < v.var)
-		return true;
-	if (v.var < var)
-		return false;
-	return version < v.version;
-}
-
-
 bool MediumLevelILIntegerList::ListIterator::operator==(const ListIterator& a) const
 {
 	return count == a.count;

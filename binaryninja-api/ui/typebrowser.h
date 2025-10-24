@@ -594,6 +594,11 @@ class BINARYNINJAUIAPI TypeBrowserContainer : public QWidget, public ViewContain
 	class TypeBrowserSidebarWidget* m_sidebarWidget;
 	UIActionHandler m_actionHandler;
 
+private:
+	void bindNavigationShortcuts();
+	void navigateBack();
+	void navigateForward();
+
 public:
 	TypeBrowserContainer(BinaryViewRef data, class TypeBrowserSidebarWidget* parent);
 	virtual View* getView() override { return m_view; }

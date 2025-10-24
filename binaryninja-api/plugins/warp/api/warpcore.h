@@ -21,7 +21,7 @@
     #endif  // WARP_LIBRARY
 #else       // __GNUC__
     #ifdef _MSC_VER
-        #ifndef DEMO_VERSION
+        #ifndef DEMO_EDITION
             #ifdef WARP_LIBRARY
                 #define WARP_FFI_API __declspec(dllexport)
             #else  // WARP_LIBRARY
@@ -101,7 +101,7 @@ extern "C"
     };
 
     WARP_FFI_API void BNWARPRunMatcher(BNBinaryView* view);
-    
+
     WARP_FFI_API bool BNWARPGetBasicBlockGUID(BNBasicBlock* basicBlock, BNWARPBasicBlockGUID* result);
     WARP_FFI_API bool BNWARPGetAnalysisFunctionGUID(BNFunction* analysisFunction, BNWARPFunctionGUID* result);
     WARP_FFI_API bool BNWARPIsLiftedInstructionVariant(BNLowLevelILFunction* liftedFunction, size_t idx);
@@ -120,7 +120,7 @@ extern "C"
     WARP_FFI_API bool BNWARPContainerIsSourceUncommitted(BNWARPContainer* container, const BNWARPSource* source);
     WARP_FFI_API bool BNWARPContainerIsSourceWritable(BNWARPContainer* container, const BNWARPSource* source);
     WARP_FFI_API char* BNWARPContainerGetSourcePath(BNWARPContainer* container, const BNWARPSource* source);
-    
+
     WARP_FFI_API bool BNWARPContainerAddFunctions(BNWARPContainer* container, const BNWARPTarget* target, const BNWARPSource* source, BNWARPFunction** functions, size_t count);
     WARP_FFI_API bool BNWARPContainerAddTypes(BNBinaryView* view, BNWARPContainer* container, const BNWARPSource* source, BNType** types, size_t count);
 
@@ -128,7 +128,7 @@ extern "C"
     WARP_FFI_API bool BNWARPContainerRemoveTypes(BNWARPContainer* container, const BNWARPSource* source, BNWARPTypeGUID* types, size_t count);
 
     WARP_FFI_API void BNWARPContainerFetchFunctions(BNWARPContainer* container, BNWARPTarget* target, const char** sourceTags, size_t sourceTagCount, const BNWARPTypeGUID* guids, size_t count);
-    
+
     WARP_FFI_API BNWARPSource* BNWARPContainerGetSourcesWithFunctionGUID(BNWARPContainer* container, const BNWARPTarget* target, const BNWARPFunctionGUID* guid, size_t* count);
     WARP_FFI_API BNWARPSource* BNWARPContainerGetSourcesWithTypeGUID(BNWARPContainer* container, const BNWARPTypeGUID* guid, size_t* count);
     WARP_FFI_API BNWARPFunction** BNWARPContainerGetFunctionsWithGUID(BNWARPContainer* container, const BNWARPTarget* target, const BNWARPSource* source, const BNWARPFunctionGUID* guid, size_t* count);

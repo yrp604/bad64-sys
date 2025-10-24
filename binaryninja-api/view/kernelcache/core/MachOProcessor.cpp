@@ -193,8 +193,9 @@ uint64_t KernelCacheMachOProcessor::ApplyHeaderSections(KernelCacheMachOHeader& 
 			semantics = ReadWriteDataSectionSemantics;
 		if (strncmp(section.sectname, "__auth_got", sizeof(section.sectname)) == 0)
 			semantics = ReadOnlyDataSectionSemantics;
-		if (strncmp(section.segname, "__DATA_CONST", sizeof(section.segname)) == 0)
-			semantics = ReadOnlyDataSectionSemantics;
+
+		if (auto overriddenSemantics = SectionSemanticsForSection(section))
+			semantics = static_cast<BNSectionSemantics>(overriddenSemantics);
 
 		// Typically a view would add auto sections but those won't persist when loading the BNDB.
 		// if we want to use an auto section here we would need to allow the core to apply auto sections from the database.

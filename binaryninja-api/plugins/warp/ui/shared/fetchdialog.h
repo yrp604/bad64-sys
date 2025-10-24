@@ -13,44 +13,45 @@
 
 class WarpFetchDialog : public QDialog
 {
-    Q_OBJECT
+	Q_OBJECT
 
-    QComboBox *m_containerCombo;
+	QComboBox* m_containerCombo;
 
-    QListWidget *m_tagsList;
-    QPushButton *m_addTagBtn;
-    QPushButton *m_removeTagBtn;
+	QListWidget* m_tagsList;
+	QPushButton* m_addTagBtn;
+	QPushButton* m_removeTagBtn;
+	QPushButton* m_resetTagBtn;
 
-    QSpinBox *m_batchSize;
-    QCheckBox *m_rerunMatcher;
-    QCheckBox *m_clearProcessed;
+	QSpinBox* m_batchSize;
+	QCheckBox* m_rerunMatcher;
+	QCheckBox* m_clearProcessed;
 
-    std::vector<Warp::Ref<Warp::Container> > m_containers;
+	std::vector<Warp::Ref<Warp::Container>> m_containers;
 
-    std::shared_ptr<WarpFetcher> m_fetchProcessor;
-    BinaryViewRef m_bv;
+	std::shared_ptr<WarpFetcher> m_fetchProcessor;
+	BinaryViewRef m_bv;
 
 public:
-    explicit WarpFetchDialog(BinaryViewRef bv,
-                             std::shared_ptr<WarpFetcher> fetchProcessor,
-                             QWidget *parent = nullptr);
+	explicit WarpFetchDialog(BinaryViewRef bv, std::shared_ptr<WarpFetcher> fetchProcessor, QWidget* parent = nullptr);
 
 private slots:
-    void onAddTag();
+	void onAddTag();
 
-    void onRemoveTag();
+	void onRemoveTag();
 
-    void onAccept();
+	void onResetTags();
+
+	void onAccept();
+
+	void onReject();
 
 private:
-    void populateContainers();
+	void populateContainers();
 
-    std::vector<Warp::SourceTag> collectTags() const;
+	std::vector<Warp::SourceTag> collectTags() const;
 
-    void runBatchedFetch(const std::optional<size_t> &containerIndex,
-                         const std::vector<Warp::SourceTag> &tags,
-                         size_t batchSize,
-                         bool rerunMatcher);
+	void runBatchedFetch(const std::optional<size_t>& containerIndex, const std::vector<Warp::SourceTag>& allowedTags,
+		size_t batchSize, bool rerunMatcher);
 };
 
 void RegisterWarpFetchFunctionsCommand();

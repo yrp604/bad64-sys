@@ -203,6 +203,14 @@ impl Debug for TagType {
     }
 }
 
+impl PartialEq for TagType {
+    fn eq(&self, other: &Self) -> bool {
+        self.id() == other.id()
+    }
+}
+
+impl Eq for TagType {}
+
 unsafe impl RefCountable for TagType {
     unsafe fn inc_ref(handle: &Self) -> Ref<Self> {
         Ref::new(Self {

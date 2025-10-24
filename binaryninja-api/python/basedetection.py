@@ -162,13 +162,13 @@ class BaseAddressDetection:
     def detect_base_address(
         self,
         arch: Optional[Union['architecture.Architecture', str]] = None,
-        analysis: Optional[Literal["basic", "controlFlow", "full"]] = "full",
-        min_strlen: Optional[int] = 10,
-        alignment: Optional[int] = 1024,
-        low_boundary: Optional[int] = 0,
-        high_boundary: Optional[int] = 0xFFFFFFFFFFFFFFFF,
-        poi_analysis: Optional[BaseAddressDetectionPOISetting] = BaseAddressDetectionPOISetting.POIAnalysisAll,
-        max_pointers: Optional[int] = 128,
+        analysis: Literal["basic", "controlFlow", "full"] = "full",
+        min_strlen: int = 10,
+        alignment: int = 1024,
+        low_boundary: int = 0,
+        high_boundary: int = 0xFFFFFFFFFFFFFFFF,
+        poi_analysis: BaseAddressDetectionPOISetting = BaseAddressDetectionPOISetting.POIAnalysisAll,
+        max_pointers: int = 128,
     ) -> bool:
         """
         ``detect_base_address`` runs initial analysis and attempts to identify candidate base addresses

@@ -142,6 +142,14 @@ impl DisassemblyTextLine {
             ..Default::default()
         }
     }
+
+    pub fn new_with_addr(tokens: Vec<InstructionTextToken>, addr: u64) -> Self {
+        Self {
+            address: addr,
+            tokens,
+            ..Default::default()
+        }
+    }
 }
 
 impl From<&str> for DisassemblyTextLine {
@@ -308,6 +316,10 @@ impl InstructionTextToken {
         }
     }
 
+    /// Construct a new token **without** an associated address.
+    ///
+    /// You most likely want to call [`InstructionTextToken::new_with_address`], while also adjusting
+    /// the [`InstructionTextToken::expr_index`] field where applicable.
     pub fn new(text: impl Into<String>, kind: InstructionTextTokenKind) -> Self {
         Self {
             address: 0,
@@ -493,13 +505,13 @@ pub enum InstructionTextTokenKind {
         hash: Option<u64>,
     },
     CodeSymbol {
-        // TODO: Value of what?
+        // Target address of the symbol
         value: u64,
         // TODO: Size of what?
         size: usize, // TODO: Operand?
     },
     DataSymbol {
-        // TODO: Value of what?
+        // Target address of the symbol
         value: u64,
         // TODO: Size of what?
         size: usize, // TODO: Operand?
@@ -963,6 +975,8 @@ pub enum InstructionTextTokenContext {
     Expanded,
     /// Use only with [`InstructionTextTokenKind::CollapseStateIndicator`]
     CollapsiblePadding,
+    /// Use only with [`InstructionTextTokenKind::String`]
+    DerivedStringReference,
 }
 
 impl From<BNInstructionTextTokenContext> for InstructionTextTokenContext {
@@ -990,6 +1004,9 @@ impl From<BNInstructionTextTokenContext> for InstructionTextTokenContext {
             BNInstructionTextTokenContext::ContentCollapsedContext => Self::Collapsed,
             BNInstructionTextTokenContext::ContentExpandedContext => Self::Expanded,
             BNInstructionTextTokenContext::ContentCollapsiblePadding => Self::CollapsiblePadding,
+            BNInstructionTextTokenContext::DerivedStringReferenceTokenContext => {
+                Self::DerivedStringReference
+            }
         }
     }
 }
@@ -1011,6 +1028,9 @@ impl From<InstructionTextTokenContext> for BNInstructionTextTokenContext {
             InstructionTextTokenContext::Collapsed => Self::ContentCollapsedContext,
             InstructionTextTokenContext::Expanded => Self::ContentExpandedContext,
             InstructionTextTokenContext::CollapsiblePadding => Self::ContentCollapsiblePadding,
+            InstructionTextTokenContext::DerivedStringReference => {
+                Self::DerivedStringReferenceTokenContext
+            }
         }
     }
 }

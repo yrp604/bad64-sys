@@ -32,7 +32,7 @@ struct BINARYNINJAUIAPI SelectionInfoForXref
 	// Check these booleans before accessing the address/type/variable info,
 	// since the invalid fields are not guaranteed to be initialized/zero-ed.
 	// At any given time, at most one of these four should be true.
-	bool addrValid, typeValid, typeFieldValid, localVarValid;
+	bool addrValid, typeValid, typeFieldValid, localVarValid, derivedStringValid;
 
 	BNFunctionGraphType ilSource = InvalidILViewType;
 
@@ -48,7 +48,9 @@ struct BINARYNINJAUIAPI SelectionInfoForXref
 	FunctionRef func;
 	ArchitectureRef arch;
 
-	SelectionInfoForXref() : addrValid(false), typeValid(false), typeFieldValid(false), localVarValid(false) { }
+	BinaryNinja::DerivedString derivedString;
+
+	SelectionInfoForXref() : addrValid(false), typeValid(false), typeFieldValid(false), localVarValid(false), derivedStringValid(false) { }
 
 	bool operator==(const SelectionInfoForXref& other) const
 	{
@@ -60,11 +62,13 @@ struct BINARYNINJAUIAPI SelectionInfoForXref
 			return (type == other.type) && (offset == other.offset);
 		else if (localVarValid && other.localVarValid)
 			return (var == other.var) && (ilSource == other.ilSource);
+		else if (derivedStringValid && other.derivedStringValid)
+			return derivedString == other.derivedString;
 		return false;
 	}
 
 	bool operator!=(const SelectionInfoForXref& other) const { return !(*this == other); }
-	bool isValid() const { return addrValid || typeValid || typeFieldValid || localVarValid; }
+	bool isValid() const { return addrValid || typeValid || typeFieldValid || localVarValid || derivedStringValid; }
 };
 
 /*!

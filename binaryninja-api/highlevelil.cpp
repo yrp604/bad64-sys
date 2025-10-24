@@ -645,6 +645,28 @@ set<SSAVariable> HighLevelILFunction::GetSSAVariables()
 }
 
 
+void HighLevelILFunction::SetDerivedStringReferenceForExpr(size_t expr, const DerivedString& str)
+{
+	BNDerivedString strObj = str.ToAPIObject(false);
+	BNSetHighLevelILDerivedStringReferenceForExpr(m_object, expr, &strObj);
+}
+
+
+void HighLevelILFunction::RemoveDerivedStringReferenceForExpr(size_t expr)
+{
+	BNRemoveHighLevelILDerivedStringReferenceForExpr(m_object, expr);
+}
+
+
+optional<DerivedString> HighLevelILFunction::GetDerivedStringReferenceForExpr(size_t expr)
+{
+	BNDerivedString str;
+	if (!BNGetHighLevelILDerivedStringReferenceForExpr(m_object, expr, &str))
+		return std::nullopt;
+	return DerivedString::FromAPIObject(&str, true);
+}
+
+
 HighLevelILTokenEmitter::CurrentExprGuard::CurrentExprGuard(HighLevelILTokenEmitter& parent, const BNTokenEmitterExpr& expr):
 	m_parent(&parent)
 {

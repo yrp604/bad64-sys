@@ -329,6 +329,7 @@ class BINARYNINJAUIAPI MemoryMapContainer : public QWidget, public ViewContainer
 
 	MemoryMapView* m_memoryMap;
 	MemoryMapSidebarWidget* m_widget;
+	UIActionHandler m_actionHandler;
 
 public:
 	MemoryMapContainer(BinaryViewRef data, MemoryMapSidebarWidget* parent);
@@ -338,6 +339,11 @@ public:
 
 protected:
 	virtual void focusInEvent(QFocusEvent* event) override;
+
+private:
+	void bindNavigationShortcuts();
+	void navigateBack();
+	void navigateForward();
 };
 
 /*!

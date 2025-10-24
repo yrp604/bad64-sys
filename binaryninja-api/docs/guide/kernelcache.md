@@ -78,8 +78,12 @@ Another way to interact with the kernel cache information is through the provide
 ```python
 # Load the XNU kernel
 from binaryninja import kernelcache
-kc = kernelcache.KernelCache(bv)
-kc.load_image_with_install_name('com.apple.kernel')
+kc = kernelcache.KernelCacheController(bv)
+image = kc.get_image_with_name('com.apple.kernel')
+kc.apply_image(bv, image)
 ```
+
+???+ Note "Note"
+    When using the Python console in the UI, the `kernel_cache` variable is automatically available for the current view.
 
 **Note:** *We do not support single-section loading at this time and can only load entire images.*

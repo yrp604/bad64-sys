@@ -114,8 +114,7 @@ bool Transform::DecodeWithContextCallback(void* ctxt, BNTransformContext* contex
 		paramMap[params[i].name] = DataBuffer(BNDuplicateDataBuffer(params[i].value));
 
 	CallbackRef<Transform> xform(ctxt);
-	Ref<TransformContext> contextRef = new TransformContext(BNNewTransformContextReference(context));
-	return xform->DecodeWithContext(contextRef, paramMap);
+	return xform->DecodeWithContext(new TransformContext(context), paramMap);
 }
 
 

@@ -101,14 +101,11 @@ pub enum FormInputField {
         prompt: String,
         /// File extension to filter on.
         extension: Option<String>,
-        /// Default file name to fill.
-        default_name: Option<String>,
         default: Option<String>,
         value: Option<String>,
     },
     DirectoryName {
         prompt: String,
-        default_name: Option<String>,
         default: Option<String>,
         value: Option<String>,
     },
@@ -182,14 +179,12 @@ impl FormInputField {
             BNFormInputFieldType::SaveFileNameFormField => Self::SaveFileName {
                 prompt,
                 extension,
-                default_name: name_default,
-                default: string_default,
+                default: name_default,
                 value: string_result,
             },
             BNFormInputFieldType::DirectoryNameFormField => Self::DirectoryName {
                 prompt,
-                default_name: name_default,
-                default: string_default,
+                default: name_default,
                 value: string_result,
             },
             BNFormInputFieldType::CheckboxFormField => Self::Checkbox {
@@ -345,8 +340,8 @@ impl FormInputField {
     /// Mapping to the [`BNFormInputField::defaultName`] field.
     pub fn try_default_name(&self) -> Option<String> {
         match self {
-            Self::SaveFileName { default_name, .. } => default_name.clone(),
-            Self::DirectoryName { default_name, .. } => default_name.clone(),
+            Self::SaveFileName { default, .. } => default.clone(),
+            Self::DirectoryName { default, .. } => default.clone(),
             _ => None,
         }
     }

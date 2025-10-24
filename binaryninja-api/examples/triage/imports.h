@@ -52,6 +52,8 @@ class ImportsTreeView : public QTreeView, public FilterTarget
 
   public:
 	ImportsTreeView(ImportsWidget* parent, TriageView* view, BinaryViewRef data);
+	void copySelection();
+	bool canCopySelection() const;
 
 	virtual void setFilter(const std::string& filterText) override;
 	virtual void scrollToFirstItem() override;

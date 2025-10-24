@@ -1,5 +1,8 @@
 #include <cstring>
 #include <algorithm>
+#include <QtGui/QClipboard>
+#include <QtGui/QGuiApplication>
+#include <QtCore/QStringList>
 #include "entry.h"
 #include "view.h"
 #include "fontsettings.h"
@@ -167,6 +170,9 @@ EntryTreeView::EntryTreeView(EntryWidget* parent, TriageView* view, BinaryViewRe
 	setRootIsDecorated(false);
 	setUniformRowHeights(true);
 	setSortingEnabled(true);
+	setSelectionMode(QAbstractItemView::ExtendedSelection);
+	setSelectionBehavior(QAbstractItemView::SelectRows);
+	setAllColumnsShowFocus(true);
 	sortByColumn(AddressColumn, Qt::AscendingOrder);
 
 	setColumnWidth(AddressColumn, 90);
@@ -175,6 +181,44 @@ EntryTreeView::EntryTreeView(EntryWidget* parent, TriageView* view, BinaryViewRe
 
 	connect(selectionModel(), &QItemSelectionModel::currentChanged, this, &EntryTreeView::entrySelected);
 	connect(this, &QTreeView::doubleClicked, this, &EntryTreeView::entryDoubleClicked);
+
+	m_actionHandler.bindAction("Copy", UIAction([this]() { copySelection(); }, [this]() { return canCopySelection(); }));
+}
+
+void EntryTreeView::copySelection()
+{
+	if (!model() || !selectionModel())
+		return;
+
+	QModelIndexList rows = selectionModel()->selectedRows();
+	if (rows.isEmpty())
+		return;
+
+	std::sort(rows.begin(), rows.end(), [](const QModelIndex& a, const QModelIndex& b) { return a.row() < b.row(); });
+
+	QStringList lines;
+	for (const QModelIndex& rowIndex : rows)
+	{
+		QStringList cells;
+		for (int column = 0; column < m_model->columnCount(QModelIndex()); column++)
+		{
+			if (isColumnHidden(column))
+				continue;
+
+			QModelIndex idx = m_model->index(rowIndex.row(), column, QModelIndex());
+			cells << m_model->data(idx, Qt::DisplayRole).toString();
+		}
+		lines << cells.join("\t");
+	}
+
+	if (QClipboard* clipboard = QGuiApplication::clipboard())
+		clipboard->setText(lines.join("\n"));
+}
+
+
+bool EntryTreeView::canCopySelection() const
+{
+	return !selectionModel()->selectedRows().isEmpty();
 }
 
 
@@ -257,6 +301,12 @@ void EntryTreeView::keyPressEvent(QKeyEvent* event)
 		QList<QModelIndex> sel = selectionModel()->selectedIndexes();
 		if (sel.size() != 0)
 			entryDoubleClicked(sel[0]);
+	}
+	else if (event->matches(QKeySequence::Copy))
+	{
+		copySelection();
+		event->accept();
+		return;
 	}
 	QTreeView::keyPressEvent(event);
 }

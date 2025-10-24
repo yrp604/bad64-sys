@@ -66,6 +66,7 @@ class BINARYNINJAUIAPI FilteredView : public QWidget
 	void clearFilter();
 	void showFilter(const QString& initialText);
 	void focusAndSelectFilter();
+	bool hasFilterText() const;
 
 	static bool match(const std::string& name, const std::string& filter);
 

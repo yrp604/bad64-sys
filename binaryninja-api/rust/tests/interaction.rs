@@ -94,14 +94,9 @@ impl InteractionHandler for MyInteractionHandler {
             FormInputField::DirectoryName {
                 ref mut value,
                 default,
-                default_name,
                 ..
             } => {
-                let new_value = format!(
-                    "example{}{}",
-                    default.clone().unwrap_or_default(),
-                    default_name.clone().unwrap_or_default()
-                );
+                let new_value = format!("example{}", default.clone().unwrap_or_default(),);
                 *value = Some(new_value);
                 true
             }
@@ -134,7 +129,6 @@ fn test_get_directory_default() {
     let mut my_form = Form::new("get_dir_default");
     my_form.add_field(FormInputField::DirectoryName {
         prompt: "get_dir_default".to_string(),
-        default_name: Some("_default_name".to_string()),
         default: Some("_default".to_string()),
         value: None,
     });
@@ -142,7 +136,7 @@ fn test_get_directory_default() {
     assert_eq!(my_form.prompt(), true);
     assert_eq!(
         my_form.fields[0].try_value_string(),
-        Some("example_default_default_name".to_string())
+        Some("example_default".to_string())
     )
 }
 
