@@ -1,24 +1,21 @@
 # Kernel Cache
 
 Kernel Cache support in Binary Ninja provides you with tools to selectively load specific images, search for 
-specific symbols, and follow analysis references between any images loaded from an `kernelcache` in one view.
+specific symbols, and follow analysis references between any images loaded from a `kernelcache` in one view.
 
 Our support for `kernelcache` is largely open source. The supporting code can be found in our public API repository [here](https://github.com/Vector35/binaryninja-api/tree/dev/view/kernelcache). Instructions for setting up your development environment and building plugins like this yourself can be found in our [Developer Guide](../dev/plugins.md#writing-native-plugins). Contributions are welcome!
 
 ## Support Matrix
 
-List of supported features for the given `kernelcache` targets:
+Kernel caches from these platforms, architectures, and OS versions can be loaded:
 
-| Platform | Arch   | Versions | Features                    |
-|----------|--------|----------|-----------------------------|
-| macOS    | x86_64 | 11 - 26  | Core, Objective-C           |
-| macOS    | arm64  | 11 - 26  | Core, Objective-C           |
-| iOS      | arm64  | 14 - 26  | Core, Objective-C           |
+| Platform | Arch   | Versions |
+|----------|--------|----------|
+| macOS    | x86_64 | 11 - 27  |
+| macOS    | arm64  | 11 - 27  |
+| iOS      | arm64  | 16 - 27  |
 
-- **Core**: Core functionality, such as loading, navigating, and analyzing `kernelcache` files.
-- **Objective-C**: Support for analyzing Objective-C information and symbols within the `kernelcache`.
-
-???+ Note "Note"
+!!! Note "Note"
     This plugin currently only supports `kernelcache` files in the `MH_FILESET` format.
 
 ## Obtaining a Kernel Cache
@@ -69,7 +66,7 @@ opening a `kernelcache` and is how you add images to the actual binary view.
 
     - Double click on a symbol to load the associated image, or use the "Load Image" button
 
-    ![Kernel Cache Symbols](../img/dsc/triage-symbols.png "Kernel Cache Symbols")
+    ![Kernel Cache Symbols](../img/kc/triage-symbols.png "Kernel Cache Symbols")
 
 ### Scripting
 
@@ -83,7 +80,7 @@ image = kc.get_image_with_name('com.apple.kernel')
 kc.apply_image(bv, image)
 ```
 
-???+ Note "Note"
+!!! Note "Note"
     When using the Python console in the UI, the `kernel_cache` variable is automatically available for the current view.
 
 **Note:** *We do not support single-section loading at this time and can only load entire images.*

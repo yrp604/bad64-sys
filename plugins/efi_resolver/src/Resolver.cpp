@@ -177,7 +177,7 @@ bool Resolver::parseUserGuidIfExists(const string& filePath)
 		auto guidBytes = element.value();
 		if (guidBytes.size() != 11)
 		{
-			LogError("Error: GUID array size is incorrect for %s", guidName.c_str());
+			LogErrorF("Error: GUID array size is incorrect for {}", guidName);
 			return false;
 		}
 		EFI_GUID guid;
@@ -208,7 +208,7 @@ void Resolver::initProtocolMapping()
 		return;
 	auto fileName = GetBundledEfiPath();
 	if (!parseProtocolMapping(fileName))
-		LogAlert("Binary Ninja Version Too Low. Please upgrade to a new version.");
+		LogAlertF("Binary Ninja Version Too Low. Please upgrade to a new version.");
 
 	fileName = GetUserGuidPath();
 	parseUserGuidIfExists(fileName);
@@ -223,7 +223,7 @@ bool Resolver::setModuleEntry(EFIModuleType fileType)
 	auto entryFunc = m_view->GetAnalysisFunction(m_view->GetDefaultPlatform(), entry);
 	if (!entryFunc)
 	{
-		LogDebug("Entry func Not found... ");
+		LogDebugF("Entry func Not found... ");
 		return false;
 	}
 
@@ -232,14 +232,14 @@ bool Resolver::setModuleEntry(EFIModuleType fileType)
 
 	// Note: we only adjust the callsite in entry function, this is just a temp fix and it cannot cover all cases
 	auto callsites = entryFunc->GetCallSites();
-	LogDebug("Checking callsites at 0x%llx", entryFunc->GetStart());
-	LogDebug("callsite count : %zu", callsites.size());
+	LogDebugF("Checking callsites at {:#x}", entryFunc->GetStart());
+	LogDebugF("callsite count : {}", callsites.size());
 	for (auto callsite : entryFunc->GetCallSites())
 	{
 		auto mlil = entryFunc->GetMediumLevelIL();
 		size_t mlilIdx = mlil->GetInstructionStart(m_view->GetDefaultArchitecture(), callsite.addr);
 		auto instr = mlil->GetInstruction(mlilIdx);
-		LogDebug("Checking Callsite at 0x%llx", callsite.addr);
+		LogDebugF("Checking Callsite at {:#x}", callsite.addr);
 		if (instr.operation == MLIL_CALL || instr.operation == MLIL_TAILCALL)
 		{
 			auto params = instr.GetParameterExprs();
@@ -255,16 +255,16 @@ bool Resolver::setModuleEntry(EFIModuleType fileType)
 					m_view->UpdateAnalysisAndWait();
 				}
 				else
-					LogDebug("Operation not ConstPtr: %d", constantPtr.operation);
+					LogDebugF("Operation not ConstPtr: {}", constantPtr.operation);
 			}
 			else
-				LogDebug("param size not zero");
+				LogDebugF("param size not zero");
 		}
 	}
 
 	string errors;
 	QualifiedNameAndType result;
-	bool ok;
+	bool ok = false;
 
 	string typeString;
 	switch (fileType)
@@ -285,7 +285,7 @@ bool Resolver::setModuleEntry(EFIModuleType fileType)
 
 	case UNKNOWN:
 	{
-		LogAlert("Could not identify EFI module type");
+		LogAlertF("Could not identify EFI module type");
 		return false;
 	}
 	}
@@ -467,7 +467,7 @@ bool Resolver::resolveGuidInterface(Ref<Function> func, uint64_t addr, int guidP
 			if (!found)
 				continue;
 
-			LogInfo("Found EFI Protocol wrapper at 0x%llx, checking reference to this function", addr);
+			LogInfoF("Found EFI Protocol wrapper at {:#x}, checking reference to this function", addr);
 
 			auto refs = m_view->GetCodeReferences(func->GetStart());
 			for (auto& ref : refs)
@@ -503,7 +503,7 @@ bool Resolver::resolveGuidInterface(Ref<Function> func, uint64_t addr, int guidP
 			else
 			{
 				// use UnknownProtocol as defult
-				LogWarn("Unknown EFI Protocol referenced at 0x%llx", addr);
+				LogWarnF("Unknown EFI Protocol referenced at {:#x}", addr);
 				guidName = nonConflictingName("UnknownProtocolGuid");
 			}
 		}
@@ -524,7 +524,7 @@ bool Resolver::resolveGuidInterface(Ref<Function> func, uint64_t addr, int guidP
 
 		if (protocol_name.empty())
 		{
-			LogWarn("Found unknown protocol at 0x%llx", addr);
+			LogWarnF("Found unknown protocol at {:#x}", addr);
 			protocol_name = "VOID*";
 		}
 
@@ -617,7 +617,7 @@ bool Resolver::defineTypeAtCallsite(
 	ok = m_view->ParseTypeString(typeName, result, errors);
 	if (!ok)
 	{
-		LogError("Cannot parse type %s when trying to define type at 0x%llx", typeName.c_str(), addr);
+		LogErrorF("Cannot parse type {} when trying to define type at {:#x}", typeName, addr);
 		return false;
 	}
 
@@ -721,9 +721,9 @@ pair<string, string> Resolver::defineAndLookupGuid(uint64_t addr)
 		if (readSize != 16)
 			return make_pair(string(), string());
 	}
-	catch (ReadException)
+	catch (const ReadException&)
 	{
-		LogError("Read GUID failed at 0x%llx", addr);
+		LogErrorF("Read GUID failed at {:#x}", addr);
 		return make_pair(string(), string());
 	}
 	auto namePair = lookupGuid(guidBytes);
@@ -741,12 +741,12 @@ pair<string, string> Resolver::defineAndLookupGuid(uint64_t addr)
 	if (guidName.empty())
 	{
 		m_view->DefineUserSymbol(new Symbol(DataSymbol, nonConflictingName("UnknownGuid"), addr));
-		LogDebug("Found UnknownGuid at 0x%llx", addr);
+		LogDebugF("Found UnknownGuid at {:#x}", addr);
 	}
 	else
 	{
 		m_view->DefineUserSymbol(new Symbol(DataSymbol, guidName, addr));
-		LogDebug("Define %s at 0x%llx", guidName.c_str(), addr);
+		LogDebugF("Define {} at {:#x}", guidName.c_str(), addr);
 	}
 
 	return namePair;

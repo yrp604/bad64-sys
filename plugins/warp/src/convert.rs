@@ -27,6 +27,8 @@ pub fn bn_var_to_location(bn_variable: BNVariable) -> Option<Location> {
             Some(Location::Register(reg_loc))
         }
         VariableSourceType::FlagVariableSourceType => None,
+        VariableSourceType::CompositeReturnValueSourceType => None,
+        VariableSourceType::CompositeParameterSourceType => None,
     }
 }
 

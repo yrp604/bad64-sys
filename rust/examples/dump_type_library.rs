@@ -2,36 +2,44 @@
 
 use binaryninja::binary_view::BinaryView;
 use binaryninja::file_metadata::FileMetadata;
-use binaryninja::type_library::TypeLibrary;
-use binaryninja::type_printer::{CoreTypePrinter, TokenEscapingType};
+use binaryninja::tracing::TracingLogListener;
+use binaryninja::types::library::TypeLibrary;
+use binaryninja::types::printer::{CoreTypePrinter, TokenEscapingType};
 
 fn main() {
+    tracing_subscriber::fmt::init();
+    let _listener = TracingLogListener::new().register();
+
     let type_lib_str = std::env::args().nth(1).expect("No type library provided");
     let type_lib_path = std::path::Path::new(&type_lib_str);
 
-    println!("Starting session...");
     // This loads all the core architecture, platform, etc plugins
     let _headless_session =
         binaryninja::headless::Session::new().expect("Failed to initialize session");
 
     let type_lib = TypeLibrary::load_from_file(type_lib_path).expect("Failed to load type library");
-    let named_types = type_lib.named_types();
-    println!("Name: `{}`", type_lib.name());
-    println!("GUID: `{}`", type_lib.guid());
+    tracing::info!("Name: `{}`", type_lib.name());
+    tracing::info!("GUID: `{}`", type_lib.guid());
 
     // Print out all the types as a c header.
     let type_lib_header_path = type_lib_path.with_extension("h");
-    println!(
+
+    let all_types: Vec<_> = type_lib
+        .named_types()
+        .iter()
+        .chain(type_lib.named_objects().iter())
+        .collect();
+
+    tracing::info!(
         "Dumping {} types to: `{:?}`",
-        named_types.len(),
+        all_types.len(),
         type_lib_header_path
     );
     let type_printer = CoreTypePrinter::default();
-    let empty_bv =
-        BinaryView::from_data(&FileMetadata::new(), &[]).expect("Failed to create empty view");
+    let empty_bv = BinaryView::from_data(&FileMetadata::new(), &[]);
     let printed_types = type_printer
         .print_all_types(
-            &type_lib.named_types(),
+            all_types,
             &empty_bv,
             4,
             TokenEscapingType::NoTokenEscapingType,

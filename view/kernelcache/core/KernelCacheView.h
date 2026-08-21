@@ -7,8 +7,6 @@
 
 #include <binaryninjaapi.h>
 
-static const char* VIEW_METADATA_KEY = "shared_cache_view";
-
 class KernelCacheView : public BinaryNinja::BinaryView
 {
 	bool m_parseOnly;
@@ -55,6 +53,8 @@ public:
 	bool IsTypeValidForData(BinaryNinja::BinaryView* data) override;
 
 	bool IsDeprecated() override { return false; }
+
+	bool HasNoInitialContent() override { return true; }
 
 	BinaryNinja::Ref<BinaryNinja::Settings> GetLoadSettingsForData(BinaryNinja::BinaryView* data) override;
 };

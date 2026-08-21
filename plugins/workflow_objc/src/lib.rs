@@ -1,4 +1,4 @@
-use binaryninja::{add_optional_plugin_dependency, logger::Logger, settings::Settings};
+use binaryninja::{add_optional_plugin_dependency, settings::Settings};
 
 mod activities;
 mod error;
@@ -8,19 +8,15 @@ mod workflow;
 pub use error::Error;
 use metadata::GlobalState;
 
-use log::LevelFilter;
-
 fn plugin_init() -> bool {
-    Logger::new("Plugin.Objective-C")
-        .with_level(LevelFilter::Debug)
-        .init();
+    binaryninja::tracing_init!("Plugin.Objective-C");
 
     if workflow::register_activities().is_err() {
-        log::warn!("Failed to register Objective-C workflow");
+        tracing::warn!("Failed to register Objective-C workflow");
         return false;
     };
 
-    let settings = Settings::new();
+    let settings = Settings::global();
     settings.register_setting_json(
         "analysis.objectiveC.resolveDynamicDispatch",
         r#"{

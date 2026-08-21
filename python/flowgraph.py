@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -21,7 +21,7 @@
 import ctypes
 import threading
 import traceback
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 # Binary Ninja components
 import binaryninja
@@ -41,7 +41,7 @@ from . import interaction
 
 
 class FlowGraphEdge:
-	def __init__(self, branch_type, source, target, points, back_edge, style):
+	def __init__(self, branch_type: Union[BranchType, int], source: 'FlowGraphNode', target: 'FlowGraphNode', points: List[Tuple[float, float]], back_edge: bool, style: 'EdgeStyle'):
 		self.type = BranchType(branch_type)
 		self.source = source
 		self.target = target
@@ -85,7 +85,7 @@ class EdgeStyle:
 
 
 class FlowGraphNode:
-	def __init__(self, graph=None, handle=None):
+	def __init__(self, graph: Optional['FlowGraph'] = None, handle=None):
 		_handle = handle
 		if _handle is None:
 			if graph is None:
@@ -343,7 +343,7 @@ class FlowGraphNode:
 
 
 class FlowGraphLayoutRequest:
-	def __init__(self, graph, callback=None):
+	def __init__(self, graph: 'FlowGraph', callback=None):
 		self.on_complete = callback
 		self._cb = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(self._complete)
 		self.handle = core.BNStartFlowGraphLayout(graph.handle, None, self._cb)
@@ -358,7 +358,7 @@ class FlowGraphLayoutRequest:
 		try:
 			if self.on_complete is not None:
 				self.on_complete()
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in FlowGraphLayoutRequest._complete")
 
 	@property
@@ -474,19 +474,19 @@ class FlowGraph:
 	def _prepare_for_layout(self, ctxt):
 		try:
 			self.prepare_for_layout()
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in FlowGraph._prepare_for_layout")
 
 	def _populate_nodes(self, ctxt):
 		try:
 			self.populate_nodes()
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in FlowGraph._populate_nodes")
 
 	def _complete_layout(self, ctxt):
 		try:
 			self.complete_layout()
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in FlowGraph._complete_layout")
 
 	def _update(self, ctxt):
@@ -497,20 +497,20 @@ class FlowGraph:
 			flow_graph = core.BNNewFlowGraphReference(graph.handle)
 			assert flow_graph is not None, "core.BNNewFlowGraphReference returned None"
 			return ctypes.cast(flow_graph, ctypes.c_void_p).value
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in FlowGraph._update")
 			return None
 
 	def _external_ref_taken(self, ctxt):
 		try:
 			self.__class__._registered_instances.append(self)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in FlowGraph._external_ref_taken")
 
 	def _external_ref_released(self, ctxt):
 		try:
 			self.__class__._registered_instances.remove(self)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in FlowGraph._external_ref_released")
 
 	def finish_prepare_for_layout(self):
@@ -921,7 +921,7 @@ class FlowGraph:
 
 class CoreFlowGraph(FlowGraph):
 	def __init__(self, handle):
-		super(CoreFlowGraph, self).__init__(handle)
+		super().__init__(handle)
 
 	def update(self):
 		graph = core.BNUpdateFlowGraph(self.handle)
@@ -951,7 +951,7 @@ class FlowGraphLayout:
 			for i in range(node_handle_count):
 				nodes.append(FlowGraphNode(graph=graph, handle=node_handles[i]))
 			return self.layout(graph, nodes)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in FlowGraphLayout._layout")
 			return False
 

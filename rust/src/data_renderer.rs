@@ -1,3 +1,5 @@
+//! Render data variables using builtin renderers as well as add custom rendering.
+
 use binaryninjacore_sys::*;
 use core::ffi;
 use ffi::c_void;
@@ -235,7 +237,7 @@ unsafe extern "C" fn cb_free_lines(
     lines: *mut BNDisassemblyTextLine,
     count: usize,
 ) {
-    let lines = Box::from_raw(core::slice::from_raw_parts_mut(lines, count));
+    let lines = Box::from_raw(std::ptr::slice_from_raw_parts_mut(lines, count));
     for line in lines {
         let _ = DisassemblyTextLine::from_raw(&line);
     }

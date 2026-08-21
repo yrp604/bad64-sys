@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -22,7 +22,7 @@ import ctypes
 
 from contextlib import contextmanager
 from os import PathLike
-from typing import Callable, List, Optional, Union
+from typing import Any, Callable, List, Optional, Union
 
 import binaryninja
 from . import _binaryninjacore as core
@@ -202,9 +202,67 @@ class ProjectFile:
 		"""
 		Get this file's path in its parent project
 
-		:return: The path on disk of the file or None
+		:return: The path in the project or None
 		"""
 		return core.BNProjectFileGetPathInProject(self._handle)
+
+	def add_dependency(self, file: 'ProjectFile') -> bool:
+		"""
+		Add a ProjectFile as a dependency of this file
+
+		:return: True on success, False otherwise
+		"""
+		return core.BNProjectFileAddDependency(self._handle, file._handle)
+
+	def remove_dependency(self, file: 'ProjectFile') -> bool:
+		"""
+		Remove a ProjectFile as a dependency of this file
+
+		:return: True on success, False otherwise
+		"""
+		return core.BNProjectFileRemoveDependency(self._handle, file._handle)
+
+	def get_dependencies(self) -> List['ProjectFile']:
+		"""
+		Get the list of files that this file depends on
+
+		:return: List of ProjectFiles that this file depends on
+		"""
+		count = ctypes.c_size_t()
+		value = core.BNProjectFileGetDependencies(self._handle, count)
+		if value is None:
+			raise ProjectException("Failed to get list of project file dependencies")
+		result = []
+		try:
+			for i in range(count.value):
+				file_handle = core.BNNewProjectFileReference(value[i])
+				if file_handle is None:
+					raise ProjectException("core.BNNewProjectFileReference returned None")
+				result.append(ProjectFile(file_handle))
+			return result
+		finally:
+			core.BNFreeProjectFileList(value, count.value)
+
+	def get_required_by(self) -> List['ProjectFile']:
+		"""
+		Get the list of files that depend on this file
+
+		:return: List of ProjectFiles that depend on this file
+		"""
+		count = ctypes.c_size_t()
+		value = core.BNProjectFileGetRequiredBy(self._handle, count)
+		if value is None:
+			raise ProjectException("Failed to get list of project files that depend on file")
+		result = []
+		try:
+			for i in range(count.value):
+				file_handle = core.BNNewProjectFileReference(value[i])
+				if file_handle is None:
+					raise ProjectException("core.BNNewProjectFileReference returned None")
+				result.append(ProjectFile(file_handle))
+			return result
+		finally:
+			core.BNFreeProjectFileList(value, count.value)
 
 
 class ProjectFolder:
@@ -324,6 +382,29 @@ class ProjectFolder:
 		:return: True if the export succeeded, False otherwise
 		"""
 		return core.BNProjectFolderExport(self._handle, str(dest), None, _wrap_progress(progress_func))
+
+	@property
+	def files(self) -> List['ProjectFile']:
+		"""
+		Get the list of files in this folder
+
+		:return: List of files contained in the folder
+		"""
+
+		count = ctypes.c_size_t()
+		value = core.BNProjectFolderGetFiles(self._handle, count)
+		if value is None:
+			raise ProjectException("Failed to get list of project files in folder")
+		result = []
+		try:
+			for i in range(count.value):
+				file_handle = core.BNNewProjectFileReference(value[i])
+				if file_handle is None:
+					raise ProjectException("core.BNNewProjectFileReference returned None")
+				result.append(ProjectFile(file_handle))
+			return result
+		finally:
+			core.BNFreeProjectFileList(value, count.value)
 
 
 class Project:
@@ -462,6 +543,34 @@ class Project:
 		md_handle = core.BNProjectQueryMetadata(self._handle, key)
 		if md_handle is None:
 			raise KeyError(key)
+		return Metadata(handle=md_handle).value
+
+	def get_metadata(self, key: str, default: Any = None) -> 'metadata.MetadataValueType | Any':
+		"""
+		`get_metadata` retrieves a metadata value associated with the given key stored in the current Project.
+
+		This method behaves like `dict.get()`:
+
+		- If the key exists, its metadata value is returned.
+		- If the key does not exist and `default` is not provided, `None` is returned.
+		- If the key does not exist and `default` is provided, `default` is returned.
+
+		:param str key: key to query
+		:param default: value to return if the key does not exist (defaults to None)
+		:rtype: metadata associated with the key or the default value
+		:Example:
+
+			>>> current_project.store_metadata("integer", 1337)
+			>>> current_project.get_metadata("integer")
+			1337L
+			>>> current_project.get_metadata("missing")
+			None
+			>>> current_project.get_metadata("missing", 42)
+			42
+		"""
+		md_handle = core.BNProjectQueryMetadata(self._handle, key)
+		if md_handle is None:
+			return default
 		return Metadata(handle=md_handle).value
 
 	def store_metadata(self, key: str, value: MetadataValueType) -> bool:
@@ -730,3 +839,26 @@ class Project:
 		core.BNProjectBeginBulkOperation(self._handle)
 		yield
 		core.BNProjectEndBulkOperation(self._handle)
+
+	def get_files_in_folder(self, folder: Optional['ProjectFolder']) -> List['ProjectFile']:
+		"""
+		Get the list of files in a folder
+
+		:return: List of files contained in the folder
+		"""
+
+		count = ctypes.c_size_t()
+		folder_handle = None if folder is None else folder._handle
+		value = core.BNProjectGetFilesInFolder(self._handle, folder_handle, count)
+		if value is None:
+			raise ProjectException("Failed to get list of project files in folder")
+		result = []
+		try:
+			for i in range(count.value):
+				file_handle = core.BNNewProjectFileReference(value[i])
+				if file_handle is None:
+					raise ProjectException("core.BNNewProjectFileReference returned None")
+				result.append(ProjectFile(file_handle))
+			return result
+		finally:
+			core.BNFreeProjectFileList(value, count.value)

@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -20,7 +20,7 @@
 
 import traceback
 import ctypes
-from typing import Generator, Union, List, Optional, Mapping, Tuple, NewType, Dict, Set
+from typing import Generator, Union, List, Optional, Mapping, Tuple, NewType, Dict, Set, Any
 from dataclasses import dataclass, field
 
 # Binary Ninja components
@@ -28,7 +28,7 @@ import binaryninja
 from . import _binaryninjacore as core
 from .enums import (
     Endianness, ImplicitRegisterExtend, BranchType, LowLevelILFlagCondition, FlagRole, LowLevelILOperation,
-    InstructionTextTokenType, InstructionTextTokenContext, IntrinsicClass
+    InstructionTextTokenType, InstructionTextTokenContext, IntrinsicClass, LinearSweepAnalysisCapability
 )
 from .log import log_error_for_exception, log_debug_for_exception
 from . import lowlevelil
@@ -41,6 +41,8 @@ from . import function
 from . import binaryview
 from . import variable
 from . import basicblock
+from . import log
+from . import unicode
 
 RegisterIndex = NewType('RegisterIndex', int)
 RegisterStackIndex = NewType('RegisterStackIndex', int)
@@ -60,357 +62,524 @@ FlagWriteTypeName = NewType('FlagWriteTypeName', str)
 
 RegisterType = Union[RegisterName, 'lowlevelil.ILRegister', RegisterIndex]
 FlagType = Union[FlagName, 'lowlevelil.ILFlag', FlagIndex]
+FlagWriteType = Union[FlagWriteTypeName, FlagWriteTypeIndex]
 RegisterStackType = Union[RegisterStackName, 'lowlevelil.ILRegisterStack', RegisterStackIndex]
 SemanticClassType = Union[SemanticClassName, 'lowlevelil.ILSemanticFlagClass', SemanticClassIndex]
 SemanticGroupType = Union[SemanticGroupName, 'lowlevelil.ILSemanticFlagGroup', SemanticGroupIndex]
 IntrinsicType = Union[IntrinsicName, 'lowlevelil.ILIntrinsic', IntrinsicIndex]
 
 
-@dataclass
-class BasicBlockAnalysisContext:
-    """Used by ``analyze_basic_blocks`` and contains analysis settings and other contextual information.
+class LifterInstructionData:
+	"""Per-function store of basic block instruction bytes, populated during basic block analysis and
+	read during lifting.
 
     .. note:: This class is meant to be used by Architecture plugins only
     """
 
-    _handle: core.BNBasicBlockAnalysisContext
-    _function: "function.Function"
-    _contextual_returns_dirty: bool
+	def __init__(self, handle: core.BNLifterInstructionDataHandle):
+		self.handle = handle
 
-    # In
-    _indirect_branches: List["variable.IndirectBranchInfo"]
-    _indirect_no_return_calls: Set["function.ArchAndAddr"]
-    _analysis_skip_override: core.FunctionAnalysisSkipOverride
-    _guided_analysis_mode: bool
-    _trigger_guided_on_invalid_instruction: bool
-    _translate_tail_calls: bool
-    _disallow_branch_to_string: bool
-    _max_function_size: int
+	def __del__(self):
+		if core is not None:
+			core.BNFreeLifterInstructionData(self.handle)
 
-    # In/Out
-    _max_size_reached: bool
-    _contextual_returns: Dict["function.ArchAndAddr", bool]
+	def append(self, block: "basicblock.BasicBlock", data: bytes) -> None:
+		"""Append decoded bytes for a block. Call during basic block analysis only."""
+		core.BNLifterInstructionDataAppend(self.handle, block.handle, data, len(data))
 
-    # Out
-    _direct_code_references: Dict[int, "function.ArchAndAddr"]
-    _direct_no_return_calls: Set["function.ArchAndAddr"]
-    _halted_disassembly_addresses: Set["function.ArchAndAddr"]
+	def get(self, block: "basicblock.BasicBlock", addr: int) -> bytes:
+		"""Returns the bytes from ``addr`` to the end of its block, or ``b''`` when the block has no
+		stored data. Read-only, call during lifting."""
+		size = ctypes.c_ulonglong(0)
+		ptr = core.BNLifterInstructionDataGet(self.handle, block.handle, addr, ctypes.byref(size))
+		if not ptr:
+			return b''
+		return ctypes.string_at(ptr, size.value)
 
-    @staticmethod
-    def from_core_struct(bn_bb_context: core.BNBasicBlockAnalysisContext) -> "BasicBlockAnalysisContext":
-        """Create a BasicBlockAnalysisContext from a core.BNBasicBlockAnalysisContext structure."""
 
-        indirect_branches = []
-        for i in range(0, bn_bb_context.indirectBranchesCount):
-            ibi = variable.IndirectBranchInfo(
-                source_arch=CoreArchitecture._from_cache(bn_bb_context.indirectBranches[i].sourceArch),
-                source_addr=bn_bb_context.indirectBranches[i].sourceAddr,
-                dest_arch=CoreArchitecture._from_cache(bn_bb_context.indirectBranches[i].destArch),
-                dest_addr=bn_bb_context.indirectBranches[i].destAddr,
-                auto_defined=bn_bb_context.indirectBranches[i].autoDefined,
-            )
-            indirect_branches.append(ibi)
+@dataclass
+class BasicBlockAnalysisContext:
+	"""Used by ``analyze_basic_blocks`` and contains analysis settings and other contextual information.
 
-        indirect_no_return_calls = set()
-        for i in range(0, bn_bb_context.indirectNoReturnCallsCount):
-            loc = function.ArchAndAddr(
-                CoreArchitecture._from_cache(bn_bb_context.indirectNoReturnCalls[i].arch),
-                bn_bb_context.indirectNoReturnCalls[i].address,
-            )
-            indirect_no_return_calls.add(loc)
+    .. note:: This class is meant to be used by Architecture plugins only
+    """
 
-        contextual_returns = {}
-        for i in range(0, bn_bb_context.contextualFunctionReturnCount):
-            loc = function.ArchAndAddr(
-                CoreArchitecture._from_cache(bn_bb_context.contextualFunctionReturnLocations[i].arch),
-                bn_bb_context.contextualFunctionReturnLocations[i].address,
-            )
-            contextual_returns[loc] = bn_bb_context._contextualFunctionReturnValues[i]
+	_handle: core.BNBasicBlockAnalysisContext
+	_function: "function.Function"
+	_contextual_returns_dirty: bool
 
-        direct_code_references = {}
-        for i in range(0, bn_bb_context.directRefCount):
-            src = function.ArchAndAddr(
-                CoreArchitecture._from_cache(bn_bb_context.directRefSources[i].arch),
-                bn_bb_context.directRefSources[i].address,
-            )
-            direct_code_references[bn_bb_context.directRefTargets[i]] = src
+	# In
+	_indirect_branches: List["variable.IndirectBranchInfo"]
+	_indirect_no_return_calls: Set["function.ArchAndAddr"]
+	_analysis_skip_override: core.FunctionAnalysisSkipOverride
+	_guided_analysis_mode: bool
+	_trigger_guided_on_invalid_instruction: bool
+	_translate_tail_calls: bool
+	_disallow_branch_to_string: bool
+	_max_function_size: int
 
-        direct_no_return_calls = set()
-        for i in range(0, bn_bb_context.directNoReturnCallsCount):
-            loc = function.ArchAndAddr(
-                CoreArchitecture._from_cache(bn_bb_context.directNoReturnCallLocations[i].arch),
-                bn_bb_context.directNoReturnCallLocations[i].address,
-            )
-            direct_no_return_calls.add(loc)
+	# In/Out
+	_max_size_reached: bool
+	_contextual_returns: Dict["function.ArchAndAddr", bool]
 
-        halted_disassembly_addresses = set()
-        for i in range(0, bn_bb_context.haltedDisassemblyAddressesCount):
-            addr = function.ArchAndAddr(
-                CoreArchitecture._from_cache(bn_bb_context.haltedDisassemblyAddresses[i].arch),
-                bn_bb_context.haltedDisassemblyAddresses[i].address,
-            )
-            halted_disassembly_addresses.add(addr)
+	# Out
+	_direct_code_references: Dict[int, "function.ArchAndAddr"]
+	_direct_no_return_calls: Set["function.ArchAndAddr"]
+	_halted_disassembly_addresses: Set["function.ArchAndAddr"]
 
-        view = binaryview.BinaryView(handle=core.BNGetFunctionData(bn_bb_context.function))
-        return BasicBlockAnalysisContext(
-            _handle=bn_bb_context,
-            _function=function.Function(view, core.BNNewFunctionReference(bn_bb_context.function)),
-            _indirect_branches=indirect_branches,
-            _indirect_no_return_calls=indirect_no_return_calls,
-            _analysis_skip_override=bn_bb_context.analysisSkipOverride,
-            _guided_analysis_mode=bn_bb_context.guidedAnalysisMode,
-            _trigger_guided_on_invalid_instruction=bn_bb_context.triggerGuidedOnInvalidInstruction,
-            _translate_tail_calls=bn_bb_context.translateTailCalls,
-            _disallow_branch_to_string=bn_bb_context.disallowBranchToString,
-            _max_function_size=bn_bb_context.maxFunctionSize,
-            _max_size_reached=bn_bb_context.maxSizeReached,
-            _contextual_returns=contextual_returns,
-            _contextual_returns_dirty=False,
-            _direct_code_references=direct_code_references,
-            _direct_no_return_calls=direct_no_return_calls,
-            _halted_disassembly_addresses=halted_disassembly_addresses,
-        )
+	@staticmethod
+	def from_core_struct(bn_bb_context: core.BNBasicBlockAnalysisContext) -> "BasicBlockAnalysisContext":
+		"""Create a BasicBlockAnalysisContext from a core.BNBasicBlockAnalysisContext structure."""
 
-    @property
-    def indirect_branches(self) -> List["variable.IndirectBranchInfo"]:
-        """Get the list of indirect branches in this context."""
+		indirect_branches = []
+		for i in range(0, bn_bb_context.indirectBranchesCount):
+			ibi = variable.IndirectBranchInfo(
+			    source_arch=CoreArchitecture._from_cache(bn_bb_context.indirectBranches[i].sourceArch),
+			    source_addr=bn_bb_context.indirectBranches[i].sourceAddr,
+			    dest_arch=CoreArchitecture._from_cache(bn_bb_context.indirectBranches[i].destArch),
+			    dest_addr=bn_bb_context.indirectBranches[i].destAddr,
+			    auto_defined=bn_bb_context.indirectBranches[i].autoDefined,
+			)
+			indirect_branches.append(ibi)
 
-        return self._indirect_branches
+		indirect_no_return_calls = set()
+		for i in range(0, bn_bb_context.indirectNoReturnCallsCount):
+			loc = function.ArchAndAddr(
+			    CoreArchitecture._from_cache(bn_bb_context.indirectNoReturnCalls[i].arch),
+			    bn_bb_context.indirectNoReturnCalls[i].address,
+			)
+			indirect_no_return_calls.add(loc)
 
-    @property
-    def indirect_no_return_calls(self) -> Set["function.ArchAndAddr"]:
-        """Get the set of indirect no-return calls in this context."""
+		contextual_returns = {}
+		for i in range(0, bn_bb_context.contextualFunctionReturnCount):
+			loc = function.ArchAndAddr(
+			    CoreArchitecture._from_cache(bn_bb_context.contextualFunctionReturnLocations[i].arch),
+			    bn_bb_context.contextualFunctionReturnLocations[i].address,
+			)
+			contextual_returns[loc] = bn_bb_context._contextualFunctionReturnValues[i]
 
-        return self._indirect_no_return_calls
+		direct_code_references = {}
+		for i in range(0, bn_bb_context.directRefCount):
+			src = function.ArchAndAddr(
+			    CoreArchitecture._from_cache(bn_bb_context.directRefSources[i].arch),
+			    bn_bb_context.directRefSources[i].address,
+			)
+			direct_code_references[bn_bb_context.directRefTargets[i]] = src
 
-    @property
-    def analysis_skip_override(self) -> core.FunctionAnalysisSkipOverride:
-        """Get the analysis skip override setting for this context."""
+		direct_no_return_calls = set()
+		for i in range(0, bn_bb_context.directNoReturnCallsCount):
+			loc = function.ArchAndAddr(
+			    CoreArchitecture._from_cache(bn_bb_context.directNoReturnCallLocations[i].arch),
+			    bn_bb_context.directNoReturnCallLocations[i].address,
+			)
+			direct_no_return_calls.add(loc)
 
-        return self._analysis_skip_override
+		halted_disassembly_addresses = set()
+		for i in range(0, bn_bb_context.haltedDisassemblyAddressesCount):
+			addr = function.ArchAndAddr(
+			    CoreArchitecture._from_cache(bn_bb_context.haltedDisassemblyAddresses[i].arch),
+			    bn_bb_context.haltedDisassemblyAddresses[i].address,
+			)
+			halted_disassembly_addresses.add(addr)
 
-    @property
-    def guided_analysis_mode(self) -> bool:
-        """Get the setting that determines if functions start in guided analysis mode."""
+		view = binaryview.BinaryView(handle=core.BNGetFunctionData(bn_bb_context.function))
+		return BasicBlockAnalysisContext(
+		    _handle=bn_bb_context,
+		    _function=function.Function(view, core.BNNewFunctionReference(bn_bb_context.function)),
+		    _indirect_branches=indirect_branches, _indirect_no_return_calls=indirect_no_return_calls,
+		    _analysis_skip_override=bn_bb_context.analysisSkipOverride,
+		    _guided_analysis_mode=bn_bb_context.guidedAnalysisMode,
+		    _trigger_guided_on_invalid_instruction=bn_bb_context.triggerGuidedOnInvalidInstruction,
+		    _translate_tail_calls=bn_bb_context.translateTailCalls,
+		    _disallow_branch_to_string=bn_bb_context.disallowBranchToString,
+		    _max_function_size=bn_bb_context.maxFunctionSize, _max_size_reached=bn_bb_context.maxSizeReached,
+		    _contextual_returns=contextual_returns, _contextual_returns_dirty=False,
+		    _direct_code_references=direct_code_references, _direct_no_return_calls=direct_no_return_calls,
+		    _halted_disassembly_addresses=halted_disassembly_addresses,
+		)
 
-        return self._guided_analysis_mode
+	@property
+	def indirect_branches(self) -> List["variable.IndirectBranchInfo"]:
+		"""Get the list of indirect branches in this context."""
 
-    @property
-    def trigger_guided_on_invalid_instruction(self) -> bool:
-        """Get the setting that determines if guided mode should be triggered on invalid instructions."""
+		return self._indirect_branches
 
-        return self._trigger_guided_on_invalid_instruction
+	@property
+	def indirect_no_return_calls(self) -> Set["function.ArchAndAddr"]:
+		"""Get the set of indirect no-return calls in this context."""
 
-    @property
-    def translate_tail_calls(self) -> bool:
-        """Get setting from context that determines if tail calls should be translated."""
+		return self._indirect_no_return_calls
 
-        return self._translate_tail_calls
+	@property
+	def analysis_skip_override(self) -> core.FunctionAnalysisSkipOverride:
+		"""Get the analysis skip override setting for this context."""
 
-    @property
-    def disallow_branch_to_string(self) -> bool:
-        """Get setting from context that determines if branches to string addresses should be disallowed."""
+		return self._analysis_skip_override
 
-        return self._disallow_branch_to_string
+	@property
+	def guided_analysis_mode(self) -> bool:
+		"""Get the setting that determines if functions start in guided analysis mode."""
 
-    @property
-    def max_function_size(self) -> int:
-        """Get the maximum function size setting for this context."""
+		return self._guided_analysis_mode
 
-        return self._max_function_size
+	@property
+	def trigger_guided_on_invalid_instruction(self) -> bool:
+		"""Get the setting that determines if guided mode should be triggered on invalid instructions."""
 
-    @property
-    def halt_on_invalid_instruction(self) -> bool:
-        """Get the setting from context that determines if analysis should halt on invalid instructions."""
+		return self._trigger_guided_on_invalid_instruction
 
-        return self._halt_on_invalid_instruction
+	@property
+	def translate_tail_calls(self) -> bool:
+		"""Get setting from context that determines if tail calls should be translated."""
 
-    @property
-    def max_size_reached(self) -> bool:
-        """Get boolean that indicates if the maximum function size has been reached."""
+		return self._translate_tail_calls
 
-        return self._max_size_reached
+	@property
+	def disallow_branch_to_string(self) -> bool:
+		"""Get setting from context that determines if branches to string addresses should be disallowed."""
 
-    @max_size_reached.setter
-    def max_size_reached(self, value: bool) -> None:
-        """Set boolean that indicates if the maximum function size has been reached.
+		return self._disallow_branch_to_string
+
+	@property
+	def max_function_size(self) -> int:
+		"""Get the maximum function size setting for this context."""
+
+		return self._max_function_size
+
+	@property
+	def lifter_instruction_data(self) -> Optional["LifterInstructionData"]:
+		"""The per-function instruction byte store. Populate it during basic block analysis so that
+		lifting can read instruction bytes without touching the view from the multi-threaded stage."""
+
+		handle = self._handle.lifterInstructionData
+		if not handle:
+			return None
+		return LifterInstructionData(core.BNNewLifterInstructionDataReference(handle))
+
+	@property
+	def halt_on_invalid_instruction(self) -> bool:
+		"""Get the setting from context that determines if analysis should halt on invalid instructions."""
+
+		return self._halt_on_invalid_instruction
+
+	@property
+	def max_size_reached(self) -> bool:
+		"""Get boolean that indicates if the maximum function size has been reached."""
+
+		return self._max_size_reached
+
+	@max_size_reached.setter
+	def max_size_reached(self, value: bool) -> None:
+		"""Set boolean that indicates if the maximum function size has been reached.
 
         :param bool value: The new value for max_size_reached
         """
-        if not isinstance(value, bool):
-            raise TypeError("value must be a boolean")
+		if not isinstance(value, bool):
+			raise TypeError("value must be a boolean")
 
-        self._max_size_reached = value
+		self._max_size_reached = value
 
-    @property
-    def contextual_returns(self) -> Dict["function.ArchAndAddr", bool]:
-        """Get the mapping of contextual function return locations to their values."""
+	@property
+	def contextual_returns(self) -> Dict["function.ArchAndAddr", bool]:
+		"""Get the mapping of contextual function return locations to their values."""
 
-        return self._contextual_returns
+		return self._contextual_returns
 
-    def add_contextual_return(self, loc: "function.ArchAndAddr", value: bool) -> None:
-        """
+	def add_contextual_return(self, loc: "function.ArchAndAddr", value: bool) -> None:
+		"""
         ``add_contextual_return`` adds a contextual function return location and its value to the current function.
 
         :param function.ArchAndAddr loc: The location of the contextual function return
         :param bool value: The value of the contextual function return
         """
-        if not isinstance(value, bool):
-            raise TypeError("value must be a boolean")
+		if not isinstance(value, bool):
+			raise TypeError("value must be a boolean")
 
-        if not isinstance(loc, function.ArchAndAddr):
-            raise TypeError("loc must be an instance of function.ArchAndAddr")
+		if not isinstance(loc, function.ArchAndAddr):
+			raise TypeError("loc must be an instance of function.ArchAndAddr")
 
-        # Update existing value if it exists
-        if loc in self._contextual_returns:
-            if self._contextual_returns[loc] == value:
-                return
+		# Update existing value if it exists
+		if loc in self._contextual_returns:
+			if self._contextual_returns[loc] == value:
+				return
 
-        self._contextual_returns[loc] = value
-        self._contextual_returns_dirty = True
+		self._contextual_returns[loc] = value
+		self._contextual_returns_dirty = True
 
-    @property
-    def direct_code_references(self) -> Dict[int, "function.ArchAndAddr"]:
-        """Get the mapping of direct code reference targets to their source locations."""
+	@property
+	def direct_code_references(self) -> Dict[int, "function.ArchAndAddr"]:
+		"""Get the mapping of direct code reference targets to their source locations."""
 
-        return self._direct_code_references
+		return self._direct_code_references
 
-    def add_direct_code_reference(self, target: int, source: "function.ArchAndAddr") -> None:
-        """
+	def add_direct_code_reference(self, target: int, source: "function.ArchAndAddr") -> None:
+		"""
         ``add_direct_code_reference`` adds a direct code reference to the current function.
 
         :param int target: The target address of the direct code reference
         :param function.ArchAndAddr source: The source location of the direct code reference
         """
 
-        if not isinstance(target, int):
-            raise TypeError("target must be an integer")
+		if not isinstance(target, int):
+			raise TypeError("target must be an integer")
 
-        if not isinstance(source, function.ArchAndAddr):
-            raise TypeError("source must be an instance of function.ArchAndAddr")
+		if not isinstance(source, function.ArchAndAddr):
+			raise TypeError("source must be an instance of function.ArchAndAddr")
 
-        self._direct_code_references[target] = source
+		self._direct_code_references[target] = source
 
-    @property
-    def direct_no_return_calls(self) -> Set["function.ArchAndAddr"]:
-        """Get the set of direct no-return call locations in this context."""
+	@property
+	def direct_no_return_calls(self) -> Set["function.ArchAndAddr"]:
+		"""Get the set of direct no-return call locations in this context."""
 
-        return self._direct_no_return_calls
+		return self._direct_no_return_calls
 
-    def add_direct_no_return_call(self, loc: "function.ArchAndAddr") -> None:
-        """
+	def add_direct_no_return_call(self, loc: "function.ArchAndAddr") -> None:
+		"""
         ``add_direct_no_return_call`` adds a direct no-return call location to the current function.
 
         :param function.ArchAndAddr loc: The location of the direct no-return call
         """
-        if not isinstance(loc, function.ArchAndAddr):
-            raise TypeError("loc must be an instance of function.ArchAndAddr")
+		if not isinstance(loc, function.ArchAndAddr):
+			raise TypeError("loc must be an instance of function.ArchAndAddr")
 
-        self._direct_no_return_calls.add(loc)
+		self._direct_no_return_calls.add(loc)
 
-    @property
-    def halted_disassembly_addresses(self) -> Set["function.ArchAndAddr"]:
-        """Get the set of addresses where disassembly has been halted."""
+	@property
+	def halted_disassembly_addresses(self) -> Set["function.ArchAndAddr"]:
+		"""Get the set of addresses where disassembly has been halted."""
 
-        return self._halted_disassembly_addresses
+		return self._halted_disassembly_addresses
 
-    def add_halted_disassembly_address(self, loc: "function.ArchAndAddr") -> None:
-        """
+	def add_halted_disassembly_address(self, loc: "function.ArchAndAddr") -> None:
+		"""
         ``add_halted_disassembly_address`` adds an address to the set of halted disassembly addresses.
 
         :param function.ArchAndAddr loc: The location of the halted disassembly address
         """
-        if not isinstance(loc, function.ArchAndAddr):
-            raise TypeError("loc must be an instance of function.ArchAndAddr")
+		if not isinstance(loc, function.ArchAndAddr):
+			raise TypeError("loc must be an instance of function.ArchAndAddr")
 
-        self._halted_disassembly_addresses.add(loc)
+		self._halted_disassembly_addresses.add(loc)
 
-    def create_basic_block(self, arch: "Architecture", start: int) -> Optional["basicblock.BasicBlock"]:
-        """
+	@property
+	def function_arch_context(self) -> Any:
+		"""Get the function architecture context"""
+
+		tok = int(self._handle.functionArchContext or 0)
+		if tok == 0:
+			return None
+		return self._function.arch.function_arch_contexts.get(tok, None)
+
+	@function_arch_context.setter
+	def function_arch_context(self, value: Any) -> None:
+		"""Set the function architecture context"""
+
+		if self._handle.functionArchContext:
+			raise ValueError("Function architecture context has already been set")
+		token = self._function.start
+		self._function.arch.function_arch_contexts[token] = value
+		self._handle.functionArchContext = ctypes.c_void_p(token)
+
+	def create_basic_block(self, arch: "Architecture", start: int) -> Optional["basicblock.BasicBlock"]:
+		"""
         ``create_basic_block`` creates a new BasicBlock at the specified address for the given Architecture.
 
         :param Architecture arch: Architecture of the BasicBlock to create
         :param int start: Address of the BasicBlock to create
         """
 
-        if not isinstance(arch, Architecture):
-            raise TypeError("arch must be an instance of architecture.Architecture")
+		if not isinstance(arch, Architecture):
+			raise TypeError("arch must be an instance of architecture.Architecture")
 
-        bnblock = core.BNAnalyzeBasicBlocksContextCreateBasicBlock(self._handle, arch.handle, start)
-        if not bnblock:
-            return None
+		bnblock = core.BNAnalyzeBasicBlocksContextCreateBasicBlock(self._handle, arch.handle, start)
+		if not bnblock:
+			return None
 
-        view = binaryview.BinaryView(handle=core.BNGetFunctionData(self._function.handle))
-        return basicblock.BasicBlock(bnblock, view)
+		view = binaryview.BinaryView(handle=core.BNGetFunctionData(self._function.handle))
+		return basicblock.BasicBlock(bnblock, view)
 
-    def add_basic_block(self, block: "basicblock.BasicBlock") -> None:
-        """
+	def add_basic_block(self, block: "basicblock.BasicBlock") -> None:
+		"""
         ``add_basic_block`` adds a BasicBlock to the current function.
 
         :param basicblock.BasicBlock block: The BasicBlock to add
         """
-        if not isinstance(block, basicblock.BasicBlock):
-            raise TypeError("block must be an instance of basicblock.BasicBlock")
+		if not isinstance(block, basicblock.BasicBlock):
+			raise TypeError("block must be an instance of basicblock.BasicBlock")
 
-        core.BNAnalyzeBasicBlocksContextAddBasicBlockToFunction(self._handle, block.handle)
+		core.BNAnalyzeBasicBlocksContextAddBasicBlockToFunction(self._handle, block.handle)
 
-    def add_temp_outgoing_reference(self, target: "function.Function") -> None:
-        """
+	def add_temp_outgoing_reference(self, target: "function.Function") -> None:
+		"""
         ``add_temp_outgoing_reference`` adds a temporary outgoing reference to the specified function.
 
         :param function.Function target: The target function to add a temporary outgoing reference to
         """
-        if not isinstance(target, function.Function):
-            raise TypeError("target must be an instance of function.Function")
+		if not isinstance(target, function.Function):
+			raise TypeError("target must be an instance of function.Function")
 
-        core.BNAnalyzeBasicBlocksContextAddTempReference(self._handle, target.handle)
+		core.BNAnalyzeBasicBlocksContextAddTempReference(self._handle, target.handle)
 
-    def finalize(self) -> None:
-        """
+	def finalize(self) -> None:
+		"""
         ``finalize`` finalizes the function's basic block analysis
         """
 
-        if self._direct_code_references:
-            total = len(self._direct_code_references)
-            sources = (core.BNArchitectureAndAddress * total)()
-            targets = (ctypes.c_ulonglong * total)()
-            for i, (target, src) in enumerate(self._direct_code_references.items()):
-                sources[i].arch = src.arch.handle
-                sources[i].address = src.addr
-                targets[i] = target
+		if self._direct_code_references:
+			total = len(self._direct_code_references)
+			sources = (core.BNArchitectureAndAddress * total)()
+			targets = (ctypes.c_ulonglong * total)()
+			for i, (target, src) in enumerate(self._direct_code_references.items()):
+				sources[i].arch = src.arch.handle
+				sources[i].address = src.addr
+				targets[i] = target
 
-            core.BNAnalyzeBasicBlocksContextSetDirectCodeReferences(self._handle, sources, targets, total)
+			core.BNAnalyzeBasicBlocksContextSetDirectCodeReferences(self._handle, sources, targets, total)
 
-        if self._direct_no_return_calls:
-            total = len(self._direct_no_return_calls)
-            direct_no_return_calls = (core.BNArchitectureAndAddress * total)()
-            for i, loc in enumerate(self._direct_no_return_calls):
-                direct_no_return_calls[i].arch = loc.arch.handle
-                direct_no_return_calls[i].address = loc.addr
-            core.BNAnalyzeBasicBlocksContextSetDirectNoReturnCalls(self._handle, direct_no_return_calls, total)
+		if self._direct_no_return_calls:
+			total = len(self._direct_no_return_calls)
+			direct_no_return_calls = (core.BNArchitectureAndAddress * total)()
+			for i, loc in enumerate(self._direct_no_return_calls):
+				direct_no_return_calls[i].arch = loc.arch.handle
+				direct_no_return_calls[i].address = loc.addr
+			core.BNAnalyzeBasicBlocksContextSetDirectNoReturnCalls(self._handle, direct_no_return_calls, total)
 
-        self._halted_disassembly_addresses.add(function.ArchAndAddr(self._function.arch, 0))
-        if self._halted_disassembly_addresses:
-            total = len(self._halted_disassembly_addresses)
-            halted_addresses = (core.BNArchitectureAndAddress * total)()
-            for i, loc in enumerate(self._halted_disassembly_addresses):
-                halted_addresses[i].arch = loc.arch.handle
-                halted_addresses[i].address = loc.addr
-            core.BNAnalyzeBasicBlocksContextSetHaltedDisassemblyAddresses(self._handle, halted_addresses, total)
+		if self._halted_disassembly_addresses:
+			total = len(self._halted_disassembly_addresses)
+			halted_addresses = (core.BNArchitectureAndAddress * total)()
+			for i, loc in enumerate(self._halted_disassembly_addresses):
+				halted_addresses[i].arch = loc.arch.handle
+				halted_addresses[i].address = loc.addr
+			core.BNAnalyzeBasicBlocksContextSetHaltedDisassemblyAddresses(self._handle, halted_addresses, total)
 
-        self._handle.maxSizeReached = ctypes.c_bool(self._max_size_reached)
-        if self._contextual_returns_dirty:
-            total = len(self._contextual_returns)
-            values = (ctypes.c_bool * total)()
-            returns = (core.BNArchitectureAndAddress * total)()
-            for i, (loc, value) in enumerate(self._contextual_returns.items()):
-                returns[i].arch = loc.arch.handle
-                returns[i].address = loc.addr
-                values[i] = value
-            core.BNAnalyzeBasicBlocksContextSetContextualFunctionReturns(self._handle, returns, values, total)
+		self._handle.maxSizeReached = ctypes.c_bool(self._max_size_reached)
+		if self._contextual_returns_dirty:
+			total = len(self._contextual_returns)
+			values = (ctypes.c_bool * total)()
+			returns = (core.BNArchitectureAndAddress * total)()
+			for i, (loc, value) in enumerate(self._contextual_returns.items()):
+				returns[i].arch = loc.arch.handle
+				returns[i].address = loc.addr
+				values[i] = value
+			core.BNAnalyzeBasicBlocksContextSetContextualFunctionReturns(self._handle, returns, values, total)
 
-        core.BNAnalyzeBasicBlocksContextFinalize(self._handle)
 
+@dataclass
+class FunctionLifterContext:
+	"""Used by ``lift_function`` and contains contextual information for function-level lifting
+
+	.. note:: This class is meant to be used by Architecture plugins only
+	"""
+
+	_handle: core.BNFunctionLifterContext
+	_function: "function.Function"
+	_platform: "platform.Platform"
+	_logger: "log.Logger"
+	_blocks: List["basicblock.BasicBlock"]
+	_contextual_returns: Dict["function.ArchAndAddr", bool]
+	_inline_remapping: Dict["function.ArchAndAddr", "function.ArchAndAddr"]
+	_user_indirect_branches: Dict["function.ArchAndAddr", Set["function.ArchAndAddr"]]
+	_auto_indirect_branches: Dict["function.ArchAndAddr", Set["function.ArchAndAddr"]]
+	_inlined_calls: Set[int]
+	_function_arch_context_token: int
+
+	@staticmethod
+	def from_core_struct(
+	    func: core.BNLowLevelILFunction, bn_fl_context: core.BNFunctionLifterContext
+	) -> "FunctionLifterContext":
+		"""Create a FunctionLifterContext from a core.BNFunctionLifterContext structure."""
+
+		session_id = core.BNLoggerGetSessionId(bn_fl_context.logger)
+		name = core.BNLoggerGetName(bn_fl_context.logger)
+		logger = log.Logger(session_id, name, handle=core.BNNewLoggerReference(bn_fl_context.logger))
+
+		plat = platform.CorePlatform._from_cache(core.BNNewPlatformReference(bn_fl_context.platform))
+		blocks = []
+		for i in range(0, bn_fl_context.basicBlockCount):
+			blocks.append(basicblock.BasicBlock(core.BNNewBasicBlockReference(bn_fl_context.basicBlocks[i])))
+
+		contextual_returns = {}
+		for i in range(0, bn_fl_context.contextualFunctionReturnCount):
+			loc = function.ArchAndAddr(
+			    CoreArchitecture._from_cache(bn_fl_context.contextualFunctionReturnLocations[i].arch),
+			    bn_fl_context.contextualFunctionReturnLocations[i].address,
+			)
+
+			contextual_returns[loc] = bn_fl_context._contextualFunctionReturnValues[i]
+
+		inline_remapping = {}
+		for i in range(0, bn_fl_context.inlinedRemappingEntryCount):
+			key = function.ArchAndAddr(
+			    CoreArchitecture._from_cache(bn_fl_context.inlinedRemappingKeys[i].arch),
+			    bn_fl_context.inlinedRemappingKeys[i].address,
+			)
+			dest = function.ArchAndAddr(
+			    CoreArchitecture._from_cache(bn_fl_context.inlinedRemappingEntries[i].destination.arch),
+			    bn_fl_context.inlinedRemappingEntries[i].destination.address,
+			)
+			inline_remapping[src] = dest
+
+		user_indirect_branches = {}
+		auto_indirect_branches = {}
+		for i in range(0, bn_fl_context.indirectBranchesCount):
+			src = function.ArchAndAddr(
+			    CoreArchitecture._from_cache(bn_fl_context.indirectBranches[i].sourceArch),
+			    bn_fl_context.indirectBranches[i].sourceAddr,
+			)
+
+			dest = function.ArchAndAddr(
+				CoreArchitecture._from_cache(bn_fl_context.indirectBranches[i].destArch),
+				bn_fl_context.indirectBranches[i].destAddr,
+			)
+
+			if bn_fl_context.indirectBranches[i].autoDefined:
+				if src not in auto_indirect_branches:
+					auto_indirect_branches[src] = set()
+				auto_indirect_branches[src].add(dest)
+			else:
+				if src not in user_indirect_branches:
+					user_indirect_branches[src] = set()
+				user_indirect_branches[src].add(dest)
+
+		inlined_calls = set()
+		for i in range(0, bn_fl_context.inlinedCallsCount):
+			inlined_calls.add(bn_fl_context.inlinedCalls[i])
+
+		return FunctionLifterContext(
+		    _handle=bn_fl_context,
+		    _function=lowlevelil.LowLevelILFunction(plat.arch,
+		                                            core.BNNewLowLevelILFunctionReference(func)), _platform=plat,
+		    _logger=logger, _blocks=blocks, _contextual_returns=contextual_returns, _inline_remapping=inline_remapping,
+		    _user_indirect_branches=user_indirect_branches, _auto_indirect_branches=auto_indirect_branches,
+		    _inlined_calls=inlined_calls, _function_arch_context_token=bn_fl_context.functionArchContext,
+		)
+
+	def prepare_block_translation(self, function, arch, address):
+		"""Prepare the basic block for translation"""
+
+		core.BNPrepareBlockTranslation(function.handle, arch.handle, address)
+
+	@property
+	def blocks(self) -> List["basicblock.BasicBlock"]:
+		"""Get the list of basic blocks in this context"""
+
+		return self._blocks
+
+	@property
+	def function_arch_context(self) -> Any:
+		"""Get the function architecture context"""
+
+		return self._function.arch.function_arch_contexts.get(self._function_arch_context_token, None)
+
+	@property
+	def lifter_instruction_data(self) -> Optional["LifterInstructionData"]:
+		"""The per-function instruction byte store populated during basic block analysis."""
+
+		handle = self._handle.lifterInstructionData
+		if not handle:
+			return None
+		return LifterInstructionData(core.BNNewLifterInstructionDataReference(handle))
 
 @dataclass(frozen=True)
 class RegisterInfo:
@@ -514,6 +683,23 @@ class _ArchitectureMetaClass(type):
 			raise KeyError(f"'{name}' is not a valid architecture")
 		return CoreArchitecture._from_cache(arch)
 
+	def __contains__(cls: '_ArchitectureMetaClass', name: object) -> bool:
+		if not isinstance(name, str):
+			return False
+		try:
+			cls[name]
+			return True
+		except KeyError:
+			return False
+
+	def get(cls: '_ArchitectureMetaClass', name: str, default: Any = None) -> Optional['Architecture']:
+		try:
+			return cls[name]
+		except KeyError:
+			if default is not None:
+				return default
+			return None
+
 
 class Architecture(metaclass=_ArchitectureMetaClass):
 	"""
@@ -548,6 +734,11 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 	address_size = 8
 	default_int_size = 4
 	instr_alignment = 1
+	linear_sweep_initial_alignment: Optional[int] = None
+	linear_sweep_analysis_capabilities = (
+	    LinearSweepAnalysisCapability.BNLinearSweepCallTargetAnalysis
+	    | LinearSweepAnalysisCapability.BNLinearSweepGenericControlFlowAnalysis
+	)
 	max_instr_length = 16
 	opcode_display_length = 8
 	regs: Dict[RegisterName, RegisterInfo] = {}
@@ -555,19 +746,20 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 	link_reg = None
 	global_regs = []
 	system_regs = []
-	flags = []
+	flags: List[FlagName] = []
 	flag_write_types: List[FlagWriteTypeName] = []
-	semantic_flag_classes = []
-	semantic_flag_groups = []
-	flag_roles = {}
-	flags_required_for_flag_condition = {}
-	flags_required_for_semantic_flag_group = {}
-	flag_conditions_for_semantic_flag_group = {}
-	flags_written_by_flag_write_type = {}
-	semantic_class_for_flag_write_type = {}
+	semantic_flag_classes: List[SemanticClassName] = []
+	semantic_flag_groups: List[SemanticGroupName] = []
+	flag_roles: Dict[FlagName, FlagRole] = {}
+	flags_required_for_flag_condition: Dict['lowlevelil.LowLevelILFlagCondition', List[FlagName]] = {}
+	flags_required_for_semantic_flag_group: Dict[SemanticGroupName, List[FlagName]] = {}
+	flag_conditions_for_semantic_flag_group: Dict[SemanticGroupName, Dict[Optional[SemanticClassName], 'lowlevelil.LowLevelILFlagCondition']] = {}
+	flags_written_by_flag_write_type: Dict[FlagWriteTypeName, List[FlagName]] = {}
+	semantic_class_for_flag_write_type: Dict[FlagWriteTypeName, SemanticClassName] = {}
 	reg_stacks: Dict[RegisterStackName, RegisterStackInfo] = {}
 	intrinsics = {}
 	next_address = 0
+	function_arch_contexts: Dict[int, Any] = {}
 
 	def __init__(self):
 		binaryninja._init_plugins()
@@ -589,11 +781,16 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 		)
 		self._cb.getInstructionInfo = self._cb.getInstructionInfo.__class__(self._get_instruction_info)
 		self._cb.getInstructionText = self._cb.getInstructionText.__class__(self._get_instruction_text)
+		self._cb.getInstructionTextWithContext = self._cb.getInstructionTextWithContext.__class__(
+		    self._get_instruction_text_with_context
+		)
 		self._cb.freeInstructionText = self._cb.freeInstructionText.__class__(self._free_instruction_text)
 		self._cb.getInstructionLowLevelIL = self._cb.getInstructionLowLevelIL.__class__(
 		    self._get_instruction_low_level_il
 		)
 		self._cb.analyzeBasicBlocks = self._cb.analyzeBasicBlocks.__class__(self._analyze_basic_blocks)
+		self._cb.liftFunction = self._cb.liftFunction.__class__(self._lift_function)
+		self._cb.freeFunctionArchContext = self._cb.freeFunctionArchContext.__class__(self._free_function_arch_context)
 		self._cb.getRegisterName = self._cb.getRegisterName.__class__(self._get_register_name)
 		self._cb.getFlagName = self._cb.getFlagName.__class__(self._get_flag_name)
 		self._cb.getFlagWriteTypeName = self._cb.getFlagWriteTypeName.__class__(self._get_flag_write_type_name)
@@ -655,6 +852,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 		self._cb.freeNameAndTypeList = self._cb.freeNameAndTypeList.__class__(self._free_name_and_type_list)
 		self._cb.getIntrinsicOutputs = self._cb.getIntrinsicOutputs.__class__(self._get_intrinsic_outputs)
 		self._cb.freeTypeList = self._cb.freeTypeList.__class__(self._free_type_list)
+		self._cb.canAssemble = self._cb.canAssemble.__class__(self._can_assemble)
 		self._cb.assemble = self._cb.assemble.__class__(self._assemble)
 		self._cb.isNeverBranchPatchAvailable = self._cb.isNeverBranchPatchAvailable.__class__(
 		    self._is_never_branch_patch_available
@@ -675,11 +873,19 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 		self._cb.alwaysBranch = self._cb.alwaysBranch.__class__(self._always_branch)
 		self._cb.invertBranch = self._cb.invertBranch.__class__(self._invert_branch)
 		self._cb.skipAndReturnValue = self._cb.skipAndReturnValue.__class__(self._skip_and_return_value)
+		self._cb.getLinearSweepInitialAlignment = self._cb.getLinearSweepInitialAlignment.__class__(
+		    self._get_linear_sweep_initial_alignment
+		)
+		self._cb.getLinearSweepAnalysisCapabilities = self._cb.getLinearSweepAnalysisCapabilities.__class__(
+		    self._get_linear_sweep_analysis_capabilities
+		)
 
 		self.__dict__['endianness'] = self.__class__.endianness
 		self.__dict__['address_size'] = self.__class__.address_size
 		self.__dict__['default_int_size'] = self.__class__.default_int_size
 		self.__dict__['instr_alignment'] = self.__class__.instr_alignment
+		self.__dict__['linear_sweep_initial_alignment'] = self.__class__.linear_sweep_initial_alignment
+		self.__dict__['linear_sweep_analysis_capabilities'] = self.__class__.linear_sweep_analysis_capabilities
 		self.__dict__['max_instr_length'] = self.__class__.max_instr_length
 		self.__dict__['opcode_display_length'] = self.__class__.opcode_display_length
 		self.__dict__['stack_pointer'] = self.__class__.stack_pointer
@@ -878,6 +1084,8 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 		binaryninja._init_plugins()
 		if cls.name is None:
 			raise ValueError("architecture 'name' is not defined")
+		if core.BNGetArchitectureByName(cls.name) is not None:
+			raise ValueError(f"architecture '{cls.name}' is already registered")
 		arch = cls()
 		cls._registered_cb = arch._cb
 		arch.handle = core.BNRegisterArchitecture(cls.name, arch._cb)
@@ -906,7 +1114,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 		result = {}
 		try:
 			for i in range(0, count.value):
-				obj = callingconvention.CallingConvention(handle=core.BNNewCallingConventionReference(cc[i]))
+				obj = callingconvention.CoreCallingConvention(handle=core.BNNewCallingConventionReference(cc[i]))
 				result[obj.name] = obj
 		finally:
 			core.BNFreeCallingConventionList(cc, count.value)
@@ -941,42 +1149,61 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 	def _get_endianness(self, ctxt):
 		try:
 			return self.endianness
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_endianness")
 			return Endianness.LittleEndian
 
 	def _get_address_size(self, ctxt):
 		try:
 			return self.address_size
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_address_size")
 			return 8
 
 	def _get_default_integer_size(self, ctxt):
 		try:
 			return self.default_int_size
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_default_integer_size")
 			return 4
 
 	def _get_instruction_alignment(self, ctxt):
 		try:
 			return self.instr_alignment
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_instruction_alignment")
 			return 1
+
+	def _get_linear_sweep_initial_alignment(self, ctxt):
+		try:
+			if self.linear_sweep_initial_alignment is None:
+				return self.instr_alignment
+			return self.linear_sweep_initial_alignment
+		except Exception:
+			log_error_for_exception("Unhandled Python exception in Architecture._get_linear_sweep_initial_alignment")
+			return self.instr_alignment
+
+	def _get_linear_sweep_analysis_capabilities(self, ctxt):
+		try:
+			return int(self.linear_sweep_analysis_capabilities)
+		except Exception:
+			log_error_for_exception("Unhandled Python exception in Architecture._get_linear_sweep_analysis_capabilities")
+			return int(
+			    LinearSweepAnalysisCapability.BNLinearSweepCallTargetAnalysis
+			    | LinearSweepAnalysisCapability.BNLinearSweepGenericControlFlowAnalysis
+			)
 
 	def _get_max_instruction_length(self, ctxt):
 		try:
 			return self.max_instr_length
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_max_instruction_length")
 			return 16
 
 	def _get_opcode_display_length(self, ctxt):
 		try:
 			return self.opcode_display_length
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_opcode_display_length")
 			return 8
 
@@ -985,7 +1212,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			result, new_addr = self.get_associated_arch_by_address(addr[0])
 			addr[0] = new_addr
 			return ctypes.cast(result.handle, ctypes.c_void_p).value
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_associated_arch_by_address")
 			return ctypes.cast(self.handle, ctypes.c_void_p).value
 
@@ -1012,7 +1239,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				else:
 					result[0].branchArch[i] = arch.handle
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_instruction_info")
 			return False
 
@@ -1031,8 +1258,28 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			ptr = ctypes.cast(token_buf, ctypes.c_void_p)
 			self._pending_token_lists[ptr.value] = (ptr.value, token_buf)
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_instruction_text")
+			return False
+
+	def _get_instruction_text_with_context(self, ctxt, data, addr, length, context_token, result, count):
+		try:
+			buf = ctypes.create_string_buffer(length[0])
+			ctypes.memmove(buf, data, length[0])
+			context = self.function_arch_contexts.get(context_token, None)
+			info = self.get_instruction_text_with_context(buf.raw, addr, context)
+			if info is None:
+				return False
+			tokens = info[0]
+			length[0] = info[1]
+			count[0] = len(tokens)
+			token_buf = function.InstructionTextToken._get_core_struct(tokens)
+			result[0] = token_buf
+			ptr = ctypes.cast(token_buf, ctypes.c_void_p)
+			self._pending_token_lists[ptr.value] = (ptr.value, token_buf)
+			return True
+		except Exception:
+			log_error_for_exception("Unhandled Python exception in Architecture._get_instruction_text_with_context")
 			return False
 
 	def _free_instruction_text(self, tokens, count):
@@ -1064,15 +1311,30 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			bn_bb_context = ptr_bn_bb_context.contents
 			context = BasicBlockAnalysisContext.from_core_struct(bn_bb_context)
 			self.analyze_basic_blocks(function.Function(handle=core.BNNewFunctionReference(func)), context)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._analyze_basic_blocks")
+
+	def _lift_function(self, ctx, func, ptr_bn_fl_context):
+		try:
+			bn_fl_context = ptr_bn_fl_context.contents
+			context = FunctionLifterContext.from_core_struct(func, bn_fl_context)
+			return self.lift_function(lowlevelil.LowLevelILFunction(arch=self, handle=core.BNNewLowLevelILFunctionReference(func)), context)
+		except Exception:
+			log_error_for_exception("Unhandled Python exception in Architecture._lift_function")
+			return False
+
+	def _free_function_arch_context(self, ctx, context_token):
+		try:
+			self.function_arch_contexts.pop(context_token, None)
+		except Exception:
+			log_error_for_exception("Unhandled Python exception in Architecture._free_function_arch_context")
 
 	def _get_register_name(self, ctxt, reg):
 		try:
 			if reg in self._regs_by_index:
 				return core.BNAllocString(self._regs_by_index[reg])
 			return core.BNAllocString("")
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_register_name")
 			return core.BNAllocString("")
 
@@ -1081,7 +1343,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			if flag in self._flags_by_index:
 				return core.BNAllocString(self._flags_by_index[flag])
 			return core.BNAllocString("")
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_flag_name")
 			return core.BNAllocString("")
 
@@ -1090,7 +1352,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			if write_type in self._flag_write_types_by_index:
 				return core.BNAllocString(self._flag_write_types_by_index[write_type])
 			return core.BNAllocString("")
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_flag_write_type_name")
 			return core.BNAllocString("")
 
@@ -1099,7 +1361,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			if sem_class in self._semantic_flag_classes_by_index:
 				return core.BNAllocString(self._semantic_flag_classes_by_index[sem_class])
 			return core.BNAllocString("")
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_semantic_flag_class_name")
 			return core.BNAllocString("")
 
@@ -1108,7 +1370,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			if sem_group in self._semantic_flag_groups_by_index:
 				return core.BNAllocString(self._semantic_flag_groups_by_index[sem_group])
 			return core.BNAllocString("")
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_semantic_flag_group_name")
 			return core.BNAllocString("")
 
@@ -1245,7 +1507,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			result = ctypes.cast(flag_buf, ctypes.c_void_p)
 			self._pending_reg_lists[result.value] = (result, flag_buf)
 			return result.value
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_flags_required_for_semantic_flag_group")
 			count[0] = 0
 			return None
@@ -1266,7 +1528,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			result = ctypes.cast(cond_buf, ctypes.c_void_p)
 			self._pending_condition_lists[result.value] = (result, cond_buf)
 			return result.value
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_flag_conditions_for_semantic_flag_group")
 			count[0] = 0
 			return None
@@ -1293,7 +1555,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			result = ctypes.cast(flag_buf, ctypes.c_void_p)
 			self._pending_reg_lists[result.value] = (result, flag_buf)
 			return result.value
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_flags_written_by_flag_write_type")
 			count[0] = 0
 			return None
@@ -1304,7 +1566,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				return self._semantic_class_for_flag_write_type[write_type]
 			else:
 				return 0
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_semantic_class_for_flag_write_type")
 			return 0
 
@@ -1316,7 +1578,13 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			flag_name = self._flags_by_index[flag]
 			operand_list = []
 			for i in range(operand_count):
-				if operands[i].constant:
+				if operand_count == 3 and i == 2 and not operands[i].constant and (
+						op == LowLevelILOperation.LLIL_ADC
+						or op == LowLevelILOperation.LLIL_SBB
+						or op == LowLevelILOperation.LLIL_RLC
+						or op == LowLevelILOperation.LLIL_RRC):
+					operand_list.append(lowlevelil.ILFlag(self, operands[i].reg))
+				elif operands[i].constant:
 					operand_list.append(operands[i].value)
 				elif lowlevelil.LLIL_REG_IS_TEMP(operands[i].reg):
 					operand_list.append(lowlevelil.ILRegister(self, operands[i].reg))
@@ -1326,7 +1594,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			    op, size, write_type_name, flag_name, operand_list,
 			    lowlevelil.LowLevelILFunction(self, core.BNNewLowLevelILFunctionReference(il))
 			)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_flag_write_low_level_il")
 			return False
 
@@ -1439,7 +1707,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			if reg_stack in self._reg_stacks_by_index:
 				return core.BNAllocString(self._reg_stacks_by_index[reg_stack])
 			return core.BNAllocString("")
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_register_stack_name")
 			return core.BNAllocString("")
 
@@ -1495,7 +1763,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			if intrinsic in self._intrinsics_by_index:
 				return core.BNAllocString(self._intrinsics_by_index[intrinsic][0])
 			return core.BNAllocString("")
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_intrinsic_name")
 			return core.BNAllocString("")
 
@@ -1529,7 +1797,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				return result.value
 			count[0] = 0
 			return None
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_intrinsic_inputs")
 			count[0] = 0
 			return None
@@ -1561,7 +1829,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				return result.value
 			count[0] = 0
 			return None
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._get_intrinsic_outputs")
 			count[0] = 0
 			return None
@@ -1579,6 +1847,13 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 		except (ValueError, KeyError):
 			log_error_for_exception("Unhandled Python exception in Architecture._free_type_list")
 
+	def _can_assemble(self, ctxt):
+		try:
+			return self.can_assemble
+		except Exception:
+			log_error_for_exception("Unhandled Python exception in Architecture._can_assemble")
+			return False
+
 	def _assemble(self, ctxt, code, addr, result, errors):
 		"""
 		This function calls the `assemble` command for the actual architecture plugin.
@@ -1586,7 +1861,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 		it uses the default function provided in CoreArchitecture.
 		"""
 		try:
-			data = self.assemble(code, addr)
+			data = self.assemble(core.pyNativeStr(code), addr)
 			if data is None:
 				return False
 			buf = ctypes.create_string_buffer(len(data))
@@ -1597,7 +1872,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			log_debug_for_exception("Assemble failed")
 			errors[0] = core.BNAllocString(str(e))
 			return False
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._assemble")
 			errors[0] = core.BNAllocString("Unhandled exception during assembly.\n")
 			return False
@@ -1607,7 +1882,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			buf = ctypes.create_string_buffer(length)
 			ctypes.memmove(buf, data, length)
 			return self.is_never_branch_patch_available(buf.raw, addr)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._is_never_branch_patch_available")
 			return False
 
@@ -1616,7 +1891,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			buf = ctypes.create_string_buffer(length)
 			ctypes.memmove(buf, data, length)
 			return self.is_always_branch_patch_available(buf.raw, addr)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._is_always_branch_patch_available")
 			return False
 
@@ -1625,7 +1900,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			buf = ctypes.create_string_buffer(length)
 			ctypes.memmove(buf, data, length)
 			return self.is_invert_branch_patch_available(buf.raw, addr)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._is_invert_branch_patch_available")
 			return False
 
@@ -1634,7 +1909,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			buf = ctypes.create_string_buffer(length)
 			ctypes.memmove(buf, data, length)
 			return self.is_skip_and_return_zero_patch_available(buf.raw, addr)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._is_skip_and_return_zero_patch_available")
 			return False
 
@@ -1643,7 +1918,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			buf = ctypes.create_string_buffer(length)
 			ctypes.memmove(buf, data, length)
 			return self.is_skip_and_return_value_patch_available(buf.raw, addr)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._is_skip_and_return_value_patch_available")
 			return False
 
@@ -1658,7 +1933,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				result = result[0:length]
 			ctypes.memmove(data, result, len(result))
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._convert_to_nop")
 			return False
 
@@ -1673,7 +1948,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				result = result[0:length]
 			ctypes.memmove(data, result, len(result))
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._always_branch")
 			return False
 
@@ -1688,7 +1963,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				result = result[0:length]
 			ctypes.memmove(data, result, len(result))
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._invert_branch")
 			return False
 
@@ -1703,7 +1978,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 				result = result[0:length]
 			ctypes.memmove(data, result, len(result))
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture._skip_and_return_value")
 			return False
 
@@ -1756,6 +2031,20 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 		"""
 		raise NotImplementedError
 
+	def get_instruction_text_with_context(self, data: bytes, addr: int, context: Any) -> Optional[Tuple[List['function.InstructionTextToken'], int]]:
+		"""
+		``get_instruction_text`` returns a tuple containing a list of decoded InstructionTextToken objects and the bytes used at the given virtual
+		address ``addr`` with data ``data``.
+
+		.. note:: Architecture subclasses should implement this method if they require context from analyze_basic_blocks for instruction decoding.
+
+		:param str data: a maximum of max_instruction_length bytes from the binary at virtual address ``addr``
+		:param int addr: virtual address of bytes in ``data``
+		:param Any context: function architecture context
+		:return: a tuple containing the InstructionTextToken list and length of bytes decoded
+		"""
+		return self.get_instruction_text(data, addr)
+
 	def get_instruction_low_level_il_instruction(
 	    self, bv: 'binaryview.BinaryView', addr: int
 	) -> 'lowlevelil.LowLevelILInstruction':
@@ -1794,8 +2083,25 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 
 		try:
 			core.BNArchitectureDefaultAnalyzeBasicBlocks(func.handle, context._handle)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Architecture.analyze_basic_blocks")
+
+	def lift_function(self, func: "lowlevelil.LowLevelILFunction", context: FunctionLifterContext) -> bool:
+		"""
+		``lift_function`` performs lifting of the function and commits the results to the function analysis
+
+		.. note:: Architecture subclasses should only implement this method if function-level analysis is required
+
+		:param LowLevelILFunction func: the function to analyze
+		:param FunctionLifterContext context: the lifting context
+		:return: True on success, False otherwise
+		"""
+
+		try:
+			return core.BNArchitectureDefaultLiftFunction(func.handle, context._handle)
+		except Exception:
+			log_error_for_exception("Unhandled Python exception in Architecture.lift_function")
+			return False
 
 	def get_low_level_il_from_bytes(self, data: bytes, addr: int) -> 'lowlevelil.LowLevelILInstruction':
 		"""
@@ -2031,14 +2337,14 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 
 	def get_flag_write_low_level_il(
 	    self, op: LowLevelILOperation, size: int, write_type: Optional[FlagWriteTypeName], flag: FlagType,
-	    operands: List['lowlevelil.ILRegisterType'], il: 'lowlevelil.LowLevelILFunction'
+	    operands: List['lowlevelil.ILOperandType'], il: 'lowlevelil.LowLevelILFunction'
 	) -> 'lowlevelil.ExpressionIndex':
 		"""
 		:param LowLevelILOperation op:
 		:param int size:
 		:param str write_type:
 		:param FlagType flag:
-		:param operands: a list of either items that are either string register names or constant integer values
+		:param operands: a list of either items that are either string registers, flags, or constant integer values
 		:type operands: list(str) or list(int)
 		:param LowLevelILFunction il:
 		:rtype: lowlevelil.ExpressionIndex
@@ -2050,7 +2356,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 
 	def get_default_flag_write_low_level_il(
 	    self, op: 'lowlevelil.LowLevelILOperation', size: int, role: FlagRole,
-	    operands: List['lowlevelil.ILRegisterType'], il: 'lowlevelil.LowLevelILFunction'
+	    operands: List['lowlevelil.ILOperandType'], il: 'lowlevelil.LowLevelILFunction'
 	) -> 'lowlevelil.ExpressionIndex':
 		"""
 		:param LowLevelILOperation op:
@@ -2067,6 +2373,15 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			if isinstance(operand, str):
 				operand_list[i].constant = False
 				operand_list[i].reg = self.regs[RegisterName(operand)].index
+			elif isinstance(operand, lowlevelil.ILFlag):
+				assert len(operands) == 3 and i == 2 and (
+						op == LowLevelILOperation.LLIL_ADC
+						or op == LowLevelILOperation.LLIL_SBB
+						or op == LowLevelILOperation.LLIL_RLC
+						or op == LowLevelILOperation.LLIL_RRC
+				), "Flag operands only allowed for adc/sbb/rlc/rrc"
+				operand_list[i].constant = False
+				operand_list[i].reg = operand.index
 			elif isinstance(operand, lowlevelil.ILRegister):
 				operand_list[i].constant = False
 				operand_list[i].reg = operand.index
@@ -2167,7 +2482,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			b'\\x0f\\x84\\x04\\x00\\x00\\x00'
 			>>>
 		"""
-		return NotImplemented
+		raise NotImplementedError
 
 	def is_never_branch_patch_available(self, data: bytes, addr: int = 0) -> bool:
 		"""
@@ -2187,7 +2502,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			False
 			>>>
 		"""
-		return NotImplemented
+		return False
 
 	def is_always_branch_patch_available(self, data: bytes, addr: int = 0) -> bool:
 		"""
@@ -2208,7 +2523,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			False
 			>>>
 		"""
-		return NotImplemented
+		return False
 
 	def is_invert_branch_patch_available(self, data: bytes, addr: int = 0) -> bool:
 		"""
@@ -2228,7 +2543,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			False
 			>>>
 		"""
-		return NotImplemented
+		return False
 
 	def is_skip_and_return_zero_patch_available(self, data: bytes, addr: int = 0) -> bool:
 		"""
@@ -2251,7 +2566,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			False
 			>>>
 		"""
-		return NotImplemented
+		return False
 
 	def is_skip_and_return_value_patch_available(self, data: bytes, addr: int = 0) -> bool:
 		"""
@@ -2272,7 +2587,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			False
 			>>>
 		"""
-		return NotImplemented
+		return False
 
 	def convert_to_nop(self, data: bytes, addr: int = 0) -> Optional[bytes]:
 		"""
@@ -2291,7 +2606,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			b'\\x90\\x90'
 			>>>
 		"""
-		return NotImplemented
+		raise NotImplementedError
 
 	def always_branch(self, data: bytes, addr: int = 0) -> Optional[bytes]:
 		"""
@@ -2313,7 +2628,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			(['jmp', '     ', '0x9'], 5)
 			>>>
 		"""
-		return NotImplemented
+		raise NotImplementedError
 
 	def invert_branch(self, data: bytes, addr: int = 0) -> Optional[bytes]:
 		"""
@@ -2336,7 +2651,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			(['jl', '      ', '0xa'], 6)
 			>>>
 		"""
-		return NotImplemented
+		raise NotImplementedError
 
 	def skip_and_return_value(self, data: bytes, addr: int, value: int) -> Optional[bytes]:
 		"""
@@ -2355,7 +2670,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 			(['mov', '     ', 'eax', ', ', '0x0'], 5)
 			>>>
 		"""
-		return NotImplemented
+		raise NotImplementedError
 
 	def register_calling_convention(self, cc: 'callingconvention.CallingConvention') -> None:
 		"""
@@ -2380,7 +2695,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 		cc_handle = core.BNGetArchitectureDefaultCallingConvention(self.handle)
 		if cc_handle is None:
 			return None
-		return callingconvention.CallingConvention(handle=cc_handle)
+		return callingconvention.CoreCallingConvention(handle=cc_handle)
 
 	@default_calling_convention.setter
 	def default_calling_convention(self, cc: 'callingconvention.CallingConvention'):
@@ -2400,7 +2715,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 		cc_handle = core.BNGetArchitectureCdeclCallingConvention(self.handle)
 		if cc_handle is None:
 			return None
-		return callingconvention.CallingConvention(handle=cc_handle)
+		return callingconvention.CoreCallingConvention(handle=cc_handle)
 
 	@cdecl_calling_convention.setter
 	def cdecl_calling_convention(self, cc: 'callingconvention.CallingConvention'):
@@ -2420,7 +2735,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 		cc_handle = core.BNGetArchitectureStdcallCallingConvention(self.handle)
 		if cc_handle is None:
 			return None
-		return callingconvention.CallingConvention(handle=cc_handle)
+		return callingconvention.CoreCallingConvention(handle=cc_handle)
 
 	@stdcall_calling_convention.setter
 	def stdcall_calling_convention(self, cc: 'callingconvention.CallingConvention'):
@@ -2440,7 +2755,7 @@ class Architecture(metaclass=_ArchitectureMetaClass):
 		cc_handle = core.BNGetArchitectureFastcallCallingConvention(self.handle)
 		if cc_handle is None:
 			return None
-		return callingconvention.CallingConvention(handle=cc_handle)
+		return callingconvention.CoreCallingConvention(handle=cc_handle)
 
 	@fastcall_calling_convention.setter
 	def fastcall_calling_convention(self, cc: 'callingconvention.CallingConvention'):
@@ -2452,7 +2767,7 @@ _architecture_cache = {}
 
 class CoreArchitecture(Architecture):
 	def __init__(self, handle: core.BNArchitecture):
-		super(CoreArchitecture, self).__init__()
+		super().__init__()
 
 		self.handle = core.handle_of_type(handle, core.BNArchitecture)
 		self.name = core.BNGetArchitectureName(self.handle)
@@ -2460,6 +2775,8 @@ class CoreArchitecture(Architecture):
 		self.address_size = core.BNGetArchitectureAddressSize(self.handle)
 		self.default_int_size = core.BNGetArchitectureDefaultIntegerSize(self.handle)
 		self.instr_alignment = core.BNGetArchitectureInstructionAlignment(self.handle)
+		self.linear_sweep_initial_alignment = core.BNGetArchitectureLinearSweepInitialAlignment(self.handle)
+		self.linear_sweep_analysis_capabilities = core.BNGetArchitectureLinearSweepAnalysisCapabilities(self.handle)
 		self.max_instr_length = core.BNGetArchitectureMaxInstructionLength(self.handle)
 		self.opcode_display_length = core.BNGetArchitectureOpcodeDisplayLength(self.handle)
 		self.stack_pointer: str = core.BNGetArchitectureRegisterName(
@@ -2824,6 +3141,9 @@ class CoreArchitecture(Architecture):
 			elif isinstance(operand, lowlevelil.ILRegister):
 				operand_list[i].constant = False
 				operand_list[i].reg = operand.index
+			elif isinstance(operand, lowlevelil.ILFlag):
+				operand_list[i].constant = False
+				operand_list[i].reg = operand.index
 			else:
 				operand_list[i].constant = True
 				operand_list[i].value = operand
@@ -3116,10 +3436,14 @@ class CoreArchitecture(Architecture):
 		return flag_names
 
 
+# Keep registered hooks alive for the lifetime of the process as core holds pointers to their callbacks.
+_registered_architecture_hooks: List['ArchitectureHook'] = []
+
+
 class ArchitectureHook(CoreArchitecture):
 	def __init__(self, base_arch: 'Architecture'):
 		self._base_arch = base_arch
-		super(ArchitectureHook, self).__init__(base_arch.handle)
+		super().__init__(base_arch.handle)
 
 		# To improve performance of simpler hooks, use null callback for functions that are not being overridden
 		if self.get_associated_arch_by_address.__code__ == CoreArchitecture.get_associated_arch_by_address.__code__:
@@ -3128,6 +3452,8 @@ class ArchitectureHook(CoreArchitecture):
 			self._cb.getInstructionInfo = self._cb.getInstructionInfo.__class__()
 		if self.get_instruction_text.__code__ == CoreArchitecture.get_instruction_text.__code__:
 			self._cb.getInstructionText = self._cb.getInstructionText.__class__()
+		if self.get_instruction_text_with_context.__code__ == CoreArchitecture.get_instruction_text_with_context.__code__:
+			self._cb.getInstructionTextWithContext = self._cb.getInstructionTextWithContext.__class__()
 		if self.__class__.stack_pointer is None:
 			self._cb.getStackPointerRegister = self._cb.getStackPointerRegister.__class__()
 		if self.__class__.link_reg is None:
@@ -3147,9 +3473,9 @@ class ArchitectureHook(CoreArchitecture):
 			self._cb.freeTypeList = self._cb.freeTypeList.__class__()
 
 	def register(self) -> None:
-		self.__class__._registered_cb = self._cb
 		self.handle = core.BNRegisterArchitectureHook(self._base_arch.handle, self._cb)
 		core.BNFinalizeArchitectureHook(self._base_arch.handle)
+		_registered_architecture_hooks.append(self)
 
 	@property
 	def base_arch(self) -> 'Architecture':
@@ -3226,7 +3552,7 @@ class InstructionTextToken:
 
 	def __post_init__(self):
 		if self.width == 0:
-			self.width = len(self.text)
+			self.width = unicode.unicode_display_width(self.text)
 
 	@staticmethod
 	def _from_core_struct(tokens: 'ctypes.pointer[core.BNInstructionTextToken]',

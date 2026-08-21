@@ -1,4 +1,4 @@
-// Copyright 2022-2025 Vector 35 Inc.
+// Copyright 2022-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,15 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::type_parser::ParsedMember;
 use anyhow::{anyhow, Result};
 use binaryninja::confidence::{Conf, MAX_CONFIDENCE};
 use binaryninja::types::{MemberAccess, MemberScope, StructureBuilder, StructureType, Type};
-use log::{debug, warn};
 use std::cmp::Ordering;
 use std::env;
 use std::fmt::{Debug, Display, Formatter};
-
-use crate::type_parser::ParsedMember;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct MemberSize {
@@ -31,8 +29,11 @@ struct MemberSize {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ResolvedGroup {
+    /// An index into a list of members
     Single(usize),
+    /// Non-overlapping members with bit-offset of start
     Struct(u64, Vec<ResolvedGroup>),
+    /// Overlapping members with bit-offset of start
     Union(u64, Vec<ResolvedGroup>),
 }
 
@@ -340,7 +341,7 @@ pub fn group_structure(
         .enumerate()
         .map(|(i, member)| MemberSize {
             index: i,
-            offset: member.bitfield_position.unwrap_or(member.offset * 8),
+            offset: member.offset * 8 + member.bitfield_position.unwrap_or(0),
             width: member
                 .bitfield_size
                 .unwrap_or(member.ty.contents.width() * 8),
@@ -359,14 +360,14 @@ pub fn group_structure(
             apply_groups(members, structure, groups, 0);
         }
         Err(e) => {
-            warn!("{} Could not resolve structure groups: {}", name, e);
+            tracing::warn!("{} Could not resolve structure groups: {}", name, e);
             for member in members {
                 match (member.bitfield_position, member.bitfield_size) {
                     (Some(bit_pos), bit_width) => {
                         structure.insert_bitwise(
                             &member.ty,
                             &member.name,
-                            bit_pos,
+                            member.offset * 8 + bit_pos,
                             bit_width.map(|w| w as u8),
                             false,
                             member.access,
@@ -401,36 +402,25 @@ fn apply_groups(
         match group {
             ResolvedGroup::Single(index) => {
                 let member = &members[index];
-
-                // TODO : Fix inner-offset being larger than `member.offset`
-
+                let member_bit_offset = member.offset * 8;
                 match (member.bitfield_position, member.bitfield_size) {
                     (Some(bit_pos), bit_width) => {
                         structure.insert_bitwise(
                             &member.ty,
                             &member.name,
-                            bit_pos,
+                            member_bit_offset - offset + bit_pos,
                             bit_width.map(|w| w as u8),
                             false,
                             member.access,
                             member.scope,
                         );
                     }
-                    (None, _) if offset > member.offset => {
-                        structure.insert(
-                            &member.ty,
-                            &member.name,
-                            0,
-                            false,
-                            member.access,
-                            member.scope,
-                        );
-                    }
                     (None, _) => {
-                        structure.insert(
+                        structure.insert_bitwise(
                             &member.ty,
                             &member.name,
-                            member.offset - offset,
+                            member_bit_offset - offset,
+                            None,
                             false,
                             member.access,
                             member.scope,
@@ -441,10 +431,11 @@ fn apply_groups(
             ResolvedGroup::Struct(inner_offset, children) => {
                 let mut inner = StructureBuilder::new();
                 apply_groups(members, &mut inner, children, inner_offset);
-                structure.insert(
+                structure.insert_bitwise(
                     &Conf::new(Type::structure(inner.finalize().as_ref()), MAX_CONFIDENCE),
                     &format!("__inner{}", i),
                     inner_offset - offset,
+                    None,
                     false,
                     MemberAccess::PublicAccess,
                     MemberScope::NoScope,
@@ -454,10 +445,11 @@ fn apply_groups(
                 let mut inner = StructureBuilder::new();
                 inner.structure_type(StructureType::UnionStructureType);
                 apply_groups(members, &mut inner, children, inner_offset);
-                structure.insert(
+                structure.insert_bitwise(
                     &Conf::new(Type::structure(inner.finalize().as_ref()), MAX_CONFIDENCE),
                     &format!("__inner{}", i),
                     inner_offset - offset,
+                    None,
                     false,
                     MemberAccess::PublicAccess,
                     MemberScope::NoScope,
@@ -1190,6 +1182,6 @@ fn test_bool_modifier() {
 fn log<F: FnOnce() -> D, D: Display>(msg: F) {
     // println!("{}", msg());
     if env::var("BN_DEBUG_PDB").is_ok() {
-        debug!("{}", msg());
+        tracing::debug!("{}", msg());
     }
 }

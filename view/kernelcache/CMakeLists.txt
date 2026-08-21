@@ -13,18 +13,13 @@ if(NOT BN_INTERNAL_BUILD)
 endif()
 
 if (NOT BN_INTERNAL_BUILD)
-    if(WIN32)
-        set(MSVC_VERSION msvc2022_64 CACHE STRING "Version of MSVC Qt is built with" )
-    endif()
     set(QT_VERSION 6.7.2 CACHE STRING "Version of Qt to use")
 
     if(NOT CMAKE_PREFIX_PATH)
-        if(APPLE)
-            set(CMAKE_PREFIX_PATH $ENV{HOME}/Qt/${QT_VERSION}/clang_64/lib/cmake)
-        elseif(WIN32)
-            set(CMAKE_PREFIX_PATH $ENV{HOMEDRIVE}$ENV{HOMEPATH}/Qt/${QT_VERSION}/${MSVC_VERSION}/lib/cmake)
+        if(WIN32)
+            set(CMAKE_PREFIX_PATH $ENV{HOMEDRIVE}$ENV{HOMEPATH}/Qt/${QT_VERSION}/lib/cmake)
         else()
-            set(CMAKE_PREFIX_PATH $ENV{HOME}/Qt/${QT_VERSION}/gcc_64/lib/cmake)
+            set(CMAKE_PREFIX_PATH $ENV{HOME}/Qt/${QT_VERSION}/lib/cmake)
         endif()
     endif()
     message("CMAKE_PREFIX_PATH is: ${CMAKE_PREFIX_PATH}")
@@ -37,7 +32,7 @@ set(METADATA_VERSION 3 CACHE STRING "Version of the metadata")
 
 add_subdirectory(core)
 add_subdirectory(api)
-# add_subdirectory(workflow)
+add_subdirectory(workflow)
 
 add_library(kernelcache SHARED
     HeadlessPlugin.cpp)
@@ -65,7 +60,7 @@ set_target_properties(kernelcache PROPERTIES
 
 target_include_directories(kernelcache PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/core ${CMAKE_CURRENT_SOURCE_DIR}/api ${CMAKE_CURRENT_SOURCE_DIR}/workflow)
 
-target_link_libraries(kernelcache PUBLIC kernelcacheapi binaryninjaapi kernelcachecore) # kernelcacheworkflow)
+target_link_libraries(kernelcache PUBLIC kernelcacheapi binaryninjaapi kernelcachecore kernelcacheworkflow)
 
 
 

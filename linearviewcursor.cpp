@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2025 Vector 35 Inc
+// Copyright (c) 2020-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -68,6 +68,7 @@ vector<LinearViewObjectIdentifier> LinearViewCursor::GetPath() const
 	size_t count;
 	BNLinearViewObjectIdentifier* path = BNGetLinearViewCursorPath(m_object, &count);
 	vector<LinearViewObjectIdentifier> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		LinearViewObjectIdentifier id;
@@ -87,6 +88,7 @@ vector<Ref<LinearViewObject>> LinearViewCursor::GetPathObjects() const
 	size_t count;
 	BNLinearViewObject** path = BNGetLinearViewCursorPathObjects(m_object, &count);
 	vector<Ref<LinearViewObject>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(new LinearViewObject(BNNewLinearViewObjectReference(path[i])));
 	BNFreeLinearViewCursorPathObjects(path, count);
@@ -216,6 +218,7 @@ std::vector<RenderLayer*> LinearViewCursor::GetRenderLayers() const
 	size_t count = 0;
 	BNRenderLayer** layers = BNGetLinearViewCursorRenderLayers(m_object, &count);
 	std::vector<RenderLayer*> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i ++)
 	{
 		result.push_back(new CoreRenderLayer(layers[i]));

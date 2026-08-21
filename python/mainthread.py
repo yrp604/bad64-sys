@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -65,6 +65,12 @@ def execute_on_main_thread(func):
 	on the main Binary Ninja thread.
 
 		.. warning:: May be required for some GUI operations, but should be used sparingly as it can block the UI.
+
+		:Example:
+			>>> # Execute a GUI operation on the main thread
+			>>> import binaryninjaui
+			>>> from binaryninja import execute_on_main_thread
+			>>> execute_on_main_thread(lambda: binaryninjaui.UIContext.activeContext().openFileContext(context))
 	"""
 	action = scriptingprovider._ThreadActionContext(func)
 	obj = core.BNExecuteOnMainThread(0, action.callback)
@@ -79,6 +85,12 @@ def execute_on_main_thread_and_wait(func):
 	executed on the main Binary Ninja thread and will block execution of further python until the function returns.
 
 		.. warning:: May be required for some GUI operations, but should be used sparingly as it can block the UI.
+
+		:Example:
+			>>> # Execute a GUI operation and wait for it to complete
+			>>> import binaryninjaui
+			>>> from binaryninja import execute_on_main_thread_and_wait
+			>>> execute_on_main_thread_and_wait(lambda: binaryninjaui.UIContext.activeContext().rebaseCurrentView(0x800000))
 	"""
 	action = scriptingprovider._ThreadActionContext(func)
 	core.BNExecuteOnMainThreadAndWait(0, action.callback)

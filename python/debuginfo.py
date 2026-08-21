@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -19,7 +19,7 @@
 # IN THE SOFTWARE.
 
 import ctypes
-from typing import Optional, List, Iterator, Callable, Tuple
+from typing import Optional, List, Iterator, Callable, Tuple, Any
 import traceback
 from dataclasses import dataclass, field
 
@@ -74,9 +74,24 @@ class _DebugInfoParserMetaClass(type):
 		parser = core.BNGetDebugInfoParserByName(str(value))
 		if parser is None:
 			raise KeyError(f"'{str(value)}' is not a valid debug-info parser")
-		parser_ref = core.BNNewDebugInfoParserReference(parser)
-		assert parser_ref is not None, "core.BNNewDebugInfoParserReference returned None"
-		return DebugInfoParser(parser_ref)
+		return DebugInfoParser(parser)
+
+	def __contains__(cls: '_DebugInfoParserMetaClass', name: object) -> bool:
+		if not isinstance(name, str):
+			return False
+		try:
+			cls[name]
+			return True
+		except KeyError:
+			return False
+
+	def get(cls: '_DebugInfoParserMetaClass', name: str, default: Any = None) -> Optional['DebugInfoParser']:
+		try:
+			return cls[name]
+		except KeyError:
+			if default is not None:
+				return default
+			return None
 
 	@staticmethod
 	def get_parsers_for_view(view: 'binaryview.BinaryView') -> List['DebugInfoParser']:
@@ -102,7 +117,7 @@ class _DebugInfoParserMetaClass(type):
 			file_metadata = filemetadata.FileMetadata(handle=core.BNGetFileForView(view))
 			view_obj = binaryview.BinaryView(file_metadata=file_metadata, handle=core.BNNewViewReference(view))
 			return callback(view_obj)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in _DebugInfoParserMetaClass._is_valid")
 			return False
 
@@ -119,7 +134,7 @@ class _DebugInfoParserMetaClass(type):
 			parser_ref = core.BNNewDebugInfoReference(debug_info)
 			assert parser_ref is not None, "core.BNNewDebugInfoReference returned None"
 			return callback(DebugInfo(parser_ref), view_obj, debug_view_obj, progress)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in _DebugInfoParserMetaClass._parse_info")
 			return False
 
@@ -145,9 +160,7 @@ class _DebugInfoParserMetaClass(type):
 		_debug_info_parsers[len(_debug_info_parsers)] = (is_valid_cb, parse_info_cb)
 		parser = core.BNRegisterDebugInfoParser(name, is_valid_cb, parse_info_cb, None)
 		assert parser is not None, "core.BNRegisterDebugInfoParser is not None"
-		parser_ref = core.BNNewDebugInfoParserReference(parser)
-		assert parser_ref is not None, "core.BNNewDebugInfoParserReference returned None"
-		return DebugInfoParser(parser_ref)
+		return DebugInfoParser(parser)
 
 
 class DebugInfoParser(object, metaclass=_DebugInfoParserMetaClass):

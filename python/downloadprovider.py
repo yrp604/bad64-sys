@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -23,6 +23,7 @@ import ctypes
 from json import dumps
 import sys
 import traceback
+from typing import Any, Optional
 from urllib.parse import urlencode
 
 # Binary Ninja Components
@@ -74,13 +75,13 @@ class DownloadInstance(object):
 			if self in self.__class__._registered_instances:
 				self.__class__._registered_instances.remove(self)
 			self.perform_destroy_instance()
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in DownloadInstance._destroy_instance")
 
 	def _perform_request(self, ctxt, url):
 		try:
 			return self.perform_request(url)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in DownloadInstance._perform_request")
 			return -1
 
@@ -135,7 +136,7 @@ class DownloadInstance(object):
 			else:
 				out_response[0] = None
 			return 0 if py_response is not None else -1
-		except:
+		except Exception:
 			out_response[0] = None
 			log_error_for_exception("Unhandled Python exception in DownloadInstance._perform_custom_request")
 			return -1
@@ -167,7 +168,7 @@ class DownloadInstance(object):
 			self._data = self._data[bytes_len:]
 
 			return bytes_len
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in DownloadInstance._read_callback")
 			return 0
 
@@ -176,7 +177,7 @@ class DownloadInstance(object):
 			str_bytes = ctypes.string_at(data, len)
 			self._response = self._response + str_bytes
 			return len
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in DownloadInstance._write_callback")
 			return 0
 
@@ -269,6 +270,23 @@ class _DownloadProviderMetaclass(type):
 			raise KeyError(f"'{value}' is not a valid download provider")
 		return DownloadProvider(provider)
 
+	def __contains__(cls: '_DownloadProviderMetaclass', name: object) -> bool:
+		if not isinstance(name, str):
+			return False
+		try:
+			cls[name]
+			return True
+		except KeyError:
+			return False
+
+	def get(cls: '_DownloadProviderMetaclass', name: str, default: Any = None) -> Optional['DownloadProvider']:
+		try:
+			return cls[name]
+		except KeyError:
+			if default is not None:
+				return default
+			return None
+
 
 class DownloadProvider(metaclass=_DownloadProviderMetaclass):
 	name = None
@@ -296,7 +314,7 @@ class DownloadProvider(metaclass=_DownloadProviderMetaclass):
 			download_instance = core.BNNewDownloadInstanceReference(result.handle)
 			assert download_instance is not None, "core.BNNewDownloadInstanceReference returned None"
 			return ctypes.cast(download_instance, ctypes.c_void_p).value
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in DownloadProvider._create_instance")
 			return None
 
@@ -314,7 +332,7 @@ try:
 	if sys.platform != "win32":
 		try:
 			from requests import pyopenssl  # type: ignore
-		except:
+		except Exception:
 			pass
 	elif core.BNIsUIEnabled():
 		try:
@@ -347,12 +365,12 @@ try:
 			# TODO FIXME remove asap when windows patch/hotfix (hopefully) gets released
 			import _ssl
 			_ssl.RAND_status()
-		except:
+		except Exception:
 			pass
 
 	class PythonDownloadInstance(DownloadInstance):
 		def __init__(self, provider):
-			super(PythonDownloadInstance, self).__init__(provider)
+			super().__init__(provider)
 
 		def perform_destroy_instance(self):
 			pass
@@ -385,7 +403,7 @@ try:
 			except requests.RequestException as e:
 				core.BNSetErrorForDownloadInstance(self.handle, e.__class__.__name__)
 				return -1
-			except:
+			except Exception:
 				core.BNSetErrorForDownloadInstance(self.handle, "Unknown Exception!")
 				log_error_for_exception("Unhandled Python exception in PythonDownloadInstance.perform_request")
 				return -1
@@ -448,7 +466,7 @@ if not _loaded and (sys.platform != "win32"):
 
 		class PythonDownloadInstance(DownloadInstance):
 			def __init__(self, provider):
-				super(PythonDownloadInstance, self).__init__(provider)
+				super().__init__(provider)
 
 			def perform_destroy_instance(self):
 				pass
@@ -488,7 +506,7 @@ if not _loaded and (sys.platform != "win32"):
 					core.BNSetErrorForDownloadInstance(self.handle, e.__class__.__name__)
 					log_error_for_exception(str(e))
 					return -1
-				except:
+				except Exception:
 					core.BNSetErrorForDownloadInstance(self.handle, "Unknown Exception!")
 					log_error_for_exception("Unhandled Python exception in PythonDownloadInstance.perform_request")
 					return -1

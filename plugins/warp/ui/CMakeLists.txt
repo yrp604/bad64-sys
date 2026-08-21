@@ -12,7 +12,13 @@ file(GLOB SOURCES CONFIGURE_DEPENDS
         containers.cpp containers.h
         shared/search.cpp shared/search.h
         shared/fetcher.cpp shared/fetcher.h
-        shared/fetchdialog.cpp shared/fetchdialog.h)
+        shared/fetchdialog.cpp shared/fetchdialog.h
+        shared/processordialog.cpp shared/processordialog.h
+        shared/commitdialog.cpp shared/commitdialog.h
+        shared/file.cpp shared/file.h
+        shared/chunk.cpp shared/chunk.h
+        shared/source.cpp shared/source.h
+        shared/selectprojectfilesdialog.cpp shared/selectprojectfilesdialog.h)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
@@ -50,8 +56,10 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 if (BN_INTERNAL_BUILD)
     ui_plugin_rpath(${PROJECT_NAME})
 
-    if (UNIX)
-        # A hack to get the ui plugin to find the warp core plugin.
+    # A hack to get the ui plugin to find the warp core plugin.
+    if (APPLE)
+        set_target_properties(${PROJECT_NAME} PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH "@loader_path")
+    elseif (UNIX)
         set_target_properties(${PROJECT_NAME} PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH "$ORIGIN")
     endif()
 

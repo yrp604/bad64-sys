@@ -374,7 +374,19 @@ class RemoteFile:
 		if not core.BNRemoteFileDeleteSnapshot(self._handle, snapshot._handle):
 			raise RuntimeError(util._last_error())
 
-	def download(self, progress: 'util.ProgressFuncType' = util.nop) -> bytes:
+	def download(self, progress: 'util.ProgressFuncType' = util.nop):
+		"""
+		Download a remote file and possibly dependencies to its project
+		Dependency download behavior depends on the value of the collaboration.autoDownloadFileDependencies setting
+
+		:param progress: Function to call on progress updates
+		:raises: RuntimeError if there was an error
+		"""
+		value = core.BNRemoteFileDownload(self._handle, util.wrap_progress(progress), None)
+		if not value:
+			raise RuntimeError(util._last_error())
+
+	def download_contents(self, progress: 'util.ProgressFuncType' = util.nop) -> bytes:
 		"""
 		Download the contents of a remote file
 
@@ -384,7 +396,7 @@ class RemoteFile:
 		"""
 		data = (ctypes.POINTER(ctypes.c_ubyte))()
 		size = ctypes.c_size_t()
-		value = core.BNRemoteFileDownload(self._handle, util.wrap_progress(progress), None, data, size)
+		value = core.BNRemoteFileDownloadContents(self._handle, util.wrap_progress(progress), None, data, size)
 		if not value:
 			raise RuntimeError(util._last_error())
 		return bytes(ctypes.cast(data, ctypes.POINTER(ctypes.c_uint8 * size.value)).contents)
@@ -399,6 +411,7 @@ class RemoteFile:
 		:return: Constructed FileMetadata object
 		:raises: RuntimeError if there was an error
 		"""
+		# TODO: deprecated, use RemoteFile.download() and ProjectFile.export()
 		if path is None:
 			path = self.default_path
 		file = databasesync.download_file(self, path, util.split_progress(progress, 0, [0.5, 0.5]))
@@ -406,23 +419,19 @@ class RemoteFile:
 			file.database, lambda conflicts: False, util.split_progress(progress, 1, [0.5, 0.5]))
 		return file
 
-	def sync(self, bv_or_db: Union['BinaryView', 'Database'], conflict_handler: 'util.ConflictHandlerType', progress: 'util.ProgressFuncType' = util.nop, name_changeset: 'util.NameChangesetFuncType' = util.nop):
+	def sync(self, bv: 'BinaryView', conflict_handler: 'util.ConflictHandlerType', progress: 'util.ProgressFuncType' = util.nop, name_changeset: 'util.NameChangesetFuncType' = util.nop):
 		"""
 		Completely sync a file, pushing/pulling/merging/applying changes
 
-		:param bv_or_db: Binary view or database to sync with
+		:param bv: Binary view to sync with
 		:param conflict_handler: Function to call to resolve snapshot conflicts
 		:param name_changeset: Function to call for naming a pushed changeset, if necessary
 		:param progress: Function to call for progress updates
 		:raises RuntimeError: If there was an error (or the operation was cancelled)
 		"""
-		if isinstance(bv_or_db, BinaryView):
-			if not bv_or_db.file.has_database:
-				raise RuntimeError("Cannot sync non-database view")
-			db = bv_or_db.file.database
-		else:
-			db = bv_or_db
-		databasesync.sync_database(db, self, conflict_handler, progress, name_changeset)
+		if not bv.file.has_database:
+			raise RuntimeError("Cannot sync non-database view")
+		databasesync.sync_database(bv.file, self, conflict_handler, progress, name_changeset)
 
 	def pull(self, bv_or_db: Union['BinaryView', 'Database'], conflict_handler: 'util.ConflictHandlerType', progress: 'util.ProgressFuncType' = util.nop, name_changeset: 'util.NameChangesetFuncType' = util.nop):
 		"""
@@ -453,7 +462,7 @@ class RemoteFile:
 		"""
 		if isinstance(bv_or_db, BinaryView):
 			if not bv_or_db.file.has_database:
-				raise RuntimeError("Cannot pull non-database view")
+				raise RuntimeError("Cannot push non-database view")
 			db = bv_or_db.file.database
 		else:
 			db = bv_or_db

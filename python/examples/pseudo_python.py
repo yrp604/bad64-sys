@@ -1,4 +1,4 @@
-# Copyright (c) 2024-2025 Vector 35 Inc
+# Copyright (c) 2024-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -24,7 +24,7 @@ from binaryninja import (Architecture, BraceRequirement, DisassemblySettings, Di
                          HighLevelILTokenEmitter, HighLevelILOperation, OperatorPrecedence, ScopeType,
                          SymbolDisplayType, SymbolDisplayResult, SymbolType, BoolType, VoidType, PointerType,
                          NamedTypeReferenceType, StructureType, InstructionTextTokenContext, StructureMember,
-                         BinaryView, BuiltinType)
+                         BinaryView, BuiltinType, escape_unicode_string)
 from typing import Optional
 import struct
 
@@ -517,6 +517,17 @@ class PseudoPythonFunction(LanguageRepresentationFunction):
                                            OperatorPrecedence.UnaryOperatorPrecedence)
                 if parens:
                     tokens.append_close_paren()
+            elif instr.operation == HighLevelILOperation.HLIL_PASS_BY_REF:
+                if instr.src.operation == HighLevelILOperation.HLIL_ADDRESS_OF:
+                    self.perform_get_expr_text(instr.src, tokens, settings,
+                        OperatorPrecedence.UnaryOperatorPrecedence)
+                else:
+                    tokens.append(InstructionTextToken(InstructionTextTokenType.OperationToken, "*"))
+                    self.perform_get_expr_text(instr.src, tokens, settings,
+                        OperatorPrecedence.UnaryOperatorPrecedence)
+            elif instr.operation == HighLevelILOperation.HLIL_RETURN_BY_REF:
+                self.perform_get_expr_text(instr.src, tokens, settings,
+                    OperatorPrecedence.UnaryOperatorPrecedence)
             elif instr.operation in [HighLevelILOperation.HLIL_CMP_E, HighLevelILOperation.HLIL_FCMP_E]:
                 parens = precedence > OperatorPrecedence.EqualityOperatorPrecedence
                 if parens:
@@ -878,6 +889,124 @@ class PseudoPythonFunction(LanguageRepresentationFunction):
                 tokens.append_close_paren()
                 if parens:
                     tokens.append_close_paren()
+            elif instr.operation == HighLevelILOperation.HLIL_BSWAP:
+                parens = precedence > OperatorPrecedence.MemberAndFunctionOperatorPrecedence
+                if parens:
+                    tokens.append_open_paren()
+                tokens.append(InstructionTextToken(InstructionTextTokenType.OperationToken, "bswap"))
+                tokens.append_open_paren()
+                self.perform_get_expr_text(instr.src, tokens, settings)
+                tokens.append_close_paren()
+                if parens:
+                    tokens.append_close_paren()
+            elif instr.operation == HighLevelILOperation.HLIL_POPCNT:
+                parens = precedence > OperatorPrecedence.MemberAndFunctionOperatorPrecedence
+                if parens:
+                    tokens.append_open_paren()
+                tokens.append(InstructionTextToken(InstructionTextTokenType.OperationToken, "popcnt"))
+                tokens.append_open_paren()
+                self.perform_get_expr_text(instr.src, tokens, settings)
+                tokens.append_close_paren()
+                if parens:
+                    tokens.append_close_paren()
+            elif instr.operation == HighLevelILOperation.HLIL_CLZ:
+                parens = precedence > OperatorPrecedence.MemberAndFunctionOperatorPrecedence
+                if parens:
+                    tokens.append_open_paren()
+                tokens.append(InstructionTextToken(InstructionTextTokenType.OperationToken, "clz"))
+                tokens.append_open_paren()
+                self.perform_get_expr_text(instr.src, tokens, settings)
+                tokens.append_close_paren()
+                if parens:
+                    tokens.append_close_paren()
+            elif instr.operation == HighLevelILOperation.HLIL_CTZ:
+                parens = precedence > OperatorPrecedence.MemberAndFunctionOperatorPrecedence
+                if parens:
+                    tokens.append_open_paren()
+                tokens.append(InstructionTextToken(InstructionTextTokenType.OperationToken, "ctz"))
+                tokens.append_open_paren()
+                self.perform_get_expr_text(instr.src, tokens, settings)
+                tokens.append_close_paren()
+                if parens:
+                    tokens.append_close_paren()
+            elif instr.operation == HighLevelILOperation.HLIL_RBIT:
+                parens = precedence > OperatorPrecedence.MemberAndFunctionOperatorPrecedence
+                if parens:
+                    tokens.append_open_paren()
+                tokens.append(InstructionTextToken(InstructionTextTokenType.OperationToken, "rbit"))
+                tokens.append_open_paren()
+                self.perform_get_expr_text(instr.src, tokens, settings)
+                tokens.append_close_paren()
+                if parens:
+                    tokens.append_close_paren()
+            elif instr.operation == HighLevelILOperation.HLIL_CLS:
+                parens = precedence > OperatorPrecedence.MemberAndFunctionOperatorPrecedence
+                if parens:
+                    tokens.append_open_paren()
+                tokens.append(InstructionTextToken(InstructionTextTokenType.OperationToken, "cls"))
+                tokens.append_open_paren()
+                self.perform_get_expr_text(instr.src, tokens, settings)
+                tokens.append_close_paren()
+                if parens:
+                    tokens.append_close_paren()
+            elif instr.operation == HighLevelILOperation.HLIL_ABS:
+                parens = precedence > OperatorPrecedence.MemberAndFunctionOperatorPrecedence
+                if parens:
+                    tokens.append_open_paren()
+                tokens.append(InstructionTextToken(InstructionTextTokenType.OperationToken, "abs"))
+                tokens.append_open_paren()
+                self.perform_get_expr_text(instr.src, tokens, settings)
+                tokens.append_close_paren()
+                if parens:
+                    tokens.append_close_paren()
+            elif instr.operation == HighLevelILOperation.HLIL_MINS:
+                parens = precedence > OperatorPrecedence.MemberAndFunctionOperatorPrecedence
+                if parens:
+                    tokens.append_open_paren()
+                tokens.append(InstructionTextToken(InstructionTextTokenType.OperationToken, "mins"))
+                tokens.append_open_paren()
+                self.perform_get_expr_text(instr.left, tokens, settings)
+                tokens.append(InstructionTextToken(InstructionTextTokenType.TextToken, ", "))
+                self.perform_get_expr_text(instr.right, tokens, settings)
+                tokens.append_close_paren()
+                if parens:
+                    tokens.append_close_paren()
+            elif instr.operation == HighLevelILOperation.HLIL_MAXS:
+                parens = precedence > OperatorPrecedence.MemberAndFunctionOperatorPrecedence
+                if parens:
+                    tokens.append_open_paren()
+                tokens.append(InstructionTextToken(InstructionTextTokenType.OperationToken, "maxs"))
+                tokens.append_open_paren()
+                self.perform_get_expr_text(instr.left, tokens, settings)
+                tokens.append(InstructionTextToken(InstructionTextTokenType.TextToken, ", "))
+                self.perform_get_expr_text(instr.right, tokens, settings)
+                tokens.append_close_paren()
+                if parens:
+                    tokens.append_close_paren()
+            elif instr.operation == HighLevelILOperation.HLIL_MINU:
+                parens = precedence > OperatorPrecedence.MemberAndFunctionOperatorPrecedence
+                if parens:
+                    tokens.append_open_paren()
+                tokens.append(InstructionTextToken(InstructionTextTokenType.OperationToken, "minu"))
+                tokens.append_open_paren()
+                self.perform_get_expr_text(instr.left, tokens, settings)
+                tokens.append(InstructionTextToken(InstructionTextTokenType.TextToken, ", "))
+                self.perform_get_expr_text(instr.right, tokens, settings)
+                tokens.append_close_paren()
+                if parens:
+                    tokens.append_close_paren()
+            elif instr.operation == HighLevelILOperation.HLIL_MAXU:
+                parens = precedence > OperatorPrecedence.MemberAndFunctionOperatorPrecedence
+                if parens:
+                    tokens.append_open_paren()
+                tokens.append(InstructionTextToken(InstructionTextTokenType.OperationToken, "maxu"))
+                tokens.append_open_paren()
+                self.perform_get_expr_text(instr.left, tokens, settings)
+                tokens.append(InstructionTextToken(InstructionTextTokenType.TextToken, ", "))
+                self.perform_get_expr_text(instr.right, tokens, settings)
+                tokens.append_close_paren()
+                if parens:
+                    tokens.append_close_paren()
             elif instr.operation == HighLevelILOperation.HLIL_ROUND_TO_INT:
                 parens = precedence > OperatorPrecedence.MemberAndFunctionOperatorPrecedence
                 if parens:
@@ -1036,6 +1165,51 @@ class PseudoPythonFunction(LanguageRepresentationFunction):
                 tokens.append(InstructionTextToken(InstructionTextTokenType.TextToken, ", "))
                 self.perform_get_expr_text(instr.low, tokens, settings)
                 tokens.append_close_paren()
+            elif instr.operation == HighLevelILOperation.HLIL_STRUCT_INIT:
+                # Check for a recognized string before rendering as a structure initializer
+                derived_string = instr.derived_string_reference
+                if derived_string is not None and derived_string.custom_type is not None:
+                    prefix = derived_string.custom_type.string_prefix
+                    postfix = derived_string.custom_type.string_postfix
+                    tokens.append(InstructionTextToken(InstructionTextTokenType.BraceToken, f'{prefix}"'))
+                    tokens.append(InstructionTextToken(InstructionTextTokenType.StringToken,
+                        escape_unicode_string(bytes(derived_string.value), self.function.view),
+                        address=instr.address, value=instr.expr_index,
+                        context=InstructionTextTokenContext.DerivedStringReferenceTokenContext))
+                    tokens.append(InstructionTextToken(InstructionTextTokenType.BraceToken, f'"{postfix}'))
+                    return
+
+                # Render the structure type if it is known, otherwise just the `struct` keyword. Use
+                # Python-style constructor syntax for the initializer.
+                struct_type = instr.expr_type
+                if struct_type is not None:
+                    tokens.append(struct_type.get_tokens())
+                else:
+                    tokens.append(InstructionTextToken(InstructionTextTokenType.KeywordToken, "struct"))
+                tokens.append_open_paren()
+                tokens.increase_indent()
+                first = True
+                for field in instr.fields:
+                    if field.operation != HighLevelILOperation.HLIL_STRUCT_INIT_FIELD:
+                        continue
+                    if not first:
+                        tokens.append(InstructionTextToken(InstructionTextTokenType.OperandSeparatorToken, ", "))
+                    first = False
+                    tokens.new_line()
+                    tokens.prepend_blank_collapse_indicator()
+                    self.append_struct_init_field_text_tokens(instr, field.offset, field.member_index, field.size, tokens)
+                    tokens.append(InstructionTextToken(InstructionTextTokenType.OperationToken, " = "))
+                    self.perform_get_expr_text(field.src, tokens, settings,
+                        OperatorPrecedence.AssignmentOperatorPrecedence)
+                tokens.decrease_indent()
+                tokens.new_line()
+                tokens.prepend_blank_collapse_indicator()
+                tokens.append_close_paren()
+            elif instr.operation == HighLevelILOperation.HLIL_STRUCT_INIT_FIELD:
+                tokens.append(InstructionTextToken(InstructionTextTokenType.OperationToken, "."))
+                self.append_struct_init_field_text_tokens(instr, instr.offset, instr.member_index, instr.size, tokens)
+                tokens.append(InstructionTextToken(InstructionTextTokenType.OperationToken, " = "))
+                self.perform_get_expr_text(instr.src, tokens, settings, OperatorPrecedence.AssignmentOperatorPrecedence)
             elif instr.operation in [HighLevelILOperation.HLIL_UNIMPL, HighLevelILOperation.HLIL_UNIMPL_MEM]:
                 tokens.append(InstructionTextToken(InstructionTextTokenType.AnnotationToken, "# "))
                 for token in instr.tokens:
@@ -1124,6 +1298,66 @@ class PseudoPythonFunction(LanguageRepresentationFunction):
         tokens.append(InstructionTextToken(InstructionTextTokenType.StructOffsetToken, offset_str, value=offset,
                                            size=size, typeNames=name_list))
 
+    def append_struct_init_field_text_tokens(self, init: HighLevelILInstruction, offset: int, member_index: int, size: int,
+            tokens: HighLevelILTokenEmitter):
+        struct_type = init.expr_type
+        # Follow named type references to the target
+        if isinstance(struct_type, NamedTypeReferenceType):
+            target_type = struct_type.target(init.function.view)
+            if target_type is not None:
+                struct_type = target_type
+
+        has_field = False
+        if isinstance(struct_type, StructureType):
+            # For structures, resolve field names using the type API
+            class Resolver:
+                def __init__(self, view: BinaryView, offset: int):
+                    self.has_field = False
+                    self.correct_size = False
+                    self.offset = offset
+                    self.view = view
+
+                def resolve_func(self, base_name: Optional[NamedTypeReferenceType],
+                        resolved_struct: Optional[StructureType], resolved_member_index: int,
+                        struct_offset: int, adjusted_offset: int, member: StructureMember):
+                    if self.has_field:
+                        tokens.append(InstructionTextToken(InstructionTextTokenType.OperationToken, "."))
+                    name_list = HighLevelILTokenEmitter.names_for_outer_structure_members(
+                        self.view, struct_type, init) + [member.name]
+                    tokens.append(InstructionTextToken(InstructionTextTokenType.FieldNameToken, member.name,
+                        value=struct_offset + member.offset, typeNames=name_list))
+                    self.offset = adjusted_offset - member.offset
+                    self.has_field = True
+                    self.correct_size = member.type is not None and size == member.type.width
+
+            resolver = Resolver(self.function.view, offset)
+            result = struct_type.resolve_member_or_base_member(resolver.view, offset, 0, resolver.resolve_func)
+            if result and resolver.has_field and resolver.correct_size:
+                # If the field was matched, we're done
+                return
+            has_field = resolver.has_field
+            offset = resolver.offset
+
+        # Generate offset syntax for the missing field
+        suffix = {0: "", 1: ".b", 2: ".w", 4: ".d", 8: ".q", 10: ".t", 16: ".q"}
+        if size in suffix:
+            suffix_str = suffix[size]
+        else:
+            suffix_str = f".{size}"
+        if (has_field or not isinstance(struct_type, StructureType)) and offset == 0:
+            # No offset, just display a size suffix
+            offset_str = suffix_str
+        else:
+            # Has an offset
+            offset_str = f"__offset({offset:#x}){suffix_str}"
+            if has_field:
+                offset_str = f".{offset_str}"
+
+        name_list = HighLevelILTokenEmitter.names_for_outer_structure_members(
+            self.function.view, struct_type, init) + [offset_str]
+        tokens.append(InstructionTextToken(InstructionTextTokenType.StructOffsetToken, offset_str, value=offset,
+            size=size, typeNames=name_list))
+
 
 class PseudoPythonFunctionType(LanguageRepresentationFunctionType):
     language_name = "Pseudo Python"
@@ -1136,23 +1370,33 @@ class PseudoPythonFunctionType(LanguageRepresentationFunctionType):
         tokens.append(InstructionTextToken(InstructionTextTokenType.KeywordToken, "def "))
         tokens.append(InstructionTextToken(InstructionTextTokenType.CodeSymbolToken, func.name, value=func.start))
         tokens.append(InstructionTextToken(InstructionTextTokenType.BraceToken, "("))
+        params = func.type.parameters
         for (i, param) in enumerate(func.type.parameters_with_all_locations):
             if i > 0:
                 tokens.append(InstructionTextToken(InstructionTextTokenType.TextToken, ", "))
+            var = param.location.variable_for_parameter(i)
             tokens.append(InstructionTextToken(InstructionTextTokenType.ArgumentNameToken, param.name,
                                                context=InstructionTextTokenContext.LocalVariableTokenContext,
-                                               address=param.location.identifier))
+                                               address=var.identifier))
             tokens.append(InstructionTextToken(InstructionTextTokenType.TextToken, ": "))
             for token in param.type.get_tokens():
                 token.context = InstructionTextTokenContext.LocalVariableTokenContext
-                token.address = param.location.identifier
+                token.address = var.identifier
                 tokens.append(token)
+            if i < len(params) and params[i].location is not None:
+                tokens.append(InstructionTextToken(InstructionTextTokenType.TextToken, " @ "))
+                tokens.append(InstructionTextToken(InstructionTextTokenType.ValueLocationToken,
+                                                   params[i].location.to_string(func.arch)))
         tokens.append(InstructionTextToken(InstructionTextTokenType.BraceToken, ")"))
         if func.can_return.value and func.type.return_value is not None and not isinstance(func.type.return_value, VoidType):
             tokens.append(InstructionTextToken(InstructionTextTokenType.TextToken, " -> "))
             for token in func.type.return_value.get_tokens():
                 token.context = InstructionTextTokenContext.FunctionReturnTokenContext
                 tokens.append(token)
+            if func.type.return_value_location is not None:
+                tokens.append(InstructionTextToken(InstructionTextTokenType.TextToken, " @ "))
+                tokens.append(InstructionTextToken(InstructionTextTokenType.ValueLocationToken,
+                    func.type.return_value_location.location.to_string(func.arch)))
         tokens.append(InstructionTextToken(InstructionTextTokenType.TextToken, ":"))
         return [DisassemblyTextLine(tokens, func.start)]
 

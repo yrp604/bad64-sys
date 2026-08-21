@@ -187,6 +187,55 @@ pub enum Op<D: RiscVDisassembler> {
     FmvToInt(FpMvToIntInst<D>),
     FmvFromInt(FpMvFromIntInst<D>),
     Fclass(FpClassInst<D>),
+
+    // Zbs (bit-manipulation, single-bit)
+    Bclr(RTypeIntInst<D>),
+    BclrI(ITypeIntInst<D>),
+    Bext(RTypeIntInst<D>),
+    BextI(ITypeIntInst<D>),
+    Binv(RTypeIntInst<D>),
+    BinvI(ITypeIntInst<D>),
+    Bset(RTypeIntInst<D>),
+    BsetI(ITypeIntInst<D>),
+
+    // Zba (bit-manipulation, address generation)
+    ShXAdd(u8, RTypeIntInst<D>),
+    ShXAddUW(u8, RTypeIntInst<D>),
+    AddUW(RTypeIntInst<D>),
+    SllIUW(ITypeIntInst<D>),
+
+    // Zbb (bit-manipulation, "basic")
+    Andn(RTypeIntInst<D>),
+    Orn(RTypeIntInst<D>),
+    Xnor(RTypeIntInst<D>),
+
+    Max(RTypeIntInst<D>),
+    MaxU(RTypeIntInst<D>),
+    Min(RTypeIntInst<D>),
+    MinU(RTypeIntInst<D>),
+
+    SextB(ITypeIntInst<D>),
+    SextH(ITypeIntInst<D>),
+    ZextH(RTypeIntInst<D>),
+
+    Rol(RTypeIntInst<D>),
+    Ror(RTypeIntInst<D>),
+    RorI(ITypeIntInst<D>),
+    RolW(RTypeIntInst<D>),
+    RorW(RTypeIntInst<D>),
+    RorIW(ITypeIntInst<D>),
+
+    Clz(ITypeIntInst<D>),
+    ClzW(ITypeIntInst<D>),
+    Ctz(ITypeIntInst<D>),
+    CtzW(ITypeIntInst<D>),
+    Cpop(ITypeIntInst<D>),
+    CpopW(ITypeIntInst<D>),
+    Orcb(ITypeIntInst<D>),
+    Rev8(ITypeIntInst<D>),
+
+    // WCH
+    WchMcpy(RTypeIntInst<D>), // does not use R-format, but uses three registers
 }
 
 pub trait Register {
@@ -318,6 +367,13 @@ impl RegFile for Rv32ERegs {
     fn int_reg_count() -> u32 {
         16
     }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct Rv32FRegs;
+impl RegFile for Rv32FRegs {
+    type Int = u32;
+    type Float = f32;
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -1767,6 +1823,36 @@ impl Instr16 {
 
         imm as i16 as i32
     }
+
+    #[inline(always)]
+    fn qk_byte_imm(self) -> i32 {
+        let b0 = self.extract_bits(12, 1);
+        let b21 = self.extract_bits(5, 2);
+        let b43 = self.extract_bits(10, 2);
+
+        (b0 | (b21 << 1) | (b43 << 3)) as i32
+    }
+
+    #[inline(always)]
+    fn qk_half_imm(self) -> i32 {
+        let b21 = self.extract_bits(5, 2);
+        let b53 = self.extract_bits(10, 3);
+
+        ((b21 << 1) | (b53 << 3)) as i32
+    }
+
+    #[inline(always)]
+    fn qk_byte_sp_imm(self) -> i32 {
+        self.extract_bits(7, 4) as i32
+    }
+
+    #[inline(always)]
+    fn qk_half_sp_imm(self) -> i32 {
+        let b31 = self.extract_bits(8, 3);
+        let b4 = self.extract_bits(7, 1);
+
+        ((b31 << 1) | (b4 << 4)) as i32
+    }
 }
 
 pub enum Instr<D: RiscVDisassembler> {
@@ -1775,7 +1861,7 @@ pub enum Instr<D: RiscVDisassembler> {
 }
 
 impl<D: RiscVDisassembler> Instr<D> {
-    pub fn mnem(&self) -> Mnem<D> {
+    pub fn mnem(&self) -> Mnem<'_, D> {
         Mnem(self)
     }
 
@@ -1807,7 +1893,14 @@ impl<D: RiscVDisassembler> Instr<D> {
                 | Op::AddIW(ref i)
                 | Op::SllIW(ref i)
                 | Op::SrlIW(ref i)
-                | Op::SraIW(ref i) => {
+                | Op::SraIW(ref i)
+                | Op::BclrI(ref i)
+                | Op::BextI(ref i)
+                | Op::BinvI(ref i)
+                | Op::BsetI(ref i)
+                | Op::SllIUW(ref i)
+                | Op::RorI(ref i)
+                | Op::RorIW(ref i) => {
                     ops.push(Operand::R(i.rd()));
                     ops.push(Operand::R(i.rs1()));
                     ops.push(Operand::I(i.imm()));
@@ -1843,10 +1936,46 @@ impl<D: RiscVDisassembler> Instr<D> {
                 | Op::DivW(ref r)
                 | Op::DivUW(ref r)
                 | Op::RemW(ref r)
-                | Op::RemUW(ref r) => {
+                | Op::RemUW(ref r)
+                | Op::Bclr(ref r)
+                | Op::Bext(ref r)
+                | Op::Binv(ref r)
+                | Op::Bset(ref r)
+                | Op::ShXAdd(_, ref r)
+                | Op::ShXAddUW(_, ref r)
+                | Op::AddUW(ref r)
+                | Op::Andn(ref r)
+                | Op::Orn(ref r)
+                | Op::Xnor(ref r)
+                | Op::Max(ref r)
+                | Op::MaxU(ref r)
+                | Op::Min(ref r)
+                | Op::MinU(ref r)
+                | Op::Rol(ref r)
+                | Op::Ror(ref r)
+                | Op::RolW(ref r)
+                | Op::RorW(ref r)
+                | Op::WchMcpy(ref r) => {
                     ops.push(Operand::R(r.rd()));
                     ops.push(Operand::R(r.rs1()));
                     ops.push(Operand::R(r.rs2()));
+                }
+                Op::SextB(ref i)
+                | Op::SextH(ref i)
+                | Op::Clz(ref i)
+                | Op::ClzW(ref i)
+                | Op::Ctz(ref i)
+                | Op::CtzW(ref i)
+                | Op::Cpop(ref i)
+                | Op::CpopW(ref i)
+                | Op::Orcb(ref i)
+                | Op::Rev8(ref i) => {
+                    ops.push(Operand::R(i.rd()));
+                    ops.push(Operand::R(i.rs1()));
+                }
+                Op::ZextH(ref r) => {
+                    ops.push(Operand::R(r.rd()));
+                    ops.push(Operand::R(r.rs1()));
                 }
                 Op::Beq(ref b)
                 | Op::Bne(ref b)
@@ -2112,11 +2241,56 @@ impl<'a, D: RiscVDisassembler + 'a> Mnem<'a, D> {
                 Op::Fcvt(..) | Op::FcvtToInt(..) | Op::FcvtFromInt(..) => "fcvt",
                 Op::FmvToInt(..) | Op::FmvFromInt(..) => "fmv",
                 Op::Fclass(..) => "fclass",
+
+                Op::Bclr(..) => "bclr",
+                Op::Bext(..) => "bext",
+                Op::Binv(..) => "binv",
+                Op::Bset(..) => "bset",
+                Op::BclrI(..) => "bclri",
+                Op::BextI(..) => "bexti",
+                Op::BinvI(..) => "binvi",
+                Op::BsetI(..) => "bseti",
+
+                Op::ShXAdd(x, _) => ["sh1add", "sh2add", "sh3add"][x as usize - 1],
+                Op::ShXAddUW(x, _) => ["sh1add.uw", "sh2add.uw", "sh3add.uw"][x as usize - 1],
+                Op::SllIUW(..) => "slli.uw",
+                Op::AddUW(..) => "add.uw",
+
+                Op::Andn(..) => "andn",
+                Op::Orn(..) => "orn",
+                Op::Xnor(..) => "xnor",
+
+                Op::Max(..) => "max",
+                Op::MaxU(..) => "maxu",
+                Op::Min(..) => "min",
+                Op::MinU(..) => "minu",
+
+                Op::SextB(..) => "sext.b",
+                Op::SextH(..) => "sext.h",
+                Op::ZextH(..) => "zext.h",
+
+                Op::Rol(..) => "rol",
+                Op::Ror(..) => "ror",
+                Op::RorI(..) => "rori",
+                Op::RolW(..) => "rolw",
+                Op::RorW(..) => "rorw",
+                Op::RorIW(..) => "roriw",
+
+                Op::Clz(..) => "clz",
+                Op::ClzW(..) => "clzw",
+                Op::Ctz(..) => "ctz",
+                Op::CtzW(..) => "ctzw",
+                Op::Cpop(..) => "cpop",
+                Op::CpopW(..) => "cpopw",
+                Op::Orcb(..) => "orc.b",
+                Op::Rev8(..) => "rev8",
+
+                Op::WchMcpy(..) => "qk.mcpy",
             },
         }
     }
 
-    fn suffix(&self) -> Option<Cow<str>> {
+    fn suffix(&self) -> Option<Cow<'_, str>> {
         match self.0 {
             // &Instr::Rv16(_) => None,
             &Instr::Rv32(ref op) | &Instr::Rv16(ref op) => match *op {
@@ -2314,9 +2488,18 @@ impl<D: RiscVDisassembler> fmt::Display for Mnem<'_, D> {
 pub trait StandardExtension {
     fn supported() -> bool;
 }
+pub trait VendorExtension {
+    fn supported() -> bool;
+}
 
 pub struct ExtensionNotImplemented;
 impl StandardExtension for ExtensionNotImplemented {
+    #[inline(always)]
+    fn supported() -> bool {
+        false
+    }
+}
+impl VendorExtension for ExtensionNotImplemented {
     #[inline(always)]
     fn supported() -> bool {
         false
@@ -2330,12 +2513,22 @@ impl StandardExtension for ExtensionSupported {
         true
     }
 }
+impl VendorExtension for ExtensionSupported {
+    #[inline(always)]
+    fn supported() -> bool {
+        true
+    }
+}
 
 pub trait RiscVDisassembler: 'static + Debug + Sized + Copy + Clone + Send + Sync {
     type RegFile: RegFile;
     type MulDivExtension: StandardExtension;
     type AtomicExtension: StandardExtension;
     type CompressedExtension: StandardExtension;
+    type BitmanipZbaExtension: StandardExtension;
+    type BitmanipZbbExtension: StandardExtension;
+    type BitmanipZbsExtension: StandardExtension;
+    type WCHExtension: VendorExtension;
 
     fn decode(addr: u64, bytes: &[u8]) -> DisResult<Instr<Self>> {
         use Error::*;
@@ -2423,6 +2616,74 @@ pub trait RiscVDisassembler: 'static + Debug + Sized + Copy + Clone + Send + Syn
                             IntReg::new(rd),
                             shamt as i32,
                         ))
+                    }
+
+                    // WCH extensions
+                    0b001_00 if Self::WCHExtension::supported() => {
+                        // qk.c.lbu
+                        let rd = IntReg::new(8 + inst.extract_bits(2, 3) as u32);
+                        let rs1 = IntReg::new(8 + inst.extract_bits(7, 3) as u32);
+
+                        let imm = inst.qk_byte_imm();
+                        Op::Load(LoadTypeInst::new(1, true, rd, rs1, imm)?)
+                    }
+                    0b101_00 if Self::WCHExtension::supported() => {
+                        // qk.c.sb
+                        let rs2 = IntReg::new(8 + inst.extract_bits(2, 3) as u32);
+                        let rs1 = IntReg::new(8 + inst.extract_bits(7, 3) as u32);
+
+                        let imm = inst.qk_byte_imm();
+                        Op::Store(StoreTypeInst::new(1, rs2, rs1, imm)?)
+                    }
+                    0b001_10 if Self::WCHExtension::supported() => {
+                        // qk.c.lhu
+                        let rd = IntReg::new(8 + inst.extract_bits(2, 3) as u32);
+                        let rs1 = IntReg::new(8 + inst.extract_bits(7, 3) as u32);
+
+                        let imm = inst.qk_half_imm();
+                        Op::Load(LoadTypeInst::new(2, true, rd, rs1, imm)?)
+                    }
+                    0b101_10 if Self::WCHExtension::supported() => {
+                        // qk.c.sh
+                        let rs2 = IntReg::new(8 + inst.extract_bits(2, 3) as u32);
+                        let rs1 = IntReg::new(8 + inst.extract_bits(7, 3) as u32);
+
+                        let imm = inst.qk_half_imm();
+                        Op::Store(StoreTypeInst::new(2, rs2, rs1, imm)?)
+                    }
+                    0b100_00 if Self::WCHExtension::supported() && ((parcel >> 11) & 3 == 0) => {
+                        let subop = (parcel >> 5) & 0b11;
+                        match subop {
+                            0b00 => {
+                                // qk.c.lbusp
+                                let rd = IntReg::new(8 + inst.extract_bits(2, 3) as u32);
+                                let imm = inst.qk_byte_sp_imm();
+
+                                Op::Load(LoadTypeInst::new(1, true, rd, IntReg::new(2), imm)?)
+                            }
+                            0b01 => {
+                                // qk.c.lhusp
+                                let rd = IntReg::new(8 + inst.extract_bits(2, 3) as u32);
+                                let imm = inst.qk_half_sp_imm();
+
+                                Op::Load(LoadTypeInst::new(2, true, rd, IntReg::new(2), imm)?)
+                            }
+                            0b10 => {
+                                // qk.c.sbsp
+                                let rs2 = IntReg::new(8 + inst.extract_bits(2, 3) as u32);
+                                let imm = inst.qk_byte_sp_imm();
+
+                                Op::Store(StoreTypeInst::new(1, rs2, IntReg::new(2), imm)?)
+                            }
+                            0b11 => {
+                                // qk.c.shsp
+                                let rs2 = IntReg::new(8 + inst.extract_bits(2, 3) as u32);
+                                let imm = inst.qk_half_sp_imm();
+
+                                Op::Store(StoreTypeInst::new(2, rs2, IntReg::new(2), imm)?)
+                            }
+                            _ => unreachable!(),
+                        }
                     }
 
                     //0b001_00 if int_width == 16 => unimplemented!("LQ"),
@@ -2778,12 +3039,27 @@ pub trait RiscVDisassembler: 'static + Debug + Sized + Copy + Clone + Send + Syn
                     // TODO CUSTOM_0
                     0b00011 => {
                         // MISC-MEM
-                        let itype = ITypeInst::new(inst)?;
+                        if Self::WCHExtension::supported()
+                            && inst.0 & 0b00000_11_00000_00000_11111111_1111111
+                                == 0b00000_00_00000_00000_11100000_0001111
+                        {
+                            // qk.mcpy
+                            let r_end = inst.extract_bits(15, 5);
+                            let r_start = inst.extract_bits(20, 5);
+                            let r_dst = inst.extract_bits(27, 5);
+                            Op::WchMcpy(RTypeIntInst::from_ops(
+                                IntReg::new(r_dst),
+                                IntReg::new(r_start),
+                                IntReg::new(r_end),
+                            ))
+                        } else {
+                            let itype = ITypeInst::new(inst)?;
 
-                        match inst.funct3() {
-                            0b000 => Op::Fence(itype),
-                            0b001 => Op::FenceI(itype),
-                            _ => return Err(InvalidSubop),
+                            match inst.funct3() {
+                                0b000 => Op::Fence(itype),
+                                0b001 => Op::FenceI(itype),
+                                _ => return Err(InvalidSubop),
+                            }
                         }
                     }
                     0b00100 => {
@@ -2796,14 +3072,75 @@ pub trait RiscVDisassembler: 'static + Debug + Sized + Copy + Clone + Send + Syn
                             0b100 => Op::XorI(itype),
                             0b110 => Op::OrI(itype),
                             0b111 => Op::AndI(itype),
-                            0b001 => Op::SllI(itype), // TODO shamt
-                            0b101 => {
-                                if inst.0 & 0x40000000 == 0 {
-                                    Op::SrlI(itype)
+                            0b001 => {
+                                let shift_opc = inst.0 >> 26;
+                                let orig_imm = inst.i_imm();
+
+                                // pretty terrible hack to clear bits for shamt
+                                if int_width > 4 {
+                                    itype.inst.0 &= !0xfc000000;
                                 } else {
-                                    // pretty terrible hack, whatever
-                                    itype.inst.0 &= !0x40000000;
-                                    Op::SraI(itype)
+                                    itype.inst.0 &= !0xfe000000;
+                                }
+
+                                match shift_opc {
+                                    0b000000 => Op::SllI(itype),
+                                    0b010010 if Self::BitmanipZbsExtension::supported() => {
+                                        Op::BclrI(itype)
+                                    }
+                                    0b011010 if Self::BitmanipZbsExtension::supported() => {
+                                        Op::BinvI(itype)
+                                    }
+                                    0b001010 if Self::BitmanipZbsExtension::supported() => {
+                                        Op::BsetI(itype)
+                                    }
+                                    0b011000 if Self::BitmanipZbbExtension::supported() => {
+                                        match orig_imm & 0b11111 {
+                                            0b00000 => Op::Clz(itype),
+                                            0b00001 => Op::Ctz(itype),
+                                            0b00010 => Op::Cpop(itype),
+                                            0b00100 => Op::SextB(itype),
+                                            0b00101 => Op::SextH(itype),
+                                            _ => return Err(InvalidSubop),
+                                        }
+                                    }
+                                    _ => return Err(InvalidSubop),
+                                }
+                            }
+                            0b101 => {
+                                let shift_opc = inst.0 >> 26;
+                                let orig_imm = inst.i_imm();
+
+                                // pretty terrible hack to clear bits for shamt
+                                if int_width > 4 {
+                                    itype.inst.0 &= !0xfc000000;
+                                } else {
+                                    itype.inst.0 &= !0xfe000000;
+                                }
+
+                                match shift_opc {
+                                    0b000000 => Op::SrlI(itype),
+                                    0b001010 if Self::BitmanipZbbExtension::supported() => {
+                                        match orig_imm & 0b111111 {
+                                            0b000111 => Op::Orcb(itype),
+                                            _ => return Err(InvalidSubop),
+                                        }
+                                    }
+                                    0b010000 => Op::SraI(itype),
+                                    0b010010 if Self::BitmanipZbsExtension::supported() => {
+                                        Op::BextI(itype)
+                                    }
+                                    0b011000 if Self::BitmanipZbbExtension::supported() => {
+                                        Op::RorI(itype)
+                                    }
+                                    0b011010 if Self::BitmanipZbbExtension::supported() => {
+                                        match orig_imm & 0b111111 {
+                                            0b011000 if int_width == 4 => Op::Rev8(itype),
+                                            0b111000 if int_width == 8 => Op::Rev8(itype),
+                                            _ => return Err(InvalidSubop),
+                                        }
+                                    }
+                                    _ => return Err(InvalidSubop),
                                 }
                             }
                             _ => unreachable!(),
@@ -2817,14 +3154,38 @@ pub trait RiscVDisassembler: 'static + Debug + Sized + Copy + Clone + Send + Syn
                         let mut itype = ITypeInst::new(inst)?;
                         match inst.funct3() {
                             0b000 => Op::AddIW(itype),
-                            0b001 => Op::SllIW(itype), // TODO shamt
+                            0b001 => {
+                                let shift_opc = inst.0 >> 26;
+                                let orig_imm = inst.i_imm();
+                                // pretty terrible hack to clear bits for shamt
+                                itype.inst.0 &= !0xfc000000;
+
+                                match shift_opc {
+                                    0b000000 => Op::SllIW(itype),
+                                    0b000010 => Op::SllIUW(itype),
+                                    0b011000 if Self::BitmanipZbbExtension::supported() => {
+                                        match orig_imm & 0b11111 {
+                                            0b00000 => Op::ClzW(itype),
+                                            0b00001 => Op::CtzW(itype),
+                                            0b00010 => Op::CpopW(itype),
+                                            _ => return Err(InvalidSubop),
+                                        }
+                                    }
+                                    _ => return Err(InvalidSubop),
+                                }
+                            }
                             0b101 => {
-                                if inst.0 & 0x40000000 == 0 {
-                                    Op::SrlIW(itype)
-                                } else {
-                                    // pretty terrible hack, whatever
-                                    itype.inst.0 &= !0x40000000;
-                                    Op::SraIW(itype)
+                                let shift_opc = inst.0 >> 26;
+                                // pretty terrible hack to clear bits for shamt
+                                itype.inst.0 &= !0xfc000000;
+
+                                match shift_opc {
+                                    0b000000 => Op::SrlIW(itype),
+                                    0b010000 => Op::SraIW(itype),
+                                    0b011000 if Self::BitmanipZbbExtension::supported() => {
+                                        Op::RorIW(itype)
+                                    }
+                                    _ => return Err(InvalidSubop),
                                 }
                             }
                             _ => return Err(InvalidSubop),
@@ -2883,7 +3244,10 @@ pub trait RiscVDisassembler: 'static + Debug + Sized + Copy + Clone + Send + Syn
                             },
                             0b0100000 => match inst.funct3() {
                                 0b000 => Op::Sub(rtype),
+                                0b100 if Self::BitmanipZbbExtension::supported() => Op::Xnor(rtype),
                                 0b101 => Op::Sra(rtype),
+                                0b110 if Self::BitmanipZbbExtension::supported() => Op::Orn(rtype),
+                                0b111 if Self::BitmanipZbbExtension::supported() => Op::Andn(rtype),
                                 _ => return Err(InvalidSubop),
                             },
                             0b0000001 if Self::MulDivExtension::supported() => {
@@ -2897,6 +3261,60 @@ pub trait RiscVDisassembler: 'static + Debug + Sized + Copy + Clone + Send + Syn
                                     0b110 => Op::Rem(rtype),
                                     0b111 => Op::RemU(rtype),
                                     _ => unreachable!(),
+                                }
+                            }
+                            0b0000100
+                                if Self::BitmanipZbbExtension::supported() && int_width == 4 =>
+                            {
+                                if inst.funct3() == 0b100 && inst.rs2() == 0 {
+                                    Op::ZextH(rtype)
+                                } else {
+                                    return Err(InvalidSubop);
+                                }
+                            }
+                            0b0000101 if Self::BitmanipZbbExtension::supported() => {
+                                match inst.funct3() {
+                                    0b110 => Op::Max(rtype),
+                                    0b111 => Op::MaxU(rtype),
+                                    0b100 => Op::Min(rtype),
+                                    0b101 => Op::MinU(rtype),
+                                    _ => return Err(InvalidSubop),
+                                }
+                            }
+                            0b0010000 if Self::BitmanipZbaExtension::supported() => {
+                                match inst.funct3() {
+                                    0b010 => Op::ShXAdd(1, rtype),
+                                    0b100 => Op::ShXAdd(2, rtype),
+                                    0b110 => Op::ShXAdd(3, rtype),
+                                    _ => return Err(InvalidSubop),
+                                }
+                            }
+                            0b0100100 if Self::BitmanipZbsExtension::supported() => {
+                                match inst.funct3() {
+                                    0b001 => Op::Bclr(rtype),
+                                    0b101 => Op::Bext(rtype),
+                                    _ => return Err(InvalidSubop),
+                                }
+                            }
+                            0b0010100 if Self::BitmanipZbsExtension::supported() => {
+                                if inst.funct3() == 0b001 {
+                                    Op::Bset(rtype)
+                                } else {
+                                    return Err(InvalidSubop);
+                                }
+                            }
+                            0b0110000 if Self::BitmanipZbbExtension::supported() => {
+                                match inst.funct3() {
+                                    0b001 => Op::Rol(rtype),
+                                    0b101 => Op::Ror(rtype),
+                                    _ => return Err(InvalidSubop),
+                                }
+                            }
+                            0b0110100 if Self::BitmanipZbsExtension::supported() => {
+                                if inst.funct3() == 0b001 {
+                                    Op::Binv(rtype)
+                                } else {
+                                    return Err(InvalidSubop);
                                 }
                             }
                             _ => return Err(InvalidSubop),
@@ -2925,6 +3343,34 @@ pub trait RiscVDisassembler: 'static + Debug + Sized + Copy + Clone + Send + Syn
                                     0b101 => Op::DivUW(rtype),
                                     0b110 => Op::RemW(rtype),
                                     0b111 => Op::RemUW(rtype),
+                                    _ => return Err(InvalidSubop),
+                                }
+                            }
+                            0b0000100 => match inst.funct3() {
+                                0b000 if Self::BitmanipZbaExtension::supported() => {
+                                    Op::AddUW(rtype)
+                                }
+                                0b100
+                                    if Self::BitmanipZbbExtension::supported()
+                                        && inst.rs2() == 0
+                                        && int_width == 8 =>
+                                {
+                                    Op::ZextH(rtype)
+                                }
+                                _ => return Err(InvalidSubop),
+                            },
+                            0b0010000 if Self::BitmanipZbaExtension::supported() => {
+                                match inst.funct3() {
+                                    0b010 => Op::ShXAddUW(1, rtype),
+                                    0b100 => Op::ShXAddUW(2, rtype),
+                                    0b110 => Op::ShXAddUW(3, rtype),
+                                    _ => return Err(InvalidSubop),
+                                }
+                            }
+                            0b0110000 if Self::BitmanipZbbExtension::supported() => {
+                                match inst.funct3() {
+                                    0b001 => Op::RolW(rtype),
+                                    0b101 => Op::RorW(rtype),
                                     _ => return Err(InvalidSubop),
                                 }
                             }
@@ -3181,4 +3627,22 @@ impl<RF: RegFile> RiscVDisassembler for RiscVIMACDisassembler<RF> {
     type MulDivExtension = ExtensionSupported;
     type AtomicExtension = ExtensionSupported;
     type CompressedExtension = ExtensionSupported;
+    type BitmanipZbaExtension = ExtensionSupported;
+    type BitmanipZbbExtension = ExtensionSupported;
+    type BitmanipZbsExtension = ExtensionSupported;
+    type WCHExtension = ExtensionNotImplemented;
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct RiscVWCHDisassembler();
+
+impl RiscVDisassembler for RiscVWCHDisassembler {
+    type RegFile = Rv32FRegs;
+    type MulDivExtension = ExtensionSupported;
+    type AtomicExtension = ExtensionSupported;
+    type CompressedExtension = ExtensionSupported;
+    type BitmanipZbaExtension = ExtensionSupported;
+    type BitmanipZbbExtension = ExtensionSupported;
+    type BitmanipZbsExtension = ExtensionSupported;
+    type WCHExtension = ExtensionSupported;
 }

@@ -340,6 +340,13 @@
 // #define ELF_SHN_MIPS_SCOMMON    0xff03
 // #define ELF_SHN_MIPS_SUNDEFINED 0xff04
 
+// x86 ONLY
+#define R_386_IRELATIVE 0x2a
+
+// x86-64 ONLY
+#define R_X86_64_DTPMOD64 0x10
+#define R_X86_64_DTPOFF64 0x11
+
 // ARM ONLY
 #define R_ARM_TLS_DTPMOD32 0x11
 #define R_ARM_TLS_DTPOFF32 0x12
@@ -493,7 +500,7 @@ namespace BinaryNinja
 		bool m_objectFile;
 		Ref<Logger> m_logger;
 		bool m_extractMangledTypes;
-		bool m_simplifyTemplates;
+		bool m_simplifyTemplates = false;
 		bool m_relocatable = false;
 		std::map<uint64_t, std::vector<char>> m_stringTableCache;
 
@@ -540,6 +547,7 @@ namespace BinaryNinja
 		bool DerefPpc64Descriptor(BinaryReader& reader, uint64_t addr, uint64_t& result);
 
 		void ParseMiniDebugInfo();
+		uint64_t ParseHeaders(BinaryView* data, ElfIdent& ident, ElfCommonHeader& commonHeader, Elf64Header& header, Ref<Architecture>* arch, Ref<Platform>* plat, std::string& errorMsg, BNEndianness& endianness);
 	public:
 		ElfView(BinaryView* data, bool parseOnly = false);
 		~ElfView();
@@ -555,7 +563,6 @@ namespace BinaryNinja
 		virtual Ref<BinaryView> Create(BinaryView* data) override;
 		virtual Ref<BinaryView> Parse(BinaryView* data) override;
 		virtual bool IsTypeValidForData(BinaryView* data) override;
-		virtual uint64_t ParseHeaders(BinaryView* data, ElfIdent& ident, ElfCommonHeader& commonHeader, Elf64Header& header, Ref<Architecture>* arch, Ref<Platform>* plat, std::string& errorMsg, BNEndianness& endianness);
 		virtual Ref<Settings> GetLoadSettingsForData(BinaryView* data) override;
 	};
 

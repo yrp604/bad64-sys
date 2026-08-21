@@ -22,6 +22,7 @@ struct WorkflowState
 {
 	bool autoLoadStubsAndDyldData = true;
 	bool autoLoadObjCStubRequirements = true;
+	bool simplifyTemplates = false;
 };
 
 std::shared_ptr<WorkflowState> GetWorkflowState(Ref<BinaryView> view)
@@ -37,20 +38,27 @@ std::shared_ptr<WorkflowState> GetWorkflowState(Ref<BinaryView> view)
 	readLock.unlock();
 
 	std::unique_lock<std::shared_mutex> writeLock(globalWorkflowStateMutex);
-	globalWorkflowState[viewId] = std::make_shared<WorkflowState>();
+	foundState = globalWorkflowState.find(viewId);
+	if (foundState != globalWorkflowState.end())
+		return foundState->second;
+
+	auto workflowState = std::make_shared<WorkflowState>();
+	globalWorkflowState[viewId] = workflowState;
+	workflowState->simplifyTemplates =
+		Settings::Instance()->Get<bool>("analysis.types.templateSimplifier", view);
 	Ref<Settings> settings = view->GetLoadSettings(VIEW_NAME);
 
 	bool autoLoadStubsAndDyldData = true;
 	if (settings && settings->Contains("loader.dsc.autoLoadStubsAndDyldData"))
 		autoLoadStubsAndDyldData = settings->Get<bool>("loader.dsc.autoLoadStubsAndDyldData", view);
-	globalWorkflowState[viewId]->autoLoadStubsAndDyldData = autoLoadStubsAndDyldData;
+	workflowState->autoLoadStubsAndDyldData = autoLoadStubsAndDyldData;
 
 	bool autoLoadObjC = true;
 	if (settings && settings->Contains("loader.dsc.autoLoadObjCStubRequirements"))
 		autoLoadObjC = settings->Get<bool>("loader.dsc.autoLoadObjCStubRequirements", view);
-	globalWorkflowState[viewId]->autoLoadObjCStubRequirements = autoLoadObjC;
+	workflowState->autoLoadObjCStubRequirements = autoLoadObjC;
 
-	return globalWorkflowState[viewId];
+	return workflowState;
 }
 
 // TODO: Add a type library cache to this workflow. (so we dont take global file lock)
@@ -67,7 +75,8 @@ Ref<TypeLibrary> TypeLibraryFromName(BinaryView& view, const std::string& name) 
 }
 
 // Rename and retype the stub function.
-void IdentifyStub(BinaryView& view, const SharedCacheController& controller, uint64_t stubFuncAddr, uint64_t symbolAddr) {
+void IdentifyStub(BinaryView& view, const SharedCacheController& controller, const DemanglerConfig& demanglerConfig,
+	uint64_t stubFuncAddr, uint64_t symbolAddr) {
 	static const char* STUB_PREFIX = "j_";
 	// Try and apply a version of the symbol address to the target address
 	if (const auto symbol = view.GetSymbolByAddress(symbolAddr))
@@ -85,8 +94,10 @@ void IdentifyStub(BinaryView& view, const SharedCacheController& controller, uin
 	if (!symbol.has_value())
 		return;
 
+	std::string demangledName = symbol->name;
+	if (auto result = Demangler::DemangleAny(symbol->name, demanglerConfig))
+		demangledName = result->name.GetString();
 	// TODO: The demangled type here is almost always wrong so we omit it for now.
-	auto [demangledName, demangledType] = symbol->DemangledName(view);
 	auto rawName = STUB_PREFIX + symbol->name;
 	auto shortName = STUB_PREFIX + demangledName;
 
@@ -95,13 +106,21 @@ void IdentifyStub(BinaryView& view, const SharedCacheController& controller, uin
 	{
 		// NOTE: The type library name is expected to be the image name currently.
 		// Try and pull the type from the associated type library (if there is one)
-		// TODO: The demangled type here is missing a param
+		// TODO: The demangled type here is missing a param.
 		// Ref<Type> selectedType = demangledType;
 		Ref<Type> selectedType = nullptr;
 		if (const auto image = controller.GetImageContaining(symbolAddr))
-			if (auto typeLib = TypeLibraryFromName(view, image->name))
+		{
+			// The objc_msgSend trampolines live in their own libobjcMsgSend* dylibs which have no type
+			// library. Look in libobjc.A.dylib instead.
+			std::string typeLibName = image->name;
+			if (typeLibName.rfind("/usr/lib/objc/libobjcMsgSend", 0) == 0)
+				typeLibName = "/usr/lib/libobjc.A.dylib";
+
+			if (auto typeLib = TypeLibraryFromName(view, typeLibName))
 				if (Ref<Type> libraryType = view.ImportTypeLibraryObject(typeLib, {symbol->name}); libraryType)
 					selectedType = libraryType;
+		}
 
 		if (selectedType != nullptr)
 			targetFunc->ApplyAutoDiscoveredType(selectedType);
@@ -112,7 +131,19 @@ void IdentifyStub(BinaryView& view, const SharedCacheController& controller, uin
 	view.DefineAutoSymbol(bnSymbol);
 }
 
-void AnalyzeStubFunction(Ref<Function> func, Ref<MediumLevelILFunction> mlil, SharedCacheController& controller, bool loadImage)
+// Controls which images AnalyzeStubFunction may auto-load to resolve a stub's jump target.
+enum class StubImageLoading
+{
+	// Do not auto-load any target image.
+	None,
+	// Only the dedicated objc_msgSend libraries introduced in macOS 27.
+	ObjCMsgSendOnly,
+	// Any directly referenced image.
+	AnyReferenced,
+};
+
+void AnalyzeStubFunction(Ref<Function> func, Ref<MediumLevelILFunction> mlil, SharedCacheController& controller,
+	const DemanglerConfig& demanglerConfig, StubImageLoading imageLoading)
 {
 	// 1. Identify the load target and load the region, resolving the load to a const pointer.
 	// 2. We _should_ have a proper call now to the appropriate external function (external to the current image)
@@ -138,6 +169,20 @@ void AnalyzeStubFunction(Ref<Function> func, Ref<MediumLevelILFunction> mlil, Sh
 		const auto image = controller.GetImageContaining(imageAddr);
 		if (!image.has_value() || controller.IsImageLoaded(*image))
 			return false;
+
+		const bool isLibobjcMsgSend = image->name.rfind("/usr/lib/objc/libobjcMsgSend", 0) == 0;
+		if (imageLoading == StubImageLoading::ObjCMsgSendOnly && !isLibobjcMsgSend)
+			return false;
+
+		if (isLibobjcMsgSend)
+		{
+			// The selectors referenced by `objc_msgSend` stubs still live in libobjc.A.dylib.
+			// Load it too so they are resolved to strings rather than `sel_` symbols.
+			auto libobjc = controller.GetImageWithName("/usr/lib/libobjc.A.dylib");
+			if (libobjc && !controller.IsImageLoaded(*libobjc))
+				controller.ApplyImage(*view, *libobjc);
+		}
+
 		return controller.ApplyImage(*view, *image);
 	};
 
@@ -145,8 +190,7 @@ void AnalyzeStubFunction(Ref<Function> func, Ref<MediumLevelILFunction> mlil, Sh
 		// Skip if already loaded.
 		if (view->IsValidOffset(targetAddr))
 			return false;
-		// If the stub function is allowed to load images (for inlining)
-		if (loadImage && loadTargetImage(targetAddr))
+		if (imageLoading != StubImageLoading::None && loadTargetImage(targetAddr))
 			return true;
 		return loadStubIslandRegion(targetAddr);
 	};
@@ -186,7 +230,7 @@ void AnalyzeStubFunction(Ref<Function> func, Ref<MediumLevelILFunction> mlil, Sh
 				// We have been promoted to the target pointer here!
 				const auto targetPtr = islandPtr;
 				// Here we expect the pointer value to be the address of the resulting function.
-				IdentifyStub(*view, controller, func->GetStart(), targetPtr);
+				IdentifyStub(*view, controller, demanglerConfig, func->GetStart(), targetPtr);
 			}
 			break;
 		default:
@@ -199,7 +243,7 @@ void AnalyzeStubFunction(Ref<Function> func, Ref<MediumLevelILFunction> mlil, Sh
 		{
 		case MLIL_CONST_PTR:
 			// NOTE: This runs every single function update.
-			func->SetAutoInlinedDuringAnalysis(true);
+			func->SetAutoInlinedDuringAnalysis(InlineUsingCallAddress);
 			break;
 		default:
 			break;
@@ -228,7 +272,8 @@ void AnalyzeStubFunction(Ref<Function> func, Ref<MediumLevelILFunction> mlil, Sh
 }
 
 // Automatically load the stub regions.
-void AnalyzeStandardFunction(Ref<Function> func, Ref<MediumLevelILFunction> mlil, SharedCacheController& controller)
+void AnalyzeStandardFunction(Ref<Function> func, Ref<MediumLevelILFunction> mlil,
+	SharedCacheController& controller, const DemanglerConfig& demanglerConfig)
 {
 	auto view = func->GetView();
 	auto identifyUnmappedSymbol = [&](uint64_t symbolAddr) {
@@ -238,7 +283,11 @@ void AnalyzeStandardFunction(Ref<Function> func, Ref<MediumLevelILFunction> mlil
 		const auto symbol = controller.GetSymbolAt(symbolAddr);
 		if (!symbol.has_value())
 			return false;
-		view->DefineAutoSymbol(symbol->GetBNSymbol(*view));
+		std::string shortName = symbol->name;
+		if (auto result = Demangler::DemangleAny(symbol->name, demanglerConfig))
+			shortName = result->name.GetString();
+		view->DefineAutoSymbol(
+			new Symbol(symbol->type, shortName, shortName, symbol->name, symbol->address, symbol->binding));
 		return true;
 	};
 
@@ -329,6 +378,8 @@ void AnalyzeFunction(Ref<AnalysisContext> ctx)
 	auto controller = SharedCacheController::GetController(*view);
 	if (!controller)
 		return;
+	const DemanglerConfig demanglerConfig(
+		view->GetDefaultPlatform(), view, workflowState->simplifyTemplates);
 
 	// Get the containing section for section specific tasks.
 	auto funcStart = func->GetStart();
@@ -355,13 +406,15 @@ void AnalyzeFunction(Ref<AnalysisContext> ctx)
 	switch (functionType)
 	{
 		case StandardFunction:
-			AnalyzeStandardFunction(func, mlilSsa, *controller);
+			AnalyzeStandardFunction(func, mlilSsa, *controller, demanglerConfig);
 			break;
 		case StubFunction:
-			AnalyzeStubFunction(func, mlilSsa, *controller, false);
+			AnalyzeStubFunction(func, mlilSsa, *controller, demanglerConfig,
+				workflowState->autoLoadObjCStubRequirements ? StubImageLoading::ObjCMsgSendOnly : StubImageLoading::None);
 			break;
 		case ObjCStubFunction:
-			AnalyzeStubFunction(func, mlilSsa, *controller, workflowState->autoLoadObjCStubRequirements);
+			AnalyzeStubFunction(func, mlilSsa, *controller, demanglerConfig,
+				workflowState->autoLoadObjCStubRequirements ? StubImageLoading::AnyReferenced : StubImageLoading::None);
 			break;
 	}
 }

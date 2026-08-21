@@ -6,7 +6,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 pub static CONTAINER_CACHE: OnceLock<DashMap<String, Arc<RwLock<Box<dyn Container>>>>> =
     OnceLock::new();
 
-pub fn for_cached_containers(f: impl Fn(&dyn Container)) {
+pub fn for_cached_containers(mut f: impl FnMut(&dyn Container)) {
     let containers_cache = CONTAINER_CACHE.get_or_init(Default::default);
     for container in containers_cache.iter() {
         if let Ok(guarded_container) = container.read() {
@@ -15,7 +15,7 @@ pub fn for_cached_containers(f: impl Fn(&dyn Container)) {
     }
 }
 
-pub fn for_cached_containers_mut(f: impl Fn(&mut dyn Container)) {
+pub fn for_cached_containers_mut(mut f: impl FnMut(&mut dyn Container)) {
     let containers_cache = CONTAINER_CACHE.get_or_init(Default::default);
     for container in containers_cache.iter() {
         if let Ok(mut guarded_container) = container.write() {
@@ -34,4 +34,9 @@ pub fn add_cached_container(container: impl Container + 'static) {
 pub fn cached_containers() -> Vec<Arc<RwLock<Box<dyn Container>>>> {
     let containers_cache = CONTAINER_CACHE.get_or_init(Default::default);
     containers_cache.iter().map(|c| c.clone()).collect()
+}
+
+pub fn cached_container_by_name(name: &str) -> Option<Arc<RwLock<Box<dyn Container>>>> {
+    let containers_cache = CONTAINER_CACHE.get_or_init(Default::default);
+    containers_cache.get(name).map(|c| c.clone())
 }

@@ -4,11 +4,10 @@
 
 using namespace BinaryNinja;
 
-KernelCacheMachOProcessor::KernelCacheMachOProcessor(Ref<BinaryView> view)
+KernelCacheMachOProcessor::KernelCacheMachOProcessor(Ref<BinaryView> view) :
+	m_view(std::move(view)),
+	m_logger(new Logger("KernelCache.MachOProcessor", m_view->GetFile()->GetSessionId()))
 {
-	m_view = view;
-	m_logger = new Logger("KernelCache.MachOProcessor", view->GetFile()->GetSessionId());
-
 	// Adjust processor settings.
 	if (Ref<Settings> settings = m_view->GetLoadSettings(KC_VIEW_NAME))
 	{
@@ -19,6 +18,7 @@ KernelCacheMachOProcessor::KernelCacheMachOProcessor(Ref<BinaryView> view)
 
 void KernelCacheMachOProcessor::ApplyHeader(const KernelCache& cache, KernelCacheMachOHeader& header)
 {
+	const auto demanglerConfig = DemanglerConfig::ForBinaryView(m_view);
 	auto typeLibraryFromName = [&](const std::string& name) -> Ref<TypeLibrary> {
 		// Check to see if we have already loaded the type library.
 		if (auto typeLib = m_view->GetTypeLibrary(name))
@@ -31,12 +31,15 @@ void KernelCacheMachOProcessor::ApplyHeader(const KernelCache& cache, KernelCach
 	};
 
 	// Add a section for the header itself.
+	m_view->BeginBulkAddSegments();
 	std::string headerSection = fmt::format("{}::__macho_header", header.identifierPrefix);
 	uint64_t machHeaderSize = m_view->GetAddressSize() == 8 ? sizeof(mach_header_64) : sizeof(mach_header);
 	uint64_t headerSectionSize = machHeaderSize + header.ident.sizeofcmds;
 	m_view->AddUserSection(headerSection, header.textBase, headerSectionSize, ReadOnlyDataSectionSemantics);
 
 	ApplyHeaderSections(header);
+	m_view->EndBulkAddSegments();
+
 	ApplyHeaderDataVariables(header);
 
 	// Pull the available type library for the image we are loading, so we can apply known types.
@@ -50,7 +53,7 @@ void KernelCacheMachOProcessor::ApplyHeader(const KernelCache& cache, KernelCach
 			m_view->AddFunctionForAnalysis(targetPlatform, func, false);
 	}
 
-	m_view->BeginBulkModifySymbols();
+	BulkSymbolModification bulkSymbolModification(m_view);
 
 	// Apply symbols from symbol table.
 	if (header.symtab.symoff != 0)
@@ -62,7 +65,7 @@ void KernelCacheMachOProcessor::ApplyHeader(const KernelCache& cache, KernelCach
 		const auto symbols = header.ReadSymbolTable(m_view, symbolInfo, stringInfo);
 		for (const auto& sym : symbols)
 		{
-			auto [symbol, symbolType] = sym.GetBNSymbolAndType(*m_view);
+			auto [symbol, symbolType] = sym.GetBNSymbolAndType(demanglerConfig);
 			ApplySymbol(m_view, typeLib, symbol, symbolType);
 		}
 	}
@@ -74,11 +77,10 @@ void KernelCacheMachOProcessor::ApplyHeader(const KernelCache& cache, KernelCach
 		const auto exportSymbols = header.ReadExportSymbolTrie(m_view);
 		for (const auto& sym : exportSymbols)
 		{
-			auto [symbol, symbolType] = sym.GetBNSymbolAndType(*m_view);
+			auto [symbol, symbolType] = sym.GetBNSymbolAndType(demanglerConfig);
 			ApplySymbol(m_view, typeLib, symbol, symbolType);
 		}
 	}
-	m_view->EndBulkModifySymbols();
 }
 
 uint64_t KernelCacheMachOProcessor::ApplyHeaderSections(KernelCacheMachOHeader& header)
@@ -191,11 +193,16 @@ uint64_t KernelCacheMachOProcessor::ApplyHeaderSections(KernelCacheMachOHeader& 
 			semantics = ReadOnlyDataSectionSemantics;
 		if (strncmp(section.sectname, "__data", sizeof(section.sectname)) == 0)
 			semantics = ReadWriteDataSectionSemantics;
-		if (strncmp(section.sectname, "__auth_got", sizeof(section.sectname)) == 0)
-			semantics = ReadOnlyDataSectionSemantics;
 
 		if (auto overriddenSemantics = SectionSemanticsForSection(section))
 			semantics = static_cast<BNSectionSemantics>(overriddenSemantics);
+
+		// GOT entries are resolved to concrete targets by chained-fixup processing. Mark them
+		// read-only for analysis so indirect calls through __auth_stubs are resolved to their
+		// targets, even though they sit in a segment that is mapped writable during early boot.
+		if (strncmp(section.sectname, "__got", sizeof(section.sectname)) == 0
+			|| strncmp(section.sectname, "__auth_got", sizeof(section.sectname)) == 0)
+			semantics = ReadOnlyDataSectionSemantics;
 
 		// Typically a view would add auto sections but those won't persist when loading the BNDB.
 		// if we want to use an auto section here we would need to allow the core to apply auto sections from the database.

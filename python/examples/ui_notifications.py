@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -97,6 +97,10 @@ class UINotification(UIContextNotification):
 	def OnContextMenuCreated(self, context, view, menu):
 		# This function only works in C++: Name is an out param (cpp: &name), and not modifiable by python.
 		print(f"py OnContextMenuCreated {context} {view} {menu}")
+
+	def OnTokenDoubleClicked(self, context, frame, view, location, token):
+		print(f"py OnTokenDoubleClicked {token.token.text!r} @ {location.getOffset():#x}")
+		return False  # return False to let the default double-click behavior run
 
 	def OnActionExecutedImmutable(self, context, handler, name, ctx):
 		print(f"py OnActionExecutedImmutable {context} {handler} {name} {ctx}")

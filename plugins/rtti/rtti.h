@@ -6,7 +6,10 @@ constexpr const char *VIEW_METADATA_RTTI = "rtti";
 constexpr int RTTI_CONFIDENCE = 100;
 
 namespace BinaryNinja::RTTI {
-	std::optional<std::string> DemangleNameMS(BinaryView* view, bool allowMangled, const std::string &mangledName);
+	Ref<Symbol> GetRealSymbol(BinaryView *view, uint64_t relocAddr, uint64_t symAddr);
+
+	std::optional<std::string> DemangleNameMS(
+		BinaryView* view, bool allowMangled, const std::string &mangledName, bool simplifyTemplates);
 
 	std::optional<std::string> DemangleNameGNU3(BinaryView* view, bool allowMangled, const std::string &mangledName);
 
@@ -69,8 +72,17 @@ namespace BinaryNinja::RTTI {
 	class RTTIProcessor
 	{
 	protected:
+		enum class FunctionDiscoverState
+		{
+			Failed = 0,
+			AlreadyExists = 1,
+			Discovered = 2,
+			Extern = 3
+		};
+
 		Ref<BinaryView> m_view;
 		Ref<Logger> m_logger;
+		bool m_simplifyTemplates = false;
 
 		std::map<uint64_t, ClassInfo> m_classInfo;
 		std::map<uint64_t, ClassInfo> m_unhandledClassInfo;
@@ -78,6 +90,10 @@ namespace BinaryNinja::RTTI {
 		virtual std::optional<ClassInfo> ProcessRTTI(uint64_t objectAddr) = 0;
 
 		virtual std::optional<VirtualFunctionTableInfo> ProcessVFT(uint64_t vftAddr, ClassInfo &classInfo, std::optional<BaseClassInfo> baseClassInfo) = 0;
+
+		[[nodiscard]] bool IsLikelyFunction(uint64_t addr) const;
+
+		[[nodiscard]] FunctionDiscoverState DiscoverVirtualFunction(uint64_t vftEntryAddr, uint64_t& vFuncAddr);
 	public:
 		virtual ~RTTIProcessor() = default;
 

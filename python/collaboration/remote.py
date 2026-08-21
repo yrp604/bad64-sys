@@ -520,22 +520,22 @@ class Remote:
 		if not core.BNRemotePullGroups(self._handle, util.wrap_progress(progress), None):
 			raise RuntimeError(util._last_error())
 
-	def create_group(self, name: str, usernames: List[str]) -> 'group.Group':
+	def create_group(self, name: str, users: List[user.User]) -> 'group.Group':
 		"""
 		Create a new group on the remote (and pull it)
 
 		.. note:: This function is only available to accounts with admin status on the Remote
 
 		:param name: Group name
-		:param usernames: List of usernames of users in the group
+		:param users: List of users in the group
 		:return: Reference to the created group
 		:raises: RuntimeError if there was an error
 		"""
-		c_usernames = (ctypes.c_char_p * len(usernames))()
-		for (i, username) in enumerate(usernames):
-			c_usernames[i] = core.cstr(username)
+		c_users = (core.BNCollaborationUserHandle * len(users))()
+		for (i, member) in enumerate(users):
+			c_users[i] = member._handle
 
-		value = core.BNRemoteCreateGroup(self._handle, name, c_usernames, len(usernames))
+		value = core.BNRemoteCreateGroup(self._handle, name, c_users, len(users))
 		if value is None:
 			raise RuntimeError(util._last_error())
 		return group.Group(value)

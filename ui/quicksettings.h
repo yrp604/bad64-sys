@@ -25,6 +25,7 @@ class BINARYNINJAUIAPI QuickSettings
 	static void addQuickSetting(const QString& settingKey, const QString& displayName, const QString& group = "", bool workflowDependent = false);
 	static void removeQuickSetting(const QString& settingKey, const QString& group = "");
 	static void setQuickSettingVisibility(const QString& settingKey, bool visible, const QString& group = "");
+	static void setDisplayName(const QString& settingKey, const QString& displayName, const QString& group = "");
 	static bool isQuickSetting(const QString& settingKey, const QString& group = "");
 	static bool isQuickSettingVisible(const QString& settingKey, const QString& group = "");
 	static QStringList getQuickSettingGroups();

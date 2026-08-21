@@ -2,8 +2,21 @@
 
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QWidget>
+#include <QtWidgets/QGridLayout>
+#include <QtCore/QTimer>
+#include <QtGui/QScreen>
+#include <QtGui/QWindow>
+#include <QtGui/QGuiApplication>
 #include <functional>
 #include "uitypes.h"
+#include "copyablelabel.h"
+#include "uicontext.h"
+
+// Responsive layout breakpoints (logical pixels)
+namespace TriageBreakpoints {
+	constexpr int NARROW = 1000;
+	constexpr int MEDIUM = 1400;
+}
 
 
 class NavigationLabel : public QLabel
@@ -90,6 +103,23 @@ class PEHeaders : public Headers
 
 class HeaderWidget : public QWidget
 {
+	Q_OBJECT
+
+	Headers m_headers;
+	QGridLayout* m_layout;
+	int m_currentColumns;
+	int m_pendingWidth;
+	QTimer* m_resizeTimer;
+
+	void rebuildLayout();
+
   public:
 	HeaderWidget(QWidget* parent, const Headers& headers);
+	void updateColumns(int width);
+
+  protected:
+	virtual void resizeEvent(QResizeEvent* event) override;
+
+  private slots:
+	void performDelayedResize();
 };

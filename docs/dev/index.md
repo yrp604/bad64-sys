@@ -11,6 +11,7 @@ The Binary Ninja API is available through a [Core API](#core-api), through the [
 The Python API is the most common third-party API and is used in many [public plugins](https://github.com/vector35/community-plugins). Here's a list of the most important Python API documentation resources:
 
  - [Writing Python Plugins](plugins.md)
+ - [Container Transforms](containertransforms.md) - Creating custom container/archive decoders
  - [Applying Annotations](annotation.md)
  - [Script Cookbook](cookbook.md) with common examples and concepts explained
  - [Python API Reference](https://api.binary.ninja/) (available offline via the Help menu)

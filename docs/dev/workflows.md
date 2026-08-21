@@ -49,6 +49,7 @@ There are two distinct types of Workflows:
 ### **Activity**
 
 An **Activity** represents a fundamental unit of work within a Workflow. Activities are configurable components that form the building blocks of complex analysis pipelines. Activities can:
+
   - Execute specific tasks through callbacks
   - Make dynamic decisions
   - Manage dependencies and eligibility
@@ -70,6 +71,7 @@ Activities can have different **roles** that define their behavior and how they 
 #### Eligibility Control
 
 Activities provide fine-grained execution control through:
+
 * Static configuration via JSON settings
 * Dynamic eligibility functions
 * Continuation and run-once behaviors
@@ -77,9 +79,12 @@ Activities provide fine-grained execution control through:
 #### Continuation Support
 
 Activities can be configured with `continuation` eligibility, allowing them to:
+
   - Remain on the execution stack after processing
   - Execute repeatedly until becoming ineligible
   - Build iterative processing patterns
+
+Continuations can derive their eligibility from work providers, which are Activities that report available work through their eligibility handlers. When a continuation has work providers, it remains eligible as long as any provider reports work, even if the continuation’s own handler does not. This allows Activities to signal that additional work is needed without requiring the continuation to directly poll or inspect external state.
 
 ### Workflow Machine
 
@@ -154,7 +159,7 @@ Additionally, some Activities currently act as containers for multiple analysis 
 
 ### Workflow Cloning and Registration
 
-Binary Ninja utilizes a copy-on-write mechanism to enable safe workflow customization. This approach allows you to create and modify workflows without impacting the integrity of registered workflows that may already be in use. When you clone a workflow, you generate a new, independent version that can be safely customized. Once the cloned workflow has been tailored to your needs, it can be registered under a new unique name, or—if the original workflow is mutable—under the same name to seamlessly replace it.
+Binary Ninja uses a copy-on-write model to make workflow customization safe. When you clone a workflow, you create an independent copy that can be modified without affecting the original or any analyses already using it. After customizing the clone, you can register it under a new name or, if the original workflow is mutable, register it under the same name to replace it.
 
 The process involves three steps:
 
@@ -293,6 +298,9 @@ workflow.insert("core.function.generateHighLevelIL", ["analysis.plugins.xorStrin
 workflow.register()
 ```
 
+!!! note
+	You do not need to worry about permanently overwriting core.module.metaAnalysis or any other core workflow. Workflows are reconstructed fresh each time Binary Ninja starts, and plugin modifications are applied afterward during initialization. Any changes made programmatically in your plugin only affect the current session.
+
 The example above demonstrates how the auto-generated control setting allows users to enable or disable an activity directly through the settings UI. This provides a convenient way to control the execution of custom analysis steps without modifying the code. As shown in the image below, the control setting automatically appears in a function's context menu under the *Function Analysis* group. By defaulting the setting to false, users can selectively enable the custom analysis step for specific functions as needed.
 
 Please refer to the [Activity Eligibility](#activity-eligibility) section for more details on setting-based eligibility and control settings.
@@ -325,7 +333,7 @@ The Activity's callback function operates on an `AnalysisContext`, which provide
 modifying, or transforming the context.
 
 - **Workflow-Defined Composition**:
-The structural relationship of an Activity—whether it has children or serves as a child of another Activity—is defined by the Workflow. The Workflow determines the execution order and dependency graph, making Activities composable and adaptable to various analysis pipelines.
+Activities do not define their own hierarchy. Instead, the Workflow determines parent/child relationships, execution order, and dependencies. This allows Activities to be reused and composed into different analysis pipelines.
 
 - **Declarative Metadata via JSON Configuration**:
 	Each Activity is accompanied by metadata that provides essential information for its integration and execution within a workflow. The metadata structure ensures that Activities are not only functionally robust but also easy to manage and integrate into complex workflows. This metadata is defined through a JSON configuration and serves several purposes:
@@ -337,7 +345,7 @@ The structural relationship of an Activity—whether it has children or serves a
 	The role field specifies the Activity's operational role within the workflow, such as `action`, `task`, or `subflow`. This helps determine how the Activity interacts with others in the workflow.
 
 	- **Eligibility and Execution Semantics**:
-	The eligibility field defines conditions under which the Activity is allowed to run. It supports a range of predicates, including automatic settings, single-run constraints, and custom logical operators, allowing for fine-grained control over execution.
+	The eligibility field defines conditions under which the Activity is allowed to run. It supports a range of predicates, including automatic settings, single-run constraints, work provider signals, and custom logical operators, allowing for fine-grained control over execution.
 
 ### Activity Configuration
 
@@ -376,7 +384,8 @@ Eligibility determines whether an Activity should execute, based on certain cond
 	- `default`: The default boolean value for the auto-generated setting. If not provided, the default is `true`.
 - `runOnce`: A boolean indicating whether the activity executes only once across all file/analysis sessions. Once the activity runs, its state is saved persistently, and it will not run again unless explicitly reset. This is useful for activities that only need to be performed once, such as initial setup tasks.
 - `runOncePerSession`: A boolean indicating whether the activity executes only once within the current session. Its state is not saved persistently, meaning it resets when a new session begins. This is useful for tasks that should run once per analysis session, such as initialization steps specific to a particular execution context.
-- `continuation`: A boolean indicating if a `subflow` is eligible for re-execution based on its eligibility logic. If not provided, the default is `false`.
+- `continuation`: A boolean indicating if an activity is eligible for re-execution based on its eligibility logic and/or work provider signals. When enabled, the activity remains on the execution stack after processing and is re-evaluated each cycle. If not provided, the default is `false`.
+- `workProvider`: A boolean indicating that this activity signals whether it has work available via its eligibility handler. Work providers are evaluated by ancestor continuation activities to determine if additional processing cycles are needed. Not compatible with the `selector` role. If not provided, the default is `false`.
 - `predicates`: An array of objects defining the condition that must be met for the activity to be eligible to run.
 	- `type` (required): A string indicating the type of predicate. Valid values:
 		- `"setting"`: Evaluates the value of specific setting.
@@ -565,7 +574,7 @@ bv.workflow.machine.cli()
 
 **Available Commands**:
 
-```
+```text
 abort       configure  dump    halt  log      override  reset   run     step
 breakpoint  disable    enable  help  metrics  quit      resume  status
 ```

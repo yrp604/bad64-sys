@@ -3,7 +3,7 @@ use crate::container::disk::{DiskContainer, DiskContainerSource};
 use crate::container::{ContainerError, SourcePath};
 use crate::convert::platform_to_target;
 use crate::plugin::workflow::run_matcher;
-use binaryninja::binary_view::{BinaryView, BinaryViewExt};
+use binaryninja::binary_view::BinaryView;
 use binaryninja::command::Command;
 use binaryninja::interaction::{
     show_message_box, Form, FormInputField, MessageBoxButtonResult, MessageBoxButtonSet,
@@ -12,7 +12,6 @@ use binaryninja::interaction::{
 use binaryninja::rc::Ref;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
 use std::thread;
 use warp::WarpFile;
 
@@ -49,7 +48,7 @@ impl RunMatcherField {
 
     pub fn from_form(form: &Form) -> Option<bool> {
         let field = form.get_field_with_name("Rerun Matcher")?;
-        let field_value = field.try_value_index()?;
+        let field_value = field.try_value_int()?;
         match field_value {
             1 => Some(true),
             _ => Some(false),
@@ -130,20 +129,20 @@ impl LoadSignatureFile {
         let file = match LoadSignatureFile::read_file(&view, source_file_path.clone()) {
             Ok(file) => file,
             Err(e) => {
-                log::error!("Failed to read signature file: {}", e);
+                tracing::error!("Failed to read signature file: {}", e);
                 return;
             }
         };
 
         // Verify we have not already loaded the file.
-        let already_exists = AtomicBool::new(false);
+        let mut already_exists = false;
         for_cached_containers(|c| {
-            if let Ok(_) = c.source_path(&source_file_id) {
+            if c.source_path(&source_file_id).is_ok() {
                 // TODO: What happens if path differs? Warn?
-                already_exists.store(true, std::sync::atomic::Ordering::SeqCst);
+                already_exists = true;
             }
         });
-        if already_exists.load(std::sync::atomic::Ordering::SeqCst) {
+        if already_exists {
             let res = show_message_box(
                 "Load again?",
                 "File already loaded, would you like to load it again?",
@@ -156,7 +155,7 @@ impl LoadSignatureFile {
         }
 
         let container_source = DiskContainerSource::new(source_file_path.clone(), file);
-        log::info!("Loading container source: '{}'", container_source.path);
+        tracing::info!("Loading container source: '{}'", container_source.path);
         let mut map = HashMap::new();
         map.insert(source_file_path.to_source_id(), container_source);
         let container = DiskContainer::new("Loaded signatures".to_string(), map);

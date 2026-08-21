@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,18 +17,19 @@ use binaryninjacore_sys::*;
 use crate::{
     architecture::{Architecture, CoreArchitecture, CoreRegister, Register},
     basic_block::{BasicBlock, BlockContext},
-    binary_view::{BinaryView, BinaryViewExt},
+    binary_view::BinaryView,
     calling_convention::CoreCallingConvention,
     component::Component,
     disassembly::{DisassemblySettings, DisassemblyTextLine},
+    ffi::slice_from_raw_parts,
     flowgraph::FlowGraph,
     medium_level_il::FunctionGraphType,
     platform::Platform,
     references::CodeReference,
     string::*,
-    symbol::Symbol,
+    symbol::{Binding, Symbol},
     tags::{Tag, TagReference, TagType},
-    types::{IntegerDisplayType, QualifiedName, Type},
+    types::{IntegerDisplayType, QualifiedName, ReturnValue, Type, ValueLocation},
 };
 use crate::{data_buffer::DataBuffer, disassembly::InstructionTextToken, rc::*};
 pub use binaryninjacore_sys::BNAnalysisSkipReason as AnalysisSkipReason;
@@ -36,8 +37,10 @@ pub use binaryninjacore_sys::BNBuiltinType as BuiltinType;
 pub use binaryninjacore_sys::BNFunctionAnalysisSkipOverride as FunctionAnalysisSkipOverride;
 pub use binaryninjacore_sys::BNFunctionUpdateType as FunctionUpdateType;
 pub use binaryninjacore_sys::BNHighlightStandardColor as HighlightStandardColor;
+pub use binaryninjacore_sys::BNInlineDuringAnalysis as InlineDuringAnalysis;
 
-use crate::architecture::RegisterId;
+use crate::architecture::{IndirectBranchInfo, RegisterId};
+use crate::binary_view::{AddressRange, MetadataStoreFlags};
 use crate::confidence::Conf;
 use crate::high_level_il::HighLevelILFunction;
 use crate::language_representation::CoreLanguageRepresentationFunction;
@@ -45,7 +48,7 @@ use crate::low_level_il::LowLevelILRegularFunction;
 use crate::medium_level_il::MediumLevelILFunction;
 use crate::metadata::Metadata;
 use crate::variable::{
-    IndirectBranchInfo, MergedVariable, NamedVariableWithType, RegisterValue, RegisterValueType,
+    MergedVariable, NamedVariableWithType, RegisterValue, RegisterValueType,
     StackVariableReference, Variable,
 };
 use crate::workflow::Workflow;
@@ -70,25 +73,32 @@ impl Location {
             arch: Some(unsafe { CoreArchitecture::from_raw(arch) }),
         }
     }
+
+    pub fn new(arch: Option<CoreArchitecture>, addr: u64) -> Self {
+        Self { arch, addr }
+    }
 }
 
 impl From<u64> for Location {
     fn from(addr: u64) -> Self {
-        Location { arch: None, addr }
+        Location::new(None, addr)
     }
 }
 
 impl From<(CoreArchitecture, u64)> for Location {
     fn from(loc: (CoreArchitecture, u64)) -> Self {
-        Location {
-            arch: Some(loc.0),
-            addr: loc.1,
-        }
+        Location::new(Some(loc.0), loc.1)
     }
 }
 
 impl From<BNArchitectureAndAddress> for Location {
     fn from(value: BNArchitectureAndAddress) -> Self {
+        Self::from_raw(value.address, value.arch)
+    }
+}
+
+impl From<&BNArchitectureAndAddress> for Location {
+    fn from(value: &BNArchitectureAndAddress) -> Self {
         Self::from_raw(value.address, value.arch)
     }
 }
@@ -99,6 +109,29 @@ impl From<Location> for BNArchitectureAndAddress {
             arch: value.arch.map(|a| a.handle).unwrap_or(std::ptr::null_mut()),
             address: value.addr,
         }
+    }
+}
+
+impl From<&Location> for BNArchitectureAndAddress {
+    fn from(value: &Location) -> Self {
+        Self::from(*value)
+    }
+}
+
+impl CoreArrayProvider for Location {
+    type Raw = BNArchitectureAndAddress;
+    type Context = ();
+    type Wrapped<'a> = Self;
+}
+
+unsafe impl CoreArrayProviderInner for Location {
+    unsafe fn free(raw: *mut Self::Raw, _count: usize, _context: &Self::Context) {
+        // NOTE: Does not use _count because freeing does not require iterating the list.
+        BNFreeArchitectureAndAddressList(raw)
+    }
+
+    unsafe fn wrap_raw<'a>(raw: &'a Self::Raw, _context: &'a Self::Context) -> Self::Wrapped<'a> {
+        Location::from(*raw)
     }
 }
 
@@ -337,11 +370,27 @@ impl Function {
         }
     }
 
+    /// Returns the symbol at the function start address or a default symbol.
+    ///
+    /// NOTE: If you want to only get the symbol if there is actually a symbol, use [`Function::defined_symbol`].
     pub fn symbol(&self) -> Ref<Symbol> {
         unsafe {
             let sym = BNGetFunctionSymbol(self.handle);
             Symbol::ref_from_raw(sym)
         }
+    }
+
+    /// Returns the symbol at the function start address or `None` if there is no symbol.
+    ///
+    /// NOTE: If you want to get a default "sub_X" symbol use [`Function::symbol`].
+    pub fn defined_symbol(&self) -> Option<Ref<Symbol>> {
+        self.view().symbol_by_address(self.start())
+    }
+
+    /// Returns true when the function's symbol binding marks it as exported.
+    pub fn is_exported(&self) -> bool {
+        let symbol = self.symbol();
+        matches!(symbol.binding(), Binding::Global | Binding::Weak)
     }
 
     pub fn workflow(&self) -> Option<Ref<Workflow>> {
@@ -367,7 +416,6 @@ impl Function {
         unsafe {
             let mut count = 0;
             let addresses = BNGetFunctionAddressRanges(self.handle, &mut count);
-
             Array::new(addresses, count, ())
         }
     }
@@ -461,6 +509,15 @@ impl Function {
             unsafe { BNGetFunctionBlockAnnotations(self.handle, arch.handle, addr, &mut count) };
         assert!(!lines.is_null());
         unsafe { Array::new(lines, count, ()) }
+    }
+
+    pub fn block_sort_hint(&self, addr: u64, arch: Option<CoreArchitecture>) -> Option<i64> {
+        let arch = arch.unwrap_or_else(|| self.arch());
+        let mut result = 0;
+        unsafe {
+            BNGetFunctionBlockSortHint(self.handle, arch.handle, addr, &mut result)
+                .then_some(result)
+        }
     }
 
     pub fn variable_name(&self, var: &Variable) -> String {
@@ -602,6 +659,11 @@ impl Function {
         Conf::<Ref<Type>>::from_owned_raw(raw_return_type)
     }
 
+    pub fn return_value(&self) -> ReturnValue {
+        let raw_return_value = unsafe { BNGetFunctionReturnValue(self.handle) };
+        ReturnValue::from_owned_core_raw(raw_return_value)
+    }
+
     pub fn set_auto_return_type<'a, C>(&self, return_type: C)
     where
         C: Into<Conf<&'a Type>>,
@@ -610,12 +672,44 @@ impl Function {
         unsafe { BNSetAutoFunctionReturnType(self.handle, &mut raw_return_type) }
     }
 
+    pub fn set_auto_is_return_value_default_location(&self, is_default: bool) {
+        unsafe { BNSetAutoIsFunctionReturnValueDefaultLocation(self.handle, is_default) }
+    }
+
+    pub fn set_auto_return_value_location(&self, location: impl Into<Conf<ValueLocation>>) {
+        let mut raw_location = Conf::<ValueLocation>::into_rust_raw(location.into());
+        unsafe { BNSetAutoFunctionReturnValueLocation(self.handle, &mut raw_location) };
+        Conf::<ValueLocation>::free_rust_raw(raw_location);
+    }
+
+    pub fn set_auto_return_value(&self, return_value: impl Into<ReturnValue>) {
+        let mut raw_return_value = ReturnValue::into_rust_raw(&return_value.into());
+        unsafe { BNSetAutoFunctionReturnValue(self.handle, &mut raw_return_value) }
+        ReturnValue::free_rust_raw(raw_return_value);
+    }
+
     pub fn set_user_return_type<'a, C>(&self, return_type: C)
     where
         C: Into<Conf<&'a Type>>,
     {
         let mut raw_return_type = Conf::<&Type>::into_raw(return_type.into());
         unsafe { BNSetUserFunctionReturnType(self.handle, &mut raw_return_type) }
+    }
+
+    pub fn set_user_is_return_value_default_location(&self, is_default: bool) {
+        unsafe { BNSetUserIsFunctionReturnValueDefaultLocation(self.handle, is_default) }
+    }
+
+    pub fn set_user_return_value_location(&self, location: impl Into<Conf<ValueLocation>>) {
+        let mut raw_location = Conf::<ValueLocation>::into_rust_raw(location.into());
+        unsafe { BNSetUserFunctionReturnValueLocation(self.handle, &mut raw_location) };
+        Conf::<ValueLocation>::free_rust_raw(raw_location);
+    }
+
+    pub fn set_user_return_value(&self, return_value: impl Into<ReturnValue>) {
+        let mut raw_return_value = ReturnValue::into_rust_raw(&return_value.into());
+        unsafe { BNSetUserFunctionReturnValue(self.handle, &mut raw_return_value) }
+        ReturnValue::free_rust_raw(raw_return_value);
     }
 
     pub fn function_type(&self) -> Ref<Type> {
@@ -962,38 +1056,61 @@ impl Function {
         }
     }
 
-    pub fn set_user_parameter_variables<I>(&self, values: I, confidence: u8)
-    where
-        I: IntoIterator<Item = Variable>,
-    {
-        let vars: Vec<BNVariable> = values.into_iter().map(Into::into).collect();
+    pub fn parameter_locations(&self) -> Conf<Vec<ValueLocation>> {
         unsafe {
-            BNSetUserFunctionParameterVariables(
-                self.handle,
-                &mut BNParameterVariablesWithConfidence {
-                    vars: vars.as_ptr() as *mut _,
-                    count: vars.len(),
-                    confidence,
-                },
-            )
+            let mut raw_locations = BNGetFunctionParameterLocations(self.handle);
+            let raw_location_list =
+                slice_from_raw_parts(raw_locations.locations, raw_locations.count);
+            let locations: Vec<ValueLocation> = raw_location_list
+                .iter()
+                .map(ValueLocation::from_raw)
+                .collect();
+            let confidence = raw_locations.confidence;
+            BNFreeParameterLocations(&mut raw_locations);
+            Conf::new(locations, confidence)
         }
     }
 
-    pub fn set_auto_parameter_variables<I>(&self, values: I, confidence: u8)
+    pub fn set_user_parameter_locations<I>(&self, values: I, confidence: u8)
     where
-        I: IntoIterator<Item = Variable>,
+        I: IntoIterator<Item = ValueLocation>,
     {
-        let vars: Vec<BNVariable> = values.into_iter().map(Into::into).collect();
+        let locations: Vec<BNValueLocation> = values
+            .into_iter()
+            .map(|location| ValueLocation::into_rust_raw(&location))
+            .collect();
         unsafe {
-            BNSetAutoFunctionParameterVariables(
+            BNSetUserFunctionParameterLocations(
                 self.handle,
-                &mut BNParameterVariablesWithConfidence {
-                    vars: vars.as_ptr() as *mut _,
-                    count: vars.len(),
+                &mut BNValueLocationListWithConfidence {
+                    locations: locations.as_ptr() as *mut _,
+                    count: locations.len(),
                     confidence,
                 },
             )
         }
+        locations.into_iter().for_each(ValueLocation::free_rust_raw);
+    }
+
+    pub fn set_auto_parameter_locations<I>(&self, values: I, confidence: u8)
+    where
+        I: IntoIterator<Item = ValueLocation>,
+    {
+        let locations: Vec<BNValueLocation> = values
+            .into_iter()
+            .map(|location| ValueLocation::into_rust_raw(&location))
+            .collect();
+        unsafe {
+            BNSetAutoFunctionParameterLocations(
+                self.handle,
+                &mut BNValueLocationListWithConfidence {
+                    locations: locations.as_ptr() as *mut _,
+                    count: locations.len(),
+                    confidence,
+                },
+            )
+        }
+        locations.into_iter().for_each(ValueLocation::free_rust_raw);
     }
 
     pub fn parameter_at(
@@ -1081,17 +1198,17 @@ impl Function {
 
     pub fn set_auto_inline_during_analysis<C>(&self, value: C)
     where
-        C: Into<Conf<bool>>,
+        C: Into<Conf<InlineDuringAnalysis>>,
     {
-        let value: Conf<bool> = value.into();
+        let value: Conf<InlineDuringAnalysis> = value.into();
         unsafe { BNSetAutoFunctionInlinedDuringAnalysis(self.handle, value.into()) }
     }
 
     pub fn set_user_inline_during_analysis<C>(&self, value: C)
     where
-        C: Into<Conf<bool>>,
+        C: Into<Conf<InlineDuringAnalysis>>,
     {
-        let value: Conf<bool> = value.into();
+        let value: Conf<InlineDuringAnalysis> = value.into();
         unsafe { BNSetUserFunctionInlinedDuringAnalysis(self.handle, value.into()) }
     }
 
@@ -1110,7 +1227,7 @@ impl Function {
     /// Function.add_tag, you'll create an "address tag". These are good for labeling
     /// specific instructions.
     ///
-    /// For tagging arbitrary data, consider [BinaryViewExt::add_tag].
+    /// For tagging arbitrary data, consider [BinaryView::add_tag].
     ///
     /// * `tag_type_name` - The name of the tag type for this Tag.
     /// * `data` - Additional data for the Tag.
@@ -1120,7 +1237,7 @@ impl Function {
     /// # Example
     ///
     /// ```no_run
-    /// # use binaryninja::binary_view::{BinaryView, BinaryViewExt};
+    /// # use binaryninja::binary_view::BinaryView;
     /// # use binaryninja::function::Function;
     /// # let fun: Function = todo!();
     /// # let bv: BinaryView = todo!();
@@ -1828,7 +1945,11 @@ impl Function {
     ) {
         let arch = arch.unwrap_or_else(|| self.arch());
         let enum_display_typeid = enum_display_typeid.map(IntoCStr::to_cstr);
+        // Borrow the owned C string rather than moving it into `map`, otherwise it is dropped
+        // before the FFI call below and `BNSetIntegerConstantDisplayType` reads freed memory,
+        // storing a garbage type id for the enumeration.
         let enum_display_typeid_ptr = enum_display_typeid
+            .as_ref()
             .map(|x| x.as_ptr())
             .unwrap_or(std::ptr::null());
         unsafe {
@@ -2113,10 +2234,44 @@ impl Function {
         unsafe { Array::new(refs, count, ()) }
     }
 
+    /// Deprecated. Use [`Function::global_pointer_values`] instead.
+    ///
     /// Discovered value of the global pointer register, if the function uses one
     pub fn global_pointer_value(&self) -> Conf<RegisterValue> {
-        let result = unsafe { BNGetFunctionGlobalPointerValue(self.handle) };
-        Conf::new(result.value.into(), result.confidence)
+        self.global_pointer_values()
+            .into_iter()
+            .next()
+            .map(|(_, value)| value)
+            .unwrap_or_else(|| {
+                Conf::new(
+                    RegisterValue::new(RegisterValueType::UndeterminedValue, 0, 0, 0),
+                    255,
+                )
+            })
+    }
+
+    /// Discovered values of the global pointer registers, if the function uses any
+    pub fn global_pointer_values(&self) -> Vec<(RegisterId, Conf<RegisterValue>)> {
+        unsafe {
+            let mut count = 0;
+            let values_ptr = BNGetFunctionGlobalPointerValues(self.handle, &mut count);
+            if values_ptr.is_null() {
+                return Vec::new();
+            }
+
+            let values = std::slice::from_raw_parts(values_ptr, count);
+            let result = values
+                .iter()
+                .map(|value| {
+                    (
+                        RegisterId::from(value.reg),
+                        Conf::new(value.value.value.into(), value.value.confidence),
+                    )
+                })
+                .collect();
+            BNFreeRegisterValueWithConfidenceAndRegisterList(values_ptr);
+            result
+        }
     }
 
     pub fn type_tokens(
@@ -2481,38 +2636,30 @@ impl Function {
         Conf::new(regs, result.confidence)
     }
 
-    pub fn set_user_return_registers<I>(&self, values: I, confidence: u8)
-    where
-        I: IntoIterator<Item = CoreRegister>,
-    {
-        let mut regs: Box<[u32]> = values.into_iter().map(|reg| reg.id().0).collect();
-        let mut regs = BNRegisterSetWithConfidence {
-            regs: regs.as_mut_ptr(),
-            count: regs.len(),
-            confidence,
-        };
-        unsafe { BNSetUserFunctionReturnRegisters(self.handle, &mut regs) }
-    }
-
-    pub fn set_auto_return_registers<I>(&self, values: I, confidence: u8)
-    where
-        I: IntoIterator<Item = CoreRegister>,
-    {
-        let mut regs: Box<[u32]> = values.into_iter().map(|reg| reg.id().0).collect();
-        let mut regs = BNRegisterSetWithConfidence {
-            regs: regs.as_mut_ptr(),
-            count: regs.len(),
-            confidence,
-        };
-        unsafe { BNSetAutoFunctionReturnRegisters(self.handle, &mut regs) }
-    }
-
     /// Flow graph of unresolved stack adjustments
     pub fn unresolved_stack_adjustment_graph(&self) -> Option<Ref<FlowGraph>> {
         let graph = unsafe { BNGetUnresolvedStackAdjustmentGraph(self.handle) };
         (!graph.is_null()).then(|| unsafe { FlowGraph::ref_from_raw(graph) })
     }
 
+    /// Create a [`FlowGraph`] of the function at the specified `view_type`.
+    ///
+    /// This will **NOT** populate the [`FlowGraph::nodes`], to populate the nodes and position
+    /// them, you must call [`FlowGraph::request_layout`] or [`FlowGraph::request_layout_and_wait`].
+    ///
+    /// ```no_run
+    /// # use std::time::Duration;
+    /// # use binaryninja::function::{Function, FunctionViewType};
+    /// # let func: Function = todo!()
+    /// let graph = func.create_graph(FunctionViewType::MediumLevelIL, None);
+    /// assert!(graph.request_layout_and_wait(Duration::from_secs(5)), "Took too long to create graph");
+    /// assert!(graph.is_layout_complete(), "Should always be true if request_layout_and_wait returned true");
+    /// for node in &graph.nodes() {
+    ///    for line in &node.lines() {
+    ///        println!("{}", line);
+    ///    }
+    ///}
+    /// ```
     pub fn create_graph(
         &self,
         view_type: FunctionViewType,
@@ -2574,13 +2721,20 @@ impl Function {
         }
     }
 
-    pub fn store_metadata<V>(&self, key: &str, value: V, is_auto: bool)
+    pub fn store_metadata<V>(&self, key: &str, value: V, flags: MetadataStoreFlags)
     where
         V: Into<Ref<Metadata>>,
     {
         let md = value.into();
         let key = key.to_cstr();
-        unsafe { BNFunctionStoreMetadata(self.handle, key.as_ptr(), md.as_ref().handle, is_auto) };
+        unsafe {
+            BNFunctionStoreMetadata(
+                self.handle,
+                key.as_ptr(),
+                md.as_ref().handle,
+                flags.into_raw(),
+            )
+        };
     }
 
     pub fn remove_metadata(&self, key: &str) {
@@ -2588,19 +2742,14 @@ impl Function {
         unsafe { BNFunctionRemoveMetadata(self.handle, key.as_ptr()) };
     }
 
-    pub fn guided_source_blocks(&self) -> HashSet<ArchAndAddr> {
+    /// The current list of guided source block start [`Location`]s for this function.
+    ///
+    /// These blocks have their direct outgoing branch targets analyzed.
+    pub fn guided_source_blocks(&self) -> HashSet<Location> {
         let mut count = 0;
         let raw = unsafe { BNGetGuidedSourceBlocks(self.handle, &mut count) };
-        if raw.is_null() || count == 0 {
-            return HashSet::new();
-        }
-
-        (0..count)
-            .map(|i| {
-                let raw = unsafe { std::ptr::read(raw.add(i)) };
-                ArchAndAddr::from(raw)
-            })
-            .collect::<HashSet<_>>()
+        let array: Array<Location> = unsafe { Array::new(raw, count, ()) };
+        array.into_iter().collect()
     }
 }
 
@@ -2675,46 +2824,6 @@ impl PartialEq for Function {
         self.start() == other.start()
             && self.arch() == other.arch()
             && self.platform() == other.platform()
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct AddressRange {
-    pub start: u64,
-    pub end: u64,
-}
-
-impl From<BNAddressRange> for AddressRange {
-    fn from(raw: BNAddressRange) -> Self {
-        Self {
-            start: raw.start,
-            end: raw.end,
-        }
-    }
-}
-
-impl From<AddressRange> for BNAddressRange {
-    fn from(raw: AddressRange) -> Self {
-        Self {
-            start: raw.start,
-            end: raw.end,
-        }
-    }
-}
-
-impl CoreArrayProvider for AddressRange {
-    type Raw = BNAddressRange;
-    type Context = ();
-    type Wrapped<'a> = Self;
-}
-
-unsafe impl CoreArrayProviderInner for AddressRange {
-    unsafe fn free(raw: *mut Self::Raw, _count: usize, _context: &Self::Context) {
-        BNFreeAddressRanges(raw);
-    }
-
-    unsafe fn wrap_raw<'a>(raw: &'a Self::Raw, _context: &'a Self::Context) -> Self::Wrapped<'a> {
-        Self::from(*raw)
     }
 }
 
@@ -3005,37 +3114,6 @@ unsafe impl CoreArrayProviderInner for Comment {
         Comment {
             addr: *raw,
             comment: function.comment_at(*raw),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct ArchAndAddr {
-    pub arch: CoreArchitecture,
-    pub addr: u64,
-}
-
-impl ArchAndAddr {
-    pub fn new(arch: CoreArchitecture, addr: u64) -> Self {
-        Self { arch, addr }
-    }
-}
-
-impl From<BNArchitectureAndAddress> for ArchAndAddr {
-    fn from(raw: BNArchitectureAndAddress) -> Self {
-        unsafe {
-            let arch = CoreArchitecture::from_raw(raw.arch);
-            let addr = raw.address;
-            ArchAndAddr { arch, addr }
-        }
-    }
-}
-
-impl ArchAndAddr {
-    pub fn into_raw(self) -> BNArchitectureAndAddress {
-        BNArchitectureAndAddress {
-            arch: self.arch.handle,
-            address: self.addr,
         }
     }
 }

@@ -1,5 +1,8 @@
 # Binary Ninja Flags
 
+!!! note
+    This is an older guide covering the fundamentals of Binary Ninja's flag system. For a more recent and comprehensive treatment of flags in the context of building a full architecture plugin, see the [Flags section of the Lifting guide](archplatform-lifting.md#flags).
+
 This guide is broken up into three sections.
 
 - Part 1 covers the basics of how architecture modules and flags interact
@@ -17,7 +20,7 @@ Instructions like JXX glance at the flagmen for permission to jump.
 
 Analysis would be _really_ complicated by tracking a "remote thread" like this, in addition to the normal instruction stream. So another approach is to insert the flag logic _into_ the instruction stream:
 
-```
+```text
 ...
 SUB a, b, c
 flag_s = ...
@@ -36,7 +39,7 @@ But this is about basics! So what are the basic ways in which an architecture au
 
 ### 1) declare the flags
 
-```
+```python
 flags = ['s', 'z', 'h', 'pv', 'n', 'c']
 ```
 
@@ -44,14 +47,16 @@ That's simple, it's just a list of strings.
 
 ### 2) assign flag Roles
 
-    flag_roles = {
-        's': FlagRole.NegativeSignFlagRole,
-        'z': FlagRole.ZeroFlagRole,
-        'h': FlagRole.HalfCarryFlagRole,
-        'pv': FlagRole.SpecialFlagRole,
-        'n': FlagRole.NegativeSignFlagRole,
-        'c': FlagRole.CarryFlagRole
-    }
+```python
+flag_roles = {
+    's': FlagRole.NegativeSignFlagRole,
+    'z': FlagRole.ZeroFlagRole,
+    'h': FlagRole.HalfCarryFlagRole,
+    'pv': FlagRole.SpecialFlagRole,
+    'n': FlagRole.NegativeSignFlagRole,
+    'c': FlagRole.CarryFlagRole
+}
+```
 
 Map each flag to a role from [api/python/enum.py](https://api.binary.ninja/_modules/binaryninja/enums.html) if possible. This informs Binary Ninja to generate IL for the basic, textbook behavior of a flag. For example, the `ZeroFlagRole` will generate IL that sets the flag when an arithmetic result is zero.
 
@@ -123,7 +128,7 @@ Recap: the C function is named `add()` which will produce a Z80 instruction `ADD
 
 Binary Ninja gives this LLIL, after compilation with [SDCC](http://sdcc.sourceforge.net):
 
-```
+```text
 _add:
    0 @ 0000020e  HL = 3
    1 @ 00000211  HL = HL + SP {arg2}
@@ -152,7 +157,7 @@ unsigned int add(unsigned int a, unsigned int b)
 
 Since the Z80 ALU only adds 8-bit ints, multi-byte adds are synthesized with an initial `ADD`, followed by runs of `ADC`. Here's the new IL:
 
-```
+```text
 _add:
    0 @ 0000020e  HL = 4
    1 @ 00000211  HL = HL + SP {arg3}
@@ -194,7 +199,7 @@ With the defined variables and lifted IL, Binary Ninja decides when to generate 
 
 The previous sections said that flag roles were the textbook behavior of flags. If you can assign a flag to a role, there's a chance Binary Ninja will have that default behavior and you won't have to implement it yourself. For example, the carry flag is so common among architectures and its behavior is (to my knowledge) non-varying during addition, that we have it hard-coded into Binary Ninja:
 
-```
+```text
    5 @ 0000021b  temp0.b = A
    6 @ 0000021b  temp1.b = [HL {arg3}].b
    7 @ 0000021b  A = A + [HL {arg3}].b
@@ -221,7 +226,7 @@ So for any instructions that are not ADD, ADC, SUB, NEG, or FSUB, you can try an
 
 What happens when you mark an instruction the producer of a certain flag, but no implementation exists?
 
-```
+```text
   12 @ 0000029e  A = sbb.b(temp1.b, D, flag:c)
   13 @ 0000029e  flag:s = sbb.b(temp1.b, D, flag:c) s< 0
   14 @ 0000029e  flag:pv = unimplemented

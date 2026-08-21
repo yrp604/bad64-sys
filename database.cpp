@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -248,6 +248,7 @@ vector<Ref<Snapshot>> Snapshot::GetParents()
 	size_t count;
 	BNSnapshot** parents = BNGetSnapshotParents(m_object, &count);
 	vector<Ref<Snapshot>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		result.push_back(new Snapshot(BNNewSnapshotReference(parents[i])));
@@ -262,6 +263,7 @@ vector<Ref<Snapshot>> Snapshot::GetChildren()
 	size_t count;
 	BNSnapshot** children = BNGetSnapshotChildren(m_object, &count);
 	vector<Ref<Snapshot>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		result.push_back(new Snapshot(BNNewSnapshotReference(children[i])));
@@ -304,25 +306,26 @@ DataBuffer Snapshot::GetUndoData()
 }
 
 
-vector<Ref<UndoEntry>> Snapshot::GetUndoEntries()
+vector<Ref<UndoEntry>> Snapshot::GetUndoEntries(Ref<FileMetadata> file)
 {
-	return GetUndoEntries([](size_t, size_t) { return true; });
+	return GetUndoEntries(file, [](size_t, size_t) { return true; });
 }
 
 
-vector<Ref<UndoEntry>> Snapshot::GetUndoEntries(const ProgressFunction& progress)
+vector<Ref<UndoEntry>> Snapshot::GetUndoEntries(Ref<FileMetadata> file, const ProgressFunction& progress)
 {
 	ProgressContext pctxt;
 	pctxt.callback = progress;
 
 	size_t count;
-	BNUndoEntry** entries = BNGetSnapshotUndoEntriesWithProgress(m_object, &pctxt, ProgressCallback, &count);
+	BNUndoEntry** entries = BNGetSnapshotUndoEntriesWithProgress(m_object, file->GetObject(), &pctxt, ProgressCallback, &count);
 	if (entries == nullptr)
 	{
 		throw DatabaseException("BNGetSnapshotUndoEntriesWithProgress");
 	}
 
 	vector<Ref<UndoEntry>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		result.push_back(new UndoEntry(BNNewUndoEntryReference(entries[i])));
@@ -377,6 +380,15 @@ Database::Database(BNDatabase* database)
 }
 
 
+Ref<Database> Database::OpenExisting(const std::string& path)
+{
+	Ref<Database> db = new Database(BNCreateDatabaseInstance());
+	if (!BNDatabaseOpenExisting(db->GetObject(), path.c_str()))
+		throw DatabaseException("BNDatabaseOpenExisting");
+	return db;
+}
+
+
 Ref<Snapshot> Database::GetSnapshot(int64_t id)
 {
 	BNSnapshot* snap = BNGetDatabaseSnapshot(m_object, id);
@@ -390,6 +402,7 @@ vector<Ref<Snapshot>> Database::GetSnapshots()
 	size_t count;
 	BNSnapshot** snapshots = BNGetDatabaseSnapshots(m_object, &count);
 	vector<Ref<Snapshot>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(new Snapshot(BNNewSnapshotReference(snapshots[i])));
 	BNFreeSnapshotList(snapshots, count);
@@ -455,6 +468,7 @@ std::vector<std::string> Database::GetGlobalKeys() const
 	}
 
 	std::vector<std::string> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		result.push_back(value[i]);
@@ -531,16 +545,7 @@ void Database::WriteGlobalData(const std::string& key, const DataBuffer& val)
 }
 
 
-Ref<FileMetadata> Database::GetFile()
-{
-	return new FileMetadata(BNGetDatabaseFile(m_object));
-}
-
-
-void Database::ReloadConnection()
-{
-	BNDatabaseReloadConnection(m_object);
-}
+void Database::ReloadConnection() {}
 
 
 Ref<KeyValueStore> Database::ReadAnalysisCache() const

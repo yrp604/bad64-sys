@@ -5,6 +5,9 @@ find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 file(REAL_PATH "${PROJECT_SOURCE_DIR}/../" ABSOLUTE_API_PATH)
 
+# Remove long path prefix because it makes cl.exe very angry
+string(REGEX REPLACE "^//\\?/" "" ABSOLUTE_API_PATH "${ABSOLUTE_API_PATH}")
+
 # Generate stubs.cpp with implementations of all the BNAPI functions
 add_custom_command(
     OUTPUT ${PROJECT_BINARY_DIR}/stubs.cpp

@@ -51,7 +51,7 @@ The tags API has been reworked in 3.4 to be easier to use and understand.
 
 ### TagTypes
 
-A [TagType](https://api.binary.ninja/binaryninja.binaryview-module.html#binaryninja.binaryview.TagType) is the object that represents the "type" of tag something is. By default, a binary view starts off with several tag types, include "Bugs," "Crashes," "Important," and so on.
+A [TagType](https://api.binary.ninja/binaryninja.binaryview-module.html#binaryninja.binaryview.TagType) is the object that represents the "type" of tag something is. By default, a binary view starts off with several tag types, including "Bugs," "Crashes," "Important," and so on.
 
 Before you can create a tag of a type that's not already in the BinaryView, you need to create the tag type.
 
@@ -122,6 +122,7 @@ There are a number of different type objects available for creation:
 - Void (like an integer but if its size was zero)
 - Functions
 - Arrays
+- Fragment Types
 - Enumeration (kind of an integer)
 - Structures (probably has integers in it)
 - Type Definitions
@@ -211,6 +212,44 @@ Type.array(Type.int(4), 2) # Create an array of 2 - 4 byte integers
 ArrayType.create(Type.int(4), 2)
 ```
 
+#### Fragment Types
+
+Fragment types describe bitwise slices of larger source types while those slices are carried
+in integer-like storage. Their live size and placement within the container are measured in
+bits. The constructor supplies the larger source type, container width in bytes, original
+source byte offset, and source-to-container byte order. A new fragment begins at container bit
+zero and has a bit size of `width * 8`.
+
+```python
+from binaryninja import Endianness, FragmentType, Type
+
+source = Type.structure([
+    (Type.int(4, False), "header"),
+    (Type.int(4, False), "payload"),
+    (Type.int(4, False), "flags"),
+])
+
+# Model a 64-bit live fragment derived from source bytes 4 through 11.
+fragment = Type.fragment(source, 8, 4, Endianness.LittleEndian)
+
+# Equivalently, construct the concrete class directly.
+same_fragment = FragmentType.create(source, 8, 4, Endianness.LittleEndian)
+
+assert fragment == same_fragment
+assert fragment.target == source
+assert fragment.width == 8
+assert fragment.offset == 4
+assert fragment.fragment_original_width_bytes == 8
+assert fragment.fragment_start_bit == 0
+assert fragment.fragment_width_bits == 64
+assert fragment.fragment_endianness == Endianness.LittleEndian
+```
+
+Binary Ninja generally uses fragments as intermediate types while pieces of larger objects
+move through registers, such as in calling conventions or optimized inline copies. Analysis
+updates their bit-level state as those in-flight values are transformed. See
+[Type Fragments](../guide/types/fragments.md) for the analysis model and text syntax.
+
 #### Function Types
 
 ```python
@@ -252,9 +291,34 @@ To create a bitfield in a structure, you can use the `bit_position` and `bit_wid
 ```
 
 It is important to note the distinction between the `bit_position` and `offset` parameters. The `offset` is a byte offset
-from the start of the structure, and the `bit_position` is a bit offset from the start of byte offset. The reason member
+from the start of the structure, and the `bit_position` is the bit from the start of byte offset the member resides at, `bit_position` **cannot** be greater than `7`. The reason member
 offsets are byte offsets instead of bit offsets is historical, previous versions of Binary Ninja had no concept of bitwise
 structures.
+
+For example, if you have a structure with the following members:
+
+```c
+struct SmallFuncHeader __packed
+{
+    uint32_t offset : 25;
+    uint32_t paramCount : 7;
+    uint32_t bytecodeSizeInBytes : 15;
+    uint32_t functionName : 17;
+};
+```
+
+This can be constructed in Python like so:
+
+```pycon
+>>> t = TypeBuilder.structure(packed=True)
+... t.insert(0, Type.int(4, False), "offset", bit_position=0, bit_width=25)
+... t.insert(3, Type.int(4, False), "paramCount", bit_position=1, bit_width=7)
+... t.insert(4, Type.int(4, False), "bytecodeSizeInBytes", bit_position=0, bit_width=15)
+... t.insert(5, Type.int(4, False), "functionName", bit_position=7, bit_width=17)
+... t.members
+... 
+[<uint32_t offset, offset 0x0, bit 0:25>, <uint32_t paramCount, offset 0x3, bit 1:7>, <uint32_t bytecodeSizeInBytes, offset 0x4, bit 0:15>, <uint32_t functionName, offset 0x5, bit 7:17>]
+```
 
 #### Create Enumerations
 
@@ -456,7 +520,7 @@ current_function.parameter_vars[0].type = Type.pointer(bv.arch, Type.char())
 >>> bv.get_data_var_at(here).type = Type.char()
 ```
 
-#### Applying a type where non exists yet
+#### Applying a type where none exists yet
 
 In some instances you may need to first create a `DataVariable` before you can set the type at a given location:
 
@@ -525,7 +589,7 @@ There are now two different signature library systems: [SigKit](#sigkit-signatur
 
 ### SigKit Signature Libraries
 
-While many signatures are [built-in](https://github.com/Vector35/binaryninja-api/issues/1551) and require no interaction to automatically match functions, you may wish to add or modify your own. First, install the [SigKit](https://github.com/Vector35/sigkit/) plugin from the [plugin manager](../guide/plugins.md#plugin-manager).
+While many signatures are built-in and require no interaction to automatically match functions, you may wish to add or modify your own. First, install the [SigKit](https://github.com/Vector35/sigkit/) plugin from the [extension manager](../guide/plugins.md#extension-manager).
 
 #### Running the signature matcher
 
@@ -545,7 +609,7 @@ To generate a signature library for the currently-open binary, use `Tools > Sign
 
 For headless users, you can generate signature libraries by using the sigkit API ([examples](https://github.com/Vector35/sigkit/tree/master/examples) and [documentation](https://github.com/Vector35/sigkit/blob/master/__init__.py#L46)). For more detailed information, see our blog post describing [signature generation](https://binary.ninja/2020/03/11/signature-libraries.html#signature-generation).
 
-If you are accessing the sigkit API through the Binary Ninja GUI and you've installed the sigkit plugin through the plugin manager, you will need to import sigkit under a different name:
+If you are accessing the sigkit API through the Binary Ninja GUI and you've installed the sigkit plugin through the extension manager, you will need to import sigkit under a different name:
 
 ``` python
 import Vector35_sigkit as sigkit
@@ -558,7 +622,7 @@ Binary Ninja loads signature libraries from 2 locations:
  - [$INSTALL_DIR](https://docs.binary.ninja/guide/#binary-path)/signatures/$PLATFORM
  - [$USER_DIR](https://docs.binary.ninja/guide/#user-folder)/signatures/$PLATFORM
 
-???+ Danger "Warning"
+!!! Warning "Warning"
     Always place your signature libraries in your user directory. The install path is wiped whenever Binary Ninja auto-updates. You can locate it with `Open Plugin Folder` in the command palette and navigate "up" a directory.
 
 Inside the signatures folder, each platform has its own folder for its set of signatures. For example, `windows-x86_64` and `linux-ppc32` are two sample platforms. When the signature matcher runs, it uses the signature libraries that are relevant to the current binary's platform. (You can check the platform of any binary you have open in the UI using the console and typing `bv.platform`)

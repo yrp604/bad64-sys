@@ -85,6 +85,8 @@ class BINARYNINJAUIAPI HistoryEntry : public BinaryNinja::RefCountObject
 	QString getViewType() const { return m_viewType; }
 	void setViewType(const QString& type) { m_viewType = type; }
 
+	virtual QString getDescription() const;
+
 	/*!
 	    Serialize to json representation
 	    \return Json representation of history entry. In the Python api, this must be a dict.
@@ -208,6 +210,7 @@ class BINARYNINJAUIAPI View
 	virtual void writeData(const BinaryNinja::DataBuffer& data, uint64_t addr);
 
 	virtual bool canDisplayAs(const UIActionContext& context, const BNIntegerDisplayType);
+	virtual BNIntegerDisplayType getCurrentDisplayAs(const UIActionContext& context);
 	virtual void displayAs(const UIActionContext& context, BNIntegerDisplayType type);
 
 	virtual BinaryNinja::Ref<HistoryEntry> getHistoryEntry();
@@ -354,6 +357,34 @@ Q_SIGNALS:
 };
 
 
+/*! Options controlling the address input dialog shown by \ref ViewFrame::getAddressFromInput
+
+	\ingroup viewframe
+*/
+struct BINARYNINJAUIAPI AddressFromInputOptions
+{
+	/// Title shown in the dialog's title bar.
+	QString title = "Go to Address";
+	/// Prompt shown next to the input field.
+	QString message = "Address:";
+	/// Pre-fill the input with the current address.
+	bool defaultToCurrent = false;
+	/// Show the "Relative" checkbox, allowing the entered value to be interpreted relative to an address.
+	/// Defaults to true; set to false for inputs where a relative value is meaningless (e.g. a size or count).
+	bool showRelativeCheckbox = true;
+};
+
+
+/*!
+	Controls whether navigation transfers keyboard and window focus to the destination view.
+	\ingroup viewframe
+*/
+enum class ViewNavigationFocusBehavior
+{
+	FocusDestination,
+	PreserveCurrentFocus
+};
+
 /*!
 
 	\ingroup viewframe
@@ -392,12 +423,7 @@ class BINARYNINJAUIAPI ViewFrame : public QWidget
 	bool gestureEvent(QGestureEvent* event);
 
 	void setView(QWidget* view);
-	/*!
-	    Load one history entry from json representation
-	    \param json Json rep of history entry
-	    \return Entry, if successful, else nullptr
-	 */
-	BinaryNinja::Ref<HistoryEntry> deserializeHistoryEntry(const Json::Value& json);
+	void setView(QWidget* view, ViewNavigationFocusBehavior focusBehavior);
 
 	bool tryMainSymbolsNavigation();
 
@@ -428,6 +454,7 @@ class BINARYNINJAUIAPI ViewFrame : public QWidget
 	bool isGraphViewPreferred();
 	void setPriorityView(const QString& viewType, bool isBinaryDataNavigable);
 	bool setViewType(const QString& viewType);
+	bool setViewType(const QString& viewType, ViewNavigationFocusBehavior focusBehavior);
 	void focus();
 
 	Sidebar* getSidebar();
@@ -446,10 +473,14 @@ class BINARYNINJAUIAPI ViewFrame : public QWidget
 
 	bool navigate(const QString& type, uint64_t offset, bool updateInfo = true, bool addHistoryEntry = true, bool checkNavigable = false);
 	bool navigate(const QString& type, const std::function<bool(View*)>& handler, bool updateInfo = true, bool addHistoryEntry = true, bool checkNavigable = false);
+	bool navigate(const QString& type, const std::function<bool(View*)>& handler, bool updateInfo,
+		bool addHistoryEntry, bool checkNavigable, ViewNavigationFocusBehavior focusBehavior);
 	bool navigate(BinaryViewRef data, uint64_t offset, bool updateInfo = true, bool addHistoryEntry = true);
 	bool navigateToFunction(FunctionRef func, uint64_t offset, bool updateInfo = true, bool addHistoryEntry = true);
 	bool goToReference(BinaryViewRef data, FunctionRef func, uint64_t source, uint64_t target, bool addHistoryEntry = true);
 	bool navigateToViewLocation(BinaryViewRef data, const ViewLocation& viewLocation, bool addHistoryEntry = true, bool center = false);
+	bool navigateToViewLocation(BinaryViewRef data, const ViewLocation& viewLocation, bool addHistoryEntry,
+		bool center, ViewNavigationFocusBehavior focusBehavior);
 	bool navigateToHistoryEntry(BinaryNinja::Ref<HistoryEntry> entry);
 	QString getTypeForView(QWidget* view) const;
 	QString getDataTypeForView(const QString& type) const;
@@ -464,6 +495,14 @@ class BINARYNINJAUIAPI ViewFrame : public QWidget
 
 	void updateFonts();
 	void updateTheme();
+	std::vector<BinaryNinja::Ref<HistoryEntry>> getBackHistory();
+	std::vector<BinaryNinja::Ref<HistoryEntry>> getForwardHistory();
+	/*!
+		Load one history entry from json representation
+		\param json Json rep of history entry
+		\return Entry, if successful, else nullptr
+	 */
+	BinaryNinja::Ref<HistoryEntry> deserializeHistoryEntry(const Json::Value& json);
 	void addHistoryEntry();
 	/*!
 	    Parse history entries from the raw data associated with a BinaryView, loading them into the back/forward
@@ -485,7 +524,7 @@ class BINARYNINJAUIAPI ViewFrame : public QWidget
 	static bool getAddressFromString(QWidget* parent, BinaryViewRef data, uint64_t& offset, uint64_t currentAddress,
 	    const QString& addrStr, std::string& errorString);
 	static bool getAddressFromInput(QWidget* parent, BinaryViewRef data, uint64_t& offset, uint64_t currentAddress,
-	    const QString& title = "Go to Address", const QString& msg = "Address:", bool defaultToCurrent = false);
+	    const AddressFromInputOptions& options = {});
 	static bool getFileOffsetFromInput(QWidget* parent, BinaryViewRef data, uint64_t& offset, uint64_t currentAddress,
 	    const QString& title = "Go to File Offset", const QString& msg = "File Offset:", bool defaultToCurrent = false);
 

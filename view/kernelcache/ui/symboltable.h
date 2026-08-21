@@ -19,6 +19,7 @@ Q_OBJECT
 	SymbolTableView* m_parent;
 	QFont m_font;
 	std::string m_filter;
+	FilterOptions m_filterOptions;
 	std::vector<KernelCacheAPI::CacheSymbol> m_preparedSymbols{};
 	// These are the symbols we actually use
 	std::vector<KernelCacheAPI::CacheSymbol> m_modelSymbols{};
@@ -32,7 +33,7 @@ public:
 	QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
 	void sort(int column, Qt::SortOrder order) override;
 	void updateSymbols(std::vector<KernelCacheAPI::CacheSymbol>&& symbols);
-	void setFilter(std::string text);
+	void setFilter(const std::string& text, FilterOptions options);
 	const KernelCacheAPI::CacheSymbol& symbolAt(int row) const;
 
 };
@@ -68,26 +69,25 @@ public:
 			scrollTo(currentIndex);
 	}
 
-	void selectFirstItem() override
+	void ensureSelection() override
 	{
-		if (model()->rowCount() > 0) {
-			QModelIndex top = indexAt(rect().topLeft());
-			if (top.isValid()) {
-				selectionModel()->select(top, QItemSelectionModel::ClearAndSelect);
-				setCurrentIndex(top);
-			}
+		QModelIndex current = selectionModel()->currentIndex();
+		if (current.isValid() || model()->rowCount() == 0)
+			return;
+
+		if (auto top = indexAt(rect().topLeft()); top.isValid())
+		{
+			selectionModel()->select(top, QItemSelectionModel::ClearAndSelect);
+			setCurrentIndex(top);
 		}
 	}
 
-	void activateFirstItem() override
+
+	void activateSelection() override
 	{
-		if (model()->rowCount() > 0) {
-			QModelIndex topLeft = indexAt(rect().topLeft());
-			if (topLeft.isValid()) {
-				setCurrentIndex(topLeft);
-				emit activated(topLeft);
-			}
-		}
+		ensureSelection();
+		if (auto current = selectionModel()->currentIndex(); current.isValid())
+			emit activated(current);
 	}
 
 	KernelCacheAPI::CacheSymbol getSymbolAtRow(int row) const
@@ -95,7 +95,7 @@ public:
 		return m_model->symbolAt(row);
 	}
 
-	void setFilter(const std::string& filter) override;
+	void setFilter(const std::string& filter, FilterOptions options) override;
 };
 
 

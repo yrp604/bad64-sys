@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -41,6 +41,24 @@ Variable Variable::FromIdentifier(uint64_t id)
 }
 
 
+Variable Variable::Register(uint32_t reg)
+{
+	return Variable(RegisterVariableSourceType, reg);
+}
+
+
+Variable Variable::Flag(uint32_t flag)
+{
+	return Variable(FlagVariableSourceType, flag);
+}
+
+
+Variable Variable::StackOffset(int64_t offset)
+{
+	return Variable(StackVariableSourceType, offset);
+}
+
+
 RegisterValue::RegisterValue() : state(UndeterminedValue), value(0), offset(0), size(0) {}
 
 
@@ -62,6 +80,12 @@ bool RegisterValue::operator==(const RegisterValue& a) const
 
 	case StackFrameOffset:
 		 return (state == StackFrameOffset) && (a.value == value);
+
+	case ResultPointerValue:
+		return (state == ResultPointerValue) && (a.value == value);
+
+	case ParameterPointerValue:
+		return (state == ParameterPointerValue) && (a.value == value) && (a.offset == offset);
 
 	case UndeterminedValue:
 		return state == UndeterminedValue;
@@ -200,6 +224,16 @@ uint64_t Function::GetStart() const
 Ref<Symbol> Function::GetSymbol() const
 {
 	return new Symbol(BNGetFunctionSymbol(m_object));
+}
+
+bool Function::IsExported() const
+{
+	Ref<Symbol> sym = GetSymbol();
+	if (!sym)
+		return false;
+
+	BNSymbolBinding binding = sym->GetBinding();
+	return (binding == BNSymbolBinding::GlobalBinding) || (binding == BNSymbolBinding::WeakBinding);
 }
 
 
@@ -405,121 +439,6 @@ RegisterValue RegisterValue::FromAPIObject(const BNRegisterValue& value)
 	result.offset = value.offset;
 	result.size = value.size;
 	return result;
-}
-
-
-PossibleValueSet PossibleValueSet::FromAPIObject(BNPossibleValueSet& value)
-{
-	PossibleValueSet result;
-	result.state = value.state;
-	result.value = value.value;
-	result.offset = value.offset;
-	result.size = value.size;
-	if (value.state == LookupTableValue)
-	{
-		for (size_t i = 0; i < value.count; i++)
-		{
-			LookupTableEntry entry;
-			entry.fromValues.insert(entry.fromValues.end(), &value.table[i].fromValues[0],
-			    &value.table[i].fromValues[value.table[i].fromCount]);
-			entry.toValue = value.table[i].toValue;
-			result.table.push_back(entry);
-		}
-	}
-	else if ((value.state == SignedRangeValue) || (value.state == UnsignedRangeValue))
-	{
-		for (size_t i = 0; i < value.count; i++)
-			result.ranges.push_back(value.ranges[i]);
-	}
-	else if ((value.state == InSetOfValues) || (value.state == NotInSetOfValues))
-	{
-		for (size_t i = 0; i < value.count; i++)
-			result.valueSet.insert(value.valueSet[i]);
-	}
-
-	result.count = value.count;
-	BNFreePossibleValueSet(&value);
-	return result;
-}
-
-
-BNPossibleValueSet PossibleValueSet::ToAPIObject() const
-{
-	BNPossibleValueSet result;
-	result.state = state;
-	result.value = value;
-	result.offset = offset;
-	result.size = size;
-	result.count = 0;
-
-	if ((state == SignedRangeValue) || (state == UnsignedRangeValue))
-	{
-		result.ranges = new BNValueRange[ranges.size()];
-		result.count = ranges.size();
-		for (size_t i = 0; i < ranges.size(); i++)
-			result.ranges[i] = ranges[i];
-	}
-	else
-	{
-		result.ranges = nullptr;
-	}
-
-	if (state == LookupTableValue)
-	{
-		result.table = new BNLookupTableEntry[table.size()];
-		result.count = table.size();
-		for (size_t i = 0; i < table.size(); i++)
-		{
-			result.table[i].fromValues = new int64_t[table[i].fromValues.size()];
-			memcpy(result.table[i].fromValues, &table[i].fromValues[0], sizeof(int64_t) * table[i].fromValues.size());
-			result.table[i].fromCount = table[i].fromValues.size();
-			result.table[i].toValue = table[i].toValue;
-		}
-	}
-	else
-	{
-		result.table = nullptr;
-	}
-
-	if ((state == InSetOfValues) || (state == NotInSetOfValues))
-	{
-		result.valueSet = new int64_t[valueSet.size()];
-		result.count = valueSet.size();
-		size_t i = 0;
-		for (auto j : valueSet)
-			result.valueSet[i++] = j;
-	}
-	else
-	{
-		result.valueSet = nullptr;
-	}
-
-	return result;
-}
-
-
-void PossibleValueSet::FreeAPIObject(BNPossibleValueSet* value)
-{
-	switch (value->state)
-	{
-	case SignedRangeValue:
-	case UnsignedRangeValue:
-		delete[] value->ranges;
-		break;
-	case LookupTableValue:
-		for (size_t i = 0; i < value->count; i ++)
-		{
-			delete[] value->table[i].fromValues;
-		}
-		delete[] value->table;
-		break;
-	case InSetOfValues:
-	case NotInSetOfValues:
-		delete[] value->valueSet;
-		break;
-	default:
-		break;
-	}
 }
 
 
@@ -834,10 +753,35 @@ Confidence<Ref<Type>> Function::GetReturnType() const
 }
 
 
+ReturnValue Function::GetReturnValue() const
+{
+	BNReturnValue ret = BNGetFunctionReturnValue(m_object);
+	ReturnValue result = ReturnValue::FromAPIObject(&ret);
+	BNFreeReturnValue(&ret);
+	return result;
+}
+
+
+bool Function::IsReturnValueDefaultLocation() const
+{
+	return BNIsFunctionReturnValueDefaultLocation(m_object);
+}
+
+
+Confidence<ValueLocation> Function::GetReturnValueLocation() const
+{
+	auto location = BNGetFunctionReturnValueLocation(m_object);
+	Confidence<ValueLocation> result(ValueLocation::FromAPIObject(&location.location), location.confidence);
+	BNFreeValueLocation(&location.location);
+	return result;
+}
+
+
 Confidence<vector<uint32_t>> Function::GetReturnRegisters() const
 {
 	BNRegisterSetWithConfidence regs = BNGetFunctionReturnRegisters(m_object);
 	vector<uint32_t> regList;
+	regList.reserve(regs.count);
 	for (size_t i = 0; i < regs.count; i++)
 		regList.push_back(regs.regs[i]);
 	Confidence<vector<uint32_t>> result(regList, regs.confidence);
@@ -863,6 +807,19 @@ Confidence<vector<Variable>> Function::GetParameterVariables() const
 		varList.emplace_back(vars.vars[i].type, vars.vars[i].index, vars.vars[i].storage);
 	Confidence<vector<Variable>> result(varList, vars.confidence);
 	BNFreeParameterVariables(&vars);
+	return result;
+}
+
+
+Confidence<vector<ValueLocation>> Function::GetParameterLocations() const
+{
+	BNValueLocationListWithConfidence locations = BNGetFunctionParameterLocations(m_object);
+	vector<ValueLocation> locationList;
+	locationList.reserve(locations.count);
+	for (size_t i = 0; i < locations.count; i++)
+		locationList.push_back(ValueLocation::FromAPIObject(&locations.locations[i]));
+	Confidence<vector<ValueLocation>> result(locationList, locations.confidence);
+	BNFreeParameterLocations(&locations);
 	return result;
 }
 
@@ -921,16 +878,27 @@ void Function::SetAutoReturnType(const Confidence<Ref<Type>>& type)
 }
 
 
-void Function::SetAutoReturnRegisters(const Confidence<std::vector<uint32_t>>& returnRegs)
+void Function::SetAutoReturnValue(const ReturnValue& rv)
 {
-	BNRegisterSetWithConfidence regs;
-	regs.regs = new uint32_t[returnRegs.GetValue().size()];
-	regs.count = returnRegs.GetValue().size();
-	for (size_t i = 0; i < regs.count; i++)
-		regs.regs[i] = returnRegs.GetValue()[i];
-	regs.confidence = returnRegs.GetConfidence();
-	BNSetAutoFunctionReturnRegisters(m_object, &regs);
-	delete[] regs.regs;
+	BNReturnValue ret = rv.ToAPIObject();
+	BNSetAutoFunctionReturnValue(m_object, &ret);
+	ReturnValue::FreeAPIObject(&ret);
+}
+
+
+void Function::SetAutoIsReturnValueDefaultLocation(bool defaultLocation)
+{
+	BNSetAutoIsFunctionReturnValueDefaultLocation(m_object, defaultLocation);
+}
+
+
+void Function::SetAutoReturnValueLocation(const Confidence<ValueLocation>& location)
+{
+	BNValueLocationWithConfidence loc;
+	loc.location = location->ToAPIObject();
+	loc.confidence = location.GetConfidence();
+	BNSetAutoFunctionReturnValueLocation(m_object, &loc);
+	ValueLocation::FreeAPIObject(&loc.location);
 }
 
 
@@ -943,22 +911,21 @@ void Function::SetAutoCallingConvention(const Confidence<Ref<CallingConvention>>
 }
 
 
-void Function::SetAutoParameterVariables(const Confidence<vector<Variable>>& vars)
+void Function::SetAutoParameterLocations(const Confidence<std::vector<ValueLocation>>& locations)
 {
-	BNParameterVariablesWithConfidence varConf;
-	varConf.vars = new BNVariable[vars->size()];
-	varConf.count = vars->size();
+	BNValueLocationListWithConfidence varConf;
+	varConf.locations = new BNValueLocation[locations->size()];
+	varConf.count = locations->size();
 	size_t i = 0;
-	for (auto it = vars->begin(); it != vars->end(); ++it, ++i)
-	{
-		varConf.vars[i].type = it->type;
-		varConf.vars[i].index = it->index;
-		varConf.vars[i].storage = it->storage;
-	}
-	varConf.confidence = vars.GetConfidence();
+	for (auto it = locations->begin(); it != locations->end(); ++it, ++i)
+		varConf.locations[i] = it->ToAPIObject();
+	varConf.confidence = locations.GetConfidence();
 
-	BNSetAutoFunctionParameterVariables(m_object, &varConf);
-	delete[] varConf.vars;
+	BNSetAutoFunctionParameterLocations(m_object, &varConf);
+
+	for (i = 0; i < locations->size(); i++)
+		ValueLocation::FreeAPIObject(&varConf.locations[i]);
+	delete[] varConf.locations;
 }
 
 
@@ -1050,16 +1017,27 @@ void Function::SetReturnType(const Confidence<Ref<Type>>& type)
 }
 
 
-void Function::SetReturnRegisters(const Confidence<std::vector<uint32_t>>& returnRegs)
+void Function::SetReturnValue(const ReturnValue& rv)
 {
-	BNRegisterSetWithConfidence regs;
-	regs.regs = new uint32_t[returnRegs.GetValue().size()];
-	regs.count = returnRegs.GetValue().size();
-	for (size_t i = 0; i < regs.count; i++)
-		regs.regs[i] = returnRegs.GetValue()[i];
-	regs.confidence = returnRegs.GetConfidence();
-	BNSetUserFunctionReturnRegisters(m_object, &regs);
-	delete[] regs.regs;
+	BNReturnValue ret = rv.ToAPIObject();
+	BNSetUserFunctionReturnValue(m_object, &ret);
+	ReturnValue::FreeAPIObject(&ret);
+}
+
+
+void Function::SetIsReturnValueDefaultLocation(bool defaultLocation)
+{
+	BNSetUserIsFunctionReturnValueDefaultLocation(m_object, defaultLocation);
+}
+
+
+void Function::SetReturnValueLocation(const Confidence<ValueLocation>& location)
+{
+	BNValueLocationWithConfidence loc;
+	loc.location = location->ToAPIObject();
+	loc.confidence = location.GetConfidence();
+	BNSetUserFunctionReturnValueLocation(m_object, &loc);
+	ValueLocation::FreeAPIObject(&loc.location);
 }
 
 
@@ -1072,22 +1050,21 @@ void Function::SetCallingConvention(const Confidence<Ref<CallingConvention>>& co
 }
 
 
-void Function::SetParameterVariables(const Confidence<vector<Variable>>& vars)
+void Function::SetParameterLocations(const Confidence<std::vector<ValueLocation>>& locations)
 {
-	BNParameterVariablesWithConfidence varConf;
-	varConf.vars = new BNVariable[vars->size()];
-	varConf.count = vars->size();
+	BNValueLocationListWithConfidence varConf;
+	varConf.locations = new BNValueLocation[locations->size()];
+	varConf.count = locations->size();
 	size_t i = 0;
-	for (auto it = vars->begin(); it != vars->end(); ++it, ++i)
-	{
-		varConf.vars[i].type = it->type;
-		varConf.vars[i].index = it->index;
-		varConf.vars[i].storage = it->storage;
-	}
-	varConf.confidence = vars.GetConfidence();
+	for (auto it = locations->begin(); it != locations->end(); ++it, ++i)
+		varConf.locations[i] = it->ToAPIObject();
+	varConf.confidence = locations.GetConfidence();
 
-	BNSetUserFunctionParameterVariables(m_object, &varConf);
-	delete[] varConf.vars;
+	BNSetUserFunctionParameterLocations(m_object, &varConf);
+
+	for (i = 0; i < locations->size(); i++)
+		ValueLocation::FreeAPIObject(&varConf.locations[i]);
+	delete[] varConf.locations;
 }
 
 
@@ -1748,14 +1725,13 @@ Ref<Function> Function::GetCalleeForAnalysis(Ref<Platform> platform, uint64_t ad
 }
 
 
-vector<ArchAndAddr> Function::GetUnresolvedIndirectBranches()
+set<ArchAndAddr> Function::GetUnresolvedIndirectBranches()
 {
 	size_t count;
 	BNArchitectureAndAddress* addresses = BNGetUnresolvedIndirectBranches(m_object, &count);
-	vector<ArchAndAddr> result;
-	result.reserve(count);
+	set<ArchAndAddr> result;
 	for (size_t i = 0; i < count; i++)
-		result.push_back({new CoreArchitecture(addresses[i].arch), addresses[i].address});
+		result.insert({new CoreArchitecture(addresses[i].arch), addresses[i].address});
 	BNFreeArchitectureAndAddressList(addresses);
 	return result;
 }
@@ -1899,6 +1875,18 @@ vector<vector<InstructionTextToken>> Function::GetBlockAnnotations(Architecture*
 		result.push_back(InstructionTextToken::ConvertInstructionTextTokenList(lines[i].tokens, lines[i].count));
 
 	BNFreeInstructionTextLines(lines, count);
+	return result;
+}
+
+
+std::optional<int64_t> Function::GetBlockSortHint(Architecture* arch, uint64_t addr)
+{
+	int64_t result;
+	if (!BNGetFunctionBlockSortHint(m_object, arch->GetObject(), addr, &result))
+	{
+		return std::nullopt;
+	}
+
 	return result;
 }
 
@@ -2440,8 +2428,24 @@ Ref<Tag> Function::CreateUserFunctionTag(Ref<TagType> tagType, const std::string
 
 Confidence<RegisterValue> Function::GetGlobalPointerValue() const
 {
-	BNRegisterValueWithConfidence value = BNGetFunctionGlobalPointerValue(m_object);
-	return Confidence<RegisterValue>(RegisterValue::FromAPIObject(value.value), value.confidence);
+	auto values = GetGlobalPointerValues();
+	if (values.empty())
+		return Confidence<RegisterValue>();
+	return values[0].second;
+}
+
+
+vector<pair<uint32_t, Confidence<RegisterValue>>> Function::GetGlobalPointerValues() const
+{
+	size_t count;
+	BNRegisterValueWithConfidenceAndRegister* values = BNGetFunctionGlobalPointerValues(m_object, &count);
+	vector<pair<uint32_t, Confidence<RegisterValue>>> result;
+	result.reserve(count);
+	for (size_t i = 0; i < count; i++)
+		result.emplace_back(values[i].reg,
+			Confidence<RegisterValue>(RegisterValue::FromAPIObject(values[i].value.value), values[i].value.confidence));
+	BNFreeRegisterValueWithConfidenceAndRegisterList(values);
+	return result;
 }
 
 
@@ -3334,21 +3338,28 @@ Confidence<bool> Function::IsInlinedDuringAnalysis()
 }
 
 
-void Function::SetAutoInlinedDuringAnalysis(Confidence<bool> inlined)
+Confidence<BNInlineDuringAnalysis> Function::GetInlinedDuringAnalysis()
 {
-	BNBoolWithConfidence bc;
-	bc.value = inlined.GetValue();
-	bc.confidence = inlined.GetConfidence();
-	BNSetAutoFunctionInlinedDuringAnalysis(m_object, bc);
+	BNInlineDuringAnalysisWithConfidence value = BNGetFunctionInlinedDuringAnalysis(m_object);
+	return Confidence(value.value, value.confidence);
 }
 
 
-void Function::SetUserInlinedDuringAnalysis(Confidence<bool> inlined)
+void Function::SetAutoInlinedDuringAnalysis(Confidence<BNInlineDuringAnalysis> inlined)
 {
-	BNBoolWithConfidence bc;
-	bc.value = inlined.GetValue();
-	bc.confidence = inlined.GetConfidence();
-	BNSetUserFunctionInlinedDuringAnalysis(m_object, bc);
+	BNInlineDuringAnalysisWithConfidence value;
+	value.value = inlined.GetValue();
+	value.confidence = inlined.GetConfidence();
+	BNSetAutoFunctionInlinedDuringAnalysis(m_object, value);
+}
+
+
+void Function::SetUserInlinedDuringAnalysis(Confidence<BNInlineDuringAnalysis> inlined)
+{
+	BNInlineDuringAnalysisWithConfidence value;
+	value.value = inlined.GetValue();
+	value.confidence = inlined.GetConfidence();
+	BNSetUserFunctionInlinedDuringAnalysis(m_object, value);
 }
 
 
@@ -3394,11 +3405,11 @@ void Function::ExpandAll()
 }
 
 
-void Function::StoreMetadata(const std::string& key, Ref<Metadata> value, bool isAuto)
+void Function::StoreMetadata(const std::string& key, Ref<Metadata> value, BNMetadataStoreFlag flags)
 {
 	if (!value)
 		return;
-	BNFunctionStoreMetadata(m_object, key.c_str(), value->GetObject(), isAuto);
+	BNFunctionStoreMetadata(m_object, key.c_str(), value->GetObject(), flags);
 }
 
 

@@ -276,6 +276,7 @@ static bool GetChoiceInputCallback(
 {
 	InteractionHandler* handler = (InteractionHandler*)ctxt;
 	vector<string> choiceStrs;
+	choiceStrs.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		choiceStrs.push_back(choices[i]);
 	return handler->GetChoiceInput(*result, prompt, title, choiceStrs);
@@ -287,6 +288,7 @@ static bool GetLargeChoiceInputCallback(
 {
 	InteractionHandler* handler = (InteractionHandler*)ctxt;
 	vector<string> choiceStrs;
+	choiceStrs.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		choiceStrs.push_back(choices[i]);
 	return handler->GetLargeChoiceInput(*result, prompt,title, choiceStrs);

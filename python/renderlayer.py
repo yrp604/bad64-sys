@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -28,7 +28,7 @@ from .enums import LinearDisassemblyLineType, RenderLayerDefaultEnableState
 from . import binaryview
 from . import types
 from .log import log_error_for_exception
-from typing import Iterable, List, Optional, Union, Tuple
+from typing import Iterable, List, Optional, Union, Tuple, Any
 
 
 class _RenderLayerMetaclass(type):
@@ -48,6 +48,23 @@ class _RenderLayerMetaclass(type):
 		if handle is None:
 			raise KeyError(f"'{value}' is not a valid RenderLayer")
 		return self._handle_to_instance(handle)
+
+	def __contains__(cls: '_RenderLayerMetaclass', name: object) -> bool:
+		if not isinstance(name, str):
+			return False
+		try:
+			cls[name]
+			return True
+		except KeyError:
+			return False
+
+	def get(cls: '_RenderLayerMetaclass', name: str, default: Any = None) -> Optional['RenderLayer']:
+		try:
+			return cls[name]
+		except KeyError:
+			if default is not None:
+				return default
+			return None
 
 	def _handle_to_instance(self, handle):
 		handle_ptr = ctypes.cast(handle, ctypes.c_void_p)
@@ -116,7 +133,7 @@ class RenderLayer(metaclass=_RenderLayerMetaclass):
 	def _apply_to_flow_graph(self, ctxt, graph):
 		try:
 			self.apply_to_flow_graph(binaryninja.FlowGraph(handle=core.BNNewFlowGraphReference(graph)))
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in RenderLayer._apply_to_flow_graph")
 
 	def _apply_to_linear_view_object(self, ctxt, obj, prev, next, in_lines, in_line_count, out_lines, out_line_count):
@@ -138,7 +155,7 @@ class RenderLayer(metaclass=_RenderLayerMetaclass):
 			out_lines_ptr = ctypes.cast(out_lines_buf, ctypes.c_void_p)
 			out_lines[0] = out_lines_buf
 			self._pending_lines[out_lines_ptr.value] = (out_lines_ptr.value, out_lines_buf)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in RenderLayer._apply_to_linear_view_object")
 			out_lines[0] = None
 			out_line_count[0] = 0
@@ -150,7 +167,7 @@ class RenderLayer(metaclass=_RenderLayerMetaclass):
 				if buf.value not in self._pending_lines:
 					raise ValueError("freeing lines list that wasn't allocated")
 				del self._pending_lines[buf.value]
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in RenderLayer._free_lines")
 
 	def apply_to_disassembly_block(
@@ -363,13 +380,15 @@ class RenderLayer(metaclass=_RenderLayerMetaclass):
 							disasm_lines = self.apply_to_block(last_block, disasm_lines)
 							func = block_lines[0].function
 							block = block_lines[0].block
+							view = block_lines[0].view
 							for block_line in disasm_lines:
 								new_block_lines.append(
 									LinearDisassemblyLine(
 										LinearDisassemblyLineType.CodeDisassemblyLineType,
 										func,
 										block,
-										block_line
+										block_line,
+										view
 									)
 								)
 							disasm_lines = []

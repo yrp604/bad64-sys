@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -19,7 +19,7 @@
 # IN THE SOFTWARE.
 
 import ctypes
-from typing import Optional, List, Dict, Union
+from typing import Any, Optional, List, Dict, Union
 import uuid
 
 # Binary Ninja components
@@ -57,17 +57,6 @@ class TypeLibrary:
 		return TypeLibrary(core.BNNewTypeLibrary(arch.handle, name))
 
 	@staticmethod
-	def decompress_to_file(path: str, output: str) -> bool:
-		"""
-		Decompresses a type library file to a file on disk.
-
-		:param str path:
-		:param str output:
-		:rtype: bool
-		"""
-		return core.BNTypeLibraryDecompressToFile(path, output)
-
-	@staticmethod
 	def load_from_file(path: str) -> Optional['TypeLibrary']:
 		"""
 		Loads a finalized type library instance from file
@@ -91,6 +80,17 @@ class TypeLibrary:
 		"""
 		if not core.BNWriteTypeLibraryToFile(self.handle, path):
 			raise OSError(f"Failed to write type library to '{path}'")
+
+	def decompress_to_file(self, path: str) -> None:
+		"""
+		Decompresses the type library file to a file on disk.
+
+		:param str path:
+		:rtype: bool
+		:raises: OSError if saving the file fails
+		"""
+		if not core.BNTypeLibraryDecompressToFile(self.handle, path):
+			raise OSError(f"Failed to decompress type library to '{path}'")
 
 	@staticmethod
 	def from_name(arch: architecture.Architecture, name: str):
@@ -138,6 +138,14 @@ class TypeLibrary:
 	def name(self, value:str):
 		"""Sets the name of a type library instance that has not been finalized"""
 		core.BNSetTypeLibraryName(self.handle, value)
+
+	def duplicate(self) -> 'TypeLibrary':
+		"""
+		Creates a new type library instance with a random GUID and the same data as the current instance.
+
+		:rtype: TypeLibrary
+		"""
+		return TypeLibrary(core.BNDuplicateTypeLibrary(self.handle))
 
 	@property
 	def dependency_name(self) -> Optional[str]:
@@ -187,6 +195,12 @@ class TypeLibrary:
 			raise ValueError(f"Expected name to be str, got {type(name)}")
 		core.BNAddTypeLibraryAlternateName(self.handle, name)
 
+	def remove_alternate_name(self, name: str) -> None:
+		"""Removes an extra name from this type library instance that has not been finalized"""
+		if not isinstance(name, str):
+			raise ValueError(f"Expected name to be str, got {type(name)}")
+		core.BNRemoveTypeLibraryAlternateName(self.handle, name)
+
 	@property
 	def platform_names(self) -> List[str]:
 		"""
@@ -233,9 +247,18 @@ class TypeLibrary:
 		"""
 		return core.BNFinalizeTypeLibrary(self.handle)
 
-	def query_metadata(self, key: str) -> Optional['metadata.MetadataValueType']:
+	def register(self) -> None:
+		"""
+		Make a created or loaded Type Library available for Platforms to use when loading binaries.
+		"""
+		core.BNRegisterTypeLibrary(self.handle)
+
+	def query_metadata(self, key: str) -> 'metadata.MetadataValueType':
 		"""
 		`query_metadata` retrieves a metadata associated with the given key stored in the type library
+
+		.. note:: As of Binary Ninja 5.3 this API now raises KeyError on failure. \
+			Please use `get_metadata` for a non-raising version of the API.
 
 		:param string key: key to query
 		:rtype: metadata associated with the key
@@ -247,7 +270,35 @@ class TypeLibrary:
 		"""
 		md_handle = core.BNTypeLibraryQueryMetadata(self.handle, key)
 		if md_handle is None:
-			return None
+			raise KeyError(key)
+		return metadata.Metadata(handle=md_handle).value
+
+	def get_metadata(self, key: str, default: Any = None) -> 'metadata.MetadataValueType | Any':
+		"""
+		`get_metadata` retrieves a metadata value associated with the given key stored in the current BinaryView.
+
+		This method behaves like `dict.get()`:
+
+		- If the key exists, its metadata value is returned.
+		- If the key does not exist and `default` is not provided, `None` is returned.
+		- If the key does not exist and `default` is provided, `default` is returned.
+
+		:param str key: key to query
+		:param default: value to return if the key does not exist (defaults to None)
+		:rtype: metadata associated with the key or the default value
+		:Example:
+
+			>>> tl.store_metadata("integer", 1337)
+			>>> tl.get_metadata("integer")
+			1337L
+			>>> tl.get_metadata("missing")
+			None
+			>>> tl.get_metadata("missing", 42)
+			42
+		"""
+		md_handle = core.BNTypeLibraryQueryMetadata(self.handle, key)
+		if md_handle is None:
+			return default
 		return metadata.Metadata(handle=md_handle).value
 
 	def store_metadata(self, key: str, md: metadata.Metadata) -> None:
@@ -314,7 +365,7 @@ class TypeLibrary:
 		"""
 		return typecontainer.TypeContainer(core.BNGetTypeLibraryTypeContainer(self.handle))
 
-	def add_named_object(self, name: 'types.QualifiedName', type: 'types.Type') -> None:
+	def add_named_object(self, name: Union[types.QualifiedName, str], type: 'types.Type') -> None:
 		"""
 		`add_named_object` directly inserts a named object into the type library's object store.
 		This is not done recursively, so care should be taken that types referring to other types
@@ -334,6 +385,18 @@ class TypeLibrary:
 		if not isinstance(type, types.Type):
 			raise ValueError("type must be a Type")
 		core.BNAddTypeLibraryNamedObject(self.handle, name._to_core_struct(), type.handle)
+
+	def remove_named_object(self, name: Union[types.QualifiedName, str]) -> None:
+		"""
+		`remove_named_object` removes a named object from the type library's object store.
+		This does not remove any types that are referenced by the object, only the object itself.
+		
+		:param QualifiedName name:
+		:rtype: None
+		"""
+		if not isinstance(name, types.QualifiedName):
+			name = types.QualifiedName(name)
+		core.BNRemoveTypeLibraryNamedObject(self.handle, name._to_core_struct())
 
 	def add_named_type(self, name: 'types.QualifiedNameType', type: 'types.Type') -> None:
 		"""
@@ -356,13 +419,24 @@ class TypeLibrary:
 			raise ValueError("parameter type must be a Type")
 		core.BNAddTypeLibraryNamedType(self.handle, name._to_core_struct(), type.handle)
 
-	def add_type_source(self, name: types.QualifiedName, source: str) -> None:
+	def remove_named_type(self, name: Union[types.QualifiedName, str]) -> None:
+		"""
+		`remove_named_type` removes a named type from the type library's type store.
+		This does not remove any objects that reference the type, only the type itself.
+		"""
+		if not isinstance(name, types.QualifiedName):
+			name = types.QualifiedName(name)
+		core.BNRemoveTypeLibraryNamedType(self.handle, name._to_core_struct())
+
+	def add_type_source(self, name: Union[types.QualifiedName, str], source: str) -> None:
 		"""
 		Manually flag NamedTypeReferences to the given QualifiedName as originating from another source
 		TypeLibrary with the given dependency name.
 
 		.. warning:: Use this api with extreme caution.
 		"""
+		if not isinstance(name, types.QualifiedName):
+			name = types.QualifiedName(name)
 		core.BNAddTypeLibraryNamedTypeSource(self.handle, types.QualifiedName(name)._to_core_struct(), source)
 
 	def get_named_object(self, name: Union[types.QualifiedName, str]) -> Optional[types.Type]:

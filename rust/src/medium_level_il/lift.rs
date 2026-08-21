@@ -102,6 +102,10 @@ pub enum MediumLevelILLiftedInstructionKind {
     ModuDp(LiftedBinaryOp),
     Mods(LiftedBinaryOp),
     ModsDp(LiftedBinaryOp),
+    MinSigned(LiftedBinaryOp),
+    MaxSigned(LiftedBinaryOp),
+    MinUnsigned(LiftedBinaryOp),
+    MaxUnsigned(LiftedBinaryOp),
     CmpE(LiftedBinaryOp),
     CmpNe(LiftedBinaryOp),
     CmpSlt(LiftedBinaryOp),
@@ -154,6 +158,13 @@ pub enum MediumLevelILLiftedInstructionKind {
     SharedParamSlot(LiftedSharedParamSlot),
     Neg(LiftedUnaryOp),
     Not(LiftedUnaryOp),
+    Bswap(LiftedUnaryOp),
+    Popcnt(LiftedUnaryOp),
+    Clz(LiftedUnaryOp),
+    Ctz(LiftedUnaryOp),
+    Rbit(LiftedUnaryOp),
+    Cls(LiftedUnaryOp),
+    Abs(LiftedUnaryOp),
     Sx(LiftedUnaryOp),
     Zx(LiftedUnaryOp),
     LowPart(LiftedUnaryOp),
@@ -175,14 +186,24 @@ pub enum MediumLevelILLiftedInstructionKind {
     LoadSsa(LiftedLoadSsa),
     Ret(LiftedRet),
     Var(Var),
+    VarOutput(VarOutput),
+    VarOutputField(VarOutputField),
+    StoreOutput(LiftedStoreOutput),
     AddressOf(Var),
+    PassByRef(LiftedUnaryOp),
+    ReturnByRef(LiftedUnaryOp),
     VarField(Field),
     AddressOfField(Field),
     VarSsa(VarSsa),
     VarAliased(VarSsa),
     VarSsaField(VarSsaField),
     VarAliasedField(VarSsaField),
+    VarOutputSsa(VarOutputSsa),
+    VarOutputSsaField(VarOutputSsaField),
+    VarOutputAliased(VarOutputAliased),
+    VarOutputAliasedField(VarOutputAliasedField),
     Trap(Trap),
+    BlockToExpand(LiftedBlockToExpand),
     // A placeholder for instructions that the Rust bindings do not yet support.
     // Distinct from `Unimpl` as that is a valid instruction.
     NotYetImplemented,
@@ -248,6 +269,10 @@ impl MediumLevelILLiftedInstruction {
             ModuDp(_) => "ModuDp",
             Mods(_) => "Mods",
             ModsDp(_) => "ModsDp",
+            MinSigned(_) => "MinSigned",
+            MaxSigned(_) => "MaxSigned",
+            MinUnsigned(_) => "MinUnsigned",
+            MaxUnsigned(_) => "MaxUnsigned",
             CmpE(_) => "CmpE",
             CmpNe(_) => "CmpNe",
             CmpSlt(_) => "CmpSlt",
@@ -298,8 +323,18 @@ impl MediumLevelILLiftedInstruction {
             SyscallUntyped(_) => "SyscallUntyped",
             SeparateParamList(_) => "SeparateParamList",
             SharedParamSlot(_) => "SharedParamSlot",
+            VarOutput(_) => "VarOutput",
+            VarOutputField(_) => "VarOutputField",
+            StoreOutput(_) => "StoreOutput",
             Neg(_) => "Neg",
             Not(_) => "Not",
+            Bswap(_) => "Bswap",
+            Popcnt(_) => "Popcnt",
+            Clz(_) => "Clz",
+            Ctz(_) => "Ctz",
+            Rbit(_) => "Rbit",
+            Cls(_) => "Cls",
+            Abs(_) => "Abs",
             Sx(_) => "Sx",
             Zx(_) => "Zx",
             LowPart(_) => "LowPart",
@@ -322,13 +357,20 @@ impl MediumLevelILLiftedInstruction {
             Ret(_) => "Ret",
             Var(_) => "Var",
             AddressOf(_) => "AddressOf",
+            PassByRef(_) => "PassByRef",
+            ReturnByRef(_) => "ReturnByRef",
             VarField(_) => "VarField",
             AddressOfField(_) => "AddressOfField",
             VarSsa(_) => "VarSsa",
             VarAliased(_) => "VarAliased",
             VarSsaField(_) => "VarSsaField",
             VarAliasedField(_) => "VarAliasedField",
+            VarOutputSsa(_) => "VarOutputSsa",
+            VarOutputSsaField(_) => "VarOutputSsaField",
+            VarOutputAliased(_) => "VarOutputAliased",
+            VarOutputAliasedField(_) => "VarOutputAliasedField",
             Trap(_) => "Trap",
+            BlockToExpand(_) => "BlockToExpand",
         }
     }
 
@@ -437,7 +479,8 @@ impl MediumLevelILLiftedInstruction {
             ],
             Add(op) | Sub(op) | And(op) | Or(op) | Xor(op) | Lsl(op) | Lsr(op) | Asr(op)
             | Rol(op) | Ror(op) | Mul(op) | MuluDp(op) | MulsDp(op) | Divu(op) | DivuDp(op)
-            | Divs(op) | DivsDp(op) | Modu(op) | ModuDp(op) | Mods(op) | ModsDp(op) | CmpE(op)
+            | Divs(op) | DivsDp(op) | Modu(op) | ModuDp(op) | Mods(op) | ModsDp(op)
+            | MinSigned(op) | MaxSigned(op) | MinUnsigned(op) | MaxUnsigned(op) | CmpE(op)
             | CmpNe(op) | CmpSlt(op) | CmpUlt(op) | CmpSle(op) | CmpUle(op) | CmpSge(op)
             | CmpUge(op) | CmpSgt(op) | CmpUgt(op) | TestBit(op) | AddOverflow(op) | FcmpE(op)
             | FcmpNe(op) | FcmpLt(op) | FcmpLe(op) | FcmpGe(op) | FcmpGt(op) | FcmpO(op)
@@ -451,7 +494,7 @@ impl MediumLevelILLiftedInstruction {
                 ("carry", Operand::Expr(*op.carry.clone())),
             ],
             Call(op) | Tailcall(op) => vec![
-                ("output", Operand::VarList(op.output.clone())),
+                ("output", Operand::ExprList(op.output.clone())),
                 ("dest", Operand::Expr(*op.dest.clone())),
                 ("params", Operand::ExprList(op.params.clone())),
             ],
@@ -466,7 +509,7 @@ impl MediumLevelILLiftedInstruction {
                 ("src_memory", Operand::Int(op.src_memory)),
             ],
             Syscall(op) => vec![
-                ("output", Operand::VarList(op.output.clone())),
+                ("output", Operand::ExprList(op.output.clone())),
                 ("params", Operand::ExprList(op.params.clone())),
             ],
             Intrinsic(op) => vec![
@@ -490,39 +533,40 @@ impl MediumLevelILLiftedInstruction {
                 ("output", Operand::VarSsaList(op.output.clone())),
             ],
             CallSsa(op) | TailcallSsa(op) => vec![
-                ("output", Operand::VarSsaList(op.output.clone())),
+                ("output", Operand::ExprList(op.output.clone())),
                 ("dest", Operand::Expr(*op.dest.clone())),
                 ("params", Operand::ExprList(op.params.clone())),
                 ("src_memory", Operand::Int(op.src_memory)),
             ],
             CallUntypedSsa(op) | TailcallUntypedSsa(op) => vec![
-                ("output", Operand::VarSsaList(op.output.clone())),
+                ("output", Operand::ExprList(op.output.clone())),
                 ("dest", Operand::Expr(*op.dest.clone())),
                 ("params", Operand::ExprList(op.params.clone())),
                 ("stack", Operand::Expr(*op.stack.clone())),
             ],
             SyscallSsa(op) => vec![
-                ("output", Operand::VarSsaList(op.output.clone())),
+                ("output", Operand::ExprList(op.output.clone())),
                 ("params", Operand::ExprList(op.params.clone())),
                 ("src_memory", Operand::Int(op.src_memory)),
             ],
             SyscallUntypedSsa(op) => vec![
-                ("output", Operand::VarSsaList(op.output.clone())),
+                ("output", Operand::ExprList(op.output.clone())),
                 ("params", Operand::ExprList(op.params.clone())),
                 ("stack", Operand::Expr(*op.stack.clone())),
             ],
             CallUntyped(op) | TailcallUntyped(op) => vec![
-                ("output", Operand::VarList(op.output.clone())),
+                ("output", Operand::ExprList(op.output.clone())),
                 ("dest", Operand::Expr(*op.dest.clone())),
                 ("params", Operand::ExprList(op.params.clone())),
                 ("stack", Operand::Expr(*op.stack.clone())),
             ],
             SyscallUntyped(op) => vec![
-                ("output", Operand::VarList(op.output.clone())),
+                ("output", Operand::ExprList(op.output.clone())),
                 ("params", Operand::ExprList(op.params.clone())),
                 ("stack", Operand::Expr(*op.stack.clone())),
             ],
-            Neg(op) | Not(op) | Sx(op) | Zx(op) | LowPart(op) | BoolToInt(op) | UnimplMem(op)
+            Neg(op) | Not(op) | Bswap(op) | Popcnt(op) | Clz(op) | Ctz(op) | Rbit(op) | Cls(op)
+            | Abs(op) | Sx(op) | Zx(op) | LowPart(op) | BoolToInt(op) | UnimplMem(op)
             | Fsqrt(op) | Fneg(op) | Fabs(op) | FloatToInt(op) | IntToFloat(op) | FloatConv(op)
             | RoundToInt(op) | Floor(op) | Ceil(op) | Ftrunc(op) | Load(op) => {
                 vec![("src", Operand::Expr(*op.src.clone()))]
@@ -544,6 +588,14 @@ impl MediumLevelILLiftedInstruction {
             SeparateParamList(op) => vec![("params", Operand::ExprList(op.params.clone()))],
             SharedParamSlot(op) => vec![("params", Operand::ExprList(op.params.clone()))],
             Var(op) | AddressOf(op) => vec![("src", Operand::Var(op.src))],
+            VarOutput(op) => vec![("dest", Operand::Var(op.dest))],
+            VarOutputField(op) => vec![
+                ("dest", Operand::Var(op.dest)),
+                ("offset", Operand::Int(op.offset)),
+            ],
+            StoreOutput(op) => vec![("dest", Operand::Expr(*op.dest.clone()))],
+            PassByRef(op) => vec![("src", Operand::Expr(*op.src.clone()))],
+            ReturnByRef(op) => vec![("src", Operand::Expr(*op.src.clone()))],
             VarField(op) | AddressOfField(op) => vec![
                 ("src", Operand::Var(op.src)),
                 ("offset", Operand::Int(op.offset)),
@@ -553,7 +605,23 @@ impl MediumLevelILLiftedInstruction {
                 ("src", Operand::VarSsa(op.src)),
                 ("offset", Operand::Int(op.offset)),
             ],
+            VarOutputSsa(op) => vec![("dest", Operand::VarSsa(op.dest))],
+            VarOutputSsaField(op) => vec![
+                ("dest", Operand::VarSsa(op.dest)),
+                ("prev", Operand::VarSsa(op.prev)),
+                ("offset", Operand::Int(op.offset)),
+            ],
+            VarOutputAliased(op) => vec![
+                ("dest", Operand::VarSsa(op.dest)),
+                ("prev", Operand::VarSsa(op.prev)),
+            ],
+            VarOutputAliasedField(op) => vec![
+                ("dest", Operand::VarSsa(op.dest)),
+                ("prev", Operand::VarSsa(op.prev)),
+                ("offset", Operand::Int(op.offset)),
+            ],
             Trap(op) => vec![("vector", Operand::Int(op.vector))],
+            BlockToExpand(op) => vec![("exprs", Operand::ExprList(op.exprs.clone()))],
         }
     }
 }

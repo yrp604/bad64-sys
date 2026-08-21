@@ -11,7 +11,7 @@ use super::{
     Remote, RemoteFolder, RemoteProject, RemoteSnapshot,
 };
 
-use crate::binary_view::{BinaryView, BinaryViewExt};
+use crate::binary_view::BinaryView;
 use crate::database::Database;
 use crate::file_metadata::FileMetadata;
 use crate::progress::{NoProgressCallback, ProgressCallback, SplitProgressBuilder};
@@ -57,10 +57,10 @@ impl RemoteFile {
         RemoteFile::get_for_local_database(&database)
     }
 
-    pub fn core_file(&self) -> Result<ProjectFile, ()> {
+    pub fn core_file(&self) -> Result<Ref<ProjectFile>, ()> {
         let result = unsafe { BNRemoteFileGetCoreFile(self.handle.as_ptr()) };
         NonNull::new(result)
-            .map(|handle| unsafe { ProjectFile::from_raw(handle) })
+            .map(|handle| unsafe { ProjectFile::ref_from_raw(handle) })
             .ok_or(())
     }
 
@@ -394,53 +394,62 @@ impl RemoteFile {
         unsafe { BnString::into_string(result) }
     }
 
-    // TODO: AsRef<Path>
-    /// Download a file from its remote, saving all snapshots to a database in the
-    /// specified location. Returns a FileContext for opening the file later.
+    /// Download a remote file and possibly dependencies to its project
+    /// Dependency download behavior depends on the value of the collaboration.autoDownloadFileDependencies setting
     ///
-    /// * `db_path` - File path for saved database
-    /// * `progress_function` - Function to call for progress updates
-    pub fn download(&self, db_path: &Path) -> Result<Ref<FileMetadata>, ()> {
-        sync::download_file(self, db_path)
+    /// * `progress` - Function to call on progress updates
+    pub fn download(&self) -> Result<(), ()> {
+        self.download_with_progress(NoProgressCallback)
     }
 
-    // TODO: AsRef<Path>
-    /// Download a file from its remote, saving all snapshots to a database in the
-    /// specified location. Returns a FileContext for opening the file later.
+    /// Download a remote file and possibly dependencies to its project
+    /// Dependency download behavior depends on the value of the collaboration.autoDownloadFileDependencies setting
     ///
-    /// * `db_path` - File path for saved database
-    /// * `progress_function` - Function to call for progress updates
-    pub fn download_with_progress<F>(
-        &self,
-        db_path: &Path,
-        progress_function: F,
-    ) -> Result<Ref<FileMetadata>, ()>
+    /// * `progress` - Function to call on progress updates
+    pub fn download_with_progress<P>(&self, mut progress: P) -> Result<(), ()>
     where
-        F: ProgressCallback,
+        P: ProgressCallback,
     {
-        sync::download_file_with_progress(self, db_path, progress_function)
+        let success = unsafe {
+            BNRemoteFileDownload(
+                self.handle.as_ptr(),
+                Some(P::cb_progress_callback),
+                &mut progress as *mut P as *mut c_void,
+            )
+        };
+        success.then_some(()).ok_or(())
     }
 
     /// Download a remote file and save it to a BNDB at the given `path`, returning the associated [`FileMetadata`].
-    pub fn download_database(&self, path: &Path) -> Result<Ref<FileMetadata>, ()> {
-        let file = self.download(path)?;
-        let database = file.database().ok_or(())?;
-        self.sync(&database, DatabaseConflictHandlerFail, NoNameChangeset)?;
-        Ok(file)
+    /// Download a file from its remote, saving all snapshots to a database in the
+    /// specified location. Returns a FileContext for opening the file later.
+    ///
+    /// * `path` - File path for saved database
+    pub fn download_database(&self, path: impl AsRef<Path>) -> Result<Ref<FileMetadata>, ()> {
+        //TODO: deprecated, use RemoteFile.download() and ProjectFile.export()
+        self.download_database_with_progress(path, NoProgressCallback)
     }
 
-    // TODO: This might be a bad helper... maybe remove...
-    /// Download a remote file and save it to a BNDB at the given `path`.
+    /// Download a remote file and save it to a BNDB at the given `path`, returning the associated [`FileMetadata`].
+    /// Download a file from its remote, saving all snapshots to a database in the
+    /// specified location. Returns a FileContext for opening the file later.
+    ///
+    /// * `path` - File path for saved database
+    /// * `progress_function` - Function to call for progress updates
     pub fn download_database_with_progress(
         &self,
-        path: &Path,
+        path: impl AsRef<Path>,
         progress: impl ProgressCallback,
     ) -> Result<Ref<FileMetadata>, ()> {
+        //TODO: deprecated, use RemoteFile.download_with_progress() and ProjectFile.export()
         let mut progress = progress.split(&[50, 50]);
-        let file = self.download_with_progress(path, progress.next_subpart().unwrap())?;
-        let database = file.database().ok_or(())?;
+        let file = sync::download_file_with_progress(
+            self,
+            path.as_ref(),
+            progress.next_subpart().unwrap(),
+        )?;
         self.sync_with_progress(
-            &database,
+            &file,
             DatabaseConflictHandlerFail,
             NoNameChangeset,
             progress.next_subpart().unwrap(),
@@ -455,11 +464,11 @@ impl RemoteFile {
     /// * `name_changeset` - Function to call for naming a pushed changeset, if necessary
     pub fn sync<C: DatabaseConflictHandler, N: NameChangeset>(
         &self,
-        database: &Database,
+        metadata: &FileMetadata,
         conflict_handler: C,
         name_changeset: N,
     ) -> Result<(), ()> {
-        sync::sync_database(database, self, conflict_handler, name_changeset)
+        sync::sync_database(metadata, self, conflict_handler, name_changeset)
     }
 
     /// Completely sync a file, pushing/pulling/merging/applying changes
@@ -470,13 +479,13 @@ impl RemoteFile {
     /// * `progress` - Function to call for progress updates
     pub fn sync_with_progress<C: DatabaseConflictHandler, P: ProgressCallback, N: NameChangeset>(
         &self,
-        database: &Database,
+        metadata: &FileMetadata,
         conflict_handler: C,
         name_changeset: N,
         progress: P,
     ) -> Result<(), ()> {
         sync::sync_database_with_progress(
-            database,
+            metadata,
             self,
             conflict_handler,
             name_changeset,
@@ -574,6 +583,7 @@ impl PartialEq for RemoteFile {
         self.id() == other.id()
     }
 }
+
 impl Eq for RemoteFile {}
 
 impl ToOwned for RemoteFile {
@@ -583,6 +593,9 @@ impl ToOwned for RemoteFile {
         unsafe { RefCountable::inc_ref(self) }
     }
 }
+
+unsafe impl Send for RemoteFile {}
+unsafe impl Sync for RemoteFile {}
 
 unsafe impl RefCountable for RemoteFile {
     unsafe fn inc_ref(handle: &Self) -> Ref<Self> {

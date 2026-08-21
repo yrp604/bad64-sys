@@ -1,7 +1,7 @@
 use crate::cache::FunctionID;
 use crate::convert::from_bn_symbol;
 use crate::function_guid;
-use binaryninja::binary_view::BinaryViewExt;
+use binaryninja::binary_view::MetadataStoreFlags;
 use binaryninja::function::Function as BNFunction;
 use binaryninja::low_level_il::function::{FunctionMutability, LowLevelILFunction, NonSSA};
 use binaryninja::rc::Ref as BNRef;
@@ -30,7 +30,7 @@ pub fn cached_function_guid<M: FunctionMutability>(
     function.store_metadata(
         "warp_function_guid",
         &function_guid.as_bytes().to_vec(),
-        false,
+        MetadataStoreFlags::PERSISTENT,
     );
     Some(function_guid)
 }
@@ -49,7 +49,7 @@ where
     // TODO: Implied constraints, symbol name, image offset
     let cs_constraints = cached_call_site_constraints(function);
     let adj_constraints = cached_adjacency_constraints(function, filter);
-    cs_constraints.union(&adj_constraints).cloned().collect()
+    cs_constraints.union(&adj_constraints).copied().collect()
 }
 
 pub fn cached_call_site_constraints(function: &BNFunction) -> HashSet<Constraint> {
@@ -155,8 +155,10 @@ impl ConstraintBuilder {
             let guid_constraint = Constraint::from_function(&guid, Some(offset));
             constraints.push(guid_constraint);
         }
-        let symbol_constraint = self.related_symbol_constraint(&function.symbol(), offset);
-        constraints.push(symbol_constraint);
+        if let Some(symbol) = function.defined_symbol() {
+            let symbol_constraint = self.related_symbol_constraint(&symbol, offset);
+            constraints.push(symbol_constraint);
+        }
         constraints
     }
 

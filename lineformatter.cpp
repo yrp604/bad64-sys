@@ -1,4 +1,4 @@
-// Copyright (c) 2024-2025 Vector 35 Inc
+// Copyright (c) 2024-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -126,6 +126,7 @@ vector<Ref<LineFormatter>> LineFormatter::GetList()
 	size_t count;
 	BNLineFormatter** list = BNGetLineFormatterList(&count);
 	vector<Ref<LineFormatter>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(new CoreLineFormatter(list[i]));
 	BNFreeLineFormatterList(list);

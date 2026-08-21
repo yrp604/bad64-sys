@@ -1,4 +1,5 @@
 #include "fileinfo.h"
+#include "entropy.h"
 #include "fontsettings.h"
 #include "theme.h"
 #include "copyablelabel.h"
@@ -6,6 +7,8 @@
 #include <QApplication>
 #include <QToolTip>
 #include <QPainter>
+#include <QFontMetrics>
+#include <QScrollArea>
 #include <QtConcurrent/QtConcurrent>
 #include <QFuture>
 #include <QFutureWatcher>
@@ -16,6 +19,27 @@ void FileInfoWidget::addCopyableField(const QString& name, const QVariant& value
 
 	const auto valueLabel = new CopyableLabel(value.toString(), getThemeColor(AlphanumericHighlightColor));
 	valueLabel->setFont(getMonospaceFont(this));
+
+	this->m_layout->addWidget(new QLabel(name), row, column);
+	this->m_layout->addWidget(valueLabel, row++, column + 1);
+}
+
+void FileInfoWidget::addCopyableFieldWithElide(const QString& name, const QVariant& value, int maxWidth)
+{
+	auto& [row, column] = this->m_fieldPosition;
+
+	const auto fullText = value.toString();
+	const auto font = getMonospaceFont(this);
+	const QFontMetrics fontMetrics(font);
+	auto elidedText = fontMetrics.elidedText(fullText, Qt::ElideMiddle, maxWidth);
+	elidedText.replace(QChar(0x2026), "...");
+
+	const auto valueLabel = new CopyableLabel(elidedText, getThemeColor(AlphanumericHighlightColor));
+	valueLabel->setFont(font);
+	valueLabel->setCopyText(fullText);
+	valueLabel->setToolTip(fullText + "\n\nClick to Copy");
+	valueLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+	valueLabel->setWordWrap(false);
 
 	this->m_layout->addWidget(new QLabel(name), row, column);
 	this->m_layout->addWidget(valueLabel, row++, column + 1);
@@ -105,7 +129,7 @@ void FileInfoWidget::addHashFields(BinaryViewRef view)
 	});
 }
 
-FileInfoWidget::FileInfoWidget(QWidget* parent, BinaryViewRef bv)
+FileInfoWidget::FileInfoWidget(QWidget* parent, BinaryViewRef bv, EntropyWidget* entropyWidget)
 {
 	this->m_layout = new QGridLayout();
 	this->m_layout->setContentsMargins(0, 0, 0, 0);
@@ -115,17 +139,34 @@ FileInfoWidget::FileInfoWidget(QWidget* parent, BinaryViewRef bv)
 
 	const auto file = bv->GetFile();
 	const auto filePath = file->GetOriginalFilename();
-	this->addCopyableField("Path on disk: ", filePath.c_str());
+
+	const QFontMetrics monoMetrics(getMonospaceFont(this));
+	const int maxPathWidth = monoMetrics.horizontalAdvance(QString(64, '0'));
+
+	this->addCopyableFieldWithElide("Path on disk: ", filePath.c_str(), maxPathWidth);
 
 	// If triage view is opened from a project, show both actual filepath and path relative to project
 	if (const auto fileProjectRef = file->GetProjectFile())
 	{
 		const auto projectFilePath = file->GetProjectFile()->GetPathInProject();
-		this->addCopyableField("Path in project: ", projectFilePath.c_str());
+		this->addCopyableFieldWithElide("Path in project: ", projectFilePath.c_str(), maxPathWidth);
 	}
 
 	const auto fileSize = QString::number(view->GetLength(), 16).prepend("0x");
 	this->addCopyableField("Size: ", fileSize);
+
+	// Display entropy value from the entropy widget
+	if (entropyWidget)
+	{
+		auto& [row, column] = this->m_fieldPosition;
+		m_entropyLabel = new CopyableLabel("Calculating...", getThemeColor(AlphanumericHighlightColor));
+		m_entropyLabel->setFont(getMonospaceFont(this));
+		this->m_layout->addWidget(new QLabel("Entropy: "), row, column);
+		this->m_layout->addWidget(m_entropyLabel, row++, column + 1);
+
+		// Connect to entropy updates
+		connect(entropyWidget, &EntropyWidget::entropyUpdated, this, &FileInfoWidget::updateEntropy);
+	}
 
 	this->addHashFields(view);
 
@@ -133,4 +174,14 @@ FileInfoWidget::FileInfoWidget(QWidget* parent, BinaryViewRef bv)
 	this->m_layout->setColumnMinimumWidth(FileInfoWidget::m_maxColumns * 3 - 1, scaledWidth);
 	this->m_layout->setColumnStretch(FileInfoWidget::m_maxColumns * 3 - 1, 1);
 	setLayout(this->m_layout);
+}
+
+
+void FileInfoWidget::updateEntropy(double avgEntropy)
+{
+	if (m_entropyLabel)
+	{
+		const auto entropyStr = QString::number(avgEntropy, 'f', 6);
+		m_entropyLabel->setText(entropyStr);
+	}
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -442,6 +442,7 @@ std::vector<RenderLayer*> FlowGraph::GetRenderLayers() const
 	size_t count = 0;
 	BNRenderLayer** layers = BNGetFlowGraphRenderLayers(m_object, &count);
 	std::vector<RenderLayer*> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i ++)
 	{
 		result.push_back(new CoreRenderLayer(layers[i]));

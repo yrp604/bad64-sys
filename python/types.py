@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -20,24 +20,26 @@
 
 import ctypes
 import typing
-from typing import Generator, List, Union, Tuple, Optional, Iterable, Dict, Generic, TypeVar, Callable
+from typing import Generator, List, Union, Tuple, Optional, Iterable, Dict, Generic, TypeVar, Callable, overload
 from dataclasses import dataclass
 import uuid
 
 # Binary Ninja components
 from . import _binaryninjacore as core
 from .enums import (
-	StructureVariant, SymbolType, SymbolBinding, TypeClass, NamedTypeReferenceClass,
-	ReferenceType, VariableSourceType,
+	InlineDuringAnalysis, StructureVariant, SymbolType, SymbolBinding, TypeClass, NamedTypeReferenceClass,
+	ReferenceType, VariableSourceType, ValueLocationSource,
 	TypeReferenceType, MemberAccess, MemberScope, TypeDefinitionLineType,
 	TokenEscapingType,
-	NameType, PointerSuffix, PointerBaseType
+	NameType, PointerSuffix, PointerBaseType,
+	Endianness, IntegerDisplayType
 )
 from . import callingconvention
 from . import function as _function
 from . import variable
 from . import architecture
 from . import binaryview
+from . import function
 from . import platform as _platform
 from . import typecontainer
 from . import typelibrary
@@ -50,11 +52,13 @@ ParamsType = Union[List['Type'], List['FunctionParameter'], List[Tuple[str, 'Typ
 MembersType = Union[List['StructureMember'], List['Type'], List[Tuple['Type', str]]]
 EnumMembersType = Union[List[Tuple[str, int]], List[str], List['EnumerationMember']]
 SomeType = Union['TypeBuilder', 'Type']
+ReturnValueOrType = Union['TypeBuilder', 'Type', 'ReturnValue']
 TypeContainerType = Union['binaryview.BinaryView', 'typelibrary.TypeLibrary']
 NameSpaceType = Optional[Union[str, List[str], 'NameSpace']]
 TypeParserResult = typeparser.TypeParserResult
 BasicTypeParserResult = typeparser.BasicTypeParserResult
 ResolveMemberCallback = Callable[['NamedTypeReferenceType', 'StructureType', int, int, int, 'StructureMember'], None]
+OptionalLocation = Optional[Union['ValueLocation', 'ValueLocationWithConfidence', 'variable.CoreVariable']]
 # The following are needed to prevent the type checker from getting
 # confused as we have member functions in `Type` named the same thing
 _int = int
@@ -85,7 +89,7 @@ def convert_integer(value: ctypes.c_uint64, signed: bool, width: int) -> int:
 	return func[bool(signed)][width](value).value
 
 class QualifiedName:
-	def __init__(self, name: Optional[QualifiedNameType] = None):
+	def __init__(self, name: Optional[QualifiedNameType] = None, join: str = "::"):
 		self._name: List[str] = []
 		if isinstance(name, str):
 			self._name = [name]
@@ -99,9 +103,10 @@ class QualifiedName:
 					self._name.append(i.decode("utf-8"))
 				else:
 					self._name.append(str(i))
+		self._join = join
 
 	def __str__(self):
-		return "::".join(self.name)
+		return self.join.join(self.name)
 
 	def __repr__(self):
 		return repr(str(self))
@@ -115,7 +120,7 @@ class QualifiedName:
 		elif isinstance(other, list):
 			return self.name == other
 		elif isinstance(other, self.__class__):
-			return self.name == other.name
+			return self.name == other.name and self.join == other.join
 		return NotImplemented
 
 	def __ne__(self, other):
@@ -163,7 +168,7 @@ class QualifiedName:
 			name_list[i] = self.name[i].encode("utf-8")
 		result.name = name_list
 		result.nameCount = len(self.name)
-		result.join = "::".encode("utf-8")
+		result.join = self.join
 		return result
 
 	@staticmethod
@@ -171,7 +176,7 @@ class QualifiedName:
 		result = []
 		for i in range(0, name.nameCount):
 			result.append(name.name[i].decode("utf-8"))
-		return QualifiedName(result)
+		return QualifiedName(result, name.join)
 
 	@property
 	def name(self) -> List[str]:
@@ -181,6 +186,14 @@ class QualifiedName:
 	def name(self, value: List[str]) -> None:
 		self._name = value
 
+	@property
+	def join(self) -> str:
+		return self._join
+
+	@join.setter
+	def join(self, value: str) -> None:
+		self._join = value
+
 	@staticmethod
 	def escape(name: QualifiedNameType, escaping: TokenEscapingType) -> str:
 		return core.BNEscapeTypeName(str(QualifiedName(name)), escaping)
@@ -188,7 +201,6 @@ class QualifiedName:
 	@staticmethod
 	def unescape(name: QualifiedNameType, escaping: TokenEscapingType) -> str:
 		return core.BNUnescapeTypeName(str(QualifiedName(name)), escaping)
-
 
 @dataclass(frozen=True)
 class TypeReferenceSource:
@@ -207,16 +219,14 @@ class TypeReferenceSource:
 
 
 class NameSpace(QualifiedName):
-	def __str__(self):
-		return ":".join(self.name)
-
 	def _to_core_struct(self) -> core.BNNameSpace:
 		result = core.BNNameSpace()
 		name_list = (ctypes.c_char_p * len(self.name))()
 		for i in range(0, len(self.name)):
-			name_list[i] = self.name[i].encode('charmap')
+			name_list[i] = self.name[i].encode('utf-8')
 		result.name = name_list
 		result.nameCount = len(self.name)
+		result.join = self.join
 		return result
 
 	@staticmethod
@@ -224,7 +234,7 @@ class NameSpace(QualifiedName):
 		result = []
 		for i in range(0, name.nameCount):
 			result.append(name.name[i].decode("utf-8"))
-		return NameSpace(result)
+		return NameSpace(result, name.join)
 
 	@staticmethod
 	def get_core_struct(name: Optional[Union[str, List[str], 'NameSpace']]) -> Optional[core.BNNameSpace]:
@@ -425,25 +435,233 @@ class Symbol(CoreSymbol):
 		_namespace = NameSpace.get_core_struct(namespace)
 		_handle = core.BNCreateSymbol(sym_type, short_name, full_name, raw_name, addr, binding, _namespace, ordinal)
 		assert _handle is not None, "core.BNCreateSymbol return None"
-		super(Symbol, self).__init__(_handle)
+		super().__init__(_handle)
+
+
+@dataclass
+class ValueLocationComponent:
+	var: 'variable.CoreVariable'
+	offset: int = 0
+	size: Optional[int] = None
+
+	@staticmethod
+	def _from_core_struct(struct: core.BNValueLocationComponent, arch: Optional['architecture.Architecture'] = None):
+		if arch is None:
+			var = variable.CoreVariable.from_BNVariable(struct.variable)
+		else:
+			var = variable.ArchitectureVariable.from_BNVariable(arch, struct.variable)
+		offset = struct.offset
+		size = None
+		if struct.sizeValid:
+			size = struct.size
+		return ValueLocationComponent(var, offset, size)
+
+	def _to_core_struct(self) -> core.BNValueLocationComponent:
+		struct = core.BNValueLocationComponent()
+		struct.variable = self.var.to_BNVariable()
+		struct.offset = self.offset
+		struct.sizeValid = self.size is not None
+		if self.size is not None:
+			struct.size = self.size
+		return struct
+
+	def to_string(self, arch: Optional['architecture.Architecture']):
+		if arch is None:
+			if isinstance(self.var, variable.ArchitectureVariable):
+				arch = self.var.arch
+			elif isinstance(self.var, variable.Variable):
+				arch = self.var.function.arch
+		if arch is None:
+			return f"{repr(self.var)} offset {hex(self.offset)} size {repr(self.size)}"
+		struct = self._to_core_struct()
+		return core.BNValueLocationComponentToString(struct, arch.handle)
+
+	def __str__(self):
+		return self.to_string(None)
+
+	def __repr__(self):
+		return f"<component {self.to_string(None)}>"
+
+
+@dataclass
+class ValueLocation:
+	components: List['ValueLocationComponent']
+	indirect: bool = False
+	returned_pointer: Optional['variable.CoreVariable'] = None
+
+	@staticmethod
+	def _from_core_struct(struct: core.BNValueLocation, arch: Optional['architecture.Architecture'] = None):
+		components = []
+		for i in range(struct.count):
+			components.append(ValueLocationComponent._from_core_struct(struct.components[i], arch))
+		indirect = struct.indirect
+		returned_pointer = None
+		if struct.returnedPointerValid:
+			if arch is None:
+				returned_pointer = variable.CoreVariable.from_BNVariable(struct.returnedPointer)
+			else:
+				returned_pointer = variable.ArchitectureVariable.from_BNVariable(arch, struct.returnedPointer)
+		return ValueLocation(components, indirect, returned_pointer)
+
+	def _to_core_struct(self) -> core.BNValueLocation:
+		struct = core.BNValueLocation()
+		struct.count = len(self.components)
+		components = (core.BNValueLocationComponent * len(self.components))()
+		for i in range(len(self.components)):
+			components[i] = self.components[i]._to_core_struct()
+		struct.components = components
+		struct.indirect = self.indirect
+		struct.returnedPointerValid = self.returned_pointer is not None
+		if self.returned_pointer is not None:
+			struct.returnedPointer = self.returned_pointer.to_BNVariable()
+		return struct
+
+	def with_confidence(self, confidence: int) -> 'ValueLocationWithConfidence':
+		return ValueLocationWithConfidence(self, confidence)
+
+	def variable_for_parameter(self, idx: int) -> Optional['variable.CoreVariable']:
+		struct = self._to_core_struct()
+		var = core.BNVariable()
+		if core.BNGetValueLocationVariableForParameter(struct, var, idx):
+			return variable.CoreVariable.from_BNVariable(var)
+		return None
+
+	@staticmethod
+	def parse(string: str, arch: 'architecture.Architecture') -> 'ValueLocation':
+		struct = core.BNValueLocation()
+		error = ctypes.c_char_p()
+		if not core.BNParseValueLocation(string, arch.handle, struct, error):
+			assert error.value is not None, "core.BNParseValueLocation returned 'error' set to None"
+			error_str = error.value.decode("utf-8")
+			core.free_string(error)
+			raise SyntaxError(error_str)
+		result = ValueLocation._from_core_struct(struct, arch)
+		core.BNFreeValueLocation(struct)
+		return result
+
+	def to_string(self, arch: Optional['architecture.Architecture']):
+		if arch is None:
+			for component in self.components:
+				if isinstance(component.var, variable.ArchitectureVariable):
+					arch = component.var.arch
+					break
+				if isinstance(component.var, variable.Variable):
+					arch = component.var.function.arch
+					break
+		if arch is None:
+			if self.indirect:
+				indirect = " indirect"
+			else:
+				indirect = ""
+			if self.returned_pointer is None:
+				ret_ptr = ""
+			else:
+				ret_ptr = f" returned ptr {repr(self.returned_pointer)}"
+			return f"{repr(self.components)}{indirect}{ret_ptr}"
+		struct = self._to_core_struct()
+		return core.BNValueLocationToString(struct, arch.handle)
+
+	def __str__(self):
+		return self.to_string(None)
+
+	def __repr__(self):
+		return f"<value location {self.to_string(None)}>"
+
+
+@dataclass
+class ValueLocationWithConfidence:
+	location: 'ValueLocation'
+	confidence: int = core.max_confidence
+
+	@staticmethod
+	def from_optional_location(location: OptionalLocation) -> Optional['ValueLocationWithConfidence']:
+		if isinstance(location, ValueLocation):
+			return location.with_confidence(core.max_confidence)
+		elif isinstance(location, ValueLocationWithConfidence):
+			return location
+		elif location is not None:
+			return ValueLocation([ValueLocationComponent(location)]).with_confidence(core.max_confidence)
+		return None
+
+	def __repr__(self):
+		return f"<value location {self.location.to_string(None)} confidence {self.confidence}>"
+
+
+@dataclass
+class ReturnValue:
+	type: SomeType
+	location: Optional['ValueLocationWithConfidence']
+
+	def __init__(self, ty: SomeType, location: OptionalLocation = None):
+		self.type = ty.immutable_copy()
+		self.location = ValueLocationWithConfidence.from_optional_location(location)
+
+	@staticmethod
+	def _from_core_struct(struct: core.BNReturnValue, arch: Optional['architecture.Architecture'] = None):
+		ty = Type.from_core_struct(struct.type).with_confidence(struct.typeConfidence)
+		if struct.defaultLocation:
+			location = None
+		else:
+			location = ValueLocation._from_core_struct(struct.location, arch).with_confidence(struct.locationConfidence)
+		return ReturnValue(ty, location)
+
+	def _to_core_struct(self) -> core.BNReturnValue:
+		struct = core.BNReturnValue()
+		ic = self.type.immutable_copy()
+		struct.type = ic.handle
+		struct.typeConfidence = ic.confidence
+		struct.defaultLocation = self.location is None
+		if self.location is None:
+			struct.location.count = 0
+			struct.locationConfidence = 0
+		else:
+			struct.location = self.location.location._to_core_struct()
+			struct.locationConfidence = self.location.confidence
+		return struct
 
 
 @dataclass
 class FunctionParameter:
 	type: SomeType
 	name: str = ""
-	location: Optional['variable.VariableNameAndType'] = None
+	location_source: ValueLocationSource = ValueLocationSource.DefaultLocationSource
+	location: Optional['ValueLocation'] = None
+
+	def __init__(self, type: SomeType, name: str = "", location: OptionalLocation = None, source: Optional['ValueLocationSource'] = None):
+		self.type = type
+		self.name = name
+		location = ValueLocationWithConfidence.from_optional_location(location)
+		if location is not None:
+			self.location = location.location
+			self.location_source = ValueLocationSource.CustomLocationSource
+		else:
+			self.location = None
+			self.location_source = ValueLocationSource.DefaultLocationSource
+		if source is not None:
+			self.location_source = source
 
 	def __repr__(self):
-		if (self.location is not None) and (self.location.name != self.name):
-			return f"{self.type.immutable_copy().get_string_before_name()} {self.name}{self.type.immutable_copy().get_string_after_name()} @ {self.location.name}"
-		return f"{self.type.immutable_copy().get_string_before_name()} {self.name}{self.type.immutable_copy().get_string_after_name()}"
+		ic = self.type.immutable_copy()
+		if (self.location is not None) and (str(self.location) != self.name):
+			return f"{ic.get_string_before_name()} {self.name}{ic.get_string_after_name()} @ {self.location}"
+		return f"{ic.get_string_before_name()} {self.name}{ic.get_string_after_name()}"
 
 	def immutable_copy(self) -> 'FunctionParameter':
-		return FunctionParameter(self.type.immutable_copy(), self.name, self.location)
+		return FunctionParameter(self.type.immutable_copy(), self.name, self.location, self.location_source)
 
 	def mutable_copy(self) -> 'FunctionParameter':
-		return FunctionParameter(self.type.mutable_copy(), self.name, self.location)
+		return FunctionParameter(self.type.mutable_copy(), self.name, self.location, self.location_source)
+
+	@staticmethod
+	def _from_core_struct(struct: 'core.BNFunctionParameter', arch: Optional['architecture.Architecture'] = None) -> 'FunctionParameter':
+		name = struct.name
+		ty = Type.from_core_struct(struct.type).with_confidence(struct.typeConfidence)
+		source = ValueLocationSource(struct.locationSource)
+		if source == ValueLocationSource.CustomLocationSource:
+			location = ValueLocation._from_core_struct(struct.location, arch)
+		else:
+			location = None
+		return FunctionParameter(ty, name, location, source)
 
 
 @dataclass(frozen=True)
@@ -528,6 +746,39 @@ class BoolWithConfidence:
 			return BoolWithConfidence(value, confidence)._to_core_struct()
 
 
+@dataclass(frozen=True)
+class InlineDuringAnalysisWithConfidence:
+	"""Represents an InlineDuringAnalysis value with an associated confidence level."""
+	value: InlineDuringAnalysis
+	confidence: int = core.max_confidence
+
+	def __eq__(self, other):
+		if not isinstance(other, self.__class__):
+			# For backward compatibility, allow comparison with bool
+			if isinstance(other, bool):
+				return bool(self.value) == other
+			# Allow comparison with enum value directly
+			return self.value == other
+		else:
+			return (self.value, self.confidence) == (other.value, other.confidence)
+
+	def __ne__(self, other):
+		return not (self == other)
+
+	def __bool__(self):
+		return bool(self.value)
+
+	def _to_core_struct(self) -> core.BNInlineDuringAnalysisWithConfidence:
+		result = core.BNInlineDuringAnalysisWithConfidence()
+		result.value = self.value
+		result.confidence = self.confidence
+		return result
+
+	@classmethod
+	def from_core_struct(cls, core_struct: core.BNInlineDuringAnalysisWithConfidence) -> 'InlineDuringAnalysisWithConfidence':
+		return cls(InlineDuringAnalysis(core_struct.value), core_struct.confidence)
+
+
 @dataclass
 class MutableTypeBuilder(Generic[TB]):
 	type: TB
@@ -552,8 +803,8 @@ class MutableTypeBuilder(Generic[TB]):
 
 
 class TypeBuilderAttributes(dict):
-	def __init__(self, builder, *args):
-		super(TypeBuilderAttributes, self).__init__(*args)
+	def __init__(self, builder: 'TypeBuilder', *args):
+		super().__init__(*args)
 		self._builder = builder
 
 	def __setitem__(self, key: str, value: str):
@@ -562,13 +813,13 @@ class TypeBuilderAttributes(dict):
 		if not isinstance(value, str):
 			raise TypeError("Type attribute value must be a string")
 		core.BNSetTypeBuilderAttribute(self._builder._handle, key, value)
-		super(TypeBuilderAttributes, self).__setitem__(key, value)
+		super().__setitem__(key, value)
 
 	def __delitem__(self, key: str):
 		if not isinstance(key, str):
 			raise TypeError("Type attribute key must be a string")
 		core.BNRemoveTypeBuilderAttribute(self._builder._handle, key)
-		super(TypeBuilderAttributes, self).__delitem__(key)
+		super().__delitem__(key)
 
 
 class TypeBuilder:
@@ -602,18 +853,8 @@ class TypeBuilder:
 	def __str__(self):
 		return str(self.immutable_copy())
 
-	@property
-	def handle(self) -> core.BNTypeHandle:
-		return self.immutable_copy().handle
-
 	def __hash__(self):
-		return hash(ctypes.addressof(self.handle.contents))
-
-	def _to_core_struct(self) -> core.BNTypeWithConfidence:
-		type_conf = core.BNTypeWithConfidence()
-		type_conf.type = self.handle
-		type_conf.confidence = self.confidence
-		return type_conf
+		return hash(ctypes.addressof(self._handle.contents))
 
 	def immutable_copy(self):
 		Types = {
@@ -624,6 +865,7 @@ class TypeBuilder:
 		    TypeClass.StructureTypeClass: StructureType,
 		    TypeClass.EnumerationTypeClass: EnumerationType,
 		    TypeClass.NamedTypeReferenceClass: NamedTypeReferenceType,
+		    TypeClass.FragmentTypeClass: FragmentType,
 		}
 		return Types[self.type_class](self._finalized, self.platform, self.confidence)
 
@@ -695,7 +937,7 @@ class TypeBuilder:
 
 	@staticmethod
 	def named_type_from_type_and_id(
-	    type_id: str, name: QualifiedNameType, type: Optional['Type'] = None
+	    type_id: str, name: QualifiedNameType, type: Optional[SomeType] = None
 	) -> 'NamedTypeReferenceBuilder':
 		return NamedTypeReferenceBuilder.named_type_from_type_and_id(type_id, name, type)
 
@@ -707,7 +949,7 @@ class TypeBuilder:
 
 	@staticmethod
 	def pointer(
-	    arch: 'architecture.Architecture', type: 'Type', const: BoolWithConfidenceType = BoolWithConfidence(False),
+	    arch: 'architecture.Architecture', type: SomeType, const: BoolWithConfidenceType = BoolWithConfidence(False),
 	    volatile: BoolWithConfidenceType = BoolWithConfidence(False),
 	    ref_type: ReferenceType = ReferenceType.PointerReferenceType
 	) -> 'PointerBuilder':
@@ -715,19 +957,19 @@ class TypeBuilder:
 
 	@staticmethod
 	def pointer_of_width(
-	    width: _int, type: 'Type', const: BoolWithConfidenceType = BoolWithConfidence(False),
+	    width: _int, type: SomeType, const: BoolWithConfidenceType = BoolWithConfidence(False),
 	    volatile: BoolWithConfidenceType = BoolWithConfidence(False),
 	    ref_type: ReferenceType = ReferenceType.PointerReferenceType
 	) -> 'PointerBuilder':
 		return PointerBuilder.create(type, width, None, const, volatile, ref_type)
 
 	@staticmethod
-	def array(type: 'Type', count: _int) -> 'ArrayBuilder':
+	def array(type: SomeType, count: _int) -> 'ArrayBuilder':
 		return ArrayBuilder.create(type, count)
 
 	@staticmethod
 	def function(
-	    ret: Optional['Type'] = None, params: Optional[ParamsType] = None,
+		ret: Optional[ReturnValueOrType] = None, params: Optional[ParamsType] = None,
 	    calling_convention: Optional['callingconvention.CallingConvention'] = None,
 	    variable_arguments: Optional[BoolWithConfidenceType] = None,
 	    stack_adjust: Optional[OffsetWithConfidenceType] = None
@@ -832,7 +1074,8 @@ class TypeBuilder:
 
 	@child.setter
 	def child(self, value: SomeType) -> None:
-		core.BNTypeBuilderSetChildType(self._handle, value.immutable_copy()._to_core_struct())
+		ic = value.immutable_copy()
+		core.BNTypeBuilderSetChildType(self._handle, ic._to_core_struct())
 
 	@property
 	def alternate_name(self) -> Optional[str]:
@@ -868,6 +1111,15 @@ class TypeBuilder:
 	def signed(self, value: BoolWithConfidenceType) -> None:
 		_value = BoolWithConfidence.get_core_struct(value)
 		core.BNTypeBuilderSetSigned(self._handle, _value)
+
+	@property
+	def display_type(self) -> IntegerDisplayType:
+		"""Integer display type for this type."""
+		return core.BNGetIntegerTypeDisplayType(self.immutable_copy().handle)
+
+	@display_type.setter
+	def display_type(self, value: IntegerDisplayType) -> None:
+		core.BNSetIntegerTypeDisplayType(self._handle, value)
 
 	@property
 	def children(self) -> List['TypeBuilder']:
@@ -964,7 +1216,7 @@ class WideCharBuilder(TypeBuilder):
 class PointerBuilder(TypeBuilder):
 	@classmethod
 	def create(
-	    cls, type: 'Type', width: int = 4, arch: Optional['architecture.Architecture'] = None,
+	    cls, type: SomeType, width: int = 4, arch: Optional['architecture.Architecture'] = None,
 	    const: BoolWithConfidenceType = False, volatile: BoolWithConfidenceType = False,
 	    ref_type: ReferenceType = ReferenceType.PointerReferenceType, platform: Optional['_platform.Platform'] = None,
 	    confidence: int = core.max_confidence
@@ -978,7 +1230,8 @@ class PointerBuilder(TypeBuilder):
 
 		_const = BoolWithConfidence.get_core_struct(const)
 		_volatile = BoolWithConfidence.get_core_struct(volatile)
-		handle = core.BNCreatePointerTypeBuilderOfWidth(_width, type._to_core_struct(), _const, _volatile, ref_type)
+		ic = type.immutable_copy()
+		handle = core.BNCreatePointerTypeBuilderOfWidth(_width, ic._to_core_struct(), _const, _volatile, ref_type)
 		assert handle is not None, "BNCreatePointerTypeBuilderOfWidth returned None"
 		return cls(handle, platform, confidence)
 
@@ -1092,6 +1345,99 @@ class PointerBuilder(TypeBuilder):
 	def pointer_base_offset(self, value: int):
 		self.set_pointer_base(self.pointer_base_type, value)
 
+class FragmentBuilder(TypeBuilder):
+	"""Mutable builder for a bitwise slice, with live size and container placement measured in bits."""
+
+	@classmethod
+	def create(
+	    cls, type: SomeType, width: int,
+	    offset: int, endianness: Endianness = Endianness.LittleEndian,
+	    confidence: int = core.max_confidence
+	) -> 'FragmentBuilder':
+		"""
+		Create a mutable fragment whose live bits initially fill a container whose width is measured in bytes.
+
+		:param Type type: larger source type of which the fragment is a slice
+		:param int width: container width in bytes; the initial live fragment size is ``width * 8`` bits
+		:param int offset: original source byte offset within ``type``
+		:param Endianness endianness: byte order used to map source-layout bytes to container bits
+		:param int confidence: confidence in the resulting type
+		:return: Mutable fragment type builder
+		:rtype: FragmentBuilder
+		:Example:
+			>>> source = Type.array(Type.int(1, False), 16)
+			>>> fragment = FragmentBuilder.create(source, 8, 4, Endianness.BigEndian)
+			>>> fragment.offset, fragment.fragment_width_bits
+			(4, 64)
+		"""
+		ic = type.immutable_copy()
+		handle = core.BNCreateFragmentTypeBuilder(width, ic._to_core_struct(), offset, endianness)
+		assert handle is not None, "BNCreateFragmentTypeBuilder returned None"
+		return cls(handle, None, confidence)
+
+	@property
+	def offset(self) -> int:
+		"""Original source byte offset, not the live fragment's placement within the container."""
+		return core.BNGetTypeBuilderFragmentOriginalOffsetBytes(self._handle)
+
+	@offset.setter
+	def offset(self, value: int):
+		core.BNSetTypeBuilderFragmentOriginalOffsetBytes(self._handle, value)
+
+	@property
+	def fragment_original_width(self) -> int:
+		"""Width in bytes of the original source window, not the live fragment's bit size."""
+		return core.BNGetTypeBuilderFragmentOriginalWidthBytes(self._handle)
+
+	@fragment_original_width.setter
+	def fragment_original_width(self, value: int):
+		core.BNSetTypeBuilderFragmentOriginalWidthBytes(self._handle, value)
+
+	@property
+	def fragment_start_bit(self) -> int:
+		"""Bit offset of the live fragment in the current container, where the least-significant bit is zero."""
+		return core.BNGetTypeBuilderFragmentStartBit(self._handle)
+
+	@fragment_start_bit.setter
+	def fragment_start_bit(self, value: int):
+		core.BNSetTypeBuilderFragmentStartBit(self._handle, value)
+
+	@property
+	def fragment_width_bits(self) -> int:
+		"""Size in bits of the live fragment represented in the current container."""
+		return core.BNGetTypeBuilderFragmentWidthBits(self._handle)
+
+	@fragment_width_bits.setter
+	def fragment_width_bits(self, value: int):
+		core.BNSetTypeBuilderFragmentWidthBits(self._handle, value)
+
+	@property
+	def fragment_truncated_start_bits(self) -> int:
+		"""Number of original low-order logical fragment bits no longer represented."""
+		return core.BNGetTypeBuilderFragmentTruncatedStartBits(self._handle)
+
+	@fragment_truncated_start_bits.setter
+	def fragment_truncated_start_bits(self, value: int):
+		core.BNSetTypeBuilderFragmentTruncatedStartBits(self._handle, value)
+
+	@property
+	def fragment_wrap_bit(self) -> int:
+		"""Saved historical wrap boundary; zero means the current container width is used."""
+		return core.BNGetTypeBuilderFragmentWrapBit(self._handle)
+
+	@fragment_wrap_bit.setter
+	def fragment_wrap_bit(self, value: int):
+		core.BNSetTypeBuilderFragmentWrapBit(self._handle, value)
+
+	@property
+	def endianness(self) -> Endianness:
+		"""Byte order used to map source-layout bytes to bit positions in the current container."""
+		return Endianness(core.BNGetTypeBuilderFragmentEndianness(self._handle))
+
+	@endianness.setter
+	def endianness(self, value: Endianness):
+		core.BNSetTypeBuilderFragmentEndianness(self._handle, value)
+
 
 class ArrayBuilder(TypeBuilder):
 	@classmethod
@@ -1099,7 +1445,8 @@ class ArrayBuilder(TypeBuilder):
 	    cls, type: SomeType, element_count: int, platform: Optional['_platform.Platform'] = None,
 	    confidence: int = core.max_confidence
 	) -> 'ArrayBuilder':
-		handle = core.BNCreateArrayTypeBuilder(type._to_core_struct(), element_count)
+		ic = type.immutable_copy()
+		handle = core.BNCreateArrayTypeBuilder(ic._to_core_struct(), element_count)
 		assert handle is not None, "BNCreateArrayTypeBuilder returned None"
 		return cls(handle, platform, confidence)
 
@@ -1118,20 +1465,22 @@ class ArrayBuilder(TypeBuilder):
 class FunctionBuilder(TypeBuilder):
 	@classmethod
 	def create(
-	    cls, return_type: Optional[SomeType] = None,
+	    cls, return_type: Optional[ReturnValueOrType] = None,
 	    calling_convention: Optional['callingconvention.CallingConvention'] = None, params: Optional[ParamsType] = None,
 	    var_args: Optional[BoolWithConfidenceType] = None, stack_adjust: Optional[OffsetWithConfidenceType] = None,
 	    platform: Optional['_platform.Platform'] = None, confidence: int = core.max_confidence,
 	    can_return: Optional[BoolWithConfidence] = None, reg_stack_adjust: Optional[Dict['architecture.RegisterName', OffsetWithConfidenceType]] = None,
-	    return_regs: Optional[Union['RegisterSet', List['architecture.RegisterType']]] = None,
 	    name_type: 'NameType' = NameType.NoNameType,
 	    pure: Optional[BoolWithConfidence] = None
 	) -> 'FunctionBuilder':
-		param_buf = FunctionBuilder._to_core_struct(params)
+		param_buf, type_list = FunctionBuilder._to_core_struct(params)
 		if return_type is None:
-			ret_conf = Type.void()._to_core_struct()
+			ret = ReturnValue(Type.void())
+		elif isinstance(return_type, ReturnValue):
+			ret = return_type
 		else:
-			ret_conf = return_type._to_core_struct()
+			ret = ReturnValue(return_type)
+		ret_conf = ret._to_core_struct()
 
 		conv_conf = core.BNCallingConventionWithConfidence()
 		if calling_convention is None:
@@ -1150,18 +1499,6 @@ class FunctionBuilder(TypeBuilder):
 			reg_stack_adjust_regs[i] = reg
 			reg_stack_adjust_values[i].value = adjust.value
 			reg_stack_adjust_values[i].confidence = adjust.confidence
-
-		return_regs_set = core.BNRegisterSetWithConfidence()
-		if return_regs is None or platform is None:
-			return_regs_set.count = 0
-			return_regs_set.confidence = 0
-		else:
-			return_regs_set.count = len(return_regs)
-			return_regs_set.confidence = 255
-			return_regs_set.regs = (ctypes.c_uint32 * len(return_regs))()
-
-			for i, reg in enumerate(return_regs):
-				return_regs_set[i] = platform.arch.get_reg_index(reg)
 
 		if var_args is None:
 			vararg_conf = BoolWithConfidence.get_core_struct(False, 0)
@@ -1187,7 +1524,7 @@ class FunctionBuilder(TypeBuilder):
 		handle = core.BNCreateFunctionTypeBuilder(
 		    ret_conf, conv_conf, param_buf, len(params), vararg_conf, can_return_conf, stack_adjust_conf,
 		    reg_stack_adjust_regs, reg_stack_adjust_values, len(reg_stack_adjust),
-		    return_regs_set, name_type, pure_conf
+			name_type, pure_conf
 		)
 		assert handle is not None, "BNCreateFunctionTypeBuilder returned None"
 		return cls(handle, platform, confidence)
@@ -1204,6 +1541,31 @@ class FunctionBuilder(TypeBuilder):
 	def return_value(self, value: SomeType) -> None:
 		self.child = value
 
+	@property
+	def return_value_location(self) -> Optional[ValueLocationWithConfidence]:
+		location = core.BNGetTypeBuilderReturnValueLocation(self._handle)
+		if self.platform is None:
+			arch = None
+		else:
+			arch = self.platform.arch
+		result = ValueLocation._from_core_struct(location.location, arch).with_confidence(location.confidence)
+		core.BNFreeValueLocation(location.location)
+		return result
+
+	@return_value_location.setter
+	def return_value_location(self, value: OptionalLocation):
+		struct = core.BNValueLocationWithConfidence()
+		location = ValueLocationWithConfidence.from_optional_location(value)
+		if location is None:
+			struct.location.count = 0
+			struct.confidence = 0
+		else:
+			struct.location = location.location._to_core_struct()
+			struct.confidence = location.confidence
+		core.BNTypeBuilderSetIsReturnValueDefaultLocation(self._handle, value is None)
+		if value is not None:
+			core.BNTypeBuilderSetReturnValueLocation(self._handle, struct)
+
 	def append(self, type: Union[SomeType, FunctionParameter], name: str = ""):
 		if isinstance(type, FunctionParameter):
 			self.parameters = [*self.parameters, type]
@@ -1213,7 +1575,7 @@ class FunctionBuilder(TypeBuilder):
 	@property
 	def calling_convention(self) -> 'callingconvention.CallingConvention':
 		cc = core.BNGetTypeBuilderCallingConvention(self._handle)
-		return callingconvention.CallingConvention(handle=core.BNNewCallingConventionReference(cc.convention))
+		return callingconvention.CoreCallingConvention(handle=core.BNNewCallingConventionReference(cc.convention))
 
 	@property
 	def can_return(self) -> BoolWithConfidence:
@@ -1253,24 +1615,21 @@ class FunctionBuilder(TypeBuilder):
 		count = ctypes.c_ulonglong()
 		params = core.BNGetTypeBuilderParameters(self._handle, count)
 		assert params is not None, "core.BNGetTypeBuilderParameters returned None"
+		if self.platform is None:
+			arch = None
+		else:
+			arch = self.platform.arch
 		result = []
 		for i in range(0, count.value):
 			param_type = Type.create(
 			    core.BNNewTypeReference(params[i].type), platform=self.platform, confidence=params[i].typeConfidence
 			)
-			if params[i].defaultLocation:
-				param_location = None
+			source = ValueLocationSource(params[i].locationSource)
+			if source == ValueLocationSource.CustomLocationSource:
+				param_location = ValueLocation._from_core_struct(params[i].location, arch)
 			else:
-				name = params[i].name
-				if (params[i].location.type
-				    == VariableSourceType.RegisterVariableSourceType) and (self.platform is not None):
-					name = self.platform.arch.get_reg_name(params[i].location.storage)
-				elif params[i].location.type == VariableSourceType.StackVariableSourceType:
-					name = "arg_%x" % params[i].location.storage
-				param_location = variable.VariableNameAndType(
-				    params[i].location.type, params[i].location.index, params[i].location.storage, name, param_type
-				)
-			result.append(FunctionParameter(param_type, params[i].name, param_location))
+				param_location = None
+			result.append(FunctionParameter(param_type, params[i].name, param_location, source))
 		core.BNFreeTypeParameterList(params, count.value)
 		return result
 
@@ -1282,42 +1641,60 @@ class FunctionBuilder(TypeBuilder):
 	def _to_core_struct(params: Optional[ParamsType] = None):
 		if params is None:
 			params = []
+
+		# type_list is very important as we need to keep a reference to the intermediate type
+		# objects as we're getting their handles if they go out of scope while we're holding
+		# their handles we get a UAF. This is only necessary as we're inside a helper that
+		# has to deal with raw type objects
+		type_list = []
 		param_buf = (core.BNFunctionParameter * len(params))()
 		for i, param in enumerate(params):
 			core_param = param_buf[i]
 			if isinstance(param, (Type, TypeBuilder)):
+				param = param.immutable_copy()
+				type_list.append(param)
 				assert param.handle is not None, "Attempting to construct function parameter without properly constructed type"
 				core_param.name = ""
 				core_param.type = param.handle
 				core_param.typeConfidence = param.confidence
-				core_param.defaultLocation = True
+				core_param.locationSource = int(ValueLocationSource.DefaultLocationSource)
+				core_param.location.count = 0
 			elif isinstance(param, FunctionParameter):
 				assert param.type is not None, "Attempting to construct function parameter without properly constructed type"
+				param_type = param.type.immutable_copy()
+				type_list.append(param_type)
 				core_param.name = param.name
-				core_param.type = param.type.handle
-				core_param.typeConfidence = param.type.confidence
+				core_param.type = param_type.handle
+				core_param.typeConfidence = param_type.confidence
+				core_param.locationSource = int(param.location_source)
 				if param.location is None:
-					core_param.defaultLocation = True
+					core_param.location.count = 0
 				else:
-					core_param.defaultLocation = False
-					core_param.location.type = param.location.source_type
-					core_param.location.index = param.location.index
-					core_param.location.storage = param.location.storage
+					if isinstance(param.location, ValueLocation):
+						core_param.location = param.location._to_core_struct()
+					elif isinstance(param.location, variable.CoreVariable):
+						core_param.location = ValueLocation([ValueLocationComponent(param.location)])._to_core_struct()
+					else:
+						raise ValueError(f"Conversion from unsupported parameter location type {type(param.location)}")
 			elif isinstance(param, tuple):
 				name, _type = param
 				if not isinstance(name, str) or not isinstance(_type, (Type, TypeBuilder)):
 					raise ValueError(f"Conversion from unsupported function parameter type {type(param)}")
+				_type = _type.immutable_copy()
+				type_list.append(_type)
 				core_param.name = name
 				core_param.type = _type.handle
 				core_param.typeConfidence = _type.confidence
-				core_param.defaultLocation = True
+				core_param.locationSource = int(ValueLocationSource.DefaultLocationSource)
+				core_param.location.count = 0
 			else:
 				raise ValueError(f"Conversion from unsupported function parameter type {type(param)}")
-		return param_buf
+		return param_buf, type_list
 
 	@parameters.setter
 	def parameters(self, params: List[FunctionParameter]) -> None:
-		core.BNSetFunctionTypeBuilderParameters(self._handle, FunctionBuilder._to_core_struct(params), len(params))
+		ic, type_list = FunctionBuilder._to_core_struct(params)
+		core.BNSetFunctionTypeBuilderParameters(self._handle, ic, len(params))
 
 	@property
 	def children(self) -> List[TypeBuilder]:
@@ -1327,11 +1704,34 @@ class FunctionBuilder(TypeBuilder):
 class StructureMember:
 	type: 'Type'
 	name: str
-	offset: int
+	offset: int # Offset (in bytes) from the start of the structure. Use `bit_offset` for bitwise fields.
 	access: MemberAccess = MemberAccess.NoAccess
 	scope: MemberScope = MemberScope.NoScope
-	bit_position: int = 0
+	bit_position: int = 0 # Relative to the starting byte at `offset`, must be in range 0 to 7.
 	bit_width: int = 0
+
+	@property
+	def bit_offset(self) -> int:
+		"""
+		Total bit offset from the start of the structure.
+
+		Computed as: offset * 8 + bit_position.
+		"""
+		return (self.offset * 8) + self.bit_position
+
+	@bit_offset.setter
+	def bit_offset(self, value: int) -> None:
+		"""
+		Set the total bit offset from the start of the structure.
+
+		This will automatically set:
+		  - offset to value // 8 (byte offset)
+		  - bit_position to value % 8 (bit within the byte offset)
+		"""
+		if value < 0:
+			raise ValueError("bit_offset must be non-negative")
+		self.offset = value // 8
+		self.bit_position = value % 8
 
 	def __repr__(self):
 		if len(self.name) == 0:
@@ -1404,7 +1804,7 @@ class StructureBuilder(TypeBuilder):
 	    self, handle: core.BNTypeBuilderHandle, builder_handle: core.BNStructureBuilderHandle,
 	    platform: Optional['_platform.Platform'] = None, confidence: int = core.max_confidence
 	):
-		super(StructureBuilder, self).__init__(handle, platform, confidence)
+		super().__init__(handle, platform, confidence)
 		assert builder_handle is not None, "Can't instantiate Structure with builder_handle set to None"
 		self.builder_handle = builder_handle
 
@@ -1415,17 +1815,20 @@ class StructureBuilder(TypeBuilder):
 		for member in members:
 			if isinstance(member, Tuple):
 				_type, _name = member
+				ic = _type.immutable_copy()
 				core.BNAddStructureBuilderMember(
-				    structure_builder_handle, _type._to_core_struct(), _name, MemberAccess.NoAccess, MemberScope.NoScope
+				    structure_builder_handle, ic._to_core_struct(), _name, MemberAccess.NoAccess, MemberScope.NoScope
 				)
 			elif isinstance(member, StructureMember):
+				ic = member.type.immutable_copy()
 				core.BNAddStructureBuilderMemberAtOffset(
-				    structure_builder_handle, member.type._to_core_struct(), member.name, member.offset, False,
+				    structure_builder_handle, ic._to_core_struct(), member.name, member.offset, False,
 				    member.access, member.scope, member.bit_position, member.bit_width
 				)
 			elif isinstance(member, (TypeBuilder, Type)):
+				ic = member.immutable_copy()
 				core.BNAddStructureBuilderMember(
-				    structure_builder_handle, member._to_core_struct(), "", MemberAccess.NoAccess, MemberScope.NoScope
+				    structure_builder_handle, ic._to_core_struct(), "", MemberAccess.NoAccess, MemberScope.NoScope
 				)
 			else:
 				raise ValueError(f"Structure member type {member} not supported")
@@ -1588,8 +1991,9 @@ class StructureBuilder(TypeBuilder):
 		return None
 
 	def replace(self, index: int, type: SomeType, name: str = "", overwrite_existing: bool = True):
+		ic = type.immutable_copy()
 		core.BNReplaceStructureBuilderMember(
-		    self.builder_handle, index, type._to_core_struct(), name, overwrite_existing
+		    self.builder_handle, index, ic._to_core_struct(), name, overwrite_existing
 		)
 
 	def remove(self, index: int):
@@ -1599,8 +2003,9 @@ class StructureBuilder(TypeBuilder):
 	    self, offset: int, type: SomeType, name: str = "", overwrite_existing: bool = True,
 	    access: MemberAccess = MemberAccess.NoAccess, scope: MemberScope = MemberScope.NoScope, bit_position: int = 0, bit_width: int = 0
 	):
+		ic = type.immutable_copy()
 		core.BNAddStructureBuilderMemberAtOffset(
-		    self.builder_handle, type._to_core_struct(), name, offset, overwrite_existing, access, scope, bit_position,
+		    self.builder_handle, ic._to_core_struct(), name, offset, overwrite_existing, access, scope, bit_position,
 		    bit_width
 		)
 
@@ -1609,7 +2014,8 @@ class StructureBuilder(TypeBuilder):
 	    scope: MemberScope = MemberScope.NoScope
 	) -> 'StructureBuilder':
 		# appends a member at the end of the structure growing the structure
-		core.BNAddStructureBuilderMember(self.builder_handle, type._to_core_struct(), name, access, scope)
+		ic = type.immutable_copy()
+		core.BNAddStructureBuilderMember(self.builder_handle, ic._to_core_struct(), name, access, scope)
 		return self
 
 	def add_member_at_offset(
@@ -1617,8 +2023,9 @@ class StructureBuilder(TypeBuilder):
 	    access: MemberAccess = MemberAccess.NoAccess, scope: MemberScope = MemberScope.NoScope, bit_position: int = 0, bit_width: int = 0
 	) -> 'StructureBuilder':
 		# Adds structure member to the given offset optionally clearing any members within the range offset-offset+len(type)
+		ic = type.immutable_copy()
 		core.BNAddStructureBuilderMemberAtOffset(
-		    self.builder_handle, type._to_core_struct(), name, offset, overwrite_existing, access, scope, bit_position,
+		    self.builder_handle, ic._to_core_struct(), name, offset, overwrite_existing, access, scope, bit_position,
 		    bit_width
 		)
 		return self
@@ -1645,7 +2052,7 @@ class EnumerationBuilder(TypeBuilder):
 	    self, handle: core.BNTypeBuilderHandle, enum_builder_handle: core.BNEnumerationBuilderHandle,
 	    platform: Optional['_platform.Platform'] = None, confidence: int = core.max_confidence
 	):
-		super(EnumerationBuilder, self).__init__(handle, platform, confidence)
+		super().__init__(handle, platform, confidence)
 		assert isinstance(enum_builder_handle, core.BNEnumerationBuilderHandle)
 		self.enum_builder_handle = enum_builder_handle
 
@@ -1732,7 +2139,13 @@ class EnumerationBuilder(TypeBuilder):
 		for member in self.members:
 			yield member
 
-	def __getitem__(self, value: Union[str, int, slice]):
+	@overload
+	def __getitem__(self, value: Union[str, int]) -> EnumerationMember: ...
+
+	@overload
+	def __getitem__(self, value: slice) -> List[EnumerationMember]: ...
+
+	def __getitem__(self, value: Union[str, int, slice]) -> EnumerationMember:
 		if isinstance(value, str):
 			for member in self.members:
 				if member.name == value:
@@ -1766,7 +2179,7 @@ class NamedTypeReferenceBuilder(TypeBuilder):
 		assert isinstance(
 		    ntr_builder_handle, core.BNNamedTypeReferenceBuilderHandle
 		), "Failed to construct NameTypeReference"
-		super(NamedTypeReferenceBuilder, self).__init__(handle, platform, confidence)
+		super().__init__(handle, platform, confidence)
 		self.ntr_builder_handle = ntr_builder_handle
 
 	@classmethod
@@ -1794,6 +2207,11 @@ class NamedTypeReferenceBuilder(TypeBuilder):
 	def name(self) -> QualifiedName:
 		return QualifiedName._from_core_struct(core.BNGetTypeReferenceBuilderName(self.ntr_builder_handle))
 
+	@name.setter
+	def name(self, value: QualifiedNameType) -> None:
+		qn = QualifiedName(value)._to_core_struct()
+		core.BNSetNamedTypeReferenceBuilderName(self.ntr_builder_handle, qn)
+
 	@property
 	def id(self) -> str:
 		return core.BNGetTypeReferenceBuilderId(self.ntr_builder_handle)
@@ -1802,9 +2220,17 @@ class NamedTypeReferenceBuilder(TypeBuilder):
 	def type_id(self) -> str:
 		return core.BNGetTypeReferenceBuilderId(self.ntr_builder_handle)
 
+	@type_id.setter
+	def type_id(self, value: str) -> None:
+		core.BNSetNamedTypeReferenceBuilderTypeId(self.ntr_builder_handle, value)
+
 	@property
 	def named_type_class(self) -> NamedTypeReferenceClass:
 		return NamedTypeReferenceClass(core.BNGetTypeReferenceBuilderClass(self.ntr_builder_handle))
+
+	@named_type_class.setter
+	def named_type_class(self, value: NamedTypeReferenceClass) -> None:
+		core.BNSetNamedTypeReferenceBuilderTypeClass(self.ntr_builder_handle, value)
 
 	@staticmethod
 	def named_type(
@@ -1819,7 +2245,7 @@ class NamedTypeReferenceBuilder(TypeBuilder):
 
 	@staticmethod
 	def named_type_from_type_and_id(
-	    type_id: str, name: QualifiedNameType, type: Optional['Type'] = None
+	    type_id: str, name: QualifiedNameType, type: Optional[SomeType] = None
 	) -> 'NamedTypeReferenceBuilder':
 		if type is None:
 			return NamedTypeReferenceBuilder.create(NamedTypeReferenceClass.UnknownNamedTypeClass, type_id, name)
@@ -1978,6 +2404,11 @@ class Type:
 			result[attributes[i].name] = attributes[i].value
 		core.BNFreeTypeAttributeList(attributes, count.value)
 		return result
+
+	@property
+	def display_type(self) -> IntegerDisplayType:
+		"""Integer display type for this type."""
+		return core.BNGetIntegerTypeDisplayType(self._handle)
 
 	def _to_core_struct(self) -> core.BNTypeWithConfidence:
 		type_conf = core.BNTypeWithConfidence()
@@ -2193,6 +2624,7 @@ class Type:
 		    TypeClass.IntegerTypeClass: IntegerBuilder, TypeClass.FloatTypeClass: FloatBuilder,
 		    TypeClass.PointerTypeClass: PointerBuilder, TypeClass.ArrayTypeClass: ArrayBuilder,
 		    TypeClass.FunctionTypeClass: FunctionBuilder, TypeClass.WideCharTypeClass: WideCharBuilder,
+		    TypeClass.FragmentTypeClass: FragmentBuilder,
 		    # TypeClass.StructureTypeClass:Structure,
 		    # TypeClass.EnumerationTypeClass:Enumeration,
 		    # TypeClass.NamedTypeReferenceClass:NamedTypeReference,
@@ -2326,12 +2758,12 @@ class Type:
 		return result
 
 	@staticmethod
-	def named_type_from_type(name: QualifiedNameType, type: 'Type') -> 'NamedTypeReferenceType':
+	def named_type_from_type(name: QualifiedNameType, type: SomeType) -> 'NamedTypeReferenceType':
 		return NamedTypeReferenceType.create_from_type(name, type)
 
 	@staticmethod
 	def named_type_from_type_and_id(
-	    type_id: str, name: QualifiedNameType, type: Optional['Type'] = None
+	    type_id: str, name: QualifiedNameType, type: Optional[SomeType] = None
 	) -> 'NamedTypeReferenceType':
 		return NamedTypeReferenceType.create_from_type(name, type, type_id)
 
@@ -2351,7 +2783,7 @@ class Type:
 
 	@staticmethod
 	def pointer(
-	    arch: 'architecture.Architecture', type: 'Type', const: BoolWithConfidenceType = BoolWithConfidence(False),
+	    arch: 'architecture.Architecture', type: SomeType, const: BoolWithConfidenceType = BoolWithConfidence(False),
 	    volatile: BoolWithConfidenceType = BoolWithConfidence(False),
 	    ref_type: ReferenceType = ReferenceType.PointerReferenceType, width: _int = None
 	) -> 'PointerType':
@@ -2364,10 +2796,34 @@ class Type:
 
 	@staticmethod
 	def pointer_of_width(
-	    width: _int, type: 'Type', const: BoolWithConfidenceType = False, volatile: BoolWithConfidenceType = False,
+	    width: _int, type: SomeType, const: BoolWithConfidenceType = False, volatile: BoolWithConfidenceType = False,
 	    ref_type: ReferenceType = ReferenceType.PointerReferenceType
 	) -> 'PointerType':
 		return PointerType.create_with_width(width, type, const, volatile, ref_type)
+
+	@staticmethod
+	def fragment(
+	    type: SomeType, width: _int, offset: _int,
+	    endianness: Endianness = Endianness.LittleEndian
+	) -> 'FragmentType':
+		"""
+		Create a fresh fragment whose live bits initially fill a container whose width is measured in bytes.
+
+		:param Type type: larger source type of which the fragment is a slice
+		:param int width: container width in bytes; the initial live fragment size is ``width * 8`` bits
+		:param int offset: original source byte offset within ``type``
+		:param Endianness endianness: byte order used to map source-layout bytes to container bits
+		:return: Immutable fragment type
+		:rtype: FragmentType
+		:Example:
+			>>> source = Type.array(Type.int(1, False), 16)
+			>>> fragment = Type.fragment(source, 8, 4, Endianness.BigEndian)
+			>>> fragment.target == source
+			True
+			>>> fragment.width, fragment.offset
+			(8, 4)
+		"""
+		return FragmentType.create(type, width, offset, endianness)
 
 	@staticmethod
 	def array(type: 'Type', count: _int) -> 'ArrayType':
@@ -2375,7 +2831,7 @@ class Type:
 
 	@staticmethod
 	def function(
-	    ret: Optional['Type'] = None, params: Optional[ParamsType] = None,
+	    ret: Optional[Union['Type', 'ReturnValue']] = None, params: Optional[ParamsType] = None,
 	    calling_convention: Optional['callingconvention.CallingConvention'] = None,
 	    variable_arguments: BoolWithConfidenceType = False,
 	    stack_adjust: OffsetWithConfidence = OffsetWithConfidence(0)
@@ -2503,7 +2959,7 @@ class BoolType(Type):
 
 class IntegerType(Type):
 	def __init__(self, handle, platform: Optional['_platform.Platform'] = None, confidence: int = core.max_confidence):
-		super(IntegerType, self).__init__(handle, platform, confidence)
+		super().__init__(handle, platform, confidence)
 
 	@classmethod
 	def create(
@@ -2549,7 +3005,7 @@ class FloatType(Type):
 class StructureType(Type):
 	def __init__(self, handle, platform: Optional['_platform.Platform'] = None, confidence: int = core.max_confidence):
 		assert handle is not None, "Attempted to create EnumerationType with handle which is None"
-		super(StructureType, self).__init__(handle, platform, confidence)
+		super().__init__(handle, platform, confidence)
 		struct_handle = core.BNGetTypeStructure(handle)
 		assert struct_handle is not None, "core.BNGetTypeStructure returned None"
 		self.struct_handle = struct_handle
@@ -2586,7 +3042,7 @@ class StructureType(Type):
 	def __del__(self):
 		if core is not None:
 			core.BNFreeStructure(self.struct_handle)
-		super(StructureType, self).__del__()
+		super().__del__()
 
 	def __hash__(self):
 		return hash(ctypes.addressof(self.struct_handle.contents))
@@ -2826,7 +3282,7 @@ class StructureType(Type):
 class EnumerationType(IntegerType):
 	def __init__(self, handle, platform: Optional['_platform.Platform'] = None, confidence: int = core.max_confidence):
 		assert handle is not None, "Attempted to create EnumerationType without handle"
-		super(EnumerationType, self).__init__(handle, platform, confidence)
+		super().__init__(handle, platform, confidence)
 		enum_handle = core.BNGetTypeEnumeration(handle)
 		assert enum_handle is not None, "core.BNGetTypeEnumeration returned None"
 		self.enum_handle = enum_handle
@@ -2834,7 +3290,7 @@ class EnumerationType(IntegerType):
 	def __del__(self):
 		if core is not None:
 			core.BNFreeEnumeration(self.enum_handle)
-		super(EnumerationType, self).__del__()
+		super().__del__()
 
 	def __hash__(self):
 		return hash(ctypes.addressof(self.enum_handle.contents))
@@ -3046,21 +3502,22 @@ class ArrayType(Type):
 class FunctionType(Type):
 	@classmethod
 	def create(
-	    cls, ret: Optional[Type] = None, params: Optional[ParamsType] = None,
+	    cls, ret: Optional[Union[Type, ReturnValue]] = None, params: Optional[ParamsType] = None,
 	    calling_convention: Optional['callingconvention.CallingConvention'] = None,
 	    variable_arguments: BoolWithConfidenceType = BoolWithConfidence(False),
 	    stack_adjust: OffsetWithConfidence = OffsetWithConfidence(0), platform: Optional['_platform.Platform'] = None,
 	    confidence: int = core.max_confidence,
 	    can_return: Union[BoolWithConfidence, bool] = True, reg_stack_adjust: Optional[Dict['architecture.RegisterName', OffsetWithConfidenceType]] = None,
-	    return_regs: Optional[Union['RegisterSet', List['architecture.RegisterType']]] = None,
 	    name_type: 'NameType' = NameType.NoNameType,
 	    pure: Union[BoolWithConfidence, bool] = False
 	) -> 'FunctionType':
 		if ret is None:
-			ret = VoidType.create()
+			ret = ReturnValue(VoidType.create())
+		elif not isinstance(ret, ReturnValue):
+			ret = ReturnValue(ret)
 		if params is None:
 			params = []
-		param_buf = FunctionBuilder._to_core_struct(params)
+		param_buf, type_list = FunctionBuilder._to_core_struct(params)
 		ret_conf = ret._to_core_struct()
 		conv_conf = core.BNCallingConventionWithConfidence()
 		if calling_convention is None:
@@ -3091,18 +3548,6 @@ class FunctionType(Type):
 			reg_stack_adjust_values[i].value = adjust.value
 			reg_stack_adjust_values[i].confidence = adjust.confidence
 
-		return_regs_set = core.BNRegisterSetWithConfidence()
-		if return_regs is None or platform is None:
-			return_regs_set.count = 0
-			return_regs_set.confidence = 0
-		else:
-			return_regs_set.count = len(return_regs)
-			return_regs_set.confidence = 255
-			return_regs_set.regs = (ctypes.c_uint32 * len(return_regs))()
-
-			for i, reg in enumerate(return_regs):
-				return_regs_set[i] = platform.arch.get_reg_index(reg)
-
 		_can_return = BoolWithConfidence.get_core_struct(can_return)
 		_pure = BoolWithConfidence.get_core_struct(pure)
 		if params is None:
@@ -3110,7 +3555,7 @@ class FunctionType(Type):
 		func_type = core.BNCreateFunctionType(
 			ret_conf, conv_conf, param_buf, len(params), _variable_arguments, _can_return, _stack_adjust,
 			reg_stack_adjust_regs, reg_stack_adjust_values, len(reg_stack_adjust),
-			return_regs_set, name_type, _pure
+			name_type, _pure
 		)
 
 		assert func_type is not None, f"core.BNCreateFunctionType returned None {ret_conf} {conv_conf} {param_buf} {_variable_arguments} {_stack_adjust}"
@@ -3131,12 +3576,26 @@ class FunctionType(Type):
 		return Type.create(result.type, platform=self._platform, confidence=result.confidence)
 
 	@property
+	def return_value_location(self) -> Optional[ValueLocationWithConfidence]:
+		"""Return value location (read-only)"""
+		if core.BNIsTypeReturnValueDefaultLocation(self._handle):
+			return None
+		location = core.BNGetTypeReturnValueLocation(self._handle)
+		if self._platform is None:
+			arch = None
+		else:
+			arch = self._platform.arch
+		result = ValueLocation._from_core_struct(location.location, arch).with_confidence(location.confidence)
+		core.BNFreeValueLocation(location.location)
+		return result
+
+	@property
 	def calling_convention(self) -> Optional[callingconvention.CallingConvention]:
 		"""Calling convention (read-only)"""
 		result = core.BNGetTypeCallingConvention(self._handle)
 		if not result.convention:
 			return None
-		return callingconvention.CallingConvention(None, handle=result.convention, confidence=result.confidence)
+		return callingconvention.CoreCallingConvention(handle=result.convention, confidence=result.confidence)
 
 	@property
 	def parameters(self) -> List[FunctionParameter]:
@@ -3144,24 +3603,21 @@ class FunctionType(Type):
 		count = ctypes.c_ulonglong()
 		params = core.BNGetTypeParameters(self._handle, count)
 		assert params is not None, "core.BNGetTypeParameters returned None"
+		if self._platform is None:
+			arch = None
+		else:
+			arch = self._platform.arch
 		result = []
 		for i in range(0, count.value):
 			param_type = Type.create(
 			    core.BNNewTypeReference(params[i].type), platform=self._platform, confidence=params[i].typeConfidence
 			)
-			if params[i].defaultLocation:
-				param_location = None
+			source = ValueLocationSource(params[i].locationSource)
+			if source == ValueLocationSource.CustomLocationSource:
+				param_location = ValueLocation._from_core_struct(params[i].location, arch)
 			else:
-				name = params[i].name
-				if (params[i].location.type
-				    == VariableSourceType.RegisterVariableSourceType) and (self._platform is not None):
-					name = self._platform.arch.get_reg_name(params[i].location.storage)
-				elif params[i].location.type == VariableSourceType.StackVariableSourceType:
-					name = "arg_%x" % params[i].location.storage
-				param_location = variable.VariableNameAndType(
-				    params[i].location.type, params[i].location.index, params[i].location.storage, name, param_type
-				)
-			result.append(FunctionParameter(param_type, params[i].name, param_location))
+				param_location = None
+			result.append(FunctionParameter(param_type, params[i].name, param_location, source))
 		core.BNFreeTypeParameterList(params, count.value)
 		return result
 
@@ -3171,21 +3627,18 @@ class FunctionType(Type):
 		count = ctypes.c_ulonglong()
 		params = core.BNGetTypeParameters(self._handle, count)
 		assert params is not None, "core.BNGetTypeParameters returned None"
+		if self._platform is None:
+			arch = None
+		else:
+			arch = self._platform.arch
 		result = []
 		for i in range(0, count.value):
 			param_type = Type.create(
 				core.BNNewTypeReference(params[i].type), platform=self._platform, confidence=params[i].typeConfidence
 			)
-			name = params[i].name
-			if (params[i].location.type
-				== VariableSourceType.RegisterVariableSourceType) and (self._platform is not None):
-				name = self._platform.arch.get_reg_name(params[i].location.storage)
-			elif params[i].location.type == VariableSourceType.StackVariableSourceType:
-				name = "arg_%x" % params[i].location.storage
-			param_location = variable.VariableNameAndType(
-				params[i].location.type, params[i].location.index, params[i].location.storage, name, param_type
-			)
-			result.append(FunctionParameter(param_type, params[i].name, param_location))
+			source = ValueLocationSource(params[i].locationSource)
+			param_location = ValueLocation._from_core_struct(params[i].location, arch)
+			result.append(FunctionParameter(param_type, params[i].name, param_location, source))
 		core.BNFreeTypeParameterList(params, count.value)
 		return result
 
@@ -3217,7 +3670,7 @@ class NamedTypeReferenceType(Type):
 	    self, handle, platform: Optional['_platform.Platform'] = None, confidence: int = core.max_confidence, ntr_handle=None
 	):
 		assert handle is not None, "Attempting to create NamedTypeReferenceType handle which is None"
-		super(NamedTypeReferenceType, self).__init__(handle, platform, confidence)
+		super().__init__(handle, platform, confidence)
 		if ntr_handle is None:
 			ntr_handle = core.BNGetTypeNamedTypeReference(handle)
 		assert ntr_handle is not None, "core.BNGetTypeNamedTypeReference returned None"
@@ -3269,7 +3722,7 @@ class NamedTypeReferenceType(Type):
 
 	@classmethod
 	def create_from_type(
-	    cls, name: QualifiedNameType, type: Optional[Type], guid: Optional[str] = None,
+	    cls, name: QualifiedNameType, type: Optional[SomeType], guid: Optional[str] = None,
 	    platform: Optional['_platform.Platform'] = None, confidence: int = core.max_confidence,
 	    const: BoolWithConfidenceType = False, volatile: BoolWithConfidenceType = False
 	) -> 'NamedTypeReferenceType':
@@ -3295,7 +3748,7 @@ class NamedTypeReferenceType(Type):
 	def __del__(self):
 		if core is not None:
 			core.BNFreeNamedTypeReference(self.ntr_handle)
-		super(NamedTypeReferenceType, self).__del__()
+		super().__del__()
 
 	def __repr__(self):
 		if self.named_type_class == NamedTypeReferenceClass.TypedefNamedTypeClass:
@@ -3388,6 +3841,92 @@ class WideCharType(Type):
 		assert core_type is not None, "core.BNCreateWideCharType returned None"
 		return cls(core_type, platform, confidence)
 
+class FragmentType(Type):
+	"""
+	A bitwise slice of a larger source type carried in an integer-like container. Its live size
+	and placement within the container are measured in bits.
+
+	Fragments are generally transient analysis types. They commonly arise when a calling
+	convention moves part of a structure through a register or when optimized code performs an
+	inline ``memcpy`` using register-sized moves. Retaining a byte-aligned source window, the
+	source-to-container byte-order mapping, and subsequent bit transformations lets analysis
+	preserve source and member types through those partial moves. Advanced bit state is normally
+	produced by analysis; use :py:meth:`create` or :py:meth:`Type.fragment` to create a fresh
+	fragment.
+	"""
+
+	@classmethod
+	def create(
+	    cls, type: SomeType, width: int, offset: int,
+	    endianness: Endianness = Endianness.LittleEndian,
+	    platform: Optional['_platform.Platform'] = None, confidence: int = core.max_confidence
+	) -> 'FragmentType':
+		"""
+		Create a fresh fragment whose live bits initially fill a container whose width is measured in bytes.
+
+		:param Type type: larger source type of which the fragment is a slice
+		:param int width: container width in bytes; the initial live fragment size is ``width * 8`` bits
+		:param int offset: original source byte offset within ``type``
+		:param Endianness endianness: byte order used to map source-layout bytes to container bits
+		:param Platform platform: optional platform associated with the type
+		:param int confidence: confidence in the resulting type
+		:return: Immutable fragment type
+		:rtype: FragmentType
+		:Example:
+			>>> source = Type.array(Type.int(1, False), 16)
+			>>> fragment = FragmentType.create(source, 8, 4, Endianness.BigEndian)
+			>>> fragment.fragment_original_width_bytes
+			8
+			>>> fragment.fragment_endianness == Endianness.BigEndian
+			True
+		"""
+		immutable_type = type.immutable_copy()
+		handle = core.BNCreateFragmentType(width, immutable_type._to_core_struct(), offset, endianness)
+		assert handle is not None, "core.BNCreateFragmentType returned None"
+		return cls(handle, platform, confidence)
+
+	@property
+	def target(self) -> Type:
+		"""Larger source type of which this fragment is a slice (read-only)."""
+		result = core.BNGetChildType(self._handle)
+		assert result is not None, "core.BNGetChildType returned None"
+		return Type.create(result.type, self._platform, result.confidence)
+
+	@property
+	def offset(self) -> int:
+		"""Original source byte offset, not the live fragment's placement within the container (read-only)."""
+		return core.BNGetTypeFragmentOriginalOffsetBytes(self._handle)
+
+	@property
+	def fragment_original_width_bytes(self) -> int:
+		"""Width in bytes of the original source window, not the live fragment's bit size (read-only)."""
+		return core.BNGetTypeFragmentOriginalWidthBytes(self._handle)
+
+	@property
+	def fragment_start_bit(self) -> int:
+		"""Bit offset of the live fragment in the current container, where the least-significant bit is zero (read-only)."""
+		return core.BNGetTypeFragmentStartBit(self._handle)
+
+	@property
+	def fragment_width_bits(self) -> int:
+		"""Size in bits of the live fragment represented in the current container (read-only)."""
+		return core.BNGetTypeFragmentWidthBits(self._handle)
+
+	@property
+	def fragment_truncated_start_bits(self) -> int:
+		"""Number of original low-order logical fragment bits no longer represented (read-only)."""
+		return core.BNGetTypeFragmentTruncatedStartBits(self._handle)
+
+	@property
+	def fragment_wrap_bit(self) -> int:
+		"""Saved historical wrap boundary; zero means the current container width is used (read-only)."""
+		return core.BNGetTypeFragmentWrapBit(self._handle)
+
+	@property
+	def fragment_endianness(self) -> Endianness:
+		"""Byte order used to map source-layout bytes to bit positions in the current container (read-only)."""
+		return Endianness(core.BNGetTypeFragmentEndianness(self._handle))
+
 
 Types = {
     TypeClass.VoidTypeClass: VoidType, TypeClass.BoolTypeClass: BoolType, TypeClass.IntegerTypeClass: IntegerType,
@@ -3395,6 +3934,7 @@ Types = {
     TypeClass.EnumerationTypeClass: EnumerationType, TypeClass.PointerTypeClass: PointerType,
     TypeClass.ArrayTypeClass: ArrayType, TypeClass.FunctionTypeClass: FunctionType,
     TypeClass.NamedTypeReferenceClass: NamedTypeReferenceType, TypeClass.WideCharTypeClass: WideCharType,
+    TypeClass.FragmentTypeClass: FragmentType,
 }
 
 

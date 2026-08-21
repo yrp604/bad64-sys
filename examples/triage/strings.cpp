@@ -3,19 +3,37 @@
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
 #include <QtCore/QStringList>
+#include <QtCore/QEvent>
+#include <QtCore/QTimer>
+#include <QtWidgets/QHeaderView>
 #include "strings.h"
 #include "view.h"
 #include "fontsettings.h"
 
 
-GenericStringsModel::GenericStringsModel(QWidget* parent, BinaryViewRef data) : QAbstractItemModel(parent)
+GenericStringsModel::GenericStringsModel(QWidget* parent, BinaryViewRef data) : QAbstractItemModel(parent), BinaryDataNotification(StringUpdates)
 {
 	m_data = data;
 	m_totalCols = 3;
 	m_sortCol = 0;
 	m_sortOrder = Qt::AscendingOrder;
-	m_allEntries = data->GetStrings();
-	m_entries = m_allEntries;
+
+	m_updateTimer = new QTimer(this);
+	m_updateTimer->setInterval(500);
+	connect(m_updateTimer, &QTimer::timeout, this, &GenericStringsModel::updateModel);
+	connect(this, &GenericStringsModel::updateTimerOnUIThread, this, [=, this]() {
+		updateTimer(m_needsUpdate);
+	}, Qt::QueuedConnection);
+
+	m_data->RegisterNotification(this);
+
+	updateModel();
+}
+
+
+GenericStringsModel::~GenericStringsModel()
+{
+	m_data->UnregisterNotification(this);
 }
 
 
@@ -97,16 +115,16 @@ QString GenericStringsModel::stringRefToQString(const BNStringReference& stringR
 	BinaryNinja::DataBuffer stringBuffer = m_data->ReadBuffer(stringRef.start, stringRef.length);
 
 	if (stringRef.type == BNStringType::Utf32String)
-	{	
+	{
 		char32_t* data = (char32_t*)stringBuffer.GetData();
 		qstr = QString::fromUcs4(data, stringRef.length / 4);
-	} 
+	}
 	else if (stringRef.type == BNStringType::Utf16String)
 	{
 		char16_t* data = (char16_t*)stringBuffer.GetData();
 		qstr = QString::fromUtf16(data, stringRef.length / 2);
 	}
-	else 
+	else
 	{
 		char* data = (char*)stringBuffer.GetData();
 		qstr = QString::fromUtf8(data, stringBuffer.GetLength());
@@ -141,7 +159,7 @@ void GenericStringsModel::performSort(int col, Qt::SortOrder order)
 				return a.length > b.length;
 		}
 		else if (col == 2)
-		{	
+		{
 			QString s = stringRefToQString(a);
 			QString s2 = stringRefToQString(b);
 
@@ -165,19 +183,129 @@ void GenericStringsModel::sort(int col, Qt::SortOrder order)
 }
 
 
-void GenericStringsModel::setFilter(const std::string& filterText)
+void GenericStringsModel::applyFilter()
 {
-	beginResetModel();
 	m_entries.clear();
 	for (auto& entry : m_allEntries)
 	{
-		auto s = stringRefToQString(entry).toStdString();
-		
-		if (FilteredView::match(s, filterText))
+		auto s = stringRefToQString(entry);
+
+		bool match;
+		if (m_filterOptions.testFlag(UseRegexOption))
+		{
+			match = m_filterRegex.match(s).hasMatch();
+		}
+		else
+		{
+			match = s.contains(m_filter, m_filterOptions.testFlag(CaseSensitiveOption) ? Qt::CaseSensitive : Qt::CaseInsensitive);
+		}
+
+		if (match)
 			m_entries.push_back(entry);
 	}
 	performSort(m_sortCol, m_sortOrder);
+}
+
+
+void GenericStringsModel::setFilter(const QString& filterText, FilterOptions options)
+{
+	m_filter = filterText;
+	m_filterOptions = options;
+	bool caseSensitive = options.testFlag(CaseSensitiveOption);
+	m_filterRegex = QRegularExpression(filterText, caseSensitive ? QRegularExpression::NoPatternOption : QRegularExpression::CaseInsensitiveOption);
+	beginResetModel();
+	applyFilter();
 	endResetModel();
+}
+
+
+void GenericStringsModel::updateModel()
+{
+	if (!m_needsUpdate)
+		return;
+
+	setNeedsUpdate(false);
+	beginResetModel();
+	m_allEntries = m_data->GetStrings();
+	applyFilter();
+	endResetModel();
+}
+
+
+void GenericStringsModel::setNeedsUpdate(bool needed)
+{
+	if (m_needsUpdate.exchange(needed) == needed)
+		return;
+
+	updateTimer(needed);
+}
+
+
+void GenericStringsModel::updateTimer(bool needsUpdate)
+{
+	if (needsUpdate && !m_updateTimer->isActive())
+		m_updateTimer->start();
+	if (!needsUpdate && m_updateTimer->isActive())
+		m_updateTimer->stop();
+}
+
+
+void GenericStringsModel::pauseUpdates()
+{
+	m_updatesPaused = true;
+	m_dirtyWhilePaused = false;
+	setNeedsUpdate(false);
+}
+
+
+void GenericStringsModel::resumeUpdates()
+{
+	m_updatesPaused = false;
+	// Only refresh if we got notifications while paused
+	if (m_dirtyWhilePaused.exchange(false))
+		setNeedsUpdate(true);
+}
+
+
+void GenericStringsModel::onBinaryViewNotification()
+{
+	if (m_updatesPaused)
+	{
+		// Track that updates occurred while hidden
+		m_dirtyWhilePaused = true;
+		return;
+	}
+
+	// This can be called from any thread so we cannot directly
+	// update the timer. Emitting a signal is relatively expensive
+	// given how frequently we receive notifications, so we only
+	// emit a signal if we didn't already need an update.
+	if (!m_needsUpdate.exchange(true))
+		emit updateTimerOnUIThread();
+}
+
+
+void GenericStringsModel::OnStringFound(BinaryNinja::BinaryView* view, BNStringType type, uint64_t offset, size_t len)
+{
+	onBinaryViewNotification();
+}
+
+
+void GenericStringsModel::OnStringRemoved(BinaryNinja::BinaryView* view, BNStringType type, uint64_t offset, size_t len)
+{
+	onBinaryViewNotification();
+}
+
+
+void GenericStringsModel::OnDerivedStringFound(BinaryNinja::BinaryView* view, const BinaryNinja::DerivedString& str)
+{
+	onBinaryViewNotification();
+}
+
+
+void GenericStringsModel::OnDerivedStringRemoved(BinaryNinja::BinaryView* view, const BinaryNinja::DerivedString& str)
+{
+	onBinaryViewNotification();
 }
 
 
@@ -203,11 +331,38 @@ StringsTreeView::StringsTreeView(StringsWidget* parent, TriageView* view, Binary
 
 	setFont(getMonospaceFont(this));
 
+	// Set column resize modes - use Interactive to avoid O(n) recalculation on every update
+	header()->setSectionResizeMode(QHeaderView::Interactive);
+	header()->setSectionResizeMode(2, QHeaderView::Stretch); // String column stretches to fill
+
+	updateColumnWidths();
+
 	connect(selectionModel(), &QItemSelectionModel::currentChanged, this, &StringsTreeView::stringSelected);
 	connect(this, &QTreeView::doubleClicked, this, &StringsTreeView::stringDoubleClicked);
 
 	m_actionHandler.bindAction("Copy", UIAction([this]() { copySelection(); }, [this]() { return canCopySelection(); }));
 }
+
+
+void StringsTreeView::updateColumnWidths()
+{
+	// Size address and length columns based on their headers, not contents
+	header()->resizeSection(0, header()->sectionSizeHint(0) + 20);
+	header()->resizeSection(1, header()->sectionSizeHint(1) + 20);
+}
+
+
+bool StringsTreeView::event(QEvent* event)
+{
+	// Update column widths when font or style changes (e.g., UI scale change)
+	if (event->type() == QEvent::FontChange || event->type() == QEvent::StyleChange)
+	{
+		// Defer update until after Qt recalculates font metrics
+		QTimer::singleShot(0, this, &StringsTreeView::updateColumnWidths);
+	}
+	return QTreeView::event(event);
+}
+
 
 void StringsTreeView::copySelection()
 {
@@ -270,9 +425,9 @@ void StringsTreeView::stringDoubleClicked(const QModelIndex& cur)
 }
 
 
-void StringsTreeView::setFilter(const std::string& filterText)
+void StringsTreeView::setFilter(const std::string& filterText, FilterOptions options)
 {
-	m_model->setFilter(filterText);
+	m_model->setFilter(QString::fromStdString(filterText), options);
 }
 
 
@@ -288,15 +443,18 @@ void StringsTreeView::scrollToCurrentItem()
 }
 
 
-void StringsTreeView::selectFirstItem()
+void StringsTreeView::ensureSelection()
 {
-	setCurrentIndex(m_model->index(0, 0, QModelIndex()));
+	if (auto current = currentIndex(); !current.isValid())
+		setCurrentIndex(m_model->index(0, 0, QModelIndex()));
 }
 
 
-void StringsTreeView::activateFirstItem()
+void StringsTreeView::activateSelection()
 {
-	stringDoubleClicked(m_model->index(0, 0, QModelIndex()));
+	ensureSelection();
+	if (auto current = currentIndex(); current.isValid())
+		stringDoubleClicked(current);
 }
 
 
@@ -326,6 +484,20 @@ void StringsTreeView::keyPressEvent(QKeyEvent* event)
 		return;
 	}
 	QTreeView::keyPressEvent(event);
+}
+
+
+void StringsTreeView::showEvent(QShowEvent* event)
+{
+	QTreeView::showEvent(event);
+	m_model->resumeUpdates();
+}
+
+
+void StringsTreeView::hideEvent(QHideEvent* event)
+{
+	QTreeView::hideEvent(event);
+	m_model->pauseUpdates();
 }
 
 

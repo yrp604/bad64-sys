@@ -1487,7 +1487,7 @@ namespace BinaryNinja
 		bool m_relocatable = false;
 
 		bool m_extractMangledTypes;
-		bool m_simplifyTemplates;
+		bool m_simplifyTemplates = false;
 
 		SymbolQueue* m_symbolQueue = nullptr;
 		Ref<Logger> m_logger;
@@ -1502,7 +1502,9 @@ namespace BinaryNinja
 		void RebaseThreadStarts(BinaryReader& virtualReader, std::vector<uint32_t>& threadStarts, uint64_t stepMultiplier);
 		Ref<Symbol> DefineMachoSymbol(
 			BNSymbolType type, const std::string& name, uint64_t addr, BNSymbolBinding binding, bool deferred);
-		void ParseSymbolTable(BinaryReader& reader, MachOHeader& header, const symtab_command& symtab, const std::vector<uint32_t>& symbolStubsList, MachoObjCProcessor*);
+		void ParseSymbolTable(BinaryReader& reader, MachOHeader& header, const symtab_command& symtab,
+			const std::vector<uint32_t>& symbolStubsList, MachoObjCProcessor*,
+			std::unordered_map<std::string, std::string>& symbolLibraryMapping);
 		bool IsValidFunctionStart(uint64_t addr);
 		void ParseFunctionStarts(Platform* platform, uint64_t textBase, function_starts_command functionStarts);
 		bool ParseRelocationEntry(const relocation_info& info, uint64_t start, BNRelocationInfo& result);
@@ -1512,6 +1514,7 @@ namespace BinaryNinja
 		void ReadExportNode(uint64_t viewStart, DataBuffer& buffer, const std::string& currentText,
 			size_t cursor, uint32_t endGuard);
 
+		uint64_t GetRebaseBindEntryLimit();
 		void ParseRebaseTable(BinaryReader& reader, MachOHeader& header, uint32_t tableOffset, uint32_t tableSize);
 		void ParseDynamicTable(BinaryReader& reader, MachOHeader& header, BNSymbolType type, uint32_t tableOffset, uint32_t tableSize,
 			BNSymbolBinding binding);
@@ -1530,6 +1533,7 @@ namespace BinaryNinja
 		MachoView(const std::string& typeName, BinaryView* data, bool parseOnly = false);
 
 		virtual bool Init() override;
+		void OnAfterSnapshotDataApplied() override;
 	};
 
 	class MachoViewType: public BinaryViewType

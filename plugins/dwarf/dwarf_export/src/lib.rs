@@ -1,9 +1,8 @@
 mod edit_distance;
 
 use binaryninja::interaction::form::{Form, FormInputField};
-use binaryninja::logger::Logger;
 use binaryninja::{
-    binary_view::{BinaryView, BinaryViewBase, BinaryViewExt},
+    binary_view::{BinaryView, BinaryViewBase},
     command::{register_command, Command},
     confidence::Conf,
     rc::Ref,
@@ -17,7 +16,6 @@ use gimli::{
         UnitEntryId,
     },
 };
-use log::{error, info, LevelFilter};
 use object::{write, Architecture, BinaryFormat, SectionKind};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -123,26 +121,38 @@ fn export_type(
 
             for base_struct in ty_struct.base_structures() {
                 let inheritance_uid = dwarf.unit.add(structure_die_uid, gimli::DW_TAG_inheritance);
-                let base_struct_uid = export_type(
-                    base_struct.ty.name().to_string(),
-                    base_struct.ty.target(bv).unwrap().as_ref(),
-                    bv,
-                    defined_types,
-                    dwarf,
-                )
-                .unwrap();
-                dwarf
-                    .unit
-                    .get_mut(inheritance_uid)
-                    .set(gimli::DW_AT_type, AttributeValue::UnitRef(base_struct_uid));
-                dwarf.unit.get_mut(inheritance_uid).set(
-                    gimli::DW_AT_data_member_location,
-                    AttributeValue::Data8(base_struct.offset),
-                );
-                dwarf.unit.get_mut(inheritance_uid).set(
-                    gimli::DW_AT_accessibility,
-                    AttributeValue::Accessibility(gimli::DW_ACCESS_public),
-                );
+                if let Some(target_ty) = base_struct.ty.target(bv) {
+                    let base_struct_uid = export_type(
+                        base_struct.ty.name().to_string(),
+                        &target_ty,
+                        bv,
+                        defined_types,
+                        dwarf,
+                    );
+
+                    match base_struct_uid {
+                        Some(uid) => {
+                            dwarf
+                                .unit
+                                .get_mut(inheritance_uid)
+                                .set(gimli::DW_AT_type, AttributeValue::UnitRef(uid));
+                            dwarf.unit.get_mut(inheritance_uid).set(
+                                gimli::DW_AT_data_member_location,
+                                AttributeValue::Data8(base_struct.offset),
+                            );
+                            dwarf.unit.get_mut(inheritance_uid).set(
+                                gimli::DW_AT_accessibility,
+                                AttributeValue::Accessibility(gimli::DW_ACCESS_public),
+                            );
+                        }
+                        None => {
+                            tracing::warn!(
+                                "Could not export base struct `{}`",
+                                base_struct.ty.name()
+                            );
+                        }
+                    }
+                }
             }
 
             dwarf.unit.get_mut(structure_die_uid).set(
@@ -365,7 +375,7 @@ fn export_type(
                     Some(typedef_die_uid)
                 }
             } else {
-                error!("Could not get target of typedef `{}`", ntr.name());
+                tracing::warn!("Could not get target of typedef `{}`", ntr.name());
                 None
             }
         }
@@ -390,6 +400,10 @@ fn export_type(
                 },
             );
             Some(wide_char_die_uid)
+        }
+        TypeClass::FragmentTypeClass => {
+            tracing::error!("Fragment types are not representable in DWARF");
+            None
         }
     }
 }
@@ -694,12 +708,12 @@ fn write_dwarf<T: gimli::Endianity>(
 
     if let Ok(out_data) = out_object.write() {
         if let Err(err) = fs::write(file_path, out_data) {
-            error!("Failed to write DWARF file: {}", err);
+            tracing::error!("Failed to write DWARF file: {}", err);
         } else {
-            info!("Successfully saved as DWARF to `{:?}`", file_path);
+            tracing::info!("Successfully saved as DWARF to `{:?}`", file_path);
         }
     } else {
-        error!("Failed to write DWARF with requested settings");
+        tracing::error!("Failed to write DWARF with requested settings");
     }
 
     Ok(())
@@ -776,7 +790,7 @@ fn export_dwarf(bv: &BinaryView) {
     };
 
     if let Err(e) = write_dwarf(&save_loc_path, arch, endianness, &mut dwarf) {
-        error!("Error writing DWARF: {}", e);
+        tracing::error!("Error writing DWARF: {}", e);
     }
 }
 
@@ -793,9 +807,7 @@ impl Command for MyCommand {
 
 #[no_mangle]
 pub extern "C" fn CorePluginInit() -> bool {
-    Logger::new("DWARF Export")
-        .with_level(LevelFilter::Debug)
-        .init();
+    binaryninja::tracing_init!("DWARF Export");
 
     register_command(
         "Export as DWARF",

@@ -9,6 +9,8 @@ The simplest way to directly manipulate types in disassembly is by viewing an ex
  - `1`, `2`, `4`, `8`: The number hotkeys will create a data variable at the current location if none exists, and then change the size of the variable to an integer in the size of bytes specified in the hotkey.
  - `d`: If you want to cycle through the different integer sizes, repeatedly pressing `d` has the same effect as pressing the numbers in order.
  - `-`: To quickly toggle integers between signed and unsigned integers, you can use the `-` hotkey.
+ - `0`: To quickly toggle integer display between hexadecimal and decimal, you can use the `0` hotkey.
+ - `~`: To quickly toggle integer display between normal and bitwise complement, you can use the `~` hotkey.
  - `a`: This hotkey sets or creates the current variable to a character array up until and including the next null byte.
  - `o`: `o` will set or create the current variable to be a pointer reference.
  - `*`: If you have a selection of identical variables, `*` will convert them into an array of elements. If you have no selection, the "Create Array" dialog will be shown allowing you to create an array of specific type and count at the current location.
@@ -88,7 +90,7 @@ Here's a more detailed explanation about the various workflows:
 
 1. In linear/graph view, if the selection is a variable that is not a structure, a dialog pops up and asks you to create a structure. You can specify the structure's name and size. There is also a checkbox that asks you whether the variable's type should be the structure itself or a pointer to the structure.
 2. In linear/graph view, if the selection is a variable that is not a structure, and it happens to be the result of a memory allocation routine, e.g., `malloc`, a new structure will be created and its size is automatically determined (if possible). The variable's type will be a pointer to the structure.
-3. In linear/graph/types view, If you select a variable whose type is a structure, or a pointer to a structure, BN will try to create all structure field at any offset that has been accessed in the code.
+3. In linear/graph/types view, If you select a variable whose type is a structure, or a pointer to a structure, BN will try to create all structure fields at any offset that has been accessed in the code.
 4. In linear/graph/types view, If you select a StructOffsetToken, BN will try to create a structure member at the current offset.
 
 The automatic member creation mentioned in #3 and #4 takes into consideration both incoming and outgoing type information for the accessed offsets and selects the most confident one as the type for the offset.

@@ -254,11 +254,14 @@ class BINARYNINJAUIAPI VariableList : public SidebarWidget, public FilterTarget
 	//! Copy selected variables to clipboard
 	void copy();
 
-	virtual void setFilter(const std::string& filter) override;
+	//! Notify cross-reference panels about the current selection.
+	void updateCrossReferences();
+
+	virtual void setFilter(const std::string& filter, FilterOptions options) override;
 	virtual void scrollToFirstItem() override;
 	virtual void scrollToCurrentItem() override;
-	virtual void selectFirstItem() override;
-	virtual void activateFirstItem() override;
+	virtual void ensureSelection() override;
+	virtual void activateSelection() override;
 };
 
 /*! The main variable list dock widget.

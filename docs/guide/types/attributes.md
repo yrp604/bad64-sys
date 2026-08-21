@@ -72,7 +72,7 @@ struct Foo
 };
 ```
 
-## Structures with Base Classes and Inheritence
+## Structures with Base Classes and Inheritance
 
 See [Working with C++ Types and Virtual Function Tables](cpp.md).
 
@@ -126,6 +126,83 @@ void takes_callback(int (__stdcall* param_func_ptr)());
 /* Other calling conventions can be specified by name */
 void __convention("regparm") func();
 ```
+
+### Built-in Calling Conventions
+
+The following built-in calling conventions without dedicated keywords are available in Binary Ninja:
+
+|Name|Valid architectures|Description|
+|---|---|---|
+|`linux-syscall`|Most|Linux system call|
+|`windows-syscall`|aarch64|Windows system call|
+|`apple-syscall`|aarch64|macOS and iOS system calls|
+|`go-stack`|x86, x86_64|Stack-based calling convention used by the Go compiler on 32-bit x86 or older compilers|
+|`pascal`|x86|Pascal stack-based convention with left-to-right parameter passing and callee stack cleanup|
+|`register`|x86|Register-based calling convention with left-to-right parameter passing (used by default in Delphi)|
+|`gcc-fastcall`|x86|The `fastcall` calling convention as implemented in GCC on non-Windows platforms|
+|`clang-fastcall`|x86|The `fastcall` calling convention as implemented in Clang on non-Windows platforms|
+|`gcc-thiscall`|x86|The `thiscall` calling convention as implemented in GCC on non-Windows platforms|
+|`clang-thiscall`|x86|The `thiscall` calling convention as implemented in Clang on non-Windows platforms|
+
+!!! Warning "Linux x86 / x86_64 default convention rename"
+    Prior to version 5.4, the default Linux convention on x86/x86_64 was named `cdecl` (and the stdcall variant was `stdcall`). It is now `sysv` (and `sysv-stdcall`) to deconflict with the Windows behavior of `cdecl`/`stdcall`. Both names continue to be registered on the architecture, so `__convention("cdecl")` will still resolve to the Windows version of `cdecl` even on Linux. If you have scripts that match calling conventions by string name, update them to recognize `sysv` and `sysv-stdcall`.
+
+## Custom Parameter and Return Value Locations
+
+Calling conventions describe the default placement of parameters and return values, but many real-world ABIs have functions whose locations diverge from those defaults (for example, hand-tuned assembly, custom register conventions, or high-level language features). You can override the default location for individual parameters with the `@` syntax or for a function's return value with the `__location("...")` attribute. The argument is a string in Binary Ninja's value-location syntax (described below).
+
+### Examples
+
+``` C
+/* Parameter locations: place this parameter in a specific register or stack slot */
+int foo(int reg_param @ rdi, int stack_param @ 0x10);
+
+/* Return-value location: return through rsi instead of the default rax */
+int bar() __location("rsi");
+
+/* A 16-byte value returned with the high half in rdx and the low half in rax;
+   components are written left-to-right from high to low */
+struct pair get_pair() __location("rdx:rax");
+
+/* A parameter value in two registers. Complex locations for parameters are quoted. */
+struct void set_pair(struct pair value @ "rdx:rax");
+
+/* A return value spanning two registers with explicit field offsets */
+struct mixed get_mixed() __location("[0x0: rax, 0x8: xmm0]");
+
+/* An indirect return through a caller-supplied pointer; the leading * marks the
+   location as a pointer to the storage, and "-> *rax" says the same pointer is
+   returned in rax */
+struct big get_big() __location("*rdi -> *rax");
+```
+
+### Value Location Syntax
+
+The string that makes up a location describes one or more storage components (the locations holding the bytes of a single value). The grammar is:
+
+* **Register component:** the register name, e.g., `rax`, `xmm0`, `r1`.
+* **Stack component:** an integer offset into the caller's stack frame (decimal or `0x`-prefixed hex), e.g., `0x10`, `-4`.
+* **Component size suffix:** append `.b`, `.w`, `.d`, `.q`, `.t`, or `.o` for 1/2/4/8/10/16-byte sizes, or `.<n>` for an explicit byte count, e.g., `eax.d`, `r0.q`, `rax.b`. Without a suffix, the natural register width is used (for stack components, sizes are inferred from the type).
+* **Multi-component (concatenated):** components separated by `:`, written **high-to-low**, e.g., `rdx:rax` puts the low half in `rax` and the high half in `rdx`. This form requires that components are contiguous.
+* **Multi-component with offsets:** when components are not contiguous, list them inside `[ ... ]` as `offset: component`, e.g., `[0x0: rax, 0x8: xmm0]`. Offsets are byte offsets within the value being passed/returned.
+* **Indirect:** prefix the entire location with `*` to indicate the location holds a pointer to the value rather than the value itself, e.g., `*rdi`.
+* **Returned-pointer hint:** for indirect returns where the same pointer is also returned in a register, append `-> *<reg>`, e.g., `*rdi -> *rax`.
+
+### Pass By Value and By Reference
+
+For composite types (structures, arrays) the calling convention decides whether to pass the value packed into registers, on the stack, or indirectly through a pointer. When that default is wrong for a particular declaration (most commonly in C++ where non-trivial type rules are applied that cannot always be determined at the binary level) you can override it with `__by_value` or `__by_ref`:
+
+``` C
+/* Force this argument to be passed by value (in registers or on the stack)
+   even when the convention would normally pass it indirectly */
+void takes_value(struct value_type __by_value arg);
+
+/* Force this argument to be passed by reference (as a pointer) even when the
+   convention would normally pass it by value */
+void takes_object(struct object_type __by_ref arg);
+```
+
+`__by_value` and `__by_ref` apply per-parameter and affect only the location chosen for the parameter (the parameter's type in the signature is unchanged). If you need to override the *exact* register or stack slot, use the `@` syntax or `__location()` attribute described above instead (it implies a custom location and overrides any by-value/by-ref decision).
 
 ## System Call Functions for Type Libraries
 
@@ -250,10 +327,17 @@ while (leader != event)
     event = event->sibling_list_next - 0x10
 ```
 
-???+ Tip "Tip"
+!!! Tip "Tip"
     Normally, intrusive linked lists are a structure containing pointers to that structure
     inside the next object, but we're inlining the structure members here, so we can
     specialize their pointer offsets.
+
+## Type Fragments
+
+Fragment types are displayed using `__frag` for a little-endian mapping and `__frag_be` for a
+big-endian mapping. These annotations describe how an in-flight bitwise slice maps back to a
+larger source type; they do not imply that a particular load instruction created the fragment.
+See [Type Fragments](fragments.md) for the analysis model, syntax, and examples.
 
 ## Based Pointers
 
@@ -344,4 +428,34 @@ struct BaseClassDescriptor
 };
 
 struct BaseClassDescriptor* __ptr32 __based(start) `type_info::\`RTTI Base Class Array'`[0x1];
+```
+
+## Custom Attributes
+
+Binary Ninja allows you to add custom attributes to types, which do not affect analysis but can be used by plugins and scripts. You can add these with the `__attr` annotation. Scripts can then query a `Type` object's `attributes` field to see the attribute keys and values.
+
+### Examples
+
+``` C
+typedef int __attr("a") test;
+typedef int __attr("a", "b") test;
+```
+
+```py
+>>> TypeParser.default.parse_type_string('int __attr("a", "b") test', Platform["windows-x86"])[0][1].attributes
+{'a': 'b'}
+```
+
+Attributes on function pointers can be applied to many different places:
+``` C
+typedef void (*__attr("ptr", "attr") test)();      // Applies to the pointer 
+typedef void (__attr("function", "attr")* test)(); // Applies to the function
+typedef __attr("return", "attr") void (* test)();  // Applies to the return type
+typedef void __attr("return", "attr") (* test)();  // Applies to the return type
+```
+
+Attributes propagate with the type during analysis, so they can select and parameterize a [string recognizer or constant renderer](../../dev/customstrings.md). With the [encoded_strings.py](https://github.com/Vector35/binaryninja-api/blob/dev/python/examples/encoded_strings.py) example plugin loaded, applying this type to a decoding routine's parameter deobfuscates every string passed to it:
+
+``` C
+typedef char __attr("sub_encoded", "31656537366531313932396130373434")* deobfuscate;
 ```

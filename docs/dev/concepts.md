@@ -13,7 +13,7 @@ When you are interacting in the UI with an executable file, you can access `bv` 
 140
 ```
 
-???+ Info "Tip"
+!!! Tip "Tip"
     Note the use of `bv` here as a shortcut to the currently open BinaryView. For other "magic" variables, see the [user guide](../guide/index.md#magic-console-variables)
 
 If you want to start writing a plugin, most top-level methods will exist off of the BinaryView. Conceptually, you can think about the organization as a hierarchy starting with a BinaryView, then functions, then basic blocks, then instructions. There are of course lots of other ways to access parts of the binary, but this is the most common organization. Check out the tab completion in the scripting console for `bv.get<TAB>` for example (a common prefix for many APIs):
@@ -26,7 +26,7 @@ Some BinaryViews have parent views. The view used for decompilation includes mem
 
 When you're interacting with the Binary Ninja [scripting console](../guide/index.md#script-python-console), it's important to realize that every time you run a command, the UI is automatically going to update analysis. You can see this by even running a simple command like:
 
-```
+```python
 print("test")
 ```
 
@@ -147,13 +147,13 @@ Generally speaking, scripts should operate on ILs. The available information far
 
 ### Instruction Index vs Expression Index
 
-It is easy to confuse ExpressionIndex and InstructionIndex properties in the API. While they [are both integers](https://github.com/Vector35/binaryninja-api/blob/dev/python/highlevelil.py#L49-L50) they mean different things and it's important to keep them straight. The Instruction Index is a unique index for that given IL level for that given function. However, because BNIL is [tree-based](bnil-overview.md), when there are nested expresses the expression index may be needed. These indexes are also unique per-function and per-IL level, but they are _distinct_ from instruction indexes even though they may occasionally be similar since they each start at 0 for a given function!
+It is easy to confuse ExpressionIndex and InstructionIndex properties in the API. While they [are both integers](https://github.com/Vector35/binaryninja-api/blob/dev/python/highlevelil.py#L49-L50), they mean different things and it's important to keep them straight. The Instruction Index is a unique index for that given IL level for that given function. However, because BNIL is [tree-based](bnil-overview.md), when there are nested expressions the expression index may be needed. These indexes are also unique per-function and per-IL level, but they are _distinct_ from instruction indexes even though they may occasionally be similar since they each start at 0 for a given function!
 
 ### Static Single Assignment Basics
 
 Our [BNIL Overview](bnil-overview.md) mentions Static Single Assignment (SSA) without explaining what it is. You can of course always check out [Wikipedia](https://en.wikipedia.org/wiki/Static_single-assignment_form), but here's a quick summary of what it is, why we expose multiple SSA forms of our ILs and how you can use it to improve your plugin writing with BNIL.
 
-At it's simplest, SSA forms of an Intermediate Language or Intermediate Representation are those in which variables are read only. They can be set when created, but not modified. Instead of modifying them, when you make a change, a new "version" of the variable is created denoting that the value has changed in some way. While this certainly makes the form less readable to humans, this means it's actually really easy to walk back and see how a variable has been modified by simply looking at the definition site for a given variable or all possible versions before it. Any time the variable is modified, a new version of that variable will be created (you'll see `#` followed by a number indicating that this is a new version).
+At its simplest, SSA forms of an Intermediate Language or Intermediate Representation are those in which variables are read only. They can be set when created, but not modified. Instead of modifying them, when you make a change, a new "version" of the variable is created denoting that the value has changed in some way. While this certainly makes the form less readable to humans, this means it's actually really easy to walk back and see how a variable has been modified by simply looking at the definition site for a given variable or all possible versions before it. Any time the variable is modified, a new version of that variable will be created (you'll see `#` followed by a number indicating that this is a new version).
 
 But what if the code takes multiple paths and could have different values depending on the path that was taken? SSA forms use a `Φ` (pronounced either as "fee" or "fi" like "fly" depending on which mathematician or Greek speaker you ask!) function to solve this ambiguity. All a `Φ` function does is aggregate different versions of a variable when entering a basic block with multiple paths. So a basic block with two incoming edges where `eax` is modified might have something like: `eax#3 = Φ(eax#1, eax#2)` denoting that the new version of the variable could have come from either of those sources.
 
@@ -167,7 +167,7 @@ Alternatively, the property `current_function.llil_if_available` will immediatel
 
 Even in cases where `.llil` returns `None`, it is possible to override the analysis limits by using the [`analysis_skip_override`](https://api.binary.ninja/binaryninja.function-module.html#binaryninja.function.Function.analysis_skip_override) setter.
 
-???+ Danger "Warning"
+!!! Warning "Warning"
     Overriding analysis limits is DANGEROUS! These limits exist for a reason. Whether they are because the function is too large, because analysis was taking too long, or whatever the reason, you override these limits at your own risk.
 
 It's possible to query the reason for the override by querying the [`analysis_skip_reason`](https://api.binary.ninja/binaryninja.function-module.html#binaryninja.function.Function.analysis_skip_reason) property.
@@ -179,7 +179,7 @@ Memory permissions and annotations directly impact Binary Ninja's analysis. The 
 
 So, for example, an annotation such as **`const`** takes precedence over a memory [section](https://api.binary.ninja/binaryninja.binaryview-module.html#binaryninja.binaryview.Section) with [ReadWriteDataSectionSemantics](https://api.binary.ninja/binaryninja.enums-module.html#binaryninja.enums.SectionSemantics), while an annotation such as **`volatile`** takes precedence over a memory [section](https://api.binary.ninja/binaryninja.binaryview-module.html#binaryninja.binaryview.Section) with [ReadOnlyDataSectionSemantics](https://api.binary.ninja/binaryninja.enums-module.html#binaryninja.enums.SectionSemantics). Additionally, a section with [ReadOnlyDataSectionSemantics](https://api.binary.ninja/binaryninja.enums-module.html#binaryninja.enums.SectionSemantics) over a [segment](https://api.binary.ninja/binaryninja.binaryview-module.html#binaryninja.binaryview.Segment) with a [SegmentExecutable](https://api.binary.ninja/binaryninja.enums-module.html#binaryninja.enums.SegmentFlag) flag will still block linear sweep from creating functions in that region of memory.
 
-???+ Note "Note"
+!!! Note "Note"
     If both **`const`** and **`volatile`** annotations are applied, the **`volatile`** annotation will take precedence. This means that analysis treats the data as mutable, ignoring the immutability implied by **`const`**.
 
 This is most notable for how the data flow system works and for how linear sweep/code identification works.
@@ -238,7 +238,7 @@ Summing up the basic blocks of a function is one way to produce a consistent siz
 
  In Binary Ninja, there is no explicit `.size` property of functions. Rather, you can choose to calculate it one of two ways:
 
-```
+```python
 function_size = current_function.total_bytes
 # or
 function_size = current_function.highest_address - current_function.lowest_address
@@ -270,7 +270,7 @@ If you're opening a file with non-ASCII string encodings, make sure to use one o
 
 ![Sample Binary With CJK Unified Ideographs](../img/hanyu-with-codepage.png "Sample Binary With CJK Unified Ideographs")
 
-???+ Info "Tip"
+!!! Tip "Tip"
     Note that there is a small bug and some string length calculations will be off with certain characters as shown above.
 
 ### Wide Strings in the UI
@@ -298,4 +298,4 @@ Several settings under analysis limits are relevant to identifying these strings
 
 ### Custom String Formats
 
-There is currently no support for custom types with different encoding mechanisms. Follow [#1334](https://github.com/Vector35/binaryninja-api/issues/1334) for more updates on when that feature is added. That said, it is possible to use a custom [DataRenderer](https://api.binary.ninja/binaryninja.datarender-module.html#binaryninja.datarender.DataRenderer) to improve the rendering using a custom type, but those strings will still not show up in the strings list or when included as variables in decompilation, only in linear view.
+See [Custom Strings and Constants](customstrings.md).

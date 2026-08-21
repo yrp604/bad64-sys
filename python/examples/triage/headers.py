@@ -1,5 +1,4 @@
 import time
-from binaryninja.binaryview import StructuredDataView
 import binaryninjaui
 from binaryninjaui import ViewFrame, UIContext
 from binaryninja.enums import ThemeColor

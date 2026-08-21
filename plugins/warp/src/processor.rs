@@ -12,30 +12,29 @@ use dashmap::DashMap;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rayon::prelude::ParallelSlice;
-use regex::Regex;
+use rayon::{ThreadPoolBuildError, ThreadPoolBuilder};
 use serde_json::{json, Value};
 use tempdir::TempDir;
 use thiserror::Error;
 use walkdir::WalkDir;
 
 use binaryninja::background_task::BackgroundTask;
-use binaryninja::binary_view::{BinaryView, BinaryViewExt};
+use binaryninja::binary_view::BinaryView;
 use binaryninja::function::Function as BNFunction;
-use binaryninja::interaction::{Form, FormInputField};
 use binaryninja::project::file::ProjectFile;
 use binaryninja::project::Project;
-use binaryninja::rc::{Guard, Ref};
+use binaryninja::rc::Ref;
 
+use crate::cache::cached_type_references;
+use crate::convert::platform_to_target;
+use crate::{build_function, INCLUDE_TAG_NAME};
+use binaryninja::file_metadata::{SaveOption, SaveSettings};
 use warp::chunk::{Chunk, ChunkKind, CompressionType};
 use warp::r#type::chunk::TypeChunk;
 use warp::signature::chunk::SignatureChunk;
 use warp::signature::function::Function;
 use warp::target::Target;
 use warp::{WarpFile, WarpFileHeader};
-
-use crate::cache::cached_type_references;
-use crate::convert::platform_to_target;
-use crate::{build_function, INCLUDE_TAG_ICON, INCLUDE_TAG_NAME};
 
 /// Ensure we never exceed these many functions per signature chunk.
 ///
@@ -76,142 +75,28 @@ pub enum ProcessingError {
 
     #[error("Skipping file: {0}")]
     SkippedFile(PathBuf),
+
+    #[error("Failed to create thread pool: {0}")]
+    ThreadPoolCreation(ThreadPoolBuildError),
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct FileFilterField;
-
-impl FileFilterField {
-    pub fn to_field() -> FormInputField {
-        FormInputField::TextLine {
-            prompt: "File Filter".to_string(),
-            default: None,
-            value: None,
-        }
-    }
-
-    pub fn from_form(form: &Form) -> Option<Result<Regex, regex::Error>> {
-        let field = form.get_field_with_name("File Filter")?;
-        let field_value = field.try_value_string()?;
-
-        // TODO: This is pretty absurd but whatever.
-        let pattern = if field_value.contains(['*', '.', '[', '(']) {
-            // Assume it's a regex if it contains meta-characters.
-            field_value
-        } else {
-            // Treat it as a substring
-            format!(".*{}.*", regex::escape(&field_value))
-        };
-
-        Some(Regex::new(&pattern))
-    }
-}
-
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum FileDataKindField {
-    Symbols,
-    Signatures,
-    Types,
+pub enum IncludedDataField {
+    Symbols = 0,
+    Signatures = 1,
+    Types = 2,
     #[default]
-    All,
+    All = 3,
 }
 
-impl FileDataKindField {
-    pub fn to_field(&self) -> FormInputField {
-        FormInputField::Choice {
-            prompt: "File Data".to_string(),
-            choices: vec![
-                "Symbols".to_string(),
-                "Signatures".to_string(),
-                "Types".to_string(),
-                "All".to_string(),
-            ],
-            default: Some(match self {
-                Self::Symbols => 0,
-                Self::Signatures => 1,
-                Self::Types => 2,
-                Self::All => 3,
-            }),
-            value: 0,
-        }
-    }
-
-    pub fn from_form(form: &Form) -> Option<Self> {
-        let field = form.get_field_with_name("File Data")?;
-        let field_value = field.try_value_index()?;
-        match field_value {
-            3 => Some(Self::All),
-            2 => Some(Self::Types),
-            1 => Some(Self::Signatures),
-            0 => Some(Self::Symbols),
-            _ => None,
-        }
-    }
-}
-
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum IncludedFunctionsField {
-    Selected,
+    Selected = 0,
     #[default]
-    Annotated,
-    All,
-}
-
-impl IncludedFunctionsField {
-    pub fn to_field(&self) -> FormInputField {
-        // If the user has selected any functions, change the default value of the included functions field.
-        FormInputField::Choice {
-            prompt: "Included Functions".to_string(),
-            choices: vec![
-                format!("Selected {}", INCLUDE_TAG_ICON),
-                "Annotated".to_string(),
-                "All".to_string(),
-            ],
-            default: Some(match self {
-                Self::Selected => 0,
-                Self::Annotated => 1,
-                Self::All => 2,
-            }),
-            value: 0,
-        }
-    }
-
-    pub fn from_form(form: &Form) -> Option<Self> {
-        let field = form.get_field_with_name("Included Functions")?;
-        let field_value = field.try_value_index()?;
-        match field_value {
-            2 => Some(Self::All),
-            1 => Some(Self::Annotated),
-            0 => Some(Self::Selected),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum SaveReportToDiskField {
-    No,
-    #[default]
-    Yes,
-}
-
-impl SaveReportToDiskField {
-    pub fn to_field(&self) -> FormInputField {
-        FormInputField::Checkbox {
-            prompt: "Save Report to Disk".to_string(),
-            default: Some(true),
-            value: false,
-        }
-    }
-
-    pub fn from_form(form: &Form) -> Option<Self> {
-        let field = form.get_field_with_name("Save Report to Disk")?;
-        let field_value = field.try_value_int()?;
-        match field_value {
-            1 => Some(Self::Yes),
-            _ => Some(Self::No),
-        }
-    }
+    Annotated = 1,
+    All = 2,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -219,64 +104,6 @@ pub enum RequestAnalysisField {
     No,
     #[default]
     Yes,
-}
-
-impl RequestAnalysisField {
-    pub fn to_field(&self) -> FormInputField {
-        FormInputField::Checkbox {
-            prompt: "Request Analysis for BNDB's".to_string(),
-            default: Some(true),
-            value: false,
-        }
-    }
-
-    pub fn from_form(form: &Form) -> Option<Self> {
-        let field = form.get_field_with_name("Request Analysis for BNDB's")?;
-        let field_value = field.try_value_int()?;
-        match field_value {
-            1 => Some(Self::Yes),
-            _ => Some(Self::No),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum CompressionTypeField {
-    None,
-    #[default]
-    Zstd,
-}
-
-impl CompressionTypeField {
-    pub fn to_field(&self) -> FormInputField {
-        FormInputField::Choice {
-            prompt: "Compression Type".to_string(),
-            choices: vec!["None".to_string(), "Zstd".to_string()],
-            default: Some(match self {
-                Self::None => 0,
-                Self::Zstd => 1,
-            }),
-            value: 0,
-        }
-    }
-
-    pub fn from_form(form: &Form) -> Option<Self> {
-        let field = form.get_field_with_name("Compression Type")?;
-        let field_value = field.try_value_index()?;
-        match field_value {
-            1 => Some(Self::Zstd),
-            _ => Some(Self::None),
-        }
-    }
-}
-
-impl From<CompressionTypeField> for CompressionType {
-    fn from(field: CompressionTypeField) -> Self {
-        match field {
-            CompressionTypeField::None => CompressionType::None,
-            CompressionTypeField::Zstd => CompressionType::Zstd,
-        }
-    }
 }
 
 pub fn new_processing_state_background_thread(
@@ -358,6 +185,15 @@ impl ProcessingState {
     }
 }
 
+/// An entry stored in the [`WarpFileProcessor`] to be processed.
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum WarpFileProcessorEntry {
+    Path(PathBuf),
+    Project(Ref<Project>),
+    ProjectFile(Ref<ProjectFile>),
+    BinaryView(Ref<BinaryView>),
+}
+
 /// Create a new [`WarpFile`] from files, projects, and directories.
 #[derive(Clone)]
 pub struct WarpFileProcessor {
@@ -370,18 +206,20 @@ pub struct WarpFileProcessor {
     // TODO: Databases will require regenerating LLIL in some cases, so we must support generating the LLIL.
     /// The path to a folder to intake and output analysis artifacts.
     cache_path: Option<PathBuf>,
-    file_data: FileDataKindField,
+    file_data: IncludedDataField,
     included_functions: IncludedFunctionsField,
-    compression_type: CompressionTypeField,
+    compression_type: CompressionType,
     processed_file_callback: Option<ProcessedFileCallback>,
-    /// Regex pattern used to filter out files.
-    file_filter: Option<Regex>,
-    // TODO: Merge with file filter.
     /// Whether to skip processing warp files.
     skip_warp_files: bool,
     /// Processor state, this is shareable between threads, so the processor and the consumer can
     /// read / write to the state, use this if you want to show a progress indicator.
     state: Arc<ProcessingState>,
+    /// The list of entries to process.
+    entries: HashSet<WarpFileProcessorEntry>,
+    /// When processing entries with [`WarpFileProcessor::process_entries`], this will
+    /// be used to specify the number of worker threads to use for processing entries.
+    entry_worker_count: Option<usize>,
 }
 
 impl WarpFileProcessor {
@@ -390,21 +228,23 @@ impl WarpFileProcessor {
             analysis_settings: json!({
                 "analysis.linearSweep.autorun": false,
                 "analysis.signatureMatcher.autorun": false,
-                "analysis.mode": "full",
+                "analysis.mode": "intermediate",
                 // Disable warp when opening views.
-                "analysis.warp.guid": false,
+                "analysis.warp.guid": true,
                 "analysis.warp.matcher": false,
                 "analysis.warp.apply": false,
             }),
-            request_analysis: true,
+            // We expect the `build_function` call to be run, so this should be a fine default.
+            request_analysis: false,
             cache_path: None,
             file_data: Default::default(),
             included_functions: Default::default(),
             compression_type: Default::default(),
             processed_file_callback: None,
-            file_filter: None,
             skip_warp_files: false,
             state: Arc::new(ProcessingState::default()),
+            entries: HashSet::new(),
+            entry_worker_count: None,
         }
     }
 
@@ -428,7 +268,7 @@ impl WarpFileProcessor {
         self
     }
 
-    pub fn with_file_data(mut self, file_data: FileDataKindField) -> Self {
+    pub fn with_file_data(mut self, file_data: IncludedDataField) -> Self {
         self.file_data = file_data;
         self
     }
@@ -438,7 +278,7 @@ impl WarpFileProcessor {
         self
     }
 
-    pub fn with_compression_type(mut self, compression_type: CompressionTypeField) -> Self {
+    pub fn with_compression_type(mut self, compression_type: CompressionType) -> Self {
         self.compression_type = compression_type;
         self
     }
@@ -451,20 +291,13 @@ impl WarpFileProcessor {
         self
     }
 
-    pub fn with_file_filter(mut self, file_filter: Regex) -> Self {
-        self.file_filter = Some(file_filter);
+    pub fn with_skip_warp_files(mut self, skip: bool) -> Self {
+        self.skip_warp_files = skip;
         self
     }
 
-    pub fn file_filter(&self, path: &Path) -> bool {
-        match (&self.file_filter, path.to_str()) {
-            (Some(filter), Some(path)) => filter.is_match(path),
-            _ => true,
-        }
-    }
-
-    pub fn with_skip_warp_files(mut self, skip: bool) -> Self {
-        self.skip_warp_files = skip;
+    pub fn with_entry_worker_count(mut self, count: usize) -> Self {
+        self.entry_worker_count = Some(count);
         self
     }
 
@@ -485,7 +318,55 @@ impl WarpFileProcessor {
         Ok(WarpFile::new(WarpFileHeader::new(), merged_chunks))
     }
 
-    pub fn process(&self, path: PathBuf) -> Result<WarpFile<'static>, ProcessingError> {
+    /// Add an entry to be processed later by [`WarpFileProcessor::process_entries`].
+    pub fn add_entry(&mut self, entry: WarpFileProcessorEntry) {
+        self.entries.insert(entry);
+    }
+
+    /// Process all entries in the processor, merging them into a single [`WarpFile`].
+    ///
+    /// The entries list will be cleared after processing to allow the processor to be reused.
+    ///
+    /// Because entries are processed in parallel, it is advised to set the worker count to a reasonable
+    /// amount to avoid excessive resource usage and to ensure optimal performance.
+    pub fn process_entries(&mut self) -> Result<WarpFile<'static>, ProcessingError> {
+        let thread_pool = match self.entry_worker_count {
+            Some(count) => ThreadPoolBuilder::new()
+                .num_threads(count)
+                .build()
+                .map_err(ProcessingError::ThreadPoolCreation)?,
+            None => ThreadPoolBuilder::new()
+                .build()
+                .map_err(ProcessingError::ThreadPoolCreation)?,
+        };
+
+        let unmerged_files: Result<Vec<_>, _> = thread_pool.install(|| {
+            self.entries
+                .par_iter()
+                .map(|e| self.process_entry(e))
+                .collect()
+        });
+        self.entries.clear();
+        self.merge_files(unmerged_files?)
+    }
+
+    pub fn process_entry(
+        &self,
+        entry: &WarpFileProcessorEntry,
+    ) -> Result<WarpFile<'static>, ProcessingError> {
+        match entry {
+            WarpFileProcessorEntry::Path(path) => self.process_path(path.clone()),
+            WarpFileProcessorEntry::Project(project) => self.process_project(&project),
+            WarpFileProcessorEntry::ProjectFile(project_file) => {
+                self.process_project_file(&project_file)
+            }
+            WarpFileProcessorEntry::BinaryView(view) => {
+                self.process_view(view.file().file_path(), &view)
+            }
+        }
+    }
+
+    pub fn process_path(&self, path: PathBuf) -> Result<WarpFile<'static>, ProcessingError> {
         let file = match path.extension() {
             Some(ext) if ext == "a" || ext == "lib" || ext == "rlib" => {
                 self.process_archive(path.clone())
@@ -507,18 +388,7 @@ impl WarpFileProcessor {
     }
 
     pub fn process_project(&self, project: &Project) -> Result<WarpFile<'static>, ProcessingError> {
-        let filter_project_file = |file: &Guard<ProjectFile>| {
-            let path = project_file_path(file);
-            self.file_filter(&path)
-        };
-
-        let files: Vec<_> = project
-            .files()
-            .iter()
-            .filter(filter_project_file)
-            .map(|f| f.to_owned())
-            .collect();
-
+        let files = project.files();
         // Inform the state of the new unprocessed project files.
         for project_file in &files {
             // NOTE: We use the on disk path here because the downstream file state uses that.
@@ -532,21 +402,21 @@ impl WarpFileProcessor {
             .par_iter()
             .map(|file| {
                 self.check_cancelled()?;
-                self.process_project_file(file)
+                self.process_project_file(&file)
             })
             .filter_map(|res| match res {
                 Ok(result) => Some(Ok(result)),
                 Err(ProcessingError::Cancelled) => Some(Err(ProcessingError::Cancelled)),
                 Err(ProcessingError::NoPathToProjectFile(path)) => {
-                    log::debug!("Skipping non-pulled project file: {:?}", path);
+                    tracing::debug!("Skipping non-pulled project file: {:?}", path);
                     None
                 }
                 Err(ProcessingError::SkippedFile(path)) => {
-                    log::debug!("Skipping project file: {:?}", path);
+                    tracing::debug!("Skipping project file: {:?}", path);
                     None
                 }
                 Err(e) => {
-                    log::error!("Project file processing error: {:?}", e);
+                    tracing::error!("Project file processing error: {:?}", e);
                     None
                 }
             })
@@ -615,14 +485,14 @@ impl WarpFileProcessor {
                     .with_extension("bndb");
                 if file_cache_path.exists() {
                     // TODO: Update analysis and wait option
-                    log::debug!("Analysis database found in cache: {:?}", file_cache_path);
+                    tracing::debug!("Analysis database found in cache: {:?}", file_cache_path);
                     binaryninja::load_with_options(
                         &file_cache_path,
                         self.request_analysis,
                         Some(settings_str),
                     )
                 } else {
-                    log::debug!("No database found in cache: {:?}", file_cache_path);
+                    tracing::debug!("No database found in cache: {:?}", file_cache_path);
                     binaryninja::load_with_options(&path, self.request_analysis, Some(settings_str))
                 }
             }
@@ -645,13 +515,17 @@ impl WarpFileProcessor {
             // TODO: We should also update the cache if analysis has changed!
             if !view.file().is_database_backed() {
                 // Update the cache.
-                log::debug!("Saving analysis database to {:?}", file_cache_path);
-                if !view.file().create_database(&file_cache_path) {
+                tracing::debug!("Saving analysis database to {:?}", file_cache_path);
+                let save_settings = SaveSettings::new().with_option(SaveOption::RemoveUndoData);
+                if !view
+                    .file()
+                    .create_database(&file_cache_path, &save_settings)
+                {
                     // TODO: We might want to error here...
-                    log::warn!("Failed to save analysis database to {:?}", file_cache_path);
+                    tracing::warn!("Failed to save analysis database to {:?}", file_cache_path);
                 }
             } else {
-                log::debug!(
+                tracing::debug!(
                     "Analysis database unchanged, skipping save to {:?}",
                     file_cache_path
                 );
@@ -664,6 +538,8 @@ impl WarpFileProcessor {
         if view.functions().is_empty() {
             self.state
                 .set_file_state(path.clone(), ProcessingFileState::Processed);
+            // Close the view manually, see comment in [`BinaryView`].
+            view.file().close();
             return Err(ProcessingError::SkippedFile(path));
         }
 
@@ -680,7 +556,7 @@ impl WarpFileProcessor {
             .into_iter()
             .filter_map(|e| {
                 let path = e.ok()?.into_path();
-                if path.is_file() && self.file_filter(&path) {
+                if path.is_file() {
                     Some(path)
                 } else {
                     None
@@ -697,20 +573,20 @@ impl WarpFileProcessor {
         // Process all the files.
         let unmerged_files: Result<Vec<_>, _> = files
             .into_par_iter()
-            .inspect(|path| log::debug!("Processing file: {:?}", path))
+            .inspect(|path| tracing::debug!("Processing file: {:?}", path))
             .map(|path| {
                 self.check_cancelled()?;
-                self.process(path)
+                self.process_path(path)
             })
             .filter_map(|res| match res {
                 Ok(result) => Some(Ok(result)),
                 Err(ProcessingError::SkippedFile(path)) => {
-                    log::debug!("Skipping directory file: {:?}", path);
+                    tracing::debug!("Skipping directory file: {:?}", path);
                     None
                 }
                 Err(ProcessingError::Cancelled) => Some(Err(ProcessingError::Cancelled)),
                 Err(e) => {
-                    log::error!("Directory file processing error: {:?}", e);
+                    tracing::error!("Directory file processing error: {:?}", e);
                     None
                 }
             })
@@ -750,7 +626,7 @@ impl WarpFileProcessor {
                 std::io::copy(&mut entry, &mut output_file).map_err(ProcessingError::FileRead)?;
                 entry_files.insert(output_path);
             } else {
-                log::debug!("Skipping already inserted entry: {}", normalized_name);
+                tracing::debug!("Skipping already inserted entry: {}", normalized_name);
             }
         }
 
@@ -763,16 +639,20 @@ impl WarpFileProcessor {
         // Process all the entries.
         let unmerged_files: Result<Vec<_>, _> = entry_files
             .into_par_iter()
-            .inspect(|path| log::debug!("Processing entry: {:?}", path))
+            .inspect(|path| tracing::debug!("Processing entry: {:?}", path))
             .map(|path| {
                 self.check_cancelled()?;
                 self.process_file(path)
             })
             .filter_map(|res| match res {
                 Ok(result) => Some(Ok(result)),
+                Err(ProcessingError::SkippedFile(path)) => {
+                    tracing::debug!("Skipping archive file: {:?}", path);
+                    None
+                }
                 Err(ProcessingError::Cancelled) => Some(Err(ProcessingError::Cancelled)),
                 Err(e) => {
-                    log::error!("Archive file processing error: {:?}", e);
+                    tracing::error!("Archive file processing error: {:?}", e);
                     None
                 }
             })
@@ -786,12 +666,66 @@ impl WarpFileProcessor {
         path: PathBuf,
         view: &BinaryView,
     ) -> Result<WarpFile<'static>, ProcessingError> {
+        let functions = view
+            .functions()
+            .iter()
+            .map(|function| function.to_owned())
+            .collect::<Vec<_>>();
+        self.process_view_with_functions(path, view, &functions)
+    }
+
+    pub fn process_view_with_functions(
+        &self,
+        path: PathBuf,
+        view: &BinaryView,
+        functions: &[Ref<BNFunction>],
+    ) -> Result<WarpFile<'static>, ProcessingError> {
+        self.process_view_with_functions_and_progress(path, view, functions, |_| {})
+    }
+
+    pub fn process_view_with_functions_and_progress<F>(
+        &self,
+        path: PathBuf,
+        view: &BinaryView,
+        functions: &[Ref<BNFunction>],
+        progress: F,
+    ) -> Result<WarpFile<'static>, ProcessingError>
+    where
+        F: Fn(f64) + Sync,
+    {
         self.state
             .set_file_state(path.clone(), ProcessingFileState::Processing);
+        let result =
+            self.process_view_with_functions_and_progress_inner(view, functions, &progress);
+        let final_state = match &result {
+            Ok(_) => ProcessingFileState::Processed,
+            Err(_) => ProcessingFileState::Unprocessed,
+        };
+        self.state.set_file_state(path, final_state);
+        if result.is_ok() {
+            progress(1.0);
+        }
+        result
+    }
+
+    fn process_view_with_functions_and_progress_inner<F>(
+        &self,
+        view: &BinaryView,
+        functions: &[Ref<BNFunction>],
+        progress: &F,
+    ) -> Result<WarpFile<'static>, ProcessingError>
+    where
+        F: Fn(f64) + Sync,
+    {
+        progress(0.0);
 
         let mut chunks = Vec::new();
-        if self.file_data != FileDataKindField::Types {
-            let mut signature_chunks = self.create_signature_chunks(view)?;
+        if self.file_data != IncludedDataField::Types {
+            let mut signature_chunks = self
+                .create_signature_chunks_for_functions_and_progress(functions, &|value| {
+                    progress(value * 0.9)
+                })?;
+            self.check_cancelled()?;
             for (target, mut target_chunks) in signature_chunks.drain() {
                 for signature_chunk in target_chunks.drain(..) {
                     if signature_chunk.raw_functions().next().is_some() {
@@ -805,8 +739,11 @@ impl WarpFileProcessor {
                 }
             }
         }
+        self.check_cancelled()?;
+        progress(0.9);
 
-        if self.file_data != FileDataKindField::Signatures {
+        if self.file_data != IncludedDataField::Signatures {
+            self.check_cancelled()?;
             let type_chunk = self.create_type_chunk(view)?;
             if type_chunk.raw_types().next().is_some() {
                 chunks.push(Chunk::new(
@@ -815,9 +752,6 @@ impl WarpFileProcessor {
                 ));
             }
         }
-
-        self.state
-            .set_file_state(path, ProcessingFileState::Processed);
 
         Ok(WarpFile::new(WarpFileHeader::new(), chunks))
     }
@@ -829,54 +763,85 @@ impl WarpFileProcessor {
         &self,
         view: &BinaryView,
     ) -> Result<HashMap<Target, Vec<SignatureChunk<'static>>>, ProcessingError> {
-        let is_function_named = |f: &Guard<BNFunction>| {
+        let functions = view
+            .functions()
+            .iter()
+            .map(|function| function.to_owned())
+            .collect::<Vec<_>>();
+        self.create_signature_chunks_for_functions(&functions)
+    }
+
+    pub fn create_signature_chunks_for_functions(
+        &self,
+        functions: &[Ref<BNFunction>],
+    ) -> Result<HashMap<Target, Vec<SignatureChunk<'static>>>, ProcessingError> {
+        self.create_signature_chunks_for_functions_and_progress(functions, &|_| {})
+    }
+
+    fn create_signature_chunks_for_functions_and_progress<F>(
+        &self,
+        functions: &[Ref<BNFunction>],
+        progress: &F,
+    ) -> Result<HashMap<Target, Vec<SignatureChunk<'static>>>, ProcessingError>
+    where
+        F: Fn(f64) + Sync,
+    {
+        let is_function_named = |f: &&Ref<BNFunction>| {
             self.included_functions == IncludedFunctionsField::All
-                || view.symbol_by_address(f.start()).is_some()
+                || f.defined_symbol().is_some()
                 || f.has_user_annotations()
         };
-        let is_function_tagged = |f: &Guard<BNFunction>| {
+        let is_function_tagged = |f: &&Ref<BNFunction>| {
             self.included_functions != IncludedFunctionsField::Selected
                 || !f.function_tags(None, Some(INCLUDE_TAG_NAME)).is_empty()
         };
         // TODO: is_function_blacklisted (use tag)
 
         // TODO: Move this background task to use the ProcessingState.
-        let view_functions = view.functions();
-        let total_functions = view_functions.len();
+        let total_functions = functions.len();
         let done_functions = AtomicUsize::default();
         let background_task = BackgroundTask::new(
             &format!("Generating signatures... ({}/{})", 0, total_functions),
             true,
-        );
+        )
+        .enter();
 
         // Create all of the "built" functions, for the chunk.
         // NOTE: This does a bit of filtering to remove undesired functions, look at this if
         // a desired function is not in the created chunk.
         // TODO: Make this interruptable. with background_task.is_cancelled.
         let start = Instant::now();
-        let built_functions: DashMap<Target, Vec<Function>> = view_functions
+        let built_functions: DashMap<Target, Vec<Function>> = functions
             .par_iter()
-            .inspect(|_| {
-                done_functions.fetch_add(1, Relaxed);
+            .map(|func| {
+                if self.state.is_cancelled() {
+                    return None;
+                }
+                let result = if is_function_tagged(&func)
+                    && is_function_named(&func)
+                    && !func.analysis_skipped()
+                {
+                    let target = platform_to_target(&func.platform());
+                    build_function(
+                        func,
+                        || func.lifted_il().ok(),
+                        self.file_data == IncludedDataField::Symbols,
+                    )
+                    .map(|built_function| (target, built_function))
+                } else {
+                    None
+                };
+                let completed = done_functions.fetch_add(1, Relaxed) + 1;
                 background_task.set_progress_text(&format!(
                     "Generating signatures... ({}/{}) [{}s]",
-                    done_functions.load(Relaxed),
+                    completed,
                     total_functions,
                     start.elapsed().as_secs_f32()
-                ))
+                ));
+                progress(completed as f64 / total_functions.max(1) as f64);
+                result
             })
-            .filter(is_function_tagged)
-            .filter(is_function_named)
-            .filter(|f| !f.analysis_skipped())
-            .filter_map(|func| {
-                let target = platform_to_target(&func.platform());
-                let built_function = build_function(
-                    &func,
-                    || func.lifted_il().ok(),
-                    self.file_data == FileDataKindField::Symbols,
-                )?;
-                Some((target, built_function))
-            })
+            .filter_map(|result| result)
             .fold(
                 DashMap::new,
                 |acc: DashMap<Target, Vec<Function>>, (target, function)| {
@@ -890,6 +855,10 @@ impl WarpFileProcessor {
                 });
                 acc
             });
+        self.check_cancelled()?;
+        if total_functions == 0 {
+            progress(1.0);
+        }
 
         // Split into multiple chunks if a target has more than MAX_FUNCTIONS_PER_CHUNK functions.
         // We do this because otherwise some chunks may have too many flatbuffer tables for the verifier to handle.
@@ -907,7 +876,6 @@ impl WarpFileProcessor {
                 })
                 .collect();
 
-        background_task.finish();
         chunks
     }
 
@@ -934,25 +902,10 @@ impl Debug for WarpFileProcessor {
             .field("file_data", &self.file_data)
             .field("compression_type", &self.compression_type)
             .field("included_functions", &self.included_functions)
-            .field("file_filter", &self.file_filter)
             .field("state", &self.state)
             .field("cache_path", &self.cache_path)
             .field("analysis_settings", &self.analysis_settings)
             .field("request_analysis", &self.request_analysis)
             .finish()
     }
-}
-
-fn project_file_path(file: &ProjectFile) -> PathBuf {
-    // Recurse up the folders to build a string like /foldera/folderb/myfile
-    let mut path = PathBuf::new();
-    // Add file name
-    path.push(file.name());
-    // Recursively add parent folder names
-    let mut current = file.folder();
-    while let Some(folder) = current {
-        path = PathBuf::from(folder.name()).join(path);
-        current = folder.parent();
-    }
-    path
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -19,24 +19,20 @@
 // IN THE SOFTWARE.
 
 #include "binaryninjaapi.h"
+
+#include "base/unicode.h"
 #include "ffi.h"
 
 
 std::string BinaryNinja::Unicode::UTF16ToUTF8(const uint8_t* utf16, const size_t len)
 {
-	char* value = BNUnicodeUTF16ToUTF8(utf16, len);
-	std::string result(value);
-	BNFreeString(value);
-	return result;
+	return bn::base::UTF16ToUTF8<std::string>({utf16, len});
 }
 
 
 std::string BinaryNinja::Unicode::UTF32ToUTF8(const uint8_t* utf32)
 {
-	char* value = BNUnicodeUTF32ToUTF8(utf32);
-	std::string result(value);
-	BNFreeString(value);
-	return result;
+	return bn::base::UTF32ToUTF8<std::string>({utf32, 4});
 }
 
 
@@ -64,6 +60,7 @@ std::vector<std::vector<std::pair<uint32_t, uint32_t>>> BinaryNinja::Unicode::Ge
 	for (size_t i = 0; i < blockListCounts; i ++)
 	{
 		std::vector<std::pair<uint32_t, uint32_t>> blockList;
+		blockList.reserve(blockCounts[i]);
 		for (size_t j = 0; j < blockCounts[i]; j ++)
 		{
 			blockList.push_back(std::make_pair(blockStarts[i][j], blockEnds[i][j]));
@@ -188,3 +185,29 @@ std::string BinaryNinja::Unicode::ToEscapedString(
 	return result;
 }
 
+
+std::string BinaryNinja::Unicode::ToEscapedString(BinaryView* view, const void* data, size_t dataLen)
+{
+	char* value = BNUnicodeToEscapedStringForView(view ? view->GetObject() : nullptr, data, dataLen);
+	std::string result(value);
+	BNFreeString(value);
+	return result;
+}
+
+
+std::string BinaryNinja::Unicode::ToEscapedString(BinaryView* view, std::string_view str)
+{
+	return ToEscapedString(view, str.data(), str.size());
+}
+
+
+size_t BinaryNinja::Unicode::GetDisplayWidth(const std::string& str)
+{
+	return BNUnicodeGetDisplayWidth(str.c_str());
+}
+
+
+size_t BinaryNinja::Unicode::GetNextGraphemeClusterBoundary(const std::string& str, size_t offset)
+{
+	return BNUnicodeGetNextGraphemeClusterBoundary(str.data(), str.size(), offset);
+}

@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -22,7 +22,7 @@ import os
 import ctypes
 import traceback
 import warnings
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 
 # Binary Ninja components
 import binaryninja
@@ -55,6 +55,23 @@ class _PlatformMetaClass(type):
 		if platform is None:
 			raise KeyError("'%s' is not a valid platform" % str(value))
 		return CorePlatform(handle=platform)
+
+	def __contains__(cls: '_PlatformMetaClass', name: object) -> bool:
+		if not isinstance(name, str):
+			return False
+		try:
+			cls[name]
+			return True
+		except KeyError:
+			return False
+
+	def get(cls: '_PlatformMetaClass', name: str, default: Any = None) -> Optional['Platform']:
+		try:
+			return cls[name]
+		except KeyError:
+			if default is not None:
+				return default
+			return None
 
 
 class Platform(metaclass=_PlatformMetaClass):
@@ -158,8 +175,8 @@ class Platform(metaclass=_PlatformMetaClass):
 	def _view_init(self, ctxt, view):
 		try:
 			view_obj = binaryview.BinaryView(handle=core.BNNewViewReference(view))
-			self.view_init(view)
-		except:
+			self.view_init(view_obj)
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Platform._view_init")
 
 	def _get_global_regs(self, ctxt, count):
@@ -172,7 +189,7 @@ class Platform(metaclass=_PlatformMetaClass):
 			result = ctypes.cast(reg_buf, ctypes.c_void_p)
 			self._pending_reg_lists[result.value] = (result, reg_buf)
 			return result.value
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Platform._get_global_regs")
 			count[0] = 0
 			return None
@@ -183,7 +200,7 @@ class Platform(metaclass=_PlatformMetaClass):
 			if buf.value not in self._pending_reg_lists:
 				raise ValueError("freeing register list that wasn't allocated")
 			del self._pending_reg_lists[buf.value]
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Platform._free_register_list")
 
 	def _get_global_reg_type(self, ctxt, reg):
@@ -194,14 +211,14 @@ class Platform(metaclass=_PlatformMetaClass):
 				handle = core.BNNewTypeReference(type_obj.handle)
 				return ctypes.cast(handle, ctypes.c_void_p).value
 			return None
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Platform._get_global_reg_type")
 			return None
 
 	def _get_address_size(self, ctxt):
 		try:
 			return self.address_size
-		except:
+		except Exception:
 			return self.arch.address_size
 
 	def _adjust_type_parser_input(
@@ -253,7 +270,7 @@ class Platform(metaclass=_PlatformMetaClass):
 			self._pending_parser_input_lists[source_file_names_ptr.value] = (source_file_names_ptr.value, source_file_names_buf)
 			self._pending_parser_input_lists[source_file_values_ptr.value] = (source_file_values_ptr.value, source_file_values_buf)
 
-		except:
+		except Exception:
 			arguments_out[0] = None
 			arguments_len_out[0] = 0
 			source_file_names_out[0] = None
@@ -288,7 +305,7 @@ class Platform(metaclass=_PlatformMetaClass):
 				if buf.value not in self._pending_parser_input_lists:
 					raise ValueError("freeing source_file_values list that wasn't allocated")
 				del self._pending_parser_input_lists[buf.value]
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Platform._free_type_parser_input")
 
 	def adjust_type_parser_input(
@@ -384,7 +401,7 @@ class Platform(metaclass=_PlatformMetaClass):
 		result = core.BNGetPlatformDefaultCallingConvention(self.handle)
 		if result is None:
 			return None
-		return callingconvention.CallingConvention(handle=result)
+		return callingconvention.CoreCallingConvention(handle=result)
 
 	@default_calling_convention.setter
 	def default_calling_convention(self, value):
@@ -398,7 +415,7 @@ class Platform(metaclass=_PlatformMetaClass):
 		result = core.BNGetPlatformCdeclCallingConvention(self.handle)
 		if result is None:
 			return None
-		return callingconvention.CallingConvention(handle=result)
+		return callingconvention.CoreCallingConvention(handle=result)
 
 	@cdecl_calling_convention.setter
 	def cdecl_calling_convention(self, value):
@@ -415,7 +432,7 @@ class Platform(metaclass=_PlatformMetaClass):
 		result = core.BNGetPlatformStdcallCallingConvention(self.handle)
 		if result is None:
 			return None
-		return callingconvention.CallingConvention(handle=result)
+		return callingconvention.CoreCallingConvention(handle=result)
 
 	@stdcall_calling_convention.setter
 	def stdcall_calling_convention(self, value):
@@ -432,7 +449,7 @@ class Platform(metaclass=_PlatformMetaClass):
 		result = core.BNGetPlatformFastcallCallingConvention(self.handle)
 		if result is None:
 			return None
-		return callingconvention.CallingConvention(handle=result)
+		return callingconvention.CoreCallingConvention(handle=result)
 
 	@fastcall_calling_convention.setter
 	def fastcall_calling_convention(self, value):
@@ -449,7 +466,7 @@ class Platform(metaclass=_PlatformMetaClass):
 		result = core.BNGetPlatformSystemCallConvention(self.handle)
 		if result is None:
 			return None
-		return callingconvention.CallingConvention(handle=result)
+		return callingconvention.CoreCallingConvention(handle=result)
 
 	@system_call_convention.setter
 	def system_call_convention(self, value):
@@ -471,7 +488,7 @@ class Platform(metaclass=_PlatformMetaClass):
 		assert cc is not None, "core.BNGetPlatformCallingConventions returned None"
 		result = []
 		for i in range(0, count.value):
-			result.append(callingconvention.CallingConvention(handle=core.BNNewCallingConventionReference(cc[i])))
+			result.append(callingconvention.CoreCallingConvention(handle=core.BNNewCallingConventionReference(cc[i])))
 		core.BNFreeCallingConventionList(cc, count.value)
 		return result
 
@@ -779,7 +796,7 @@ _platform_cache = {}
 
 class CorePlatform(Platform):
 	def __init__(self, handle: core.BNPlatform):
-		super(CorePlatform, self).__init__(handle=handle)
+		super().__init__(handle=handle)
 		if type(self) is CorePlatform:
 			global _platform_cache
 			_platform_cache[ctypes.addressof(handle.contents)] = self

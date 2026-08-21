@@ -226,7 +226,7 @@ class ConflictHandler:
 			for i in range(count):
 				py_conflicts[core.pyNativeStr(keys[i])] = MergeConflict(handle=conflicts[i])
 			return self.handle(py_conflicts)
-		except:
+		except Exception:
 			traceback.print_exc(file=sys.stderr)
 			return False
 
@@ -270,7 +270,7 @@ class ConflictSplitter:
 	def _get_name(self, ctxt: ctypes.c_void_p) -> ctypes.c_char_p:
 		try:
 			return core.BNAllocString(core.cstr(self.name))
-		except:
+		except Exception:
 			# Not sure why your get_name() would throw but let's handle it anyway
 			traceback.print_exc(file=sys.stderr)
 			return core.BNAllocString(core.cstr(type(self).__name__))
@@ -278,20 +278,20 @@ class ConflictSplitter:
 	def _reset(self, ctxt: ctypes.c_void_p):
 		try:
 			self.reset()
-		except:
+		except Exception:
 			traceback.print_exc(file=sys.stderr)
 
 	def _finished(self, ctxt: ctypes.c_void_p):
 		try:
 			self.finished()
-		except:
+		except Exception:
 			traceback.print_exc(file=sys.stderr)
 
 	def _can_split(self, ctxt: ctypes.c_void_p, key: ctypes.c_char_p, conflict: core.BNAnalysisMergeConflictHandle) -> bool:
 		try:
 			py_conflict = MergeConflict(handle=conflict)
 			return self.can_split(core.pyNativeStr(key), py_conflict)
-		except:
+		except Exception:
 			traceback.print_exc(file=sys.stderr)
 			return False
 
@@ -328,7 +328,7 @@ class ConflictSplitter:
 				new_conflicts[0][i] = self._split_conflicts[-1]._handle
 
 			return True
-		except:
+		except Exception:
 			traceback.print_exc(file=sys.stderr)
 			return False
 

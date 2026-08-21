@@ -14,22 +14,45 @@ To start, we suggest you download the [sample plugin](https://github.com/Vector3
 - For small scripts, you can include all the code inside `__init__.py`, though we recommend for larger scripts that `__init__.py` just act as an initializer and calls into functions organized appropriately in other files.
 - If you have python dependencies, create a [requirements.txt](https://pip.pypa.io/en/latest/cli/pip_freeze/) listing any python dependencies.
 
-### Submitting to the Plugin Manager
+### Plugin Description Display
 
-If your plugin was created as described above, there's only two steps to get it submitted to the plugin manager!
+Binary Ninja displays plugin descriptions differently depending on the contents of the `plugin.json` file.
 
-1. First, create a release either [manually](https://binary.ninja/2019/07/04/plugin-manager-2.0.html#5-create-a-release) or using our [release helper](https://github.com/Vector35/release_helper).
-1. Next, just [file an issue](https://github.com/Vector35/community-plugins/issues/new/choose) letting us know about your plugin.
+- If `longdescription` is **100 characters or longer**, the extension manager displays the `longdescription`.
+- If `longdescription` is **shorter than 100 characters**, the extension manager instead displays the contents of the plugin repository's `README.md`.
 
-For future releases all you need to do is increment the version and create a new release.
+To have your full `README.md` displayed, set `longdescription` to an empty string. The key must still be present -- validation fails if it is missing entirely. The `README.md` is read from the commit your latest release tag points at, so editing it only takes effect after you cut a new release.
+
+### Images in README Files
+
+When you include images for preview in the extension manager, be aware that animated gifs are not fully supported. They will be rendered as static images of the first frame.
+
+Additionally, all images should be included using FULL GitHub URLs as they will not render in the extension manager without that.
+
+For example:
+
+```markdown
+![](https://raw.githubusercontent.com/Vector35/6502/refs/heads/master/media/nes.png)
+```
+
+### Submitting to the Extension Manager
+
+If your plugin was created as described above, there's only two steps to get it submitted to the extension manager!
+
+1. First, cut a release. The [sample plugin](https://github.com/Vector35/sample_plugin#cutting-a-release) includes a release workflow you can copy into your own repository unmodified as long as `plugin.json` is at the repository root. Run it with `Actions` / `Release` / `Run workflow`; it bumps `version` in `plugin.json`, commits and tags that commit, and creates the release from the tag.
+2. Next, just [file an issue](https://github.com/Vector35/community-plugins/issues/new/choose) letting us know about your plugin.
+
+For future releases all you need to do is run the workflow again.
+
+[extensions.binary.ninja](https://extensions.binary.ninja) reads `plugin.json` from the commit the latest release tag points at, and the `version` field in that file is the only version it looks at -- tag names and release titles are never parsed. A release whose version the server already has is silently skipped, so if you cut a release manually, be sure to increment `version` in `plugin.json` yourself.
 
 ### Using Your Own Plugin Repository
 
-The simplest way to run your own plugin repository is to duplicate the structure of [https://github.com/vector35/community-plugins](https://github.com/vector35/community-plugins). Specifically, the [plugins.json](https://github.com/Vector35/community-plugins/blob/master/plugins.json), as [listing.json](https://github.com/Vector35/community-plugins/blob/master/listing.json) is used along with [generate_index.py](https://github.com/Vector35/community-plugins/blob/master/generate_index.py) to create that file.
+The simplest way to run your own plugin repository using the new V2 extension manager is to use the [mock server](https://github.com/Vector35/binaryninja-api/blob/dev/python/examples/mock_extension_server.py) helper script (a copy is available offline as well in the install path, in the python example scripts subfolder).
 
-Once you've created your test repository, use the `pluginManager.unofficialName` and `pluginManager.unofficialUrl` settings to add your third-party repository.
+Once you've created your test repository, add its URL to the [`extensionManager.unofficialUrls`](../guide/settings.md#extensionManager.unofficialUrls) setting, which accepts a list of third-party repository URLs.
 
-The [`add_repository`](https://api.binary.ninja/binaryninja.pluginmanager-module.html#binaryninja.pluginmanager.RepositoryManager.add_repository) API can also be used to add the repository, though it [may require manual creation of the repository folder](https://github.com/Vector35/binaryninja-api/issues/2987).
+The [`add_repository`](https://api.binary.ninja/binaryninja.extensionmanager-module.html#binaryninja.extensionmanager.RepositoryManager.add_repository) API can also be used to add the repository.
 
 ### Testing
 
@@ -79,7 +102,7 @@ If you wish to debug your python scripts, there are a few methods specific to di
 
 ## UI Plugins
 
-Binary Ninja UI plugins should always `import binaryninjaui` before an `import PySide6`. Not only does this make sure the correct PySide6 is loaded (running the wrong version of PySide6 can result in crashing), but this [prevents plugins](https://github.com/Vector35/binaryninja-api/commit/55cb3e76f536bc8d4a6533bd7ea5202d464c5f81) from running headlessly.
+Binary Ninja UI plugins written in python should always `import binaryninjaui` before an `import PySide6`. Not only does this make sure the correct PySide6 is loaded (running the wrong version of PySide6 can result in crashing), but this [prevents plugins](https://github.com/Vector35/binaryninja-api/commit/55cb3e76f536bc8d4a6533bd7ea5202d464c5f81) from running headlessly.
 
 UI plugins can take many forms. Some, like [Snippets](https://github.com/vector35/snippets) create their own UI elements and interact via UIActions. Others extend the UI via existing UI elements such as [Triage](https://github.com/Vector35/binaryninja-api/tree/dev/python/examples/triage), [Kaitai](https://github.com/Vector35/kaitai), [hellosidebar](https://github.com/Vector35/binaryninja-api/blob/dev/python/examples/hellosidebar.py), or [helloglobalarea](https://github.com/Vector35/binaryninja-api/blob/dev/python/examples/helloglobalarea.py).
 
@@ -114,16 +137,18 @@ although it is recommended to use the latest version.
 
 The first things to specify in your CMake file are a couple boilerplate options for building C++:
 
-    # Pick whatever version you have
-    cmake_minimum_required(VERSION 3.24)
+```cmake
+# Pick whatever version you have
+cmake_minimum_required(VERSION 3.24)
 
-    # Name your plugin
-    project(TestPlugin CXX)
+# Name your plugin
+project(TestPlugin CXX)
 
-    set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 20)
 
-    # Unless you are writing a plugin that needs Qt's UI, specify this
-    set(HEADLESS 1)
+# Unless you are writing a plugin that needs Qt's UI, specify this
+set(HEADLESS 1)
+```
 
 Then you want to get the matching API repository for the version of Binary Ninja you have.
 This information is contained in a file named `api_REVISION.txt` that exists in the root install folder for Linux,
@@ -132,43 +157,51 @@ the `Contents/Resources` sub-folder on macOS, and the root installation folder o
 Once you know which revision to use, you can clone a copy of the binaryninja-api repository
 and reference it directly in your plugin. If you're using git, this can be accomplished easily using a submodule:
 
-    git submodule add https://github.com/Vector35/binaryninja-api.git binaryninjaapi
-    cd binaryninjaapi
-    # Pick the revision from api_REVISION.txt
-    git checkout 6466fba3341b2ea7dbfceeeebbc6c0322a5d8514
+```bash
+git submodule add https://github.com/Vector35/binaryninja-api.git binaryninjaapi
+cd binaryninjaapi
+# Pick the revision from api_REVISION.txt
+git checkout 6466fba3341b2ea7dbfceeeebbc6c0322a5d8514
+```
 
 If you're not using git, you can clone the repository elsewhere:
 
-    git clone https://github.com/Vector35/binaryninja-api.git binaryninjaapi
-    cd binaryninjaapi
-    # Pick the revision from api_REVISION.txt
-    git checkout 6466fba3341b2ea7dbfceeeebbc6c0322a5d8514
+```bash
+git clone https://github.com/Vector35/binaryninja-api.git binaryninjaapi
+cd binaryninjaapi
+# Pick the revision from api_REVISION.txt
+git checkout 6466fba3341b2ea7dbfceeeebbc6c0322a5d8514
+```
 
 Now that you have the correct copy of the api, you need to point CMake at it and include it for use.
 Include something like the following in your CMake script and either add the path of your clone
 to the HINTS list or set the BN_API_PATH environment variable to the location of your clone
 
-    find_path(
-        BN_API_PATH
-        NAMES binaryninjaapi.h
-        # List of paths to search for the clone of the api
-        HINTS ../.. binaryninjaapi $ENV{BN_API_PATH}
-        REQUIRED
-    )
-    add_subdirectory(${BN_API_PATH} api)
+```cmake
+find_path(
+    BN_API_PATH
+    NAMES binaryninjaapi.h
+    # List of paths to search for the clone of the api
+    HINTS ../.. binaryninjaapi $ENV{BN_API_PATH}
+    REQUIRED
+)
+add_subdirectory(${BN_API_PATH} api)
+```
 
 Be sure to create a shared library and link against the Binary Ninja api. Also, you can use the
 `bn_install_plugin` helper to automatically set up your plugin to install to the Binary Ninja plugins directory
 when you use `cmake install`.
 
-    # Use whichever sources and plugin name you want
-    add_library(TestPlugin SHARED TestPlugin.cpp)
+```cmake
+# Use whichever sources and plugin name you want
+add_library(TestPlugin SHARED TestPlugin.cpp)
 
-    # Link with Binary Ninja
-    target_link_libraries(TestPlugin PUBLIC binaryninjaapi)
+# Link with Binary Ninja
+target_link_libraries(TestPlugin PUBLIC binaryninjaapi)
 
-    # Tell `cmake --install` to copy your plugin to the plugins directory
-    bn_install_plugin(TestPlugin)
+# Tell `cmake --install` to copy your plugin to the plugins directory
+bn_install_plugin(TestPlugin)
+```
 
 From there you can write the rest of your plugin's CMake configuration, including any other dependencies or
 options that you want. When you want to run your plugin, you can use `cmake --build` and `cmake --install`
@@ -178,24 +211,26 @@ You could also copy the plugin manually if you are using a different plugins dir
 In the source code of your plugin, you will need to export some functions that Binary Ninja uses to load your plugin
 at runtime:
 
-    #include "binaryninjaapi.h"
-    extern "C" {
-        // Tells Binary Ninja which version of the API you compiled against
-        BN_DECLARE_CORE_ABI_VERSION
+```cpp
+#include "binaryninjaapi.h"
+extern "C" {
+    // Tells Binary Ninja which version of the API you compiled against
+    BN_DECLARE_CORE_ABI_VERSION
 
-        // Function run on plugin startup, do simple initialization here (Settings, BinaryViewTypes, etc)
-        BINARYNINJAPLUGIN bool CorePluginInit()
-        {
-            return true;
-        }
-
-        // (Optional) Function to add other plugin dependencies in case your plugin requires them
-        BINARYNINJAPLUGIN void CorePluginDependencies()
-        {
-            // For example, if you require the x86 to be loaded before your plugin
-            AddRequiredPluginDependency("arch_x86");
-        }
+    // Function run on plugin startup, do simple initialization here (Settings, BinaryViewTypes, etc)
+    BINARYNINJAPLUGIN bool CorePluginInit()
+    {
+        return true;
     }
+
+    // (Optional) Function to add other plugin dependencies in case your plugin requires them
+    BINARYNINJAPLUGIN void CorePluginDependencies()
+    {
+        // For example, if you require the x86 to be loaded before your plugin
+        AddRequiredPluginDependency("arch_x86");
+    }
+}
+```
 
 From there, you can implement your plugin functionality as you desire. I highly recommend looking at other plugins for
 API usage since the C++ API is less well-documented than the Python API. Usually the functions and classes are named
@@ -219,46 +254,50 @@ or you can attempt to use a system-provided copy if you use Linux and like to li
 Building it is a bit of a process, but should provide you with a working installation. Once you have a Qt build,
 you can amend your CMake file to make a UI plugin. You will need the following CMake:
 
-    # Remove this or set to 0
-    # set(HEADLESS 1)
+```cmake
+# Remove this or set to 0
+# set(HEADLESS 1)
 
-    # If you are using Qt MOC (i.e. use Q_OBJECT/Q_SIGNALS/Q_SLOTS)
-    set(CMAKE_AUTOMOC ON)
-    set(CMAKE_AUTORCC ON)
+# If you are using Qt MOC (i.e. use Q_OBJECT/Q_SIGNALS/Q_SLOTS)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 
-    # Locate Qt installation for linking
-    find_package(Qt6 COMPONENTS Core Gui Widgets REQUIRED)
+# Locate Qt installation for linking
+find_package(Qt6 COMPONENTS Core Gui Widgets REQUIRED)
 
-    # Add MOCS to your build
-    add_library(TestPlugin SHARED library.cpp ${MOCS})
+# Add MOCS to your build
+add_library(TestPlugin SHARED library.cpp ${MOCS})
 
-    # Link against both binaryninjaapi/binaryninjaui and Qt6
-    target_link_libraries(TestPlugin PUBLIC binaryninjaapi binaryninjaui Qt6::Core Qt6::Gui Qt6::Widgets)
+# Link against both binaryninjaapi/binaryninjaui and Qt6
+target_link_libraries(TestPlugin PUBLIC binaryninjaapi binaryninjaui Qt6::Core Qt6::Gui Qt6::Widgets)
+```
 
 Then, in your plugin code, instead of using the exported functions for a core plugin, use the ones for a UI plugin:
 
-    #include "binaryninjaapi.h"
-    #include "uitypes.h"
-    #include "uicontext.h"
+```cpp
+#include "binaryninjaapi.h"
+#include "uitypes.h"
+#include "uicontext.h"
 
-    extern "C" {
-        // Tells Binary Ninja which version of the API you compiled against
-        BN_DECLARE_UI_ABI_VERSION
+extern "C" {
+    // Tells Binary Ninja which version of the API you compiled against
+    BN_DECLARE_UI_ABI_VERSION
 
-        // Function run on plugin startup, do simple initialization here (ViewTypes, SidebarWidgetTypes, etc)
-        BINARYNINJAPLUGIN bool UIPluginInit()
-        {
-            return true;
-        }
-
-        // (Optional) Function to add other plugin dependencies in case your plugin requires them
-        // Historically, these have never actually been used
-        BINARYNINJAPLUGIN void UIPluginDependencies()
-        {
-            // For example, if you require triage view to be loaded before your plugin
-            AddRequiredUIPluginDependency("triage");
-        }
+    // Function run on plugin startup, do simple initialization here (ViewTypes, SidebarWidgetTypes, etc)
+    BINARYNINJAPLUGIN bool UIPluginInit()
+    {
+        return true;
     }
+
+    // (Optional) Function to add other plugin dependencies in case your plugin requires them
+    // Historically, these have never actually been used
+    BINARYNINJAPLUGIN void UIPluginDependencies()
+    {
+        // For example, if you require triage view to be loaded before your plugin
+        AddRequiredUIPluginDependency("triage");
+    }
+}
+```
 
 From there, you can implement whatever wacky Qt user interfaces you dream up. Be warned that the Binary Ninja UI API is
 rather poorly documented and often missing helper functions for use by plugins. Feel free to ask for assistance and
@@ -290,7 +329,7 @@ automatically detect the plugin target and will compile and install correctly. H
 setup for building and live debugging your plugin:
 
 1. If you installed Binary Ninja somewhere other than the default, add an environment variable in your CMake Profile pointing at the installation, e.g.: `BN_INSTALL_DIR=/Applications/Binary Ninja.app`
-2. If you are writing a UI plugin, you will need to include the directory containing `qmake` to the `PATH` Environment Variable in your CMake Profile, e.g.: `PATH=/usr/bin:/bin:/usr/sbin:/sbin:/Users/user/Qt/6.8.2/clang_64/bin`
+2. If you are writing a UI plugin, you will need to include the directory containing `qmake` to the `PATH` Environment Variable in your CMake Profile, e.g.: `PATH=/usr/bin:/bin:/usr/sbin:/sbin:/Users/user/Qt/6.11.1/clang_64/bin`
 3. In your Run Configuration's Before Launch steps, add an Install step. This will copy the updated version of your plugin before starting, so you don't have to run Install manually.
 4. Set the Executable of your Run Configuration to point to the Binary Ninja executable. This allows you to compile your plugin and start Binary Ninja automatically.
    i. On macOS, you will need the full path to /Applications/Binary Ninja.app/Contents/MacOS/binaryninja
@@ -305,51 +344,55 @@ VSCode takes a bit of configuration to set up, but can build and debug plugins e
 You can install the C/C++ extension, the CMake extension, and the CMake Tools extension.
 You need to set up a task in `.vscode/tasks.json` to build and install your plugin. Something like this:
 
-    // tasks.json
-    {
-        "version": "2.0.0",
-        "tasks": [
-            {
-                "type": "cmake",
-                "label": "CMake: install",
-                "command": "install",
-                "problemMatcher": [],
-                "detail": "CMake template install task",
-                "options": {
-                    "environment": {
-                        // You will need this if your Binary Ninja installation is not in the default location
-                        "BN_INSTALL_DIR": "C:\\Users\\User\\AppData\\Local\\Vector35\\BinaryNinja",
-                        // You will need this if you are writing a UI plugin
-                        "PATH": "C:\\Users\\User\\Qt\\6.8.2\\msvc2019_64\\bin"
-                    }
+```jsonc
+// tasks.json
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "cmake",
+            "label": "CMake: install",
+            "command": "install",
+            "problemMatcher": [],
+            "detail": "CMake template install task",
+            "options": {
+                "environment": {
+                    // You will need this if your Binary Ninja installation is not in the default location
+                    "BN_INSTALL_DIR": "C:\\Users\\User\\AppData\\Local\\Vector35\\BinaryNinja",
+                    // You will need this if you are writing a UI plugin
+                    "PATH": "C:\\Users\\User\\Qt\\6.11.1\\msvc2019_64\\bin"
                 }
             }
-        ]
-    }
+        }
+    ]
+}
+```
 
 You will also want to set up a launch task in `.vscode/launch.json` to launch Binary Ninja in a debugger,
 so you can debug your plugin.
 Be sure to set `"preLaunchTask"` to use the `CMake: install` task created above, so your code updates will be
 built and installed automatically before you start debugging.
 
-    // launch.json
-    {
-        "version": "0.2.0",
-        "configurations": [
-            {
-                "name": "(Windows) Launch",
-                "type": "cppvsdbg",
-                "request": "launch",
-                "program": "C:\\Users\\User\\AppData\\Local\\Vector35\\BinaryNinja\\binaryninja.exe",
-                "args": [],
-                "stopAtEntry": false,
-                "cwd": "C:\\Users\\User\\AppData\\Local\\Vector35\\BinaryNinja",
-                "environment": [],
-                "console": "externalTerminal",
-                "preLaunchTask": "CMake: install"
-            }
-        ]
-    }
+```jsonc
+// launch.json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "(Windows) Launch",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "C:\\Users\\User\\AppData\\Local\\Vector35\\BinaryNinja\\binaryninja.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "C:\\Users\\User\\AppData\\Local\\Vector35\\BinaryNinja",
+            "environment": [],
+            "console": "externalTerminal",
+            "preLaunchTask": "CMake: install"
+        }
+    ]
+}
+```
 
 There are a few other options you can use to assist in debugging:
 
@@ -361,9 +404,9 @@ There are a few other options you can use to assist in debugging:
 As a footnote, it should be noted that most of the team at Vector 35 use VSCode as a bare text editor
 and use command-line lldb or gdb to debug their code. Shout-outs to people trying to get this working in Vim.
 
-## Submitting to the plugin manager
+## Submitting to the extension manager
 
-While native plugins are not fully supported in the plugin manager at this time, it's possible to work around this limitation by pre-building a native plugin for all three platforms and using a python plugin that acts as a loader for the native plugin. Additionally, you can submit a plugin as "view_only" which helps with discoverability.
+While native plugins are not fully supported in the extension manager at this time, it's possible to work around this limitation by pre-building a native plugin for all three platforms and using a python plugin that acts as a loader for the native plugin. Additionally, you can submit a plugin as "view_only" which helps with discoverability.
 
 ## Examples
 

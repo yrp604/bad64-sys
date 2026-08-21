@@ -1,12 +1,12 @@
 #pragma once
 
-#include <QtWidgets/QLabel>
-#include <QtGui/QStandardItemModel>
 #include <qabstractitemmodel.h>
 #include <qboxlayout.h>
 #include <qfileiconprovider.h>
 #include <qfilesystemwatcher.h>
+#include <qlabel.h>
 #include <qlineedit.h>
+#include <qmenu.h>
 #include <qmimedatabase.h>
 #include <qnamespace.h>
 #include <qplaintextedit.h>
@@ -17,10 +17,12 @@
 #include <qtextbrowser.h>
 #include <qtmetamacros.h>
 #include <qtoolbutton.h>
+#include <qtableview.h>
 #include <qtreeview.h>
 #include <qlistwidget.h>
 #include <qwidget.h>
 #include <qpushbutton.h>
+#include <qstackedwidget.h>
 #include <globalarea.h>
 #include <tabwidget.h>
 #include <unordered_map>
@@ -119,6 +121,7 @@ public:
 		COL_SIZE_ON_DISK,
 		COL_CREATED,
 		COL_LAST_OPENED,
+		COL_DESCRIPTION,
 		COL_STATUS,
 		COLUMN_COUNT,
 	};
@@ -140,7 +143,7 @@ private Q_SLOTS:
 };
 
 
-class BINARYNINJAUIAPI SortFilterProjectItemModel: public QSortFilterProxyModel
+class BINARYNINJAUIAPI ProjectTreeFilterModel: public QSortFilterProxyModel
 {
 	bool m_acceptAllFolders = false;
 
@@ -151,10 +154,92 @@ protected:
 	virtual bool filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const override;
 
 public:
-	SortFilterProjectItemModel(ProjectRef project, QObject* parent = nullptr): QSortFilterProxyModel(parent), m_project(project) {};
+	ProjectTreeFilterModel(ProjectRef project, QObject* parent = nullptr): QSortFilterProxyModel(parent), m_project(project) {};
 
 	void setAcceptAllFolders(bool accept) { m_acceptAllFolders = accept; }
 	bool acceptAllFolders() const { return m_acceptAllFolders; }
+};
+
+
+class BINARYNINJAUIAPI ProjectTableItemModel: public QAbstractProxyModel
+{
+	Q_OBJECT
+
+	ProjectRef m_project;
+
+	QList<QPersistentModelIndex> m_sourceFileIndexes;
+	QHash<QPersistentModelIndex, int> m_sourceToProxyRow;
+	QList<int> m_pendingRemovals;
+
+	void rebuildMapping();
+	void collectFileIndexes(const QModelIndex& parent, QList<QModelIndex>& results) const;
+	QString folderPathForIndex(int row) const;
+
+	void sourceRowsInserted(const QModelIndex& parent, int first, int last);
+	void sourceRowsAboutToBeRemoved(const QModelIndex& parent, int first, int last);
+	void sourceRowsRemoved();
+	void sourceDataChanged(const QModelIndex& topLeft, const QModelIndex& bottomRight, const QList<int>& roles);
+
+public:
+	ProjectTableItemModel(ProjectRef project, QObject* parent = nullptr);
+
+	enum {
+		COL_FOLDER = ProjectItemModel::COLUMN_COUNT,
+		COLUMN_COUNT,
+	};
+
+	void setSourceModel(QAbstractItemModel* sourceModel) override;
+
+	QModelIndex mapToSource(const QModelIndex& proxyIndex) const override;
+	QModelIndex mapFromSource(const QModelIndex& sourceIndex) const override;
+
+	QModelIndex index(int row, int column, const QModelIndex& parent = QModelIndex()) const override;
+	QModelIndex parent(const QModelIndex& child) const override;
+	int rowCount(const QModelIndex& parent = QModelIndex()) const override;
+	int columnCount(const QModelIndex& parent = QModelIndex()) const override;
+
+	QVariant data(const QModelIndex& proxyIndex, int role = Qt::DisplayRole) const override;
+	QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
+
+	bool setData(const QModelIndex& index, const QVariant& value, int role = Qt::EditRole) override;
+	Qt::ItemFlags flags(const QModelIndex& index) const override;
+};
+
+
+class BINARYNINJAUIAPI ProjectTableFilterModel: public QSortFilterProxyModel
+{
+	ProjectRef m_project;
+
+protected:
+	bool lessThan(const QModelIndex& sourceLeft, const QModelIndex& sourceRight) const override;
+	bool filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const override;
+
+public:
+	ProjectTableFilterModel(ProjectRef project, QObject* parent = nullptr): QSortFilterProxyModel(parent), m_project(project) {};
+};
+
+
+class BINARYNINJAUIAPI ProjectTable: public QTableView, public FilterTarget
+{
+	Q_OBJECT
+
+	virtual void scrollToFirstItem() override;
+	virtual void scrollToCurrentItem() override;
+	virtual void ensureSelection() override;
+	virtual void activateSelection() override;
+	virtual void setFilter(const std::string& filter, FilterOptions options) override;
+
+protected:
+	void mousePressEvent(QMouseEvent* event) override;
+	void keyPressEvent(QKeyEvent* event) override;
+
+public:
+	ProjectTable(QWidget* parent = nullptr);
+
+	QMenu* createHeaderContextMenu();
+
+Q_SIGNALS:
+	void filterChanged(const QString& filter, FilterOptions options);
 };
 
 
@@ -175,9 +260,9 @@ class BINARYNINJAUIAPI ProjectTree: public QTreeView, public FilterTarget
 
 	virtual void scrollToFirstItem() override;
 	virtual void scrollToCurrentItem() override;
-	virtual void selectFirstItem() override;
-	virtual void activateFirstItem() override;
-	virtual void setFilter(const std::string& filter) override;
+	virtual void ensureSelection() override;
+	virtual void activateSelection() override;
+	virtual void setFilter(const std::string& filter, FilterOptions options) override;
 
 protected:
 	void mousePressEvent(QMouseEvent* event) override;
@@ -187,8 +272,10 @@ protected:
 public:
 	ProjectTree(QWidget* parent = nullptr);
 
+	QMenu* createHeaderContextMenu();
+
 Q_SIGNALS:
-	void filterChanged(const QString& filter);
+	void filterChanged(const QString& filter, FilterOptions options);
 };
 
 
@@ -196,11 +283,15 @@ class BINARYNINJAUIAPI RecentsList: public QListWidget, public FilterTarget
 {
 	Q_OBJECT
 
+	QString m_filter;
+	FilterOptions m_filterOptions;
+
 	virtual void scrollToFirstItem() override;
 	virtual void scrollToCurrentItem() override;
-	virtual void selectFirstItem() override;
-	virtual void activateFirstItem() override;
-	virtual void setFilter(const std::string& filter) override;
+	virtual void ensureSelection() override;
+	virtual void activateSelection() override;
+	void applyFilter();
+	virtual void setFilter(const std::string& filter, FilterOptions options) override;
 
 public:
 
@@ -280,7 +371,7 @@ class BINARYNINJAUIAPI ProjectBrowser: public QWidget, public UIContextNotificat
 
 	ProjectRef m_project;
 
-	FilterEdit* m_projectFilterEdit;
+	FilterEdit* m_treeFilterEdit;
 	FilteredView* m_filteredTreeView;
 
 	FilterEdit* m_recentsFilterEdit;
@@ -289,24 +380,38 @@ class BINARYNINJAUIAPI ProjectBrowser: public QWidget, public UIContextNotificat
 	DockableTabBar* m_tabBar;
 
 	ProjectItemModel* m_projectModel;
-	SortFilterProjectItemModel* m_sortFilterProjectModel;
+	ProjectTreeFilterModel* m_sortFilterTreeModel;
+	ProjectTableItemModel* m_tableModel;
+	ProjectTableFilterModel* m_sortFilterTableModel;
 	QLabel* m_nameLabel;
 	QLabel* m_descriptionLabel;
 	ProjectTree* m_projectTree;
+	ProjectTable* m_projectTable;
 	InfoWidget* m_infoWidget;
 	QWidget* m_projectContainer;
+	QStackedWidget* m_viewStack;
+
+	FilterEdit* m_tableFilterEdit;
+	FilteredView* m_filteredTableView;
+
+	bool m_useTableView = false;
+	ClickableIcon* m_viewToggleButton;
 
 	RecentsList* m_recentFilesList;
 
 	ClickableIcon* m_refreshButton;
 	ClickableIcon* m_editDetailsButton;
 
-	UIActionHandler m_projectActionHandler;
+	UIActionHandler* m_projectTreeActionHandler = nullptr;
+	UIActionHandler* m_projectTableActionHandler = nullptr;
 	ContextMenuManager* m_projectContextMenuManager = nullptr;
 	Menu m_projectMenu;
 
 	ProjectFolderRef GetFolderContainingIndex(const QModelIndex& index) const;
 	QModelIndex GetCurrentSelectedIndex() const;
+	QItemSelectionModel* activeSelectionModel() const;
+	UIActionHandler* activeUIActionHandler() const;
+	void setUseTableView(bool useTable);
 
 	virtual void OnAfterOpenProjectFile(UIContext* context, ProjectFileRef projectFile, ViewFrame* frame) override;
 
@@ -328,12 +433,16 @@ class BINARYNINJAUIAPI ProjectBrowser: public QWidget, public UIContextNotificat
 	std::vector<ProjectFileRef> GetSelectedFilesRecursive();
 
 private slots:
-	void itemDoubleClicked(const QModelIndex& index);
-	void openProjectFile(ProjectFileRef file, bool openWithOptions = false);
-	void itemSelectionChanged(const QItemSelection& selected, const QItemSelection& deselected);
+	void treeItemDoubleClicked(const QModelIndex& index);
+	void fileDoubleClicked(ProjectFileRef file);
+	void openProjectFile(ProjectFileRef file, bool openWithOptions = false, bool forceContainerBrowser = false);
+	void treeItemSelectionChanged(const QItemSelection& selected, const QItemSelection& deselected);
 	void itemChanged(QStandardItem* item);
 	void handleItemsDropped(Qt::DropAction action, const QList<QString> fileIds, const QList<QString> folderIds, const QList<QUrl> newUrls, ProjectFolderRef newParentFolder);
-	void onTreeFilterChanged(const QString& filter);
+	void onTreeFilterChanged(const QString& filter, FilterOptions options);
+	void tableItemDoubleClicked(const QModelIndex& index);
+	void tableItemSelectionChanged(const QItemSelection& selected, const QItemSelection& deselected);
+	void onTableFilterChanged(const QString& filter, FilterOptions options);
 
 protected:
 	void SelectItems(std::vector<ProjectFileRef> files, std::vector<ProjectFolderRef> folders);
@@ -342,7 +451,7 @@ protected:
 	void PromptImportFolder(ProjectFolderRef parent = nullptr);
 	void MakeNewFolder(ProjectFolderRef parent = nullptr);
 	void PromptDeleteSelected();
-	void PromptOpenSelected(bool withOptions = false);
+	void PromptOpenSelected(bool withOptions = false, bool forceContainerBrowser = false);
 	void PromptExportSelected();
 	void PromptAnalyzeSelected();
 	void PromptEditProjectDetails();

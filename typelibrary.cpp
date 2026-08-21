@@ -14,9 +14,9 @@ TypeLibrary::TypeLibrary(Ref<Architecture> arch, const std::string& name)
 }
 
 
-bool TypeLibrary::DecompressToFile(const std::string& path, const std::string& output)
+bool TypeLibrary::DecompressToFile(const std::string& path)
 {
-	return BNTypeLibraryDecompressToFile(path.c_str(), output.c_str());
+	return BNTypeLibraryDecompressToFile(m_object, path.c_str());
 }
 
 
@@ -195,6 +195,12 @@ void TypeLibrary::AddAlternateName(const std::string& alternate)
 }
 
 
+void TypeLibrary::RemoveAlternateName(const std::string& alternate)
+{
+	BNRemoveTypeLibraryAlternateName(m_object, alternate.c_str());
+}
+
+
 void TypeLibrary::SetDependencyName(const std::string& depName)
 {
 	BNSetTypeLibraryDependencyName(m_object, depName.c_str());
@@ -258,4 +264,10 @@ void TypeLibrary::AddNamedTypeSource(const QualifiedName& name, const std::strin
 void TypeLibrary::Finalize()
 {
 	BNFinalizeTypeLibrary(m_object);
+}
+
+
+void TypeLibrary::Register()
+{
+	BNRegisterTypeLibrary(m_object);
 }

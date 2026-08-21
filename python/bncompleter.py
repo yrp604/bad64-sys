@@ -41,6 +41,11 @@ Notes:
 """
 
 import atexit
+import html
+import io
+import tokenize
+import typing
+
 import binaryninja
 import __main__
 import inspect
@@ -62,9 +67,20 @@ def fuzzy_match(target, query):
 def fnsignature(obj):
 	try:
 		sig = str(inspect.signature(obj))
-	except:
+	except Exception:
 		sig = "()"
 	return sig
+
+
+def _format_annotation(annotation):
+	if isinstance(annotation, str):
+		return annotation
+	if isinstance(annotation, typing.ForwardRef):
+		return annotation.__forward_arg__
+	try:
+		return inspect.formatannotation(annotation)
+	except Exception:
+		return repr(annotation)
 
 
 class Completer:
@@ -94,6 +110,405 @@ class Completer:
 		else:
 			self.use_main_ns = 0
 			self.namespace = namespace
+
+	def _resolve_callable(self, callable_path: str):
+		if self.use_main_ns:
+			self.namespace = __main__.__dict__
+		namespace = self.namespace
+		parts = callable_path.split(".")
+
+		if not parts:
+			return None
+
+		function_obj = namespace.get(parts[0])
+		if function_obj is None:
+			if hasattr(__builtins__, '__dict__'):
+				function_obj = __builtins__.__dict__.get(parts[0])
+			else:
+				function_obj = __builtins__.get(parts[0])
+		if function_obj is None:
+			return None
+
+		for attr in parts[1:]:
+			try:
+				function_obj = getattr(function_obj, attr)
+			except Exception:
+				return None
+
+		return function_obj
+
+	@staticmethod
+	def _split_call_arguments(
+		tokens: typing.List[tokenize.TokenInfo], opening_paren_index: int
+	) -> typing.List[typing.List[tokenize.TokenInfo]]:
+		arguments = []
+		current_argument = []
+		depth = 0
+
+		for tok in tokens[opening_paren_index + 1:]:
+			if tok.type == tokenize.OP:
+				if tok.string in "([{":
+					depth += 1
+				elif tok.string in ")]}":
+					if depth == 0:
+						break
+					depth -= 1
+				elif tok.string == "," and depth == 0:
+					arguments.append(current_argument)
+					current_argument = []
+					continue
+
+			current_argument.append(tok)
+
+		arguments.append(current_argument)
+		return arguments
+
+	@staticmethod
+	def _keyword_argument_name(
+		argument_tokens: typing.List[tokenize.TokenInfo]
+	) -> Optional[str]:
+		depth = 0
+
+		for index, tok in enumerate(argument_tokens):
+			if tok.type != tokenize.OP:
+				continue
+
+			if tok.string in "([{":
+				depth += 1
+			elif tok.string in ")]}":
+				if depth > 0:
+					depth -= 1
+			elif tok.string == "=" and depth == 0:
+				if index == 1 and argument_tokens[0].type == tokenize.NAME:
+					return argument_tokens[0].string
+				return None
+
+		return None
+
+	@staticmethod
+	def _is_keyword_unpack_argument(
+		argument_tokens: typing.List[tokenize.TokenInfo]
+	) -> bool:
+		return (
+			len(argument_tokens) > 0
+			and argument_tokens[0].type == tokenize.OP
+			and argument_tokens[0].string == "**"
+		)
+
+	@staticmethod
+	def _is_iterable_unpack_argument(
+		argument_tokens: typing.List[tokenize.TokenInfo]
+	) -> bool:
+		return (
+			len(argument_tokens) > 0
+			and argument_tokens[0].type == tokenize.OP
+			and argument_tokens[0].string == "*"
+		)
+
+	@staticmethod
+	def _var_positional_parameter_index(
+		parameters: typing.List[inspect.Parameter]
+	) -> Optional[int]:
+		return next(
+			(
+				index for index, parameter in enumerate(parameters)
+				if parameter.kind == inspect.Parameter.VAR_POSITIONAL
+			),
+			None,
+		)
+
+	@staticmethod
+	def _keyword_only_parameter_index(
+		parameters: typing.List[inspect.Parameter], used_keyword_parameters: typing.Set[str]
+	) -> Optional[int]:
+		return next(
+			(
+				index for index, parameter in enumerate(parameters)
+				if parameter.kind == inspect.Parameter.KEYWORD_ONLY
+				and parameter.name not in used_keyword_parameters
+			),
+			None,
+		)
+
+	@staticmethod
+	def _keyword_parameter_index(
+		parameters: typing.List[inspect.Parameter], keyword_name: str
+	) -> Optional[int]:
+		var_keyword_index = None
+
+		for index, parameter in enumerate(parameters):
+			if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+				var_keyword_index = index
+			elif (
+				parameter.name == keyword_name
+				and parameter.kind
+				in {
+					inspect.Parameter.POSITIONAL_OR_KEYWORD,
+					inspect.Parameter.KEYWORD_ONLY,
+				}
+			):
+				return index
+
+		return var_keyword_index
+
+	@staticmethod
+	def _positional_parameter_index(
+		parameters: typing.List[inspect.Parameter],
+		positional_argument_count: int,
+		used_keyword_parameters: typing.Set[str],
+	) -> Optional[int]:
+		positional_parameter_count = 0
+		var_positional_index = None
+
+		for index, parameter in enumerate(parameters):
+			if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
+				var_positional_index = index
+			elif parameter.kind in {
+				inspect.Parameter.POSITIONAL_ONLY,
+				inspect.Parameter.POSITIONAL_OR_KEYWORD,
+			}:
+				if (
+					parameter.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
+					and parameter.name in used_keyword_parameters
+				):
+					continue
+
+				if positional_parameter_count == positional_argument_count:
+					return index
+				positional_parameter_count += 1
+
+		return var_positional_index
+
+	@classmethod
+	def _current_argument_index(
+		cls,
+		parameters: typing.List[inspect.Parameter],
+		arguments: typing.List[typing.List[tokenize.TokenInfo]],
+	) -> Optional[int]:
+		positional_argument_count = 0
+		used_keyword_parameters = set()
+		var_keyword_index = next(
+			(
+				index for index, parameter in enumerate(parameters)
+				if parameter.kind == inspect.Parameter.VAR_KEYWORD
+			),
+			None,
+		)
+		seen_var_keyword_argument = False
+		seen_iterable_unpack_argument = False
+
+		for argument_tokens in arguments[:-1]:
+			keyword_name = cls._keyword_argument_name(argument_tokens)
+			if keyword_name is not None:
+				parameter_index = cls._keyword_parameter_index(parameters, keyword_name)
+				if parameter_index is not None:
+					used_keyword_parameters.add(parameters[parameter_index].name)
+					if parameter_index == var_keyword_index:
+						seen_var_keyword_argument = True
+			elif cls._is_iterable_unpack_argument(argument_tokens):
+				seen_iterable_unpack_argument = True
+			elif not cls._is_keyword_unpack_argument(argument_tokens):
+				positional_argument_count += 1
+
+		current_argument = arguments[-1]
+		keyword_name = cls._keyword_argument_name(current_argument)
+		if keyword_name is not None:
+			return cls._keyword_parameter_index(parameters, keyword_name)
+
+		if cls._is_keyword_unpack_argument(current_argument):
+			return var_keyword_index
+		if cls._is_iterable_unpack_argument(current_argument):
+			return cls._var_positional_parameter_index(parameters)
+
+		if seen_var_keyword_argument:
+			return var_keyword_index
+		if seen_iterable_unpack_argument:
+			return cls._var_positional_parameter_index(parameters)
+
+		parameter_index = cls._positional_parameter_index(
+			parameters, positional_argument_count, used_keyword_parameters
+		)
+		if parameter_index is not None:
+			return parameter_index
+
+		return cls._keyword_only_parameter_index(parameters, used_keyword_parameters)
+
+	def _get_argument_completion_context(
+		self, text: str
+	) -> typing.Optional[typing.Dict[str, typing.Any]]:
+		if "(" not in text:
+			return None
+
+		line_offsets = [0]
+		for line in text.splitlines(keepends=True):
+			line_offsets.append(line_offsets[-1] + len(line))
+
+		def absolute_byte_index(position: typing.Tuple[int, int]) -> int:
+			line, column = position
+			return len(text[:line_offsets[line - 1] + column].encode("utf-8"))
+
+		reader = io.StringIO(text).readline
+		stream = tokenize.generate_tokens(reader)
+
+		tokens = []
+		try:
+			for tok in stream:
+				if tok.type in {
+					tokenize.ENCODING,
+					tokenize.NL,
+					tokenize.NEWLINE,
+					tokenize.INDENT,
+					tokenize.DEDENT,
+					tokenize.ENDMARKER,
+					tokenize.COMMENT,
+				}:
+					continue
+				tokens.append(tok)
+		except tokenize.TokenError:
+			pass
+
+		if not tokens:
+			return None
+
+		stack = []
+		for index, tok in enumerate(tokens):
+			if tok.type == tokenize.OP and tok.string in "([{":
+				callable_path = None
+
+				if tok.string == "(":
+					i = index - 1
+					parts = []
+
+					if i >= 0 and tokens[i].type == tokenize.NAME:
+						parts.append(tokens[i].string)
+						i -= 1
+
+						while i >= 1:
+							if (
+								tokens[i].type == tokenize.OP
+								and tokens[i].string == "."
+								and tokens[i - 1].type == tokenize.NAME
+							):
+								parts.append(tokens[i - 1].string)
+								i -= 2
+							else:
+								break
+
+						parts.reverse()
+						callable_path = ".".join(parts)
+
+				stack.append(
+					{
+						"bracket": tok.string,
+						"token_index": index,
+						"callable_path": callable_path,
+					}
+				)
+			elif tok.type == tokenize.OP and tok.string in ")]}":
+				if stack:
+					stack.pop()
+
+		call_context = None
+		for entry in reversed(stack):
+			if entry["bracket"] == "(" and entry["callable_path"] is not None:
+				call_context = entry
+				break
+
+		if call_context is None:
+			return None
+
+		function_obj = self._resolve_callable(call_context["callable_path"])
+		if function_obj is None:
+			return None
+
+		try:
+			signature = inspect.signature(function_obj)
+		except Exception:
+			return None
+
+		parameters = list(signature.parameters.values())
+
+		arguments = self._split_call_arguments(tokens, call_context["token_index"])
+
+		return {
+			"signature": signature,
+			"parameters": parameters,
+			"current_argument_index": self._current_argument_index(parameters, arguments),
+			"start_index": absolute_byte_index(tokens[call_context["token_index"]].end),
+		}
+
+	def can_complete_arguments(self, text: str) -> bool:
+		"""
+		A faster check to see if argument assistance is even needed currently.
+
+		:param text:
+		:return:
+		"""
+		return self._get_argument_completion_context(text) is not None
+
+	def complete_arguments(self, text: str) -> typing.Tuple[Optional[str], int]:
+		"""Given input up to the contents of 'text', return a HTML string containing
+		the arguments for the function.
+
+		Used in UI to display and highlight arguments of a function as the user types them.
+		"""
+		context = self._get_argument_completion_context(text)
+		if context is None:
+			return None, 0
+
+		signature = context["signature"]
+		parameters = context["parameters"]
+		current_argument_index = context["current_argument_index"]
+
+		return_args = []
+		positional_only_count = sum(
+			1 for p in parameters if p.kind == inspect.Parameter.POSITIONAL_ONLY
+		)
+
+		for i, parameter in enumerate(parameters):
+			if (
+				parameter.kind == inspect.Parameter.KEYWORD_ONLY
+				and "*" not in return_args
+				and not any(
+					p.kind == inspect.Parameter.VAR_POSITIONAL
+					for p in parameters[:i]
+				)
+			):
+				return_args.append("*")
+
+			if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
+				arg = f"*{parameter.name}"
+			elif parameter.kind == inspect.Parameter.VAR_KEYWORD:
+				arg = f"**{parameter.name}"
+			else:
+				arg = parameter.name
+
+			if i == current_argument_index:
+				arg_postfix = ''
+				if parameter.annotation is not inspect.Signature.empty:
+					annotation = _format_annotation(parameter.annotation)
+					arg_postfix += f": {annotation}"
+
+				if parameter.default is not inspect.Signature.empty:
+					arg_postfix += f" = {parameter.default!r}"
+				arg = html.escape(arg)
+				arg_postfix = html.escape(arg_postfix)
+				arg = f'<span class="currentArgument"><b>{arg}</b>{arg_postfix}</span>'
+			else:
+				arg = html.escape(arg)
+
+			return_args.append(arg)
+
+			if positional_only_count > 0 and i + 1 == positional_only_count:
+				return_args.append("/")
+
+		result = ", ".join(return_args)
+
+		if signature.return_annotation is not inspect.Signature.empty:
+			return_annotation = _format_annotation(signature.return_annotation)
+			result += f'<span class="returnType"> -&gt; {html.escape(return_annotation)}</span>'
+
+		return result, context["start_index"]
 
 	def complete(self, text: str, state) -> Optional[str]:
 		"""Return the next possible completion for 'text'.

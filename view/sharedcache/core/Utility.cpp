@@ -39,6 +39,9 @@ int64_t readSLEB128(const uint8_t*& current, const uint8_t* end)
 
 uint64_t readLEB128(const uint8_t*& current, const uint8_t* end)
 {
+	if (current == nullptr)
+		return -1;
+
 	uint64_t result = 0;
 	int bit = 0;
 	do
@@ -120,7 +123,7 @@ void ApplySymbol(Ref<BinaryView> view, Ref<TypeLibrary> typeLib, Ref<Symbol> sym
 
 			if (auto idType = view->GetTypeByName({"id"}))
 			{
-				callTypeParams.emplace_back("obj", idType, true, Variable());
+				callTypeParams.emplace_back("obj", idType, DefaultLocationSource, Variable());
 				auto funcType = Type::FunctionType(idType, cc, callTypeParams);
 				func->SetUserType(funcType);
 			}

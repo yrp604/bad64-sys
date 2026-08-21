@@ -49,7 +49,7 @@ fn test_workflow_registration() {
         .iter()
         .find(|w| w.name() == test_workflow.name())
         .expect("Workflow not found in list");
-    Settings::new()
+    Settings::global()
         .get_property_string_list("analysis.workflows.functionWorkflow", "enum")
         .iter()
         .find(|&w| w == "test_workflow")

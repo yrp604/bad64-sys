@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -20,7 +20,7 @@
 
 import ctypes
 import traceback
-from typing import Optional, List, Dict, Union, Tuple
+from typing import Any, Optional, List, Dict, Union, Tuple
 
 # Binary Ninja components
 import binaryninja
@@ -234,7 +234,7 @@ class TypeArchive:
 	def add_types(self, new_types: List[Tuple['_types.QualifiedNameType', '_types.Type']]) -> None:
 		"""
 		Add named types to the type archive. Types must have all dependent named
-		types added prior to the parent types being added (or included in the list) or this 
+		types added prior to the parent types being added (or included in the list) or this
 		function will fail. Types already existing with any added names will be overwritten.
 
 		:param new_types: Names and definitions of new types
@@ -603,9 +603,12 @@ class TypeArchive:
 		finally:
 			core.BNFreeStringList(ids, count.value)
 
-	def query_metadata(self, key: str) -> Optional['metadata.MetadataValueType']:
+	def query_metadata(self, key: str) -> 'metadata.MetadataValueType':
 		"""
 		Look up a metadata entry in the archive
+
+		.. note:: As of Binary Ninja 5.3 this API now raises KeyError on failure. \
+			Please use `get_metadata` for a non-raising version of the API.
 
 		:param string key: key to query
 		:rtype: Metadata associated with the key, if it exists. Otherwise, None
@@ -618,7 +621,35 @@ class TypeArchive:
 		"""
 		md_handle = core.BNTypeArchiveQueryMetadata(self.handle, key)
 		if md_handle is None:
-			return None
+			raise KeyError(key)
+		return metadata.Metadata(handle=md_handle).value
+
+	def get_metadata(self, key: str, default: Any = None) -> 'metadata.MetadataValueType | Any':
+		"""
+		`get_metadata` retrieves a metadata value associated with the given key stored in the current TypeArchive.
+
+		This method behaves like `dict.get()`:
+
+		- If the key exists, its metadata value is returned.
+		- If the key does not exist and `default` is not provided, `None` is returned.
+		- If the key does not exist and `default` is provided, `default` is returned.
+
+		:param str key: key to query
+		:param default: value to return if the key does not exist (defaults to None)
+		:rtype: metadata associated with the key or the default value
+		:Example:
+
+			>>> ta.store_metadata("integer", 1337)
+			>>> ta.get_metadata("integer")
+			1337L
+			>>> ta.get_metadata("missing")
+			None
+			>>> ta.get_metadata("missing", 42)
+			42
+		"""
+		md_handle = core.BNTypeArchiveQueryMetadata(self.handle, key)
+		if md_handle is None:
+			return default
 		return metadata.Metadata(handle=md_handle).value
 
 	def store_metadata(self, key: str, md: 'metadata.MetadataValueType') -> None:
@@ -770,25 +801,25 @@ class TypeArchiveNotificationCallbacks:
 	def _type_added(self, ctxt, archive: ctypes.POINTER(core.BNTypeArchive), id: ctypes.c_char_p, definition: ctypes.POINTER(core.BNType)) -> None:
 		try:
 			self._notify.type_added(self._archive, core.pyNativeStr(id), _types.Type.create(handle=core.BNNewTypeReference(definition)))
-		except:
+		except Exception:
 			log.log_error_for_exception("Unhandled Python exception in TypeArchiveNotificationCallbacks._type_added")
 
 	def _type_updated(self, ctxt, archive: ctypes.POINTER(core.BNTypeArchive), id: ctypes.c_char_p, old_definition: ctypes.POINTER(core.BNType), new_definition: ctypes.POINTER(core.BNType)) -> None:
 		try:
 			self._notify.type_updated(self._archive, core.pyNativeStr(id), _types.Type.create(handle=core.BNNewTypeReference(old_definition)), _types.Type.create(handle=core.BNNewTypeReference(new_definition)))
-		except:
+		except Exception:
 			log.log_error_for_exception("Unhandled Python exception in TypeArchiveNotificationCallbacks._type_updated")
 
 	def _type_renamed(self, ctxt, archive: ctypes.POINTER(core.BNTypeArchive), id: ctypes.c_char_p, old_name: ctypes.POINTER(core.BNQualifiedName), new_name: ctypes.POINTER(core.BNQualifiedName)) -> None:
 		try:
 			self._notify.type_renamed(self._archive, core.pyNativeStr(id), _types.QualifiedName._from_core_struct(old_name.contents), _types.QualifiedName._from_core_struct(new_name.contents))
-		except:
+		except Exception:
 			log.log_error_for_exception("Unhandled Python exception in TypeArchiveNotificationCallbacks._type_renamed")
 
 	def _type_deleted(self, ctxt, archive: ctypes.POINTER(core.BNTypeArchive), id: ctypes.c_char_p, definition: ctypes.POINTER(core.BNType)) -> None:
 		try:
 			self._notify.type_deleted(self._archive, core.pyNativeStr(id), _types.Type.create(handle=core.BNNewTypeReference(definition)))
-		except:
+		except Exception:
 			log.log_error_for_exception("Unhandled Python exception in TypeArchiveNotificationCallbacks._type_deleted")
 
 	@property

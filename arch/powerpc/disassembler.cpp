@@ -1,7 +1,6 @@
 
 
 #include <string>
-#include <vector>
 
 #include "binaryninjaapi.h"
 
@@ -98,14 +97,14 @@ bool PushOperandTokens(string& result, const Operand* op)
 
 		case PPC_OP_SIMM:
 			if (op->simm < 0 && op->simm > -0x10000)
-				snprintf(buf, sizeof(buf), "-0x%llx", -op->simm);
+				snprintf(buf, sizeof(buf), "-0x%" PRIx64, -op->simm);
 			else
-				snprintf(buf, sizeof(buf), "0x%llx", op->simm);
+				snprintf(buf, sizeof(buf), "0x%" PRIx64, op->simm);
 			result += buf;
 			break;
 
 		case PPC_OP_LABEL:
-			snprintf(buf, sizeof(buf), "0x%llx", op->label);
+			snprintf(buf, sizeof(buf), "0x%" PRIx64, op->label);
 			result += buf;
 			break;
 

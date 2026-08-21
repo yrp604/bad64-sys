@@ -16,7 +16,7 @@ class AnalysisInfoWidget : public QWidget
 	NavigationAddressLabel* m_gpLabel;
 	QLabel* m_gpExtraLabel;
 
-	BinaryNinja::Confidence<BinaryNinja::RegisterValue> m_lastGPValue;
+	std::vector<std::pair<uint32_t, BinaryNinja::Confidence<BinaryNinja::RegisterValue>>> m_lastGPValues;
 
 	void updateDisplay();
 

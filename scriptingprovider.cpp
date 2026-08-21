@@ -56,12 +56,13 @@ void ScriptingOutputListener::NotifyInputReadyStateChanged(BNScriptingProviderIn
 
 ScriptingInstance::ScriptingInstance(ScriptingProvider* provider)
 {
-	BNScriptingInstanceCallbacks cb;
+	BNScriptingInstanceCallbacks cb = {};
 	cb.context = this;
 	cb.destroyInstance = DestroyInstanceCallback;
 	cb.externalRefTaken = nullptr;
 	cb.externalRefReleased = nullptr;
 	cb.executeScriptInput = ExecuteScriptInputCallback;
+	cb.executeScriptInputFromFilename = ExecuteScriptFromFilenameCallback;
 	cb.cancelScriptInput = CancelScriptInputCallback;
 	cb.releaseBinaryView = ReleaseBinaryViewCallback;
 	cb.setCurrentBinaryView = SetCurrentBinaryViewCallback;
@@ -71,6 +72,8 @@ ScriptingInstance::ScriptingInstance(ScriptingProvider* provider)
 	cb.setCurrentSelection = SetCurrentSelectionCallback;
 	cb.completeInput = CompleteInputCallback;
 	cb.stop = StopCallback;
+	cb.canCompleteArguments = CanCompleteArgumentsCallback;
+	cb.completeArguments = CompleteArgumentsCallback;
 	AddRefForRegistration();
 	m_object = BNInitScriptingInstance(provider->GetObject(), &cb);
 }
@@ -93,6 +96,13 @@ BNScriptingProviderExecuteResult ScriptingInstance::ExecuteScriptInputCallback(v
 {
 	CallbackRef<ScriptingInstance> instance(ctxt);
 	return instance->ExecuteScriptInput(input);
+}
+
+
+BNScriptingProviderExecuteResult ScriptingInstance::ExecuteScriptFromFilenameCallback(void* ctxt, const char* filename)
+{
+	CallbackRef<ScriptingInstance> instance(ctxt);
+	return instance->ExecuteScriptInputFromFilename(filename);
 }
 
 
@@ -162,6 +172,24 @@ char* ScriptingInstance::CompleteInputCallback(void* ctxt, const char* text, uin
 }
 
 
+bool ScriptingInstance::CanCompleteArgumentsCallback(void* ctxt, const char* text)
+{
+	CallbackRef<ScriptingInstance> instance(ctxt);
+	bool result = instance->CanCompleteArguments(text);
+	return result;
+}
+
+
+char* ScriptingInstance::CompleteArgumentsCallback(void* ctx, const char* text, uint64_t* argumentStart)
+{
+	CallbackRef<ScriptingInstance> instance(ctx);
+	auto result = instance->CompleteArguments(text);
+	if (argumentStart)
+		*argumentStart = result.second;
+	return BNAllocString(result.first.c_str());
+}
+
+
 void ScriptingInstance::StopCallback(void* ctxt)
 {
 	CallbackRef<ScriptingInstance> instance(ctxt);
@@ -199,6 +227,18 @@ void ScriptingInstance::SetCurrentSelection(uint64_t, uint64_t) {}
 std::string ScriptingInstance::CompleteInput(const std::string&, uint64_t)
 {
 	return "";
+}
+
+
+bool ScriptingInstance::CanCompleteArguments(const std::string&)
+{
+	return false;
+}
+
+
+std::pair<std::string, uint64_t> ScriptingInstance::CompleteArguments(const std::string&)
+{
+	return {"", 0};
 }
 
 
@@ -326,6 +366,24 @@ std::string CoreScriptingInstance::CompleteInput(const std::string& text, uint64
 }
 
 
+bool CoreScriptingInstance::CanCompleteArguments(const std::string& text)
+{
+	return BNScriptingInstanceCanCompleteArguments(m_object, text.c_str());
+}
+
+
+std::pair<std::string, uint64_t> CoreScriptingInstance::CompleteArguments(const std::string& text)
+{
+	uint64_t argumentStart = 0;
+	char* result = BNScriptingInstanceCompleteArguments(m_object, text.c_str(), &argumentStart);
+	if (!result)
+		return {"", argumentStart};
+	std::string ret = result;
+	BNFreeString(result);
+	return {ret, argumentStart};
+}
+
+
 void CoreScriptingInstance::Stop()
 {
 	BNStopScriptingInstance(m_object);
@@ -383,11 +441,18 @@ string ScriptingProvider::GetAPIName()
 }
 
 
+bool ScriptingProvider::IsModuleInstalled(const string& modules)
+{
+	return BNIsScriptingProviderModuleInstalled(m_object, modules.c_str());
+}
+
+
 vector<Ref<ScriptingProvider>> ScriptingProvider::GetList()
 {
 	size_t count;
 	BNScriptingProvider** list = BNGetScriptingProviderList(&count);
 	vector<Ref<ScriptingProvider>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(new CoreScriptingProvider(list[i]));
 	BNFreeScriptingProviderList(list);

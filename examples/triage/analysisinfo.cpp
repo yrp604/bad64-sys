@@ -44,11 +44,11 @@ AnalysisInfoWidget::~AnalysisInfoWidget()
 
 void AnalysisInfoWidget::timerExpired()
 {
-	auto gpValue = m_data->GetGlobalPointerValue();
-	if (gpValue == m_lastGPValue)
+	auto gpValues = m_data->GetGlobalPointerValues();
+	if (gpValues == m_lastGPValues)
 		return;
 
-	m_lastGPValue = gpValue;
+	m_lastGPValues = gpValues;
 	updateDisplay();
 }
 
@@ -61,14 +61,36 @@ void AnalysisInfoWidget::updateDisplay()
 		auto callingConvention = defaultPlatform->GetDefaultCallingConvention();
 		if (callingConvention)
 		{
-			auto gpRegister = callingConvention->GetGlobalPointerRegister();
-			if (gpRegister != BN_INVALID_REGISTER)
+			auto gpValues = m_data->GetGlobalPointerValues();
+			if (!gpValues.empty())
 			{
-				auto gpValue = m_data->GetGlobalPointerValue();
-				std::string gpString = getStringForRegisterValue(m_data->GetDefaultArchitecture(), gpValue);
-				std::string gpExtraString = std::string(" @ ") + m_data->GetDefaultArchitecture()->GetRegisterName(gpRegister);
+				std::vector<std::string> gpStrings;
+				auto arch = m_data->GetDefaultArchitecture();
+				for (auto& [reg, value] : gpValues)
+				{
+					if (reg == BN_INVALID_REGISTER)
+						continue;
+					gpStrings.push_back(arch->GetRegisterName(reg) + "=" + getStringForRegisterValue(arch, value));
+				}
+
+				if (gpStrings.empty())
+				{
+					m_gpLabel->setText("N/A");
+					m_gpExtraLabel->setText("");
+					return;
+				}
+
+				std::string gpString;
+				for (size_t i = 0; i < gpStrings.size(); i++)
+				{
+					if (i != 0)
+						gpString += ", ";
+					gpString += gpStrings[i];
+				}
+
+				std::string gpExtraString;
 				if (m_data->UserGlobalPointerValueSet())
-					gpExtraString += " (*)";
+					gpExtraString = " (*)";
 
 				m_gpLabel->setText(QString::fromStdString(gpString));
 				m_gpExtraLabel->setText(QString::fromStdString(gpExtraString));
@@ -78,4 +100,5 @@ void AnalysisInfoWidget::updateDisplay()
 	}
 
 	m_gpLabel->setText("N/A");
+	m_gpExtraLabel->setText("");
 }

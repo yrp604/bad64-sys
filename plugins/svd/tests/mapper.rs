@@ -1,4 +1,3 @@
-use binaryninja::binary_view::BinaryViewExt;
 use binaryninja::binary_view::{BinaryView, BinaryViewBase};
 use binaryninja::file_metadata::FileMetadata;
 use binaryninja::headless::Session;
@@ -18,7 +17,7 @@ fn insta_snapshots() {
         let path = out_dir.join(file_name);
         let svd_str = std::fs::read_to_string(&path).expect("Failed to read svd file");
         let device = svd_parser::parse(&svd_str).expect("Failed to parse svd file");
-        let view = BinaryView::from_data(&FileMetadata::new(), &[]).expect("Failed to create view");
+        let view = BinaryView::from_data(&FileMetadata::new(), &[]);
         let address_size = view.address_size();
         DeviceMapper::new(LoadSettings::default(), address_size, device).map_to_view(&view);
 
@@ -46,7 +45,7 @@ fn test_bitfield_unions() {
     let path = out_dir.join("ARM_Sample.svd");
     let svd_str = std::fs::read_to_string(&path).expect("Failed to read svd file");
     let device = svd_parser::parse(&svd_str).expect("Failed to parse svd file");
-    let view = BinaryView::from_data(&FileMetadata::new(), &[]).expect("Failed to create view");
+    let view = BinaryView::from_data(&FileMetadata::new(), &[]);
     let address_size = view.address_size();
     let mapper = DeviceMapper::new(LoadSettings::default(), address_size, device.clone());
 

@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -85,30 +85,22 @@ class Metadata:
 			return float(self) == other
 		elif isinstance(other, bool) and self.is_boolean:
 			return bool(self) == other
-		elif self.is_array and ((isinstance(other, Metadata) and other.is_array) or isinstance(other, list)):
+		elif self.is_array and isinstance(other, list):
 			if len(self) != len(other):
 				return False
 			for a, b in zip(self, other):
 				if a != b:
 					return False
 			return True
-		elif self.is_dict and ((isinstance(other, Metadata) and other.is_dict) or isinstance(other, dict)):
+		elif self.is_dict and isinstance(other, dict):
 			if len(self) != len(other):
 				return False
 			for a, b in zip(self, other):
 				if a != b or self[a] != other[b]:
 					return False
 			return True
-		elif isinstance(other, Metadata) and self.is_integer and other.is_integer:
-			return int(self) == int(other)
-		elif isinstance(other, Metadata) and self.is_string and other.is_string:
-			return str(self) == str(other)
-		elif isinstance(other, Metadata) and self.is_bytes and other.is_bytes:
-			return bytes(self) == bytes(other)
-		elif isinstance(other, Metadata) and self.is_float and other.is_float:
-			return float(self) == float(other)
-		elif isinstance(other, Metadata) and self.is_boolean and other.is_boolean:
-			return bool(self) == bool(other)
+		elif isinstance(other, Metadata):
+			return core.BNMetadataIsEqual(self.handle, other.handle)
 		return NotImplemented
 
 	def __ne__(self, other):

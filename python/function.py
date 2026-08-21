@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -27,9 +27,9 @@ from dataclasses import dataclass
 # Binary Ninja components
 from . import _binaryninjacore as core
 from .enums import (
-	AnalysisSkipReason, FunctionGraphType, SymbolType, InstructionTextTokenType, HighlightStandardColor,
+	AnalysisSkipReason, FunctionGraphType, SymbolType, SymbolBinding, InstructionTextTokenType, HighlightStandardColor,
 	HighlightColorStyle, DisassemblyOption, IntegerDisplayType, FunctionAnalysisSkipOverride, FunctionUpdateType,
-	BuiltinType, ExprFolding, EarlyReturn, SwitchRecovery
+	BuiltinType, ExprFolding, EarlyReturn, SwitchRecovery, VariableSourceType, MetadataStoreFlag
 )
 
 from . import associateddatastore  # Required in the main scope due to being an argument for _FunctionAssociatedDataStore
@@ -99,6 +99,16 @@ class _FunctionAssociatedDataStore(associateddatastore._AssociatedDataStore):
 
 
 class DisassemblySettings:
+	"""
+	``class DisassemblySettings`` contains the options used when rendering disassembly or IL text.
+
+	.. note::
+		Not every :py:class:`~binaryninja.enums.DisassemblyOption` applies to every representation. ``IndentHLILBody``
+		and ``ShowAddress`` are applied by linear view, not by
+		:py:func:`~binaryninja.highlevelil.HighLevelILInstruction.get_lines`; options acting on nested bodies, such as
+		``ShowCollapseIndicators``, only apply to HLIL in AST form. See `AST and Non-AST Forms
+		<https://docs.binary.ninja/dev/bnil-hlil.html#ast-and-non-ast-forms>`_.
+	"""
 	def __init__(self, handle: Optional[core.BNDisassemblySettingsHandle] = None):
 		if handle is None:
 			self.handle = core.BNCreateDisassemblySettings()
@@ -279,10 +289,8 @@ class BasicBlockList:
 			return self._function._instantiate_block(block)
 		elif isinstance(i, slice):
 			result = []
-			if i.start < 0 or i.start >= len(self) or i.stop < 0 or i.stop >= len(self):
-				raise IndexError(f"Slice {i} out of bounds for FunctionList of size {len(self)}")
-
-			for j in range(i.start, i.stop, i.step if i.step is not None else 1):
+			start, stop, step = i.indices(len(self))
+			for j in range(start, stop, step):
 				block = core.BNNewBasicBlockReference(self._blocks[j])
 				assert block is not None, "core.BNNewBasicBlockReference returned None"
 				result.append(self._function._instantiate_block(block))
@@ -400,10 +408,8 @@ class TagList:
 			return arch, self._tags[i].addr, binaryview.Tag(core_tag)
 		elif isinstance(i, slice):
 			result = []
-			if i.start < 0 or i.start >= len(self) or i.stop < 0 or i.stop >= len(self):
-				raise IndexError(f"Slice {i} out of bounds for FunctionList of size {len(self)}")
-
-			for j in range(i.start, i.stop, i.step if i.step is not None else 1):
+			start, stop, step = i.indices(len(self))
+			for j in range(start, stop, step):
 				core_tag = core.BNNewTagReference(self._tags[j].tag)
 				assert core_tag is not None, "core.BNNewTagReference returned None"
 				arch = architecture.CoreArchitecture._from_cache(self._tags[j].arch)
@@ -598,6 +604,16 @@ class Function:
 		sym = core.BNGetFunctionSymbol(self.handle)
 		assert sym is not None, "core.BNGetFunctionSymbol returned None"
 		return types.CoreSymbol(sym)
+
+	@property
+	def is_exported(self) -> bool:
+		"""
+		Whether the function is exported (read-only).
+
+		A function is considered exported when its symbol binding is global or weak.
+		"""
+		binding = self.symbol.binding
+		return binding in (SymbolBinding.GlobalBinding, SymbolBinding.WeakBinding)
 
 	@property
 	def auto(self) -> bool:
@@ -1349,13 +1365,55 @@ class Function:
 			type_conf.type = value.handle
 			type_conf.confidence = core.max_confidence
 		else:
+			value = value.immutable_copy()
 			type_conf.type = value.handle
 			type_conf.confidence = value.confidence
 		core.BNSetUserFunctionReturnType(self.handle, type_conf)
 
 	@property
+	def return_value(self) -> 'types.ReturnValue':
+		"""Return type and location"""
+		ret = core.BNGetFunctionReturnValue(self.handle)
+		result = types.ReturnValue._from_core_struct(ret, self.arch)
+		core.BNFreeReturnValue(ret)
+		return result
+
+	@return_value.setter
+	def return_value(self, value: 'types.ReturnValue') -> None:  # type: ignore
+		ret = value._to_core_struct()
+		core.BNSetUserFunctionReturnValue(self.handle, ret)
+
+	@property
+	def return_value_location(self) -> Optional['types.ValueLocationWithConfidence']:
+		"""
+		The location of the return value, or None if there isn't a return value. If the return value has been
+		specified to be placed in the default location, this will return the default location.
+		"""
+		location = core.BNGetFunctionReturnValueLocation(self.handle)
+		if location.location.count == 0:
+			result = None
+		else:
+			result = types.ValueLocation._from_core_struct(location.location, self.arch).with_confidence(location.confidence)
+		core.BNFreeValueLocation(location.location)
+		return result
+
+	@return_value_location.setter
+	def return_value_location(self, value: 'types.OptionalLocation'):
+		struct = core.BNValueLocationWithConfidence()
+		location = types.ValueLocationWithConfidence.from_optional_location(value)
+		if location is None:
+			struct.location.count = 0
+			struct.confidence = 0
+		else:
+			struct.location = location.location._to_core_struct()
+			struct.confidence = location.confidence
+		core.BNSetUserIsFunctionReturnValueDefaultLocation(self.handle, value is None)
+		if value is not None:
+			core.BNSetUserFunctionReturnValueLocation(self.handle, struct)
+
+	@property
 	def return_regs(self) -> 'types.RegisterSet':
-		"""Registers that are used for the return value"""
+		"""Registers that are used for the return value (read-only)"""
 		result = core.BNGetFunctionReturnRegisters(self.handle)
 		assert result is not None, "core.BNGetFunctionReturnRegisters returned None"
 		try:
@@ -1366,26 +1424,13 @@ class Function:
 		finally:
 			core.BNFreeRegisterSet(result)
 
-	@return_regs.setter
-	def return_regs(self, value: Union['types.RegisterSet', List['architecture.RegisterType']]) -> None:  # type: ignore
-		regs = core.BNRegisterSetWithConfidence()
-		regs.regs = (ctypes.c_uint * len(value))()
-		regs.count = len(value)
-		for i in range(0, len(value)):
-			regs.regs[i] = self.arch.get_reg_index(value[i])
-		if isinstance(value, types.RegisterSet):
-			regs.confidence = value.confidence
-		else:
-			regs.confidence = core.max_confidence
-		core.BNSetUserFunctionReturnRegisters(self.handle, regs)
-
 	@property
 	def calling_convention(self) -> Optional['callingconvention.CallingConvention']:
 		"""Calling convention used by the function"""
 		result = core.BNGetFunctionCallingConvention(self.handle)
 		if not result.convention:
 			return None
-		return callingconvention.CallingConvention(None, handle=result.convention, confidence=result.confidence)
+		return callingconvention.CoreCallingConvention(handle=result.convention, confidence=result.confidence)
 
 	@calling_convention.setter
 	def calling_convention(self, value: Optional['callingconvention.CallingConvention']) -> None:
@@ -1417,20 +1462,60 @@ class Function:
 			var_list = []
 		else:
 			var_list = list(value)
-		var_conf = core.BNParameterVariablesWithConfidence()
-		var_conf.vars = (core.BNVariable * len(var_list))()
-		var_conf.count = len(var_list)
-		for i in range(0, len(var_list)):
-			var_conf.vars[i].type = var_list[i].source_type
-			var_conf.vars[i].index = var_list[i].index
-			var_conf.vars[i].storage = var_list[i].storage
+		locations = []
+		for i in range(len(var_list)):
+			if (var_list[i].source_type != VariableSourceType.RegisterVariableSourceType and
+					var_list[i].source_type != VariableSourceType.StackVariableSourceType and
+					var_list[i].source_type != VariableSourceType.FlagVariableSourceType):
+				raise ValueError(f"Parameter {i} is a composite variable. Use parameter_locations instead.")
+			locations.append(types.ValueLocation([types.ValueLocationComponent(var_list[i])]))
 		if value is None:
-			var_conf.confidence = 0
-		elif isinstance(value, types.RegisterSet):
-			var_conf.confidence = value.confidence
+			conf = 0
+		elif isinstance(value, variable.ParameterVariables):
+			conf = value.confidence
 		else:
-			var_conf.confidence = core.max_confidence
-		core.BNSetUserFunctionParameterVariables(self.handle, var_conf)
+			conf = core.max_confidence
+		self.parameter_locations = variable.ParameterLocations(locations, conf, self)
+
+	@property
+	def parameter_locations(self) -> 'variable.ParameterLocations':
+		"""List of locations for the incoming function parameters"""
+		result = core.BNGetFunctionParameterLocations(self.handle)
+		location_list = []
+		for i in range(0, result.count):
+			location_list.append(types.ValueLocation._from_core_struct(result.locations[i], self.arch))
+		confidence = result.confidence
+		core.BNFreeParameterLocations(result)
+		return variable.ParameterLocations(location_list, confidence, self)
+
+	@parameter_locations.setter
+	def parameter_locations(
+		self, value: Optional[Union[List[Union['types.ValueLocation', 'variable.CoreVariable']],
+			'variable.CoreVariable', 'variable.ParameterLocations']]
+	) -> None:  # type: ignore
+		if value is None:
+			location_list = []
+		elif isinstance(value, variable.CoreVariable):
+			location_list = [value]
+		elif isinstance(value, variable.ParameterLocations):
+			location_list = value.locations
+		else:
+			location_list = list(value)
+		location_conf = core.BNValueLocationListWithConfidence()
+		location_conf.locations = (core.BNValueLocation * len(location_list))()
+		location_conf.count = len(location_list)
+		for i in range(0, len(location_list)):
+			if isinstance(location_list[i], types.ValueLocation):
+				location_conf.locations[i] = location_list[i]._to_core_struct()
+			else:
+				location_conf.locations[i] = types.ValueLocation([types.ValueLocationComponent(location_list[i])])._to_core_struct()
+		if value is None:
+			location_conf.confidence = 0
+		elif isinstance(value, variable.ParameterLocations):
+			location_conf.confidence = value.confidence
+		else:
+			location_conf.confidence = core.max_confidence
+		core.BNSetUserFunctionParameterLocations(self.handle, location_conf)
 
 	@property
 	def has_variable_arguments(self) -> 'types.BoolWithConfidence':
@@ -1530,9 +1615,26 @@ class Function:
 
 	@property
 	def global_pointer_value(self) -> variable.RegisterValue:
-		"""Discovered value of the global pointer register, if the function uses one (read-only)"""
-		result = core.BNGetFunctionGlobalPointerValue(self.handle)
-		return variable.RegisterValue.from_BNRegisterValue(result, self.arch)
+		"""Deprecated. Use :py:attr:`global_pointer_values` instead."""
+		values = self.global_pointer_values
+		if not values:
+			return variable.Undetermined()
+		return values[0][1]
+
+	@property
+	def global_pointer_values(self) -> List[Tuple['architecture.RegisterName', 'variable.RegisterValue']]:
+		"""Discovered values of the global pointer registers, if the function uses any (read-only)"""
+		count = ctypes.c_ulonglong()
+		values = core.BNGetFunctionGlobalPointerValues(self.handle, count)
+		if values is None:
+			return []
+		try:
+			return [
+			    (self.arch.get_reg_name(values[i].reg), variable.RegisterValue.from_BNRegisterValue(values[i].value, self.arch))
+			    for i in range(count.value)
+			]
+		finally:
+			core.BNFreeRegisterValueWithConfidenceAndRegisterList(values)
 
 	@property
 	def uses_incoming_global_pointer(self) -> bool:
@@ -1657,13 +1759,13 @@ class Function:
 		return self.view.get_function_parent_components(self)
 
 	@property
-	def inline_during_analysis(self) -> 'types.BoolWithConfidence':
+	def inline_during_analysis(self) -> 'types.InlineDuringAnalysisWithConfidence':
 		"""Whether the function's IL should be inlined into all callers' IL"""
-		result = core.BNIsFunctionInlinedDuringAnalysis(self.handle)
-		return types.BoolWithConfidence(result.value, confidence=result.confidence)
+		result = core.BNGetFunctionInlinedDuringAnalysis(self.handle)
+		return types.InlineDuringAnalysisWithConfidence(result.value, confidence=result.confidence)
 
 	@inline_during_analysis.setter
-	def inline_during_analysis(self, value: Union[bool, 'types.BoolWithConfidence']):
+	def inline_during_analysis(self, value: Union['types.InlineDuringAnalysis', 'types.InlineDuringAnalysisWithConfidence', bool, 'types.BoolWithConfidence']):
 		self.set_user_inline_during_analysis(value)
 
 	def mark_recent_use(self) -> None:
@@ -1931,7 +2033,7 @@ class Function:
 	def get_constant_data_and_builtin(
 			self, state: RegisterValueType, value: int, size: int = 0
 	) -> Tuple[databuffer.DataBuffer, BuiltinType]:
-		builtin = ctypes.c_int()
+		builtin = ctypes.c_ubyte()
 		db = databuffer.DataBuffer(
 			handle=core.BNGetConstantData(self.handle, state, value, size, ctypes.byref(builtin)))
 		return db, BuiltinType(builtin.value)
@@ -2260,11 +2362,14 @@ class Function:
 	def apply_imported_types(self, sym: 'types.CoreSymbol', type: Optional[StringOrType] = None) -> None:
 		if isinstance(type, str):
 			(type, _) = self.view.parse_type_string(type)
+		if type is not None:
+			type = type.immutable_copy()
 		core.BNApplyImportedTypes(self.handle, sym.handle, None if type is None else type.handle)
 
 	def apply_auto_discovered_type(self, func_type: StringOrType) -> None:
 		if isinstance(func_type, str):
 			(func_type, _) = self.view.parse_type_string(func_type)
+		func_type = func_type.immutable_copy()
 		core.BNApplyAutoDiscoveredFunctionType(self.handle, func_type.handle)
 
 	def set_auto_indirect_branches(
@@ -2427,14 +2532,24 @@ class Function:
 		finally:
 			core.BNFreeInstructionTextLines(lines, count.value)
 
+	def get_block_sort_hint(self, addr: int, arch: Optional['architecture.Architecture'] = None) -> Optional[int]:
+		if arch is None:
+			arch = self.arch
+		result = ctypes.c_int64()
+		if not core.BNGetFunctionBlockSortHint(self.handle, arch.handle, addr, ctypes.byref(result)):
+			return None
+		return result.value
+
 	def set_auto_type(self, value: StringOrType) -> None:
 		if isinstance(value, str):
 			(value, _) = self.view.parse_type_string(value)
+		value = value.immutable_copy()
 		core.BNSetFunctionAutoType(self.handle, value.handle)
 
 	def set_user_type(self, value: StringOrType) -> None:
 		if isinstance(value, str):
 			(value, _) = self.view.parse_type_string(value)
+		value = value.immutable_copy()
 		core.BNSetFunctionUserType(self.handle, value.handle)
 
 	@property
@@ -2452,22 +2567,23 @@ class Function:
 			type_conf.type = value
 			type_conf.confidence = core.max_confidence
 		else:
+			value = value.immutable_copy()
 			type_conf.type = value.handle
 			type_conf.confidence = value.confidence
 		core.BNSetAutoFunctionReturnType(self.handle, type_conf)
 
-	def set_auto_return_regs(self, value: Union['types.RegisterSet', List['architecture.RegisterType']]) -> None:
-		regs = core.BNRegisterSetWithConfidence()
-		regs.regs = (ctypes.c_uint * len(value))()
-		regs.count = len(value)
-
-		for i in range(0, len(value)):
-			regs.regs[i] = self.arch.get_reg_index(value[i])
-		if isinstance(value, types.RegisterSet):
-			regs.confidence = value.confidence
+	def set_auto_return_value_location(self, value: 'types.OptionalLocation'):
+		struct = core.BNValueLocationWithConfidence()
+		location = types.ValueLocationWithConfidence.from_optional_location(value)
+		if location is None:
+			struct.location.count = 0
+			struct.confidence = 0
 		else:
-			regs.confidence = core.max_confidence
-		core.BNSetAutoFunctionReturnRegisters(self.handle, regs)
+			struct.location = location.location._to_core_struct()
+			struct.confidence = location.confidence
+		core.BNSetAutoIsFunctionReturnValueDefaultLocation(self.handle, value is None)
+		if value is not None:
+			core.BNSetAutoFunctionReturnValueLocation(self.handle, struct)
 
 	def set_auto_calling_convention(self, value: 'callingconvention.CallingConvention') -> None:
 		conv_conf = core.BNCallingConventionWithConfidence()
@@ -2480,30 +2596,58 @@ class Function:
 		core.BNSetAutoFunctionCallingConvention(self.handle, conv_conf)
 
 	def set_auto_parameter_vars(
-	    self, value: Optional[Union[List['variable.Variable'], 'variable.Variable', 'variable.ParameterVariables']]
+		self, value: Optional[Union[List['variable.CoreVariable'], 'variable.CoreVariable', 'variable.ParameterVariables']]
 	) -> None:
 		if value is None:
 			var_list = []
-		elif isinstance(value, variable.Variable):
+		elif isinstance(value, variable.CoreVariable):
 			var_list = [value]
 		elif isinstance(value, variable.ParameterVariables):
 			var_list = value.vars
 		else:
 			var_list = list(value)
-		var_conf = core.BNParameterVariablesWithConfidence()
-		var_conf.vars = (core.BNVariable * len(var_list))()
-		var_conf.count = len(var_list)
-		for i in range(0, len(var_list)):
-			var_conf.vars[i].type = var_list[i].source_type
-			var_conf.vars[i].index = var_list[i].index
-			var_conf.vars[i].storage = var_list[i].storage
+		locations = []
+		for i in range(len(var_list)):
+			if (var_list[i].source_type != VariableSourceType.RegisterVariableSourceType and
+					var_list[i].source_type != VariableSourceType.StackVariableSourceType and
+					var_list[i].source_type != VariableSourceType.FlagVariableSourceType):
+				raise ValueError(f"Parameter {i} is a composite variable. Use set_auto_parameter_locations instead.")
+			locations.append(types.ValueLocation([types.ValueLocationComponent(var_list[i])]))
 		if value is None:
-			var_conf.confidence = 0
+			conf = 0
 		elif isinstance(value, variable.ParameterVariables):
-			var_conf.confidence = value.confidence
+			conf = value.confidence
 		else:
-			var_conf.confidence = core.max_confidence
-		core.BNSetAutoFunctionParameterVariables(self.handle, var_conf)
+			conf = core.max_confidence
+		self.set_auto_parameter_locations(variable.ParameterLocations(locations, conf, self))
+
+	def set_auto_parameter_locations(
+	    self, value: Optional[Union[List[Union['variable.CoreVariable', 'types.ValueLocation']],
+			'variable.CoreVariable', 'types.ValueLocation', 'variable.ParameterLocations']]
+	) -> None:
+		if value is None:
+			location_list = []
+		elif isinstance(value, variable.CoreVariable):
+			location_list = [value]
+		elif isinstance(value, variable.ParameterLocations):
+			location_list = value.locations
+		else:
+			location_list = list(value)
+		location_conf = core.BNValueLocationListWithConfidence()
+		location_conf.locations = (core.BNValueLocation * len(location_list))()
+		location_conf.count = len(location_list)
+		for i in range(0, len(location_list)):
+			if isinstance(location_list[i], types.ValueLocation):
+				location_conf.locations[i] = location_list[i]._to_core_struct()
+			else:
+				location_conf.locations[i] = types.ValueLocation([types.ValueLocationComponent(location_list[i])])._to_core_struct()
+		if value is None:
+			location_conf.confidence = 0
+		elif isinstance(value, variable.ParameterVariables):
+			location_conf.confidence = value.confidence
+		else:
+			location_conf.confidence = core.max_confidence
+		core.BNSetAutoFunctionParameterLocations(self.handle, location_conf)
 
 	def set_auto_has_variable_arguments(self, value: Union[bool, 'types.BoolWithConfidence']) -> None:
 		bc = core.BNBoolWithConfidence()
@@ -2797,14 +2941,14 @@ class Function:
 	def create_auto_stack_var(self, offset: int, var_type: StringOrType, name: str) -> None:
 		if isinstance(var_type, str):
 			(var_type, _) = self.view.parse_type_string(var_type)
-		tc = var_type._to_core_struct()
-		core.BNCreateAutoStackVariable(self.handle, offset, tc, name)
+		tc = var_type.immutable_copy()
+		core.BNCreateAutoStackVariable(self.handle, offset, tc._to_core_struct(), name)
 
 	def create_user_stack_var(self, offset: int, var_type: StringOrType, name: str) -> None:
 		if isinstance(var_type, str):
 			(var_type, _) = self.view.parse_type_string(var_type)
-		tc = var_type._to_core_struct()
-		core.BNCreateUserStackVariable(self.handle, offset, tc, name)
+		tc = var_type.immutable_copy()
+		core.BNCreateUserStackVariable(self.handle, offset, tc._to_core_struct(), name)
 
 	def delete_auto_stack_var(self, offset: int) -> None:
 		core.BNDeleteAutoStackVariable(self.handle, offset)
@@ -2817,16 +2961,16 @@ class Function:
 	) -> None:
 		if isinstance(var_type, str):
 			(var_type, _) = self.view.parse_type_string(var_type)
-		tc = var_type._to_core_struct()
-		core.BNCreateAutoVariable(self.handle, var.to_BNVariable(), tc, name, ignore_disjoint_uses)
+		tc = var_type.immutable_copy()
+		core.BNCreateAutoVariable(self.handle, var.to_BNVariable(), tc._to_core_struct(), name, ignore_disjoint_uses)
 
 	def create_user_var(
 	    self, var: 'variable.Variable', var_type: StringOrType, name: str, ignore_disjoint_uses: bool = False
 	) -> None:
 		if isinstance(var_type, str):
 			(var_type, _) = self.view.parse_type_string(var_type)
-		tc = var_type._to_core_struct()
-		core.BNCreateUserVariable(self.handle, var.to_BNVariable(), tc, name, ignore_disjoint_uses)
+		tc = var_type.immutable_copy()
+		core.BNCreateUserVariable(self.handle, var.to_BNVariable(), tc._to_core_struct(), name, ignore_disjoint_uses)
 
 	def delete_user_var(self, var: 'variable.Variable') -> None:
 		core.BNDeleteUserVariable(self.handle, var.to_BNVariable())
@@ -2945,6 +3089,7 @@ class Function:
 			else:
 				confidence = adjust_type.confidence
 			type_conf = core.BNTypeWithConfidence()
+			adjust_type = adjust_type.immutable_copy()
 			type_conf.type = adjust_type.handle
 			type_conf.confidence = confidence
 		else:
@@ -3543,23 +3688,26 @@ class Function:
 		"""
 		core.BNUnsplitVariable(self.handle, var.to_BNVariable())
 
-	def set_auto_inline_during_analysis(self, value: Union[bool, 'types.BoolWithConfidence']):
-		bc = core.BNBoolWithConfidence()
-		bc.value = bool(value)
-		if isinstance(value, types.BoolWithConfidence):
-			bc.confidence = value.confidence
-		else:
-			bc.confidence = core.max_confidence
-		core.BNSetAutoFunctionInlinedDuringAnalysis(self.handle, bc)
+	@classmethod
+	def _inline_during_analysis_with_confidence(cls, value: Union['types.InlineDuringAnalysis', 'types.InlineDuringAnalysisWithConfidence', bool, 'types.BoolWithConfidence']) -> 'core.BNInlineDuringAnalysisWithConfidence':
+		if isinstance(value, types.InlineDuringAnalysisWithConfidence):
+			return value._to_core_struct()
 
-	def set_user_inline_during_analysis(self, value: Union[bool, 'types.BoolWithConfidence']):
-		bc = core.BNBoolWithConfidence()
-		bc.value = bool(value)
 		if isinstance(value, types.BoolWithConfidence):
-			bc.confidence = value.confidence
-		else:
-			bc.confidence = core.max_confidence
-		core.BNSetUserFunctionInlinedDuringAnalysis(self.handle, bc)
+			return core.BNInlineDuringAnalysisWithConfidence(int(value.value), value.confidence)
+
+		if isinstance(value, bool):
+			return core.BNInlineDuringAnalysisWithConfidence(int(value), core.max_confidence)
+
+		return core.BNInlineDuringAnalysisWithConfidence(value, core.max_confidence)
+
+	def set_auto_inline_during_analysis(self, value: Union['types.InlineDuringAnalysis', 'types.InlineDuringAnalysisWithConfidence', bool, 'types.BoolWithConfidence']):
+		value = self._inline_during_analysis_with_confidence(value)
+		core.BNSetAutoFunctionInlinedDuringAnalysis(self.handle, value)
+
+	def set_user_inline_during_analysis(self, value: Union['types.InlineDuringAnalysis', 'types.InlineDuringAnalysisWithConfidence', bool, 'types.BoolWithConfidence']):
+		value = self._inline_during_analysis_with_confidence(value)
+		core.BNSetUserFunctionInlinedDuringAnalysis(self.handle, value)
 
 	def toggle_region(self, hash):
 		"""
@@ -3614,24 +3762,40 @@ class Function:
 		"""
 		return core.BNFunctionIsRegionCollapsed(self.handle, hash)
 
-	def store_metadata(self, key: str, md: metadata.MetadataValueType, isAuto: bool = False) -> None:
+	def store_metadata(self, key: str, md: metadata.MetadataValueType,
+			flags: 'MetadataStoreFlag | bool' = MetadataStoreFlag.MetadataStorePersistent,
+			isAuto: Optional[bool] = None) -> None:
 		"""
-		`store_metadata` stores an object for the given key in the current Function. Objects stored using
-		`store_metadata` can be retrieved when the database is reopened unless isAuto is set to True.
+		`store_metadata` stores an object for the given key in the current Function. See
+		:py:meth:`BinaryView.store_metadata` for the meaning of ``flags``.
+
+		Unlike :py:meth:`BinaryView.store_metadata`, the default does not mark the file as
+		modified, preserving the historical behavior of Function metadata writes.
+
+		``flags`` may also be passed as a legacy ``isAuto`` bool: ``False`` maps to the default
+		(persist, don't dirty) and ``True`` maps to ``MetadataStoreEphemeral`` (don't persist,
+		don't dirty). The deprecated ``isAuto`` keyword is still accepted with the same
+		meaning, taking precedence over ``flags``.
 
 		:param str key: key value to associate the Metadata object with
 		:param Varies md: object to store
-		:param bool isAuto: whether the metadata is an auto metadata
+		:param flags: storage flags (see :py:class:`MetadataStoreFlag`), or a legacy ``isAuto`` bool.
+		:param bool isAuto: deprecated alias for passing the legacy bool by keyword.
 		:rtype: None
         """
 		_md = md
 		if not isinstance(_md, metadata.Metadata):
 			_md = metadata.Metadata(_md)
-		core.BNFunctionStoreMetadata(self.handle, key, _md.handle, isAuto)
+		if isAuto is not None:
+			flags = isAuto
+		if isinstance(flags, bool):
+			flags = (MetadataStoreFlag.MetadataStoreEphemeral if flags
+				else MetadataStoreFlag.MetadataStorePersistent)
+		core.BNFunctionStoreMetadata(self.handle, key, _md.handle, flags)
 
 	def query_metadata(self, key: str) -> 'metadata.MetadataValueType':
 		"""
-		`query_metadata` retrieves metadata associated with the given key stored in the current function.
+		`query_metadata` retrieves metadata associated with the given key stored in the current Function.
 
 		:param str key: key to query
 		:rtype: metadata associated with the key
@@ -3639,6 +3803,34 @@ class Function:
 		md_handle = core.BNFunctionQueryMetadata(self.handle, key)
 		if md_handle is None:
 			raise KeyError(key)
+		return metadata.Metadata(handle=md_handle).value
+
+	def get_metadata(self, key: str, default: Any = None) -> 'metadata.MetadataValueType | Any':
+		"""
+		`get_metadata` retrieves a metadata value associated with the given key stored in the current Function.
+
+		This method behaves like `dict.get()`:
+
+		- If the key exists, its metadata value is returned.
+		- If the key does not exist and `default` is not provided, `None` is returned.
+		- If the key does not exist and `default` is provided, `default` is returned.
+
+		:param str key: key to query
+		:param default: value to return if the key does not exist (defaults to None)
+		:rtype: metadata associated with the key or the default value
+		:Example:
+
+			>>> current_function.store_metadata("integer", 1337)
+			>>> current_function.get_metadata("integer")
+			1337L
+			>>> current_function.get_metadata("missing")
+			None
+			>>> current_function.get_metadata("missing", 42)
+			42
+		"""
+		md_handle = core.BNFunctionQueryMetadata(self.handle, key)
+		if md_handle is None:
+			return default
 		return metadata.Metadata(handle=md_handle).value
 
 	def remove_metadata(self, key: str) -> None:
@@ -3793,8 +3985,8 @@ class DisassemblyTextLine:
 
 	def __repr__(self):
 		if self.address is None:
-			return f"<disassemblyTextLine {self}>"
-		return f"<disassemblyTextLine {self.address:#x}: {self}>"
+			return f"<DisassemblyTextLine {self}>"
+		return f"<DisassemblyTextLine {self.address:#x}: {self}>"
 
 	@property
 	def total_width(self):
@@ -3848,7 +4040,7 @@ class DisassemblyTextLine:
 		if il_func is not None and struct.instrIndex < len(il_func):
 			try:
 				il_instr = il_func[struct.instrIndex]
-			except:
+			except Exception:
 				il_instr = None
 		tokens = InstructionTextToken._from_core_struct(struct.tokens, struct.count)
 
@@ -4135,6 +4327,17 @@ class DisassemblyTextRenderer:
 	@staticmethod
 	def is_integer_token(token: 'InstructionTextToken') -> bool:
 		return core.BNIsIntegerToken(token.type)
+
+	@staticmethod
+	def get_display_string_for_integer(
+	    binary_view: Optional['binaryview.BinaryView'], display_type: IntegerDisplayType, value: int, input_width: int,
+	    is_signed: bool = True
+	) -> str:
+		if isinstance(display_type, str):
+			display_type = IntegerDisplayType[display_type]
+		return core.BNGetDisplayStringForInteger(
+			binary_view.handle if binary_view is not None else None, display_type, value, input_width, is_signed
+		)
 
 	def add_integer_token(
 	    self, tokens: List['InstructionTextToken'], int_token: 'InstructionTextToken', addr: int,

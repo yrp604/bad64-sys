@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -20,14 +20,17 @@
 
 #pragma once
 
-#include <functional>
-#include <unordered_map>
-#include <vector>
 #ifdef BINARYNINJACORE_LIBRARY
+	#include "ilsourcelocation.h"
 	#include "type.h"
 #else
 	#include "binaryninjaapi.h"
 #endif
+
+#include "base/function_ref.h"
+
+#include <unordered_map>
+#include <vector>
 
 #ifdef BINARYNINJACORE_LIBRARY
 namespace BinaryNinjaCore
@@ -161,7 +164,7 @@ namespace BinaryNinja
 	/*!
 		\ingroup lowlevelil
 	*/
-	enum LowLevelILOperandType
+	enum LowLevelILOperandType : uint8_t
 	{
 		IntegerLowLevelOperand,
 		IndexLowLevelOperand,
@@ -191,7 +194,7 @@ namespace BinaryNinja
 	/*!
 		\ingroup lowlevelil
 	*/
-	enum LowLevelILOperandUsage
+	enum LowLevelILOperandUsage : uint8_t
 	{
 		SourceExprLowLevelOperandUsage,
 		SourceRegisterLowLevelOperandUsage,
@@ -379,12 +382,11 @@ namespace BinaryNinja
 
 #ifdef BINARYNINJACORE_LIBRARY
 			LowLevelILFunction* function;
-			const BNLowLevelILInstruction* instr;
 #else
 			Ref<LowLevelILFunction> function;
-			BNLowLevelILInstruction instr;
 #endif
-			size_t operand, count;
+			size_t offset;
+			size_t count;
 
 			bool operator==(const ListIterator& a) const;
 			bool operator!=(const ListIterator& a) const;
@@ -399,7 +401,7 @@ namespace BinaryNinja
 	  public:
 		typedef ListIterator const_iterator;
 
-		LowLevelILIntegerList(LowLevelILFunction* func, const BNLowLevelILInstruction& instr, size_t count);
+		LowLevelILIntegerList(LowLevelILFunction* func, size_t offset, size_t count);
 
 		const_iterator begin() const;
 		const_iterator end() const;
@@ -439,7 +441,7 @@ namespace BinaryNinja
 	  public:
 		typedef ListIterator const_iterator;
 
-		LowLevelILIndexList(LowLevelILFunction* func, const BNLowLevelILInstruction& instr, size_t count);
+		LowLevelILIndexList(LowLevelILFunction* func, size_t offset, size_t count);
 
 		const_iterator begin() const;
 		const_iterator end() const;
@@ -480,7 +482,7 @@ namespace BinaryNinja
 	  public:
 		typedef ListIterator const_iterator;
 
-		LowLevelILIndexMap(LowLevelILFunction* func, const BNLowLevelILInstruction& instr, size_t count);
+		LowLevelILIndexMap(LowLevelILFunction* func, size_t offset, size_t count);
 
 		const_iterator begin() const;
 		const_iterator end() const;
@@ -523,7 +525,7 @@ namespace BinaryNinja
 		typedef ListIterator const_iterator;
 
 		LowLevelILInstructionList(
-		    LowLevelILFunction* func, const BNLowLevelILInstruction& instr, size_t count, size_t instrIndex);
+		    LowLevelILFunction* func, size_t offset, size_t count, size_t instrIndex);
 
 		const_iterator begin() const;
 		const_iterator end() const;
@@ -531,6 +533,7 @@ namespace BinaryNinja
 		const LowLevelILInstruction operator[](size_t i) const;
 
 		operator _STD_VECTOR<LowLevelILInstruction>() const;
+		operator _STD_VECTOR<ExprId>() const;
 	};
 
 	/*!
@@ -563,7 +566,7 @@ namespace BinaryNinja
 	  public:
 		typedef ListIterator const_iterator;
 
-		LowLevelILRegisterOrFlagList(LowLevelILFunction* func, const BNLowLevelILInstruction& instr, size_t count);
+		LowLevelILRegisterOrFlagList(LowLevelILFunction* func, size_t offset, size_t count);
 
 		const_iterator begin() const;
 		const_iterator end() const;
@@ -604,7 +607,7 @@ namespace BinaryNinja
 	  public:
 		typedef ListIterator const_iterator;
 
-		LowLevelILSSARegisterList(LowLevelILFunction* func, const BNLowLevelILInstruction& instr, size_t count);
+		LowLevelILSSARegisterList(LowLevelILFunction* func, size_t offset, size_t count);
 
 		const_iterator begin() const;
 		const_iterator end() const;
@@ -645,7 +648,7 @@ namespace BinaryNinja
 	  public:
 		typedef ListIterator const_iterator;
 
-		LowLevelILSSARegisterStackList(LowLevelILFunction* func, const BNLowLevelILInstruction& instr, size_t count);
+		LowLevelILSSARegisterStackList(LowLevelILFunction* func, size_t offset, size_t count);
 
 		const_iterator begin() const;
 		const_iterator end() const;
@@ -686,7 +689,7 @@ namespace BinaryNinja
 	  public:
 		typedef ListIterator const_iterator;
 
-		LowLevelILSSAFlagList(LowLevelILFunction* func, const BNLowLevelILInstruction& instr, size_t count);
+		LowLevelILSSAFlagList(LowLevelILFunction* func, size_t offset, size_t count);
 
 		const_iterator begin() const;
 		const_iterator end() const;
@@ -727,7 +730,7 @@ namespace BinaryNinja
 	  public:
 		typedef ListIterator const_iterator;
 
-		LowLevelILSSARegisterOrFlagList(LowLevelILFunction* func, const BNLowLevelILInstruction& instr, size_t count);
+		LowLevelILSSARegisterOrFlagList(LowLevelILFunction* func, size_t offset, size_t count);
 
 		const_iterator begin() const;
 		const_iterator end() const;
@@ -748,11 +751,6 @@ namespace BinaryNinja
 		Ref<LowLevelILFunction> function;
 #endif
 		size_t exprIndex, instructionIndex;
-
-		static _STD_UNORDERED_MAP<LowLevelILOperandUsage, LowLevelILOperandType> operandTypeForUsage;
-		static _STD_UNORDERED_MAP<BNLowLevelILOperation, _STD_VECTOR<LowLevelILOperandUsage>> operationOperandUsage;
-		static _STD_UNORDERED_MAP<BNLowLevelILOperation, _STD_UNORDERED_MAP<LowLevelILOperandUsage, size_t>>
-		    operationOperandIndex;
 
 		LowLevelILOperandList GetOperands() const;
 
@@ -870,11 +868,12 @@ namespace BinaryNinja
 		    LowLevelILFunction* func, const BNLowLevelILInstruction& instr, size_t expr, size_t instrIdx);
 		LowLevelILInstruction(const LowLevelILInstructionBase& instr);
 
-		void VisitExprs(const std::function<bool(const LowLevelILInstruction& expr)>& func) const;
+		void VisitExprs(bn::base::function_ref<bool(const LowLevelILInstruction& expr)> func) const;
 
-		ExprId CopyTo(LowLevelILFunction* dest) const;
+		ExprId CopyTo(LowLevelILFunction* dest, const ILSourceLocation& sourceLocation = {}) const;
 		ExprId CopyTo(LowLevelILFunction* dest,
-		    const std::function<ExprId(const LowLevelILInstruction& subExpr)>& subExprHandler) const;
+			bn::base::function_ref<ExprId(const LowLevelILInstruction& subExpr)> subExprHandler,
+			const ILSourceLocation& sourceLocation = {}) const;
 
 		// Templated accessors for instruction operands, use these for efficient access to a known instruction
 		template <BNLowLevelILOperation N>
@@ -1288,27 +1287,27 @@ namespace BinaryNinja
 			typedef value_type reference;
 
 			const LowLevelILOperandList* owner;
-			_STD_VECTOR<LowLevelILOperandUsage>::const_iterator pos;
-			bool operator==(const ListIterator& a) const { return pos == a.pos; }
-			bool operator!=(const ListIterator& a) const { return pos != a.pos; }
-			bool operator<(const ListIterator& a) const { return pos < a.pos; }
+			size_t index;
+			constexpr bool operator==(const ListIterator& a) const { return index == a.index; }
+			constexpr auto operator<=>(const ListIterator& a) const { return index <=> a.index; }
 			ListIterator& operator++()
 			{
-				++pos;
+				++index;
 				return *this;
 			}
 			const LowLevelILOperand operator*();
 		};
 
 		LowLevelILInstruction m_instr;
-		const _STD_VECTOR<LowLevelILOperandUsage>& m_usageList;
-		const _STD_UNORDERED_MAP<LowLevelILOperandUsage, size_t>& m_operandIndexMap;
+		const LowLevelILOperandUsage* m_usages;
+		const uint8_t* m_indices;
+		uint8_t m_count;
 
 	  public:
 		typedef ListIterator const_iterator;
 
-		LowLevelILOperandList(const LowLevelILInstruction& instr, const _STD_VECTOR<LowLevelILOperandUsage>& usageList,
-		    const _STD_UNORDERED_MAP<LowLevelILOperandUsage, size_t>& operandIndexMap);
+		LowLevelILOperandList(const LowLevelILInstruction& instr, const LowLevelILOperandUsage* usages,
+		    const uint8_t* indices, uint8_t count);
 
 		const_iterator begin() const;
 		const_iterator end() const;
@@ -1884,7 +1883,9 @@ namespace BinaryNinja
 	{};
 	template <>
 	struct LowLevelILInstructionAccessor<LLIL_UNIMPL> : public LowLevelILInstructionBase
-	{};
+	{
+		bool IsUnknown() const { return GetRawOperandAsInteger(0) != 0; }
+	};
 
 	template <>
 	struct LowLevelILInstructionAccessor<LLIL_CONST> : public LowLevelILConstantInstruction
@@ -2055,6 +2056,39 @@ namespace BinaryNinja
 	struct LowLevelILInstructionAccessor<LLIL_NOT> : public LowLevelILOneOperandInstruction
 	{};
 	template <>
+	struct LowLevelILInstructionAccessor<LLIL_BSWAP> : public LowLevelILOneOperandInstruction
+	{};
+	template <>
+	struct LowLevelILInstructionAccessor<LLIL_POPCNT> : public LowLevelILOneOperandInstruction
+	{};
+	template <>
+	struct LowLevelILInstructionAccessor<LLIL_CLZ> : public LowLevelILOneOperandInstruction
+	{};
+	template <>
+	struct LowLevelILInstructionAccessor<LLIL_CTZ> : public LowLevelILOneOperandInstruction
+	{};
+	template <>
+	struct LowLevelILInstructionAccessor<LLIL_RBIT> : public LowLevelILOneOperandInstruction
+	{};
+	template <>
+	struct LowLevelILInstructionAccessor<LLIL_CLS> : public LowLevelILOneOperandInstruction
+	{};
+	template <>
+	struct LowLevelILInstructionAccessor<LLIL_MINS> : public LowLevelILTwoOperandInstruction
+	{};
+	template <>
+	struct LowLevelILInstructionAccessor<LLIL_MAXS> : public LowLevelILTwoOperandInstruction
+	{};
+	template <>
+	struct LowLevelILInstructionAccessor<LLIL_MINU> : public LowLevelILTwoOperandInstruction
+	{};
+	template <>
+	struct LowLevelILInstructionAccessor<LLIL_MAXU> : public LowLevelILTwoOperandInstruction
+	{};
+	template <>
+	struct LowLevelILInstructionAccessor<LLIL_ABS> : public LowLevelILOneOperandInstruction
+	{};
+	template <>
 	struct LowLevelILInstructionAccessor<LLIL_SX> : public LowLevelILOneOperandInstruction
 	{};
 	template <>
@@ -2068,7 +2102,9 @@ namespace BinaryNinja
 	{};
 	template <>
 	struct LowLevelILInstructionAccessor<LLIL_UNIMPL_MEM> : public LowLevelILOneOperandInstruction
-	{};
+	{
+		bool IsUnknown() const { return GetRawOperandAsInteger(1) != 0; }
+	};
 	template <>
 	struct LowLevelILInstructionAccessor<LLIL_FSQRT> : public LowLevelILOneOperandInstruction
 	{};

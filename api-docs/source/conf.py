@@ -17,11 +17,15 @@
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 from __future__ import annotations
+from io import StringIO
+import dataclasses
 import os
+import shutil
+from pathlib import Path
 import sys
 import platform
 import inspect
-import glob
+from typing import List
 
 stats = '''
 
@@ -49,9 +53,29 @@ os.environ["BN_DISABLE_USER_SETTINGS"] = "True"
 os.environ["BN_DISABLE_USER_PLUGINS"] = "True"
 os.environ["BN_DISABLE_REPOSITORY_PLUGINS"] = "True"
 import binaryninja
-import binaryninja.debugger
+
+try:
+	import binaryninja.debugger
+except ImportError:
+	pass
+
 try:
 	import binaryninja.collaboration
+except ImportError:
+	pass
+
+try:
+	import binaryninja.warp
+except ImportError:
+	pass
+
+try:
+	import binaryninja.sharedcache
+except ImportError:
+	pass
+
+try:
+	import binaryninja.kernelcache
 except ImportError:
 	pass
 
@@ -59,7 +83,7 @@ def modulelist(module, basename=""):
 	modules = inspect.getmembers(module, inspect.ismodule)
 	# We block the module named "debugger", because it is the folder that contains all debugger Python files
 	moduleblacklist = ["binaryninja", "core", "_binaryninjacore", "associateddatastore",
-	"dbgcore", "_debuggercore", "_collaboration"]
+	"dbgcore", "_debuggercore", "_collaboration", "_warpcore", "_sharedcachecore", "_kernelcachecore"]
 	if basename != "":
 		basename += "."
 
@@ -81,21 +105,148 @@ def classlist(module):
 def fnlist(module):
 	return [x for x in inspect.getmembers(module, inspect.isfunction) if x[1].__module__ == module.__name__]
 
+def get_autodoc_info(name, ref):
+	"""Returns (role, directive, needs_members) for a given reference."""
+	if inspect.isclass(ref) and issubclass(ref, Exception):
+		return ('py:exc', 'autoexception', True)
+	if inspect.isclass(ref):
+		return ('py:class', 'autoclass', True)
+	if inspect.isfunction(ref):
+		return ('py:func', 'autofunction', False)
+	raise TypeError(f"Unhandled type for {name}: {type(ref)}")
+
+def get_docstring_summary(name, ref):
+	"""Returns a truncated summary of the docstring for a given reference."""
+	doc = inspect.getdoc(ref)
+	if not doc or not doc.strip():
+		return ""
+
+	# Split by double newline to get first paragraph only,
+	# avoiding :param, :return, etc. sections
+	first_paragraph = doc.split('\n\n')[0].strip()
+	# Join lines within the first paragraph to handle multi-line sentences
+	first_paragraph = ' '.join(first_paragraph.split('\n')).strip()
+
+	# Only use the description if it's actual documentation (not just prototype/signature)
+	if not first_paragraph or first_paragraph.startswith(name + "("):
+		return ""
+
+	# If first paragraph fits within 100 chars, use it all
+	if len(first_paragraph) <= 100:
+		return first_paragraph
+
+	# Paragraph is too long, use as much as possible with truncation
+	# Split by '. ' (period + space) to avoid splitting on code refs like `bv.symbols`
+	if '. ' in first_paragraph:
+		# Try to include complete sentences, or truncate mid-sentence if needed
+		sentences = first_paragraph.split('. ')
+		summary = sentences[0] + '.'
+		# Try to add more sentences if they fit
+		for i in range(1, len(sentences)):
+			next_sentence = sentences[i]
+			if i < len(sentences) - 1:
+				next_sentence += '.'
+			potential = summary + ' ' + next_sentence
+			if len(potential) <= 100:
+				summary = potential
+			elif len(summary + ' ' + next_sentence[:20]) <= 100:
+				# Can't fit the whole sentence, but try to fit part of it with truncation
+				summary = summary + ' ' + next_sentence
+				break
+			else:
+				break
+	else:
+		# No sentence boundary, just use the paragraph as-is for truncation
+		summary = first_paragraph
+
+	# If summary is still too long, truncate it
+	if len(summary) > 100:
+		truncate_at = 97
+		# Look for space before truncation to avoid breaking words
+		if ' ' in summary[80:97]:
+			space_pos = summary.rfind(' ', 80, 97)
+			if space_pos > 80:
+				truncate_at = space_pos
+		# Check if we're in the middle of a Sphinx directive or backtick
+		if ':py:' in summary[max(0, truncate_at-10):truncate_at+10]:
+			directive_start = summary.rfind(':py:', 0, truncate_at)
+			if directive_start != -1:
+				truncate_at = directive_start
+		# Check for unclosed backticks
+		if summary[:truncate_at].count('`') % 2 != 0:
+			last_backtick = summary.rfind('`', 0, truncate_at)
+			if last_backtick > 0:
+				truncate_at = summary.rfind(' ', 0, last_backtick)
+		summary = summary[:truncate_at] + "..."
+
+	return summary
+
+def write_summary_table(output, header, members):
+	"""Writes a summary table for a list of members."""
+	if not members:
+		return
+	output.write(".. list-table::\n")
+	output.write("   :header-rows: 1\n")
+	output.write("   :widths: 30 70\n\n")
+	output.write(f"   * - {header}\n")
+	output.write("     - Description\n")
+	for name, ref in members:
+		role, _, _ = get_autodoc_info(name, ref)
+		summary = get_docstring_summary(name, ref)
+		output.write(f"   * - :{role}:`{inspect.getmodule(ref).__name__}.{name}`\n")
+		output.write(f"     - {summary}\n")
+	output.write("\n")
+
+def strip_dataclass_signature_docstring(app, what, name, obj, options, lines):
+	"""Drops the ``Name(field: type, ...)`` docstring Python auto-generates for dataclasses
+	that don't have one of their own.
+
+	With autodoc_class_signature = 'mixed' Sphinx consumed that line as the class signature,
+	so it was never visible. With 'separated' the signature is taken from __init__ instead and
+	the synthetic docstring is left behind, rendering as a wall of ForwardRef(...) noise in the
+	class description. See https://github.com/Vector35/binaryninja-api/issues/8200
+	"""
+	if what not in ('class', 'exception') or not lines or not dataclasses.is_dataclass(obj):
+		return
+	try:
+		generated = obj.__name__ + str(inspect.signature(obj)).replace(' -> None', '')
+	except (TypeError, ValueError):
+		return
+	if '\n'.join(lines).strip() == generated.strip():
+		del lines[:]
+
 def setup(app):
+	app.connect('autodoc-process-docstring', strip_dataclass_signature_docstring)
+
+	# Copy canonical brand assets into Sphinx's static tree.
+	shutil.copyfile(os.path.join(os.path.dirname(__file__), '..', '..', 'docs', 'brand.css'),
+	                os.path.join(os.path.dirname(__file__), '_static', 'css', 'brand.css'))
+	os.makedirs(os.path.join(os.path.dirname(__file__), '_static', 'fonts'), exist_ok=True)
+	for font in (
+		'bebas-neue-bold.woff2',
+		'OpenSans-Regular.ttf',
+		'OpenSans-Italic.ttf',
+		'OpenSans-Bold.ttf',
+		'OpenSans-BoldItalic.ttf',
+		'roboto-mono-v22-latin-regular.woff2',
+		'roboto-mono-v22-latin-italic.woff2',
+		'roboto-mono-v22-latin-700.woff2',
+		'roboto-mono-v22-latin-700italic.woff2',
+	):
+		shutil.copyfile(
+			os.path.join(os.path.dirname(__file__), '..', '..', 'docs', 'fonts', font),
+			os.path.join(os.path.dirname(__file__), '_static', 'fonts', font),
+		)
+	app.add_css_file('css/brand.css')
 	app.add_css_file('css/other.css')
+	app.add_js_file('js/sidebar_toggle.js')
 	app.is_parallel_allowed('write')
 
-def cleansource():
-	rstfiles = glob.glob("*.rst")
-	for f in rstfiles:
-		try:
-			os.remove(f)
-		except OSError:
-			print(f"Unable to remove {f}")
-
 def generaterst():
-	pythonrst = open("index.rst", "w")
-	pythonrst.write('''Binary Ninja Python API Reference
+	# Preserve mtimes for unchanged generated RST so Sphinx can skip rebuilding it.
+	used_rst_files: List[Path] = []
+	index_rst = StringIO()
+	index_rst.write('''Binary Ninja Python API Reference
 =====================================
 
 Welcome to the Binary Ninja API documentation. The below methods are available
@@ -130,19 +281,26 @@ Full Class List
 
 	# Generate docs for both binaryninja and binaryninja.debugger module
 	modules = modulelist(binaryninja)
-	modules.extend(modulelist(binaryninja.debugger, basename="debugger"))
+	if hasattr(binaryninja, "debugger"):
+		modules.extend(modulelist(binaryninja.debugger, basename="debugger"))
 	if hasattr(binaryninja, "collaboration"):
 		modules.extend(modulelist(binaryninja.collaboration, basename="collaboration"))
+	if hasattr(binaryninja, "warp"):
+		modules.extend(modulelist(binaryninja.warp, basename="warp"))
+	if hasattr(binaryninja, "sharedcache"):
+		modules.extend(modulelist(binaryninja.sharedcache, basename="sharedcache"))
+	if hasattr(binaryninja, "kernelcache"):
+		modules.extend(modulelist(binaryninja.kernelcache, basename="kernelcache"))
 	modules = sorted(modules, key=lambda pair: pair[0])
 
 	# Separate top-level and nested modules for proper TOC structure
-	nested_modules = {"debugger": [], "collaboration": []}
-	
+	nested_modules = {"debugger": [], "collaboration": [], "warp": [], "sharedcache": [], "kernelcache": []}
+
 	for modulename, module in modules:
 		filename = f"{module.__name__}-module.rst"
 		if modulename.count(".") == 0:
 			# Top-level module - always include in main TOC
-			pythonrst.write(f"   {modulename} <{filename}>\n")
+			index_rst.write(f"   {modulename} <{filename}>\n")
 		else:
 			# This is a nested module - collect them for parent modules
 			parent = modulename.split(".")[0]
@@ -153,138 +311,79 @@ Full Class List
 		# Since we put debugger python files in a folder, binaryninja.{modulename} is no longer the
 		# correct name of the module
 		filename = f"{module.__name__}-module.rst"
-		modulefile = open(filename, "w")
+		module_contents = StringIO()
 		underline = "="*len(f"{modulename} module")
-		modulefile.write(f'''{modulename} module
+		module_contents.write(f'''{modulename} module
 {underline}
 
 ''')
-		
+
 		# Add sub-toctree for parent modules that have nested modules
 		if modulename.count(".") == 0 and modulename in nested_modules and nested_modules[modulename]:
-			modulefile.write(".. toctree::\n")
-			modulefile.write("   :maxdepth: 1\n")
-			modulefile.write("   :hidden:\n\n")
+			module_contents.write(".. toctree::\n")
+			module_contents.write("   :maxdepth: 1\n")
+			module_contents.write("   :hidden:\n\n")
 			for nested_name, nested_filename in nested_modules[modulename]:
-				modulefile.write(f"   {nested_name} <{nested_filename}>\n")
-			modulefile.write("\n")
-		
-		# Generate custom summary table
-		classes = list(classlist(module))
-		if classes:
-			modulefile.write(".. list-table::\n")
-			modulefile.write("   :header-rows: 1\n")
-			modulefile.write("   :widths: 30 70\n\n")
-			modulefile.write("   * - Class\n")
-			modulefile.write("     - Description\n")
-			
-			for (classname, classref) in classes:
-				if inspect.isclass(classref):
-					role = 'py:class'
-				else:
-					role = 'py:func'
-				
-				# Get docstring summary (first line)
-				doc = inspect.getdoc(classref)
-				summary = ""
-				if doc and doc.strip():
-					# Split by double newline to get first paragraph only,
-					# avoiding :param, :return, etc. sections
-					first_paragraph = doc.split('\n\n')[0].strip()
-					# Join lines within the first paragraph to handle multi-line sentences
-					first_paragraph = ' '.join(first_paragraph.split('\n')).strip()
+				module_contents.write(f"   {nested_name} <{nested_filename}>\n")
+			module_contents.write("\n")
 
-					# Only use the description if it's actual documentation (not just prototype/signature)
-					if first_paragraph and not first_paragraph.startswith(classname + "("):
-						# If first paragraph fits within 100 chars, use it all
-						if len(first_paragraph) <= 100:
-							summary = first_paragraph
-						else:
-							# Paragraph is too long, use as much as possible with truncation
-							# Split by '. ' (period + space) to avoid splitting on code refs like `bv.symbols`
-							if '. ' in first_paragraph:
-								# Try to include complete sentences, or truncate mid-sentence if needed
-								sentences = first_paragraph.split('. ')
-								summary = sentences[0] + '.'
-								# Try to add more sentences if they fit
-								for i in range(1, len(sentences)):
-									next_sentence = sentences[i]
-									if i < len(sentences) - 1:
-										next_sentence += '.'
-									potential = summary + ' ' + next_sentence
-									if len(potential) <= 100:
-										summary = potential
-									elif len(summary + ' ' + next_sentence[:20]) <= 100:
-										# Can't fit the whole sentence, but try to fit part of it with truncation
-										summary = summary + ' ' + next_sentence
-										break
-									else:
-										break
-
-								# If summary is still too long, truncate it
-								if len(summary) > 100:
-									truncate_at = 97
-									# Look for space before truncation to avoid breaking words
-									if ' ' in summary[80:97]:
-										space_pos = summary.rfind(' ', 80, 97)
-										if space_pos > 80:
-											truncate_at = space_pos
-									# Check if we're in the middle of a Sphinx directive or backtick
-									if ':py:' in summary[truncate_at-10:truncate_at+10]:
-										directive_start = summary.rfind(':py:', 0, truncate_at)
-										if directive_start != -1:
-											truncate_at = directive_start
-									# Check for unclosed backticks
-									if summary[:truncate_at].count('`') % 2 != 0:
-										last_backtick = summary.rfind('`', 0, truncate_at)
-										if last_backtick > 0:
-											truncate_at = summary.rfind(' ', 0, last_backtick)
-									summary = summary[:truncate_at] + "..."
-							else:
-								# No sentence boundary, just truncate the paragraph
-								summary = first_paragraph
-								truncate_at = 97
-								if ' ' in summary[80:97]:
-									space_pos = summary.rfind(' ', 80, 97)
-									if space_pos > 80:
-										truncate_at = space_pos
-								if ':py:' in summary[truncate_at-10:truncate_at+10]:
-									directive_start = summary.rfind(':py:', 0, truncate_at)
-									if directive_start != -1:
-										truncate_at = directive_start
-								if summary[:truncate_at].count('`') % 2 != 0:
-									last_backtick = summary.rfind('`', 0, truncate_at)
-									if last_backtick > 0:
-										truncate_at = summary.rfind(' ', 0, last_backtick)
-								summary = summary[:truncate_at] + "..."
-				
-				modulefile.write(f"   * - :{role}:`{inspect.getmodule(classref).__name__}.{classname}`\n")
-				modulefile.write(f"     - {summary}\n")
-
-
-		modulefile.write(f'''\n\n''')
-   
-		# Generate individual class sections with proper headers
-		for (classname, classref) in classes:
-			# Only include classes that actually belong to this module
-			if inspect.getmodule(classref).__name__ == module.__name__:
-				modulefile.write(f'''{classname}
-{"-" * len(classname)}
-
-.. autoclass:: {module.__name__}.{classname}
-   :members:
-   :undoc-members:
-   :show-inheritance:
+		# Include module-level docstring
+		module_contents.write(f'''.. automodule:: {module.__name__}
 
 ''')
-		modulefile.write(stats)
-		modulefile.close()
 
-	pythonrst.write(stats)
-	pythonrst.close()
+		# Split members into classes and functions
+		members = list(classlist(module))
+		class_members = [(name, ref) for name, ref in members if inspect.isclass(ref)]
+		func_members = [(name, ref) for name, ref in members if inspect.isfunction(ref)]
 
+		# Generate summary tables
+		write_summary_table(module_contents, "Class", class_members)
+		write_summary_table(module_contents, "Function", func_members)
 
-cleansource()
+		module_contents.write('\n')
+
+		# Generate individual sections with proper headers
+		for (classname, classref) in members:
+			# Only include classes that actually belong to this module
+			if inspect.getmodule(classref).__name__ == module.__name__:
+				_, directive, needs_members = get_autodoc_info(classname, classref)
+				module_contents.write(f'''{classname}
+{"-" * len(classname)}
+
+.. {directive}:: {module.__name__}.{classname}
+''')
+				if needs_members:
+					module_contents.write('''   :members:
+   :undoc-members:
+   :show-inheritance:
+''')
+				module_contents.write('\n')
+		module_contents.write(stats)
+
+		new_module_contents = module_contents.getvalue()
+		module_contents.close()
+		module_file = Path(filename)
+		# Only write to the module file if the contents are different
+		if not module_file.is_file() or module_file.read_text() != new_module_contents:
+			module_file.write_text(new_module_contents)
+		used_rst_files.append(module_file)
+
+		module_contents.close()
+
+	index_rst.write(stats)
+	new_index_contents = index_rst.getvalue()
+	index_rst.close()
+
+	index_file = Path("index.rst")
+	if not index_file.is_file() or index_file.read_text() != new_index_contents:
+		index_file.write_text(new_index_contents)
+	used_rst_files.append(index_file)
+
+	# Remove extra .rst files that weren't used
+	for rst_file in Path('.').glob('*.rst'):
+		if rst_file not in used_rst_files:
+			rst_file.unlink()
 
 generaterst()
 
@@ -337,7 +436,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'Binary Ninja Python API'
-copyright = u'2015-2025, Vector 35 Inc'
+copyright = u'2015-2026 Vector 35 Inc'
 author = u'Vector 35 Inc'
 
 # The version info for the project you're documenting, acts as replacement for
@@ -409,9 +508,8 @@ html_title = u'Binary Ninja API Documentation v' + version
 html_short_title = u'BN API'
 
 # The name of an image file (relative to this directory) to place at the top
-# of the sidebar.
-#
-# html_logo = None
+# of the sidebar. White-art wordmark — the sidebar header background is brand red.
+html_logo = u'../../docs/img/wordmark-white.svg'
 
 # The name of an image file (relative to this directory) to use as a favicon of
 # the docs.  This file should be a Windows icon file (.ico) being 16x16 or 32x32
@@ -604,4 +702,3 @@ texinfo_documents = [
 
 # Example configuration for intersphinx: refer to the Python standard library.
 intersphinx_mapping = {'python': ('https://docs.python.org/3', None)}
-

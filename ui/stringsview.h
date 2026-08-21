@@ -68,7 +68,10 @@ class BINARYNINJAUIAPI StringsListModel : public QAbstractItemModel, public Bina
 	std::vector<StringsListItem> m_strings;
 	std::map<uint64_t, uint64_t> m_refCounts;
 	std::map<BinaryNinja::DerivedString, uint64_t> m_derivedRefCounts;
-	std::string m_filter;
+
+	QString m_filter;
+	FilterOptions m_filterOptions;
+	QRegularExpression m_filterRegex; // This holds a compiled regex for m_filter
 
 	size_t m_filteredByOptions;
 
@@ -116,9 +119,9 @@ class BINARYNINJAUIAPI StringsListModel : public QAbstractItemModel, public Bina
 
 	virtual void sort(int col, Qt::SortOrder order) override;
 
-	void setFilter(const std::string& filter);
+	void setFilter(const QString& filter, FilterOptions options);
 
-	void updateFilter() { setFilter(m_filter); };
+	void updateFilter() { setFilter(m_filter, m_filterOptions); };
 
 	size_t getFilteredStringCount() const { return m_filteredByOptions; }
 	size_t getStringCount() const { return m_strings.size(); }
@@ -199,11 +202,11 @@ class BINARYNINJAUIAPI StringsView : public QTableView, public View, public Filt
 
 	virtual void selectionChanged(const QItemSelection& selected, const QItemSelection& deselected) override;
 
-	virtual void setFilter(const std::string& filter) override;
+	virtual void setFilter(const std::string& filter, FilterOptions options) override;
 	virtual void scrollToFirstItem() override;
 	virtual void scrollToCurrentItem() override;
-	virtual void selectFirstItem() override;
-	virtual void activateFirstItem() override;
+	virtual void ensureSelection() override;
+	virtual void activateSelection() override;
 	virtual QFont getFont() override { return m_itemDelegate->getFont(); }
 
 	bool getIncludeStringsOverlappingCode() const { return m_list->getIncludeStringsOverlappingCode(); };
@@ -225,6 +228,7 @@ class BINARYNINJAUIAPI StringsView : public QTableView, public View, public Filt
 	virtual void mouseMoveEvent(QMouseEvent* event) override;
 	virtual void mousePressEvent(QMouseEvent* event) override;
 	virtual void paintEvent(QPaintEvent* event) override;
+	virtual void scrollContentsBy(int dx, int dy) override;
 	virtual bool event(QEvent* event) override;
 
   private Q_SLOTS:
@@ -242,7 +246,7 @@ class BINARYNINJAUIAPI StringsContainer : public QWidget, public ViewContainer
 	friend class StringsView;
 
 	StringsView* m_strings;
-	FilteredView* m_filter;
+	FilteredView* m_filteredView;
 	FilterEdit* m_separateEdit = nullptr;
 	StringsViewSidebarWidget* m_widget;
 	UIActionHandler m_actionHandler;
@@ -252,7 +256,7 @@ class BINARYNINJAUIAPI StringsContainer : public QWidget, public ViewContainer
 	virtual View* getView() override { return m_strings; }
 
 	StringsView* getStringsView() { return m_strings; }
-	FilteredView* getFilter() { return m_filter; }
+	FilteredView* getFilter() { return m_filteredView; }
 	FilterEdit* getSeparateFilterEdit() { return m_separateEdit; }
 
   protected:

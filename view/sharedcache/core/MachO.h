@@ -70,7 +70,8 @@ struct SharedCacheMachOHeader
 	static std::optional<SharedCacheMachOHeader> ParseHeaderForAddress(
 		std::shared_ptr<VirtualMemory> vm, uint64_t address, const std::string& imagePath);
 
-	std::vector<CacheSymbol> ReadSymbolTable(VirtualMemory& vm, const TableInfo &symbolInfo, const TableInfo &stringInfo) const;
+	std::vector<CacheSymbol> ReadSymbolTable(VirtualMemory& vm, const TableInfo &symbolInfo, const TableInfo &stringInfo,
+		BNSymbolBinding bindingOverride = NoBinding) const;
 
 	bool AddExportTerminalSymbol(
 		std::vector<CacheSymbol>& symbols, const std::string& symbolName, const uint8_t* current,

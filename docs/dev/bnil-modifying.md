@@ -246,7 +246,7 @@ Let's call the new function `new_func` and the existing function `old_func`.
     }
     ```
 
-???+ Note "Note"
+!!! Note "Note"
     You may notice that the sample code above mentions always using `AnalysisContext.llil` (C++: `AnalysisContext::GetLowLevelIL()`) to access the relevant Low Level IL function,
     and you may be wondering why the sample doesn't instead use `AnalysisContext.function.llil` (C++: `AnalysisContext::GetFunction()->GetLowLevelILFunction()`).
     This is because you must **always access IL Functions directly through `AnalysisContext`** when writing Workflow Activities, as that is where the current, up-to-date analysis information is stored.
@@ -590,7 +590,7 @@ In addition, it applies to Find In Text results, so you can enable Show IL Opcod
 
 **Show IL Opcodes off:**
 
-```
+```text
   10 @ 1400553e7  bool rcx = temp0 s< 0x12817497a9ff848a
   11 @ 1400553f1  uint32_t rdx_1 = zx.d(rcx)
   12 @ 1400553f4  uint32_t rdx_2 = rdx_1 << 3
@@ -600,7 +600,7 @@ In addition, it applies to Find In Text results, so you can enable Show IL Opcod
 
 **Show IL Opcodes on:**
 
-```
+```text
   10 @ 1400553e7  (MLIL_SET_VAR.b bool rcx = (MLIL_CMP_SLT.q (MLIL_VAR.q temp0) s< (MLIL_CONST.q 0x12817497a9ff848a)))
   11 @ 1400553f1  (MLIL_SET_VAR.d uint32_t rdx_1 = (MLIL_ZX.d zx.d((MLIL_VAR.b rcx))))
   12 @ 1400553f4  (MLIL_SET_VAR.d uint32_t rdx_2 = (MLIL_LSL.d (MLIL_VAR.d rdx_1) << (MLIL_CONST.d 3)))
@@ -614,7 +614,7 @@ When you need to inspect a particular expression in a given IL function, it can 
 If you have the UI open, you can skip traversing the entire IL tree and simply click the expression of interest.
 From there, you can use `current_il_expr` in the Python console to interact with that expression directly.
 
-```
+```pycon
 # Clicking the `s<` token...
 >>> current_il_expr
 <MediumLevelILCmpSlt: temp0 s< 0x12817497a9ff848a>
@@ -632,7 +632,7 @@ From there, you can use `current_il_expr` in the Python console to interact with
 
 Compare this to `current_il_instruction`, which only gives you the top-level instruction:
 
-```
+```pycon
 # Clicking the `rdx_1` token...
 >>> current_il_instruction
 <MediumLevelILSetVar: rdx_2 = rdx_1 << 3>

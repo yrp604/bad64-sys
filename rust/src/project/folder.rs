@@ -1,12 +1,14 @@
 use crate::progress::{NoProgressCallback, ProgressCallback};
+use crate::project::file::ProjectFile;
 use crate::project::Project;
-use crate::rc::{CoreArrayProvider, CoreArrayProviderInner, Guard, Ref, RefCountable};
+use crate::rc::{Array, CoreArrayProvider, CoreArrayProviderInner, Guard, Ref, RefCountable};
 use crate::string::{BnString, IntoCStr};
 use binaryninjacore_sys::{
     BNFreeProjectFolder, BNFreeProjectFolderList, BNNewProjectFolderReference, BNProjectFolder,
-    BNProjectFolderExport, BNProjectFolderGetDescription, BNProjectFolderGetId,
-    BNProjectFolderGetName, BNProjectFolderGetParent, BNProjectFolderGetProject,
-    BNProjectFolderSetDescription, BNProjectFolderSetName, BNProjectFolderSetParent,
+    BNProjectFolderExport, BNProjectFolderGetDescription, BNProjectFolderGetFiles,
+    BNProjectFolderGetId, BNProjectFolderGetName, BNProjectFolderGetParent,
+    BNProjectFolderGetProject, BNProjectFolderSetDescription, BNProjectFolderSetName,
+    BNProjectFolderSetParent,
 };
 use std::ffi::c_void;
 use std::fmt::Debug;
@@ -99,6 +101,13 @@ impl ProjectFolder {
                 Some(P::cb_progress_callback),
             )
         }
+    }
+
+    /// Get the files contained in this folder
+    pub fn files(&self) -> Array<ProjectFile> {
+        let mut count = 0;
+        let result = unsafe { BNProjectFolderGetFiles(self.handle.as_ptr(), &mut count) };
+        unsafe { Array::new(result, count, ()) }
     }
 }
 

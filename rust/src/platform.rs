@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,23 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Contains all information related to the execution environment of the binary, mainly the calling conventions used
+//! A [`Platform`] models the information related to the execution environment of the binary.
 
-use crate::type_container::TypeContainer;
-use crate::type_parser::{TypeParserError, TypeParserErrorSeverity, TypeParserResult};
 use crate::{
     architecture::{Architecture, CoreArchitecture},
     calling_convention::CoreCallingConvention,
     rc::*,
     string::*,
-    type_library::TypeLibrary,
-    types::QualifiedNameAndType,
+    types::{
+        QualifiedName, QualifiedNameAndType, Type, TypeContainer, TypeLibrary, TypeParserError,
+        TypeParserErrorSeverity, TypeParserResult,
+    },
 };
 use binaryninjacore_sys::*;
 use std::fmt::Debug;
 use std::ptr::NonNull;
 use std::{borrow::Borrow, ffi, ptr};
 
+/// A platform describes the target [`CoreArchitecture`] and platform-specific information such as
+/// the calling conventions and generic types (think `HRESULT` on Windows).
 #[derive(PartialEq, Eq, Hash)]
 pub struct Platform {
     pub(crate) handle: *mut BNPlatform,
@@ -165,10 +167,16 @@ impl Platform {
         unsafe { CoreArchitecture::from_raw(BNGetPlatformArchitecture(self.handle)) }
     }
 
+    /// Get the address size of the platform, this is typically the same as the architecture's address size,
+    /// but some platforms like Linux x86_64 x32 ABI have differing address sizes from architecture.
+    pub fn address_size(&self) -> usize {
+        unsafe { BNGetPlatformAddressSize(self.handle) }
+    }
+
     pub fn type_container(&self) -> TypeContainer {
         let type_container_ptr = NonNull::new(unsafe { BNGetPlatformTypeContainer(self.handle) });
         // NOTE: I have no idea how this isn't a UAF, see the note in `TypeContainer::from_raw`
-        // TODO: We are cloning here for platforms but we dont need to do this for [BinaryViewExt::type_container]
+        // TODO: We are cloning here for platforms but we dont need to do this for [BinaryView::type_container]
         // TODO: Why does this require that we, construct a TypeContainer, duplicate the type container, then drop the original.
         unsafe { TypeContainer::from_raw(type_container_ptr.unwrap()) }
     }
@@ -268,6 +276,22 @@ impl Platform {
             let mut count = 0;
             let handles = BNGetPlatformFunctions(self.handle, &mut count);
             Array::new(handles, count, ())
+        }
+    }
+
+    pub fn function_by_name<T: Into<QualifiedName>>(
+        &self,
+        name: T,
+        exact_match: bool,
+    ) -> Option<Ref<Type>> {
+        let mut raw_name = QualifiedName::into_raw(name.into());
+        unsafe {
+            let type_handle = BNGetPlatformFunctionByName(self.handle, &mut raw_name, exact_match);
+            QualifiedName::free_raw(raw_name);
+            if type_handle.is_null() {
+                return None;
+            }
+            Some(Type::ref_from_raw(type_handle))
         }
     }
 

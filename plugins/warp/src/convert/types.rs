@@ -244,6 +244,10 @@ pub fn from_bn_type_internal(
             };
             TypeClass::Character(char_class)
         }
+        BNTypeClass::FragmentTypeClass => {
+            // XXX: possibly unrepresentable?
+            TypeClass::Void
+        }
     };
 
     let name = raw_ty.registered_name().map(|n| n.name().to_string());
@@ -270,18 +274,18 @@ pub fn from_bn_calling_convention(raw_cc: BNRef<BNCallingConvention>) -> Calling
 pub fn to_bn_calling_convention<A: BNArchitecture>(
     arch: &A,
     calling_convention: &CallingConvention,
-) -> BNRef<BNCallingConvention> {
+) -> Option<BNRef<BNCallingConvention>> {
     for cc in &arch.calling_conventions() {
         if cc.name().as_str() == calling_convention.name {
-            return cc.clone();
+            return Some(cc.clone());
         }
     }
-    arch.get_default_calling_convention().unwrap()
+    None
 }
 
 // Always pass the architecture unless you know what you're doing!
 pub fn to_bn_type<A: BNArchitecture + Copy>(arch: Option<A>, ty: &Type) -> BNRef<BNType> {
-    let bits_to_bytes = |val: u64| (val / 8);
+    let bits_to_bytes = |val: u64| val / 8;
     let addr_size = arch.map(|a| a.address_size()).unwrap_or(8) as u64;
     match &ty.class {
         TypeClass::Void => BNType::void(),
@@ -361,7 +365,7 @@ pub fn to_bn_type<A: BNArchitecture + Copy>(arch: Option<A>, ty: &Type) -> BNRef
                             ))
                         }
                         _ => {
-                            log::error!(
+                            tracing::error!(
                                 "Adding base {:?} with invalid ty: {:?}",
                                 ty.name,
                                 member.ty
@@ -439,9 +443,11 @@ pub fn to_bn_type<A: BNArchitecture + Copy>(arch: Option<A>, ty: &Type) -> BNRef
             // TODO: Variable arguments
             let variable_args = false;
             // If we have a calling convention we run the extended function type creation.
-            match (c.calling_convention.as_ref(), arch.as_ref()) {
-                (Some(cc), Some(arch)) => {
-                    let calling_convention = to_bn_calling_convention(arch, cc);
+            let default_cc = arch.and_then(|a| a.get_default_calling_convention());
+            match (c.calling_convention.as_ref(), arch.as_ref(), default_cc) {
+                (Some(cc), Some(arch), Some(default_cc)) => {
+                    let calling_convention =
+                        to_bn_calling_convention(arch, cc).unwrap_or(default_cc);
                     BNType::function_with_opts(
                         &return_type,
                         &params,
@@ -450,7 +456,7 @@ pub fn to_bn_type<A: BNArchitecture + Copy>(arch: Option<A>, ty: &Type) -> BNRef
                         BNConf::new(0, 0),
                     )
                 }
-                (_, _) => BNType::function(&return_type, params, variable_args),
+                (_, _, _) => BNType::function(&return_type, params, variable_args),
             }
         }
         TypeClass::Referrer(c) => {
@@ -470,7 +476,7 @@ pub fn to_bn_type<A: BNArchitecture + Copy>(arch: Option<A>, ty: &Type) -> BNRef
                         ntr_name,
                     ),
                     None => {
-                        log::error!("Referrer with no reference! {:?}", c);
+                        tracing::error!("Referrer with no reference! {:?}", c);
                         NamedTypeReference::new(
                             NamedTypeReferenceClass::UnknownNamedTypeClass,
                             "AHHHHHH",
@@ -486,7 +492,6 @@ pub fn to_bn_type<A: BNArchitecture + Copy>(arch: Option<A>, ty: &Type) -> BNRef
 #[cfg(test)]
 mod tests {
     use super::*;
-    use binaryninja::binary_view::BinaryViewExt;
     use binaryninja::headless::Session;
     use std::path::PathBuf;
     use warp::r#type::guid::TypeGUID;

@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2025 Vector 35 Inc
+// Copyright (c) 2020-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -28,6 +28,10 @@ BNLinearDisassemblyLine LinearDisassemblyLine::GetAPIObject() const
 {
 	BNLinearDisassemblyLine result;
 	result.type = this->type;
+	Ref<BinaryView> binaryView = this->view;
+	if (!binaryView && this->function)
+		binaryView = this->function->GetView();
+	result.view = binaryView ? BNNewViewReference(binaryView->GetObject()) : nullptr;
 	result.function = this->function ? BNNewFunctionReference(this->function->GetObject()) : nullptr;
 	result.block = this->block ? BNNewBasicBlockReference(this->block->GetObject()) : nullptr;
 	result.contents = this->contents.GetAPIObject();
@@ -39,6 +43,7 @@ LinearDisassemblyLine LinearDisassemblyLine::FromAPIObject(const BNLinearDisasse
 {
 	LinearDisassemblyLine result;
 	result.type = line->type;
+	result.view = line->view ? new BinaryView(BNNewViewReference(line->view)) : nullptr;
 	result.function = line->function ? new Function(BNNewFunctionReference(line->function)) : nullptr;
 	result.block = line->block ? new BasicBlock(BNNewBasicBlockReference(line->block)) : nullptr;
 	result.contents = DisassemblyTextLine::FromAPIObject(&line->contents);
@@ -48,6 +53,8 @@ LinearDisassemblyLine LinearDisassemblyLine::FromAPIObject(const BNLinearDisasse
 
 void LinearDisassemblyLine::FreeAPIObject(BNLinearDisassemblyLine* line)
 {
+	if (line->view)
+		BNFreeBinaryView(line->view);
 	if (line->function)
 		BNFreeFunction(line->function);
 	if (line->block)

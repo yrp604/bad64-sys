@@ -9,17 +9,18 @@ use binaryninja::relocation::{Relocation, RelocationHandlerExt};
 use binaryninja::{
     add_optional_plugin_dependency, architecture,
     architecture::{
-        llvm_assemble, Architecture, ArchitectureExt, CoreArchitecture, CustomArchitectureHandle,
-        ImplicitRegisterExtend, InstructionInfo, LlvmServicesCodeModel, LlvmServicesDialect,
-        LlvmServicesRelocMode, Register as Reg, RegisterInfo, UnusedFlag, UnusedRegisterStack,
-        UnusedRegisterStackInfo,
+        Architecture, ArchitectureExt, CoreArchitecture, CustomArchitectureHandle,
+        ImplicitRegisterExtend, InstructionInfo, Register as Reg, RegisterInfo, UnusedFlag,
+        UnusedRegisterStack,
     },
-    binary_view::{BinaryView, BinaryViewExt},
-    calling_convention::{register_calling_convention, CallingConvention, ConventionBuilder},
-    custom_binary_view::{BinaryViewType, BinaryViewTypeExt},
+    binary_view::{BinaryView, BinaryViewType},
+    calling_convention::{
+        register_calling_convention, CallingConvention, ConventionBuilder, CoreCallingConvention,
+    },
     disassembly::{InstructionTextToken, InstructionTextTokenKind},
     function::Function,
     function_recognizer::FunctionRecognizer,
+    llvm::{llvm_assemble, LlvmServicesCodeModel, LlvmServicesDialect, LlvmServicesRelocMode},
     rc::Ref,
     relocation::{
         CoreRelocationHandler, CustomRelocationHandlerHandle, RelocationHandler, RelocationInfo,
@@ -28,7 +29,6 @@ use binaryninja::{
     symbol::{Symbol, SymbolType},
     types::{NameAndType, Type},
 };
-use log::LevelFilter;
 use std::borrow::Cow;
 use std::fmt;
 use std::hash::Hash;
@@ -36,7 +36,6 @@ use std::marker::PhantomData;
 
 use binaryninja::architecture::{BranchKind, IntrinsicId, RegisterId};
 use binaryninja::confidence::{Conf, MAX_CONFIDENCE, MIN_CONFIDENCE};
-use binaryninja::logger::Logger;
 use binaryninja::low_level_il::expression::{LowLevelILExpressionKind, ValueExpr};
 use binaryninja::low_level_il::instruction::LowLevelILInstructionKind;
 use binaryninja::low_level_il::lifting::{
@@ -48,7 +47,7 @@ use binaryninja::low_level_il::{
 };
 use riscv_dis::{
     FloatReg, FloatRegType, Instr, IntRegType, Op, RegFile, Register as RiscVRegister,
-    RiscVDisassembler, RoundMode,
+    RiscVDisassembler, RiscVWCHDisassembler, RoundMode,
 };
 
 enum RegType {
@@ -85,6 +84,12 @@ enum Intrinsic {
     FcvtUToF(u8, u8, RoundMode),
     FcvtFToU(u8, u8, RoundMode),
     Fence,
+    Clz,
+    Ctz,
+    Popcount,
+    OrCombine,
+    Rev8,
+    WchMcpy,
 }
 
 #[derive(Copy, Clone)]
@@ -169,7 +174,7 @@ impl<D: RiscVDisassembler> RegisterInfo for Register<D> {
 impl<D: RiscVDisassembler> architecture::Register for Register<D> {
     type InfoType = Self;
 
-    fn name(&self) -> Cow<str> {
+    fn name(&self) -> Cow<'_, str> {
         match self.reg_type() {
             RegType::Integer(id) => match id {
                 0 => "zero".into(),
@@ -228,7 +233,7 @@ impl<'a, D: RiscVDisassembler> LiftableLowLevelILWithSize<'a> for Register<D> {
         #[cfg(debug_assertions)]
         {
             if reg.size() < size {
-                log::warn!(
+                tracing::warn!(
                     "il @ {:x} attempted to lift {} byte register as {} byte expr",
                     il.current_address(),
                     reg.size(),
@@ -342,6 +347,12 @@ impl<D: RiscVDisassembler> RiscVIntrinsic<D> {
             Some((23, usize, fsize, rm)) => Some(Intrinsic::FcvtUToF(usize, fsize, rm).into()),
             Some((24, fsize, usize, rm)) => Some(Intrinsic::FcvtFToU(fsize, usize, rm).into()),
             Some((25, _, _, _)) => Some(Intrinsic::Fence.into()),
+            Some((26, _, _, _)) => Some(Intrinsic::Clz.into()),
+            Some((27, _, _, _)) => Some(Intrinsic::Ctz.into()),
+            Some((28, _, _, _)) => Some(Intrinsic::Popcount.into()),
+            Some((29, _, _, _)) => Some(Intrinsic::OrCombine.into()),
+            Some((30, _, _, _)) => Some(Intrinsic::Rev8.into()),
+            Some((31, _, _, _)) => Some(Intrinsic::WchMcpy.into()),
             _ => None,
         }
     }
@@ -393,7 +404,7 @@ impl<D: RiscVDisassembler> From<Intrinsic> for RiscVIntrinsic<D> {
 }
 
 impl<D: RiscVDisassembler> architecture::Intrinsic for RiscVIntrinsic<D> {
-    fn name(&self) -> Cow<str> {
+    fn name(&self) -> Cow<'_, str> {
         match self.id {
             Intrinsic::Uret => "_uret".into(),
             Intrinsic::Sret => "_sret".into(),
@@ -476,6 +487,12 @@ impl<D: RiscVDisassembler> architecture::Intrinsic for RiscVIntrinsic<D> {
             )
             .into(),
             Intrinsic::Fence => "_fence".into(),
+            Intrinsic::Clz => "_clz".into(),
+            Intrinsic::Ctz => "_ctz".into(),
+            Intrinsic::Popcount => "_popcount".into(),
+            Intrinsic::OrCombine => "_orc_b".into(),
+            Intrinsic::Rev8 => "_rev8".into(),
+            Intrinsic::WchMcpy => "_wch_mcpy".into(),
         }
     }
 
@@ -517,6 +534,12 @@ impl<D: RiscVDisassembler> architecture::Intrinsic for RiscVIntrinsic<D> {
                 Self::id_from_parts(24, Some(usize), Some(fsize), Some(rm))
             }
             Intrinsic::Fence => Self::id_from_parts(25, None, None, None),
+            Intrinsic::Clz => Self::id_from_parts(26, None, None, None),
+            Intrinsic::Ctz => Self::id_from_parts(27, None, None, None),
+            Intrinsic::Popcount => Self::id_from_parts(28, None, None, None),
+            Intrinsic::OrCombine => Self::id_from_parts(29, None, None, None),
+            Intrinsic::Rev8 => Self::id_from_parts(30, None, None, None),
+            Intrinsic::WchMcpy => Self::id_from_parts(31, None, None, None),
         }
     }
 
@@ -585,6 +608,44 @@ impl<D: RiscVDisassembler> architecture::Intrinsic for RiscVIntrinsic<D> {
                     Conf::new(Type::int(4, false), MIN_CONFIDENCE),
                 )]
             }
+            Intrinsic::Clz
+            | Intrinsic::Ctz
+            | Intrinsic::Popcount
+            | Intrinsic::OrCombine
+            | Intrinsic::Rev8 => {
+                vec![NameAndType::new(
+                    "input",
+                    Conf::new(
+                        Type::int(<D::RegFile as RegFile>::Int::width(), false),
+                        MIN_CONFIDENCE,
+                    ),
+                )]
+            }
+            Intrinsic::WchMcpy => {
+                vec![
+                    NameAndType::new(
+                        "dst",
+                        Conf::new(
+                            Type::int(<D::RegFile as RegFile>::Int::width(), false),
+                            MIN_CONFIDENCE,
+                        ),
+                    ),
+                    NameAndType::new(
+                        "start",
+                        Conf::new(
+                            Type::int(<D::RegFile as RegFile>::Int::width(), false),
+                            MIN_CONFIDENCE,
+                        ),
+                    ),
+                    NameAndType::new(
+                        "end",
+                        Conf::new(
+                            Type::int(<D::RegFile as RegFile>::Int::width(), false),
+                            MIN_CONFIDENCE,
+                        ),
+                    ),
+                ]
+            }
         }
     }
 
@@ -595,7 +656,8 @@ impl<D: RiscVDisassembler> architecture::Intrinsic for RiscVIntrinsic<D> {
             | Intrinsic::Mret
             | Intrinsic::Wfi
             | Intrinsic::Csrwr
-            | Intrinsic::Fence => {
+            | Intrinsic::Fence
+            | Intrinsic::WchMcpy => {
                 vec![]
             }
             Intrinsic::Csrrw | Intrinsic::Csrrd | Intrinsic::Csrrs | Intrinsic::Csrrc => {
@@ -628,6 +690,16 @@ impl<D: RiscVDisassembler> architecture::Intrinsic for RiscVIntrinsic<D> {
             Intrinsic::FcvtFToU(_, size, _) => {
                 vec![Conf::new(Type::int(size as usize, false), MAX_CONFIDENCE)]
             }
+            Intrinsic::Clz
+            | Intrinsic::Ctz
+            | Intrinsic::Popcount
+            | Intrinsic::OrCombine
+            | Intrinsic::Rev8 => {
+                vec![Conf::new(
+                    Type::int(<D::RegFile as RegFile>::Int::width(), false),
+                    MIN_CONFIDENCE,
+                )]
+            }
         }
     }
 }
@@ -639,12 +711,26 @@ struct RiscVArch<D: RiscVDisassembler> {
     _dis: PhantomData<D>,
 }
 
+impl<D: RiscVDisassembler> RiscVArch<D> {
+    fn decode_zero(data: &[u8]) -> Option<usize> {
+        if <D::CompressedExtension as riscv_dis::StandardExtension>::supported()
+            && data.len() >= 2
+            && data[0] == 0
+            && data[1] == 0
+        {
+            Some(2)
+        } else {
+            None
+        }
+    }
+}
+
 impl<D: RiscVDisassembler> Architecture for RiscVArch<D> {
     type Handle = CustomArchitectureHandle<Self>;
 
     type RegisterInfo = Register<D>;
     type Register = Register<D>;
-    type RegisterStackInfo = UnusedRegisterStackInfo<Self::Register>;
+    type RegisterStackInfo = UnusedRegisterStack<Self::Register>;
     type RegisterStack = UnusedRegisterStack<Self::Register>;
 
     type Flag = UnusedFlag;
@@ -689,6 +775,14 @@ impl<D: RiscVDisassembler> Architecture for RiscVArch<D> {
     }
 
     fn instruction_info(&self, data: &[u8], addr: u64) -> Option<InstructionInfo> {
+        // Special handling for 0000, which is often used by compilers
+        // after jumps/calls in noreturn functions to trap execution
+        if let Some(inst_len) = Self::decode_zero(data) {
+            let mut res = InstructionInfo::new(inst_len, 0);
+            res.add_branch(BranchKind::Unresolved);
+            return Some(res);
+        }
+
         let (inst_len, op) = match D::decode(addr, data) {
             Ok(Instr::Rv16(op)) => (2, op),
             Ok(Instr::Rv32(op)) => (4, op),
@@ -754,6 +848,15 @@ impl<D: RiscVDisassembler> Architecture for RiscVArch<D> {
         use riscv_dis::Operand;
         use InstructionTextTokenKind::*;
 
+        // Special handling for 0000, which is often used by compilers
+        // after jumps/calls in noreturn functions to trap execution
+        if let Some(inst_len) = Self::decode_zero(data) {
+            return Some((
+                inst_len,
+                vec![InstructionTextToken::new("trap", Instruction)],
+            ));
+        }
+
         let inst = match D::decode(addr, data) {
             Ok(i) => i,
             _ => return None,
@@ -795,6 +898,14 @@ impl<D: RiscVDisassembler> Architecture for RiscVArch<D> {
                 // addiw rd, rs, 0 => sext.w rd, rs
                 if i.imm() == 0 {
                     mnem = "sext.w".into();
+                    pad_len = 8usize.saturating_sub(mnem.len());
+                    operands.remove(2);
+                }
+            }
+            Op::AddUW(r) => {
+                // add.uw rd, rs, x0 => zext.w rd, rs
+                if r.rs2().id() == 0 {
+                    mnem = "zext.w".into();
                     pad_len = 8usize.saturating_sub(mnem.len());
                     operands.remove(2);
                 }
@@ -1014,6 +1125,7 @@ impl<D: RiscVDisassembler> Architecture for RiscVArch<D> {
                                 CodeRelativeAddress {
                                     value: target,
                                     size: Some(self.address_size()),
+                                    operand: None,
                                 },
                             ));
                         }
@@ -1026,6 +1138,7 @@ impl<D: RiscVDisassembler> Architecture for RiscVArch<D> {
                                 Integer {
                                     value: i as u64,
                                     size: None,
+                                    operand: None,
                                 },
                             ));
                         }
@@ -1044,6 +1157,7 @@ impl<D: RiscVDisassembler> Architecture for RiscVArch<D> {
                         Integer {
                             value: i as u64,
                             size: None,
+                            operand: None,
                         },
                     ));
 
@@ -1067,6 +1181,13 @@ impl<D: RiscVDisassembler> Architecture for RiscVArch<D> {
         addr: u64,
         il: &LowLevelILMutableFunction,
     ) -> Option<(usize, bool)> {
+        // Special handling for 0000, which is often used by compilers
+        // after jumps/calls in noreturn functions to trap execution
+        if let Some(inst_len) = Self::decode_zero(data) {
+            il.trap(0).append();
+            return Some((inst_len, true));
+        }
+
         let max_width = self.default_integer_size();
 
         let (inst_len, op) = match D::decode(addr, data) {
@@ -1151,6 +1272,77 @@ impl<D: RiscVDisassembler> Architecture for RiscVArch<D> {
             Op::SrlI(i) => simple_i!(i, |rs1, imm| il.lsr(max_width, rs1, imm)),
             Op::SraI(i) => simple_i!(i, |rs1, imm| il.asr(max_width, rs1, imm)),
 
+            Op::BclrI(i) => simple_i!(i, |rs1, shamt| {
+                let mask = il.not(max_width, il.lsl(max_width, 1, shamt));
+                il.and(max_width, rs1, mask)
+            }),
+            Op::BextI(i) => simple_i!(i, |rs1, shamt| {
+                let val = il.lsr(max_width, rs1, shamt);
+                il.and(max_width, val, 1)
+            }),
+            Op::BinvI(i) => simple_i!(i, |rs1, shamt| {
+                let mask = il.lsl(max_width, 1, shamt);
+                il.xor(max_width, rs1, mask)
+            }),
+            Op::BsetI(i) => simple_i!(i, |rs1, shamt| {
+                let mask = il.lsl(max_width, 1, shamt);
+                il.or(max_width, rs1, mask)
+            }),
+
+            Op::RorI(i) => simple_i!(i, |rs1, imm| il.ror(max_width, rs1, imm)),
+            Op::Clz(i) => {
+                let rd = Register::from(i.rd());
+
+                if i.rd().id() == 0 {
+                    il.nop().append();
+                } else {
+                    let rs1 = Register::from(i.rs1());
+                    il.set_reg(max_width, rd, il.clz(max_width, rs1)).append();
+                }
+            }
+            Op::Ctz(i) => {
+                let rd = Register::from(i.rd());
+
+                if i.rd().id() == 0 {
+                    il.nop().append();
+                } else {
+                    let rs1 = Register::from(i.rs1());
+                    il.set_reg(max_width, rd, il.ctz(max_width, rs1)).append();
+                }
+            }
+            Op::Cpop(i) => {
+                let rd = Register::from(i.rd());
+
+                if i.rd().id() == 0 {
+                    il.nop().append();
+                } else {
+                    let rs1 = Register::from(i.rs1());
+                    il.set_reg(max_width, rd, il.popcnt(max_width, rs1))
+                        .append();
+                }
+            }
+            Op::Orcb(i) => {
+                let rd = Register::from(i.rd());
+                let rs1 = LiftableLowLevelIL::lift(il, Register::from(i.rs1()));
+
+                if i.rd().id() == 0 {
+                    il.nop().append();
+                } else {
+                    il.intrinsic([rd], RiscVIntrinsic::<D>::from(Intrinsic::OrCombine), [rs1])
+                        .append();
+                }
+            }
+            Op::Rev8(i) => {
+                let rd = Register::from(i.rd());
+
+                if i.rd().id() == 0 {
+                    il.nop().append();
+                } else {
+                    let rs1 = Register::from(i.rs1());
+                    il.set_reg(max_width, rd, il.bswap(max_width, rs1)).append();
+                }
+            }
+
             // r-type
             Op::Add(r) => simple_r!(r, |rs1, rs2| il.add(max_width, rs1, rs2)),
             Op::Sll(r) => simple_r!(r, |rs1, rs2| il.lsl(max_width, rs1, rs2)),
@@ -1165,11 +1357,109 @@ impl<D: RiscVDisassembler> Architecture for RiscVArch<D> {
             Op::Sub(r) => simple_r!(r, |rs1, rs2| il.sub(max_width, rs1, rs2)),
             Op::Sra(r) => simple_r!(r, |rs1, rs2| il.asr(max_width, rs1, rs2)),
 
+            Op::Bclr(r) => simple_r!(r, |rs1, rs2| {
+                let shamt = il.and(max_width, rs2, (max_width * 8 - 1) as u64);
+                let mask = il.not(max_width, il.lsl(max_width, 1, shamt));
+                il.and(max_width, rs1, mask)
+            }),
+            Op::Bext(r) => simple_r!(r, |rs1, rs2| {
+                let shamt = il.and(max_width, rs2, (max_width * 8 - 1) as u64);
+                let val = il.lsr(max_width, rs1, shamt);
+                il.and(max_width, val, 1)
+            }),
+            Op::Binv(r) => simple_r!(r, |rs1, rs2| {
+                let shamt = il.and(max_width, rs2, (max_width * 8 - 1) as u64);
+                let mask = il.lsl(max_width, 1, shamt);
+                il.xor(max_width, rs1, mask)
+            }),
+            Op::Bset(r) => simple_r!(r, |rs1, rs2| {
+                let shamt = il.and(max_width, rs2, (max_width * 8 - 1) as u64);
+                let mask = il.lsl(max_width, 1, shamt);
+                il.or(max_width, rs1, mask)
+            }),
+
+            Op::ShXAdd(x, r) => simple_r!(r, |rs1, rs2| {
+                il.add(max_width, il.lsl(max_width, rs1, x), rs2)
+            }),
+
+            Op::Andn(r) => simple_r!(r, |rs1, rs2| il.and(max_width, rs1, il.not(max_width, rs2))),
+            Op::Orn(r) => simple_r!(r, |rs1, rs2| il.or(max_width, rs1, il.not(max_width, rs2))),
+            Op::Xnor(r) => simple_r!(r, |rs1, rs2| il.not(max_width, il.xor(max_width, rs1, rs2))),
+            Op::SextB(i) => simple_i!(i, |rs1, _| { il.sx(max_width, il.low_part(1, rs1)) }),
+            Op::SextH(i) => simple_i!(i, |rs1, _| { il.sx(max_width, il.low_part(2, rs1)) }),
+            Op::ZextH(r) => simple_r!(r, |rs1, _| { il.zx(max_width, il.low_part(2, rs1)) }),
+            Op::Rol(r) => simple_r!(r, |rs1, rs2| {
+                let shamt = il.and(max_width, rs2, (max_width * 8 - 1) as u64);
+                il.rol(max_width, rs1, shamt)
+            }),
+            Op::Ror(r) => simple_r!(r, |rs1, rs2| {
+                let shamt = il.and(max_width, rs2, (max_width * 8 - 1) as u64);
+                il.ror(max_width, rs1, shamt)
+            }),
+            Op::Max(r) => simple_r!(r, |rs1, rs2| il.max_signed(max_width, rs1, rs2)),
+            Op::MaxU(r) => simple_r!(r, |rs1, rs2| il.max_unsigned(max_width, rs1, rs2)),
+            Op::Min(r) => simple_r!(r, |rs1, rs2| il.min_signed(max_width, rs1, rs2)),
+            Op::MinU(r) => simple_r!(r, |rs1, rs2| il.min_unsigned(max_width, rs1, rs2)),
+
+            Op::WchMcpy(r) => {
+                let dst = LiftableLowLevelIL::lift(il, Register::from(r.rd()));
+                let start = LiftableLowLevelIL::lift(il, Register::from(r.rs1()));
+                let end = LiftableLowLevelIL::lift(il, Register::from(r.rs2()));
+                il.intrinsic::<_, LowLevelILRegisterKind<Register<D>>, _>(
+                    [],
+                    RiscVIntrinsic::<D>::from(Intrinsic::WchMcpy),
+                    [dst, start, end],
+                )
+                .append();
+            }
+
             // i-type 32-bit
             Op::AddIW(i) => simple_i!(i, |rs1, imm| il.sx(max_width, il.add(4, rs1, imm))),
             Op::SllIW(i) => simple_i!(i, |rs1, imm| il.sx(max_width, il.lsl(4, rs1, imm))),
             Op::SrlIW(i) => simple_i!(i, |rs1, imm| il.sx(max_width, il.lsr(4, rs1, imm))),
             Op::SraIW(i) => simple_i!(i, |rs1, imm| il.sx(max_width, il.asr(4, rs1, imm))),
+
+            Op::SllIUW(i) => simple_i!(i, |rs1, imm| {
+                il.lsl(max_width, il.low_part(4, rs1), imm)
+            }),
+
+            Op::RorIW(i) => simple_i!(i, |rs1, imm| il.sx(max_width, il.ror(4, rs1, imm))),
+            Op::ClzW(i) => {
+                let rd = Register::from(i.rd());
+
+                if i.rd().id() == 0 {
+                    il.nop().append();
+                } else {
+                    let rs1 =
+                        LiftableLowLevelILWithSize::lift_with_size(il, Register::from(i.rs1()), 4);
+                    il.set_reg(max_width, rd, il.zx(max_width, il.clz(4, rs1)))
+                        .append();
+                }
+            }
+            Op::CtzW(i) => {
+                let rd = Register::from(i.rd());
+
+                if i.rd().id() == 0 {
+                    il.nop().append();
+                } else {
+                    let rs1 =
+                        LiftableLowLevelILWithSize::lift_with_size(il, Register::from(i.rs1()), 4);
+                    il.set_reg(max_width, rd, il.zx(max_width, il.ctz(4, rs1)))
+                        .append();
+                }
+            }
+            Op::CpopW(i) => {
+                let rd = Register::from(i.rd());
+
+                if i.rd().id() == 0 {
+                    il.nop().append();
+                } else {
+                    let rs1 =
+                        LiftableLowLevelILWithSize::lift_with_size(il, Register::from(i.rs1()), 4);
+                    il.set_reg(max_width, rd, il.zx(max_width, il.popcnt(4, rs1)))
+                        .append();
+                }
+            }
 
             // r-type 32-bit
             Op::AddW(r) => simple_r!(r, |rs1, rs2| il.sx(max_width, il.add(4, rs1, rs2))),
@@ -1177,6 +1467,22 @@ impl<D: RiscVDisassembler> Architecture for RiscVArch<D> {
             Op::SrlW(r) => simple_r!(r, |rs1, rs2| il.sx(max_width, il.lsr(4, rs1, rs2))),
             Op::SubW(r) => simple_r!(r, |rs1, rs2| il.sx(max_width, il.sub(4, rs1, rs2))),
             Op::SraW(r) => simple_r!(r, |rs1, rs2| il.sx(max_width, il.asr(4, rs1, rs2))),
+
+            Op::AddUW(r) => simple_r!(r, |rs1, rs2| {
+                il.add(max_width, il.low_part(4, rs1), rs2)
+            }),
+            Op::ShXAddUW(x, r) => {
+                simple_r!(r, |rs1, rs2| { il.add(max_width, il.lsl(4, rs1, x), rs2) })
+            }
+
+            Op::RolW(r) => simple_r!(r, |rs1, rs2| {
+                let shamt = il.and(max_width, rs2, 31);
+                il.sx(max_width, il.rol(4, rs1, shamt))
+            }),
+            Op::RorW(r) => simple_r!(r, |rs1, rs2| {
+                let shamt = il.and(max_width, rs2, 31);
+                il.sx(max_width, il.ror(4, rs1, shamt))
+            }),
 
             Op::Mul(r) => simple_r!(r, |rs1, rs2| il.mul(max_width, rs1, rs2)),
             Op::MulH(r) => simple_r!(r, |rs1, rs2| {
@@ -1217,6 +1523,16 @@ impl<D: RiscVDisassembler> Architecture for RiscVArch<D> {
 
             Op::Jal(j) => {
                 let target = addr.wrapping_add(j.imm() as i64 as u64);
+
+                if j.rd().id() != 0 && j.rd().id() != 1 {
+                    // Return address stored in non-ra
+                    il.set_reg(
+                        max_width,
+                        Register::from(j.rd()),
+                        il.const_ptr(addr.wrapping_add(inst_len)),
+                    )
+                    .append();
+                }
 
                 match (j.rd().id(), il.label_for_address(target)) {
                     (0, Some(mut l)) => il.goto(&mut l),
@@ -2278,6 +2594,7 @@ impl<D: 'static + RiscVDisassembler + Send + Sync> RiscVELFRelocationHandler<D> 
     const R_RISCV_SUB64: u64 = 40;
     const R_RISCV_RVC_BRANCH: u64 = 44;
     const R_RISCV_RVC_JUMP: u64 = 45;
+    const R_RISCV_RELAX: u64 = 51;
 
     fn replace_b_imm(opcode: u32, imm: u32) -> u32 {
         (opcode & 0x01fff07f)
@@ -2431,7 +2748,7 @@ impl<D: 'static + RiscVDisassembler + Send + Sync> RelocationHandler
                 }
                 Self::R_RISCV_TLS_TPREL32 => {
                     reloc.type_ = RelocationType::UnhandledRelocation;
-                    log::warn!(
+                    tracing::warn!(
                         "Unhandled relocation type {:?} (R_RISCV_TLS_TPREL32) at {:x?}",
                         reloc.native_type,
                         reloc.address
@@ -2439,15 +2756,16 @@ impl<D: 'static + RiscVDisassembler + Send + Sync> RelocationHandler
                 }
                 Self::R_RISCV_TLS_TPREL64 => {
                     reloc.type_ = RelocationType::UnhandledRelocation;
-                    log::warn!(
+                    tracing::warn!(
                         "Unhandled relocation type {:?} (R_RISCV_TLS_TPREL64) at {:x?}",
                         reloc.native_type,
                         reloc.address
                     )
                 }
+                Self::R_RISCV_RELAX => reloc.type_ = RelocationType::IgnoredRelocation,
                 _ => {
                     reloc.type_ = RelocationType::UnhandledRelocation;
-                    log::warn!(
+                    tracing::warn!(
                         "Unknown relocation type {:?} at {:x?}",
                         reloc.native_type,
                         reloc.address
@@ -2720,12 +3038,22 @@ impl<D: RiscVDisassembler> AsRef<CoreRelocationHandler> for RiscVELFRelocationHa
 }
 
 struct RiscVCC<D: RiscVDisassembler> {
+    core: CoreCallingConvention,
     _dis: PhantomData<D>,
 }
 
 impl<D: RiscVDisassembler> RiscVCC<D> {
-    fn new() -> Self {
-        RiscVCC { _dis: PhantomData }
+    fn new(core: CoreCallingConvention) -> Self {
+        RiscVCC {
+            core,
+            _dis: PhantomData,
+        }
+    }
+}
+
+impl<D: RiscVDisassembler> AsRef<CoreCallingConvention> for RiscVCC<D> {
+    fn as_ref(&self) -> &CoreCallingConvention {
+        &self.core
     }
 }
 
@@ -3014,12 +3342,20 @@ impl FunctionRecognizer for RiscVELFPLTRecognizer {
 #[no_mangle]
 #[allow(non_snake_case)]
 pub extern "C" fn CorePluginInit() -> bool {
-    Logger::new("RISCV").with_level(LevelFilter::Trace).init();
+    binaryninja::tracing_init!("RISCV");
 
     use riscv_dis::{RiscVIMACDisassembler, Rv32GRegs, Rv64GRegs};
     let arch32 =
         architecture::register_architecture("rv32gc", |custom_handle, core_arch| RiscVArch::<
             RiscVIMACDisassembler<Rv32GRegs>,
+        > {
+            handle: core_arch,
+            custom_handle,
+            _dis: PhantomData,
+        });
+    let arch_wch =
+        architecture::register_architecture("rv32gc_wch", |custom_handle, core_arch| RiscVArch::<
+            RiscVWCHDisassembler,
         > {
             handle: core_arch,
             custom_handle,
@@ -3041,6 +3377,13 @@ pub extern "C" fn CorePluginInit() -> bool {
             _dis: PhantomData,
         }
     });
+    arch_wch.register_relocation_handler("ELF", |custom_handle, core_handler| {
+        RiscVELFRelocationHandler::<RiscVWCHDisassembler> {
+            handle: core_handler,
+            custom_handle,
+            _dis: PhantomData,
+        }
+    });
     arch64.register_relocation_handler("ELF", |custom_handle, core_handler| {
         RiscVELFRelocationHandler::<RiscVIMACDisassembler<Rv64GRegs>> {
             handle: core_handler,
@@ -3050,22 +3393,23 @@ pub extern "C" fn CorePluginInit() -> bool {
     });
 
     arch32.register_function_recognizer(RiscVELFPLTRecognizer);
+    arch_wch.register_function_recognizer(RiscVELFPLTRecognizer);
     arch64.register_function_recognizer(RiscVELFPLTRecognizer);
 
-    let cc32 = register_calling_convention(
-        arch32,
-        "default",
-        RiscVCC::<RiscVIMACDisassembler<Rv32GRegs>>::new(),
-    );
+    let cc32 = register_calling_convention(arch32, "default", |core| {
+        RiscVCC::<RiscVIMACDisassembler<Rv32GRegs>>::new(core)
+    });
     arch32.set_default_calling_convention(&cc32);
-    let cc64 = register_calling_convention(
-        arch64,
-        "default",
-        RiscVCC::<RiscVIMACDisassembler<Rv64GRegs>>::new(),
-    );
+    let cc32_wch = register_calling_convention(arch_wch, "default", |core| {
+        RiscVCC::<RiscVWCHDisassembler>::new(core)
+    });
+    arch_wch.set_default_calling_convention(&cc32_wch);
+    let cc64 = register_calling_convention(arch64, "default", |core| {
+        RiscVCC::<RiscVIMACDisassembler<Rv64GRegs>>::new(core)
+    });
     arch64.set_default_calling_convention(&cc64);
 
-    if let Ok(bvt) = BinaryViewType::by_name("ELF") {
+    if let Some(bvt) = BinaryViewType::by_name("ELF") {
         bvt.register_arch(
             (1 << 16) | 243,
             binaryninja::Endianness::LittleEndian,

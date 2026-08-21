@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -454,18 +454,6 @@ void BasicBlock::SetUndeterminedOutgoingEdges(bool value)
 }
 
 
-const uint8_t* BasicBlock::GetInstructionData(uint64_t addr, size_t* len) const
-{
-	return BNBasicBlockGetInstructionData(m_object, addr, len);
-}
-
-
-void BasicBlock::AddInstructionData(const void* data, size_t len)
-{
-	BNBasicBlockAddInstructionData(m_object, data, len);
-}
-
-
 void BasicBlock::SetFallThroughToFunction(bool value)
 {
 	BNBasicBlockSetFallThroughToFunction(m_object, value);
@@ -584,6 +572,12 @@ void BasicBlock::MarkRecentUse()
 vector<vector<InstructionTextToken>> BasicBlock::GetAnnotations()
 {
 	return GetFunction()->GetBlockAnnotations(GetArchitecture(), GetStart());
+}
+
+
+std::optional<int64_t> BasicBlock::GetSortHint()
+{
+	return GetFunction()->GetBlockSortHint(GetArchitecture(), GetStart());
 }
 
 

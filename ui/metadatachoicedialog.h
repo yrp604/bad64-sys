@@ -67,6 +67,7 @@ class BINARYNINJAUIAPI ManagedTableView : public QTableView, public FilterTarget
 	ManagedTableModel* m_model;
 
 	std::string m_filter;
+	FilterOptions m_filterOptions;
 
 	ManagedTableDelegate* m_delegate;
 
@@ -78,7 +79,7 @@ public:
 	int getCurrentSelection();
 
 	void forceFilterUpdate() {
-		setFilter(m_filter);
+		setFilter(m_filter, m_filterOptions);
 	};
 
 	void resetModel();
@@ -88,11 +89,11 @@ public:
 
 	virtual void selectionChanged(const QItemSelection& selected, const QItemSelection& deselected) override;
 
-	virtual void setFilter(const std::string& filter) override;
+	virtual void setFilter(const std::string& filter, FilterOptions options) override;
 	virtual void scrollToFirstItem() override;
 	virtual void scrollToCurrentItem() override;
-	virtual void selectFirstItem() override;
-	virtual void activateFirstItem() override;
+	virtual void ensureSelection() override;
+	virtual void activateSelection() override;
 
 	virtual void focusInEvent(QFocusEvent *event) override;
 	bool focusNextPrevChild(bool next) override;

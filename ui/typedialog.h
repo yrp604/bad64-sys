@@ -5,16 +5,13 @@
 #include <QtCore/QStringListModel>
 #include <QtWidgets/QComboBox>
 #include <QtCore/QTimer>
-#ifndef BINARYNINJAUI_BINDINGS
-	#include <QtCore/QThread>
-#endif
 #include "binaryninjaapi.h"
 #include "uitypes.h"
+#include "typecompletioncombobox.h"
 
 
 #ifdef BINARYNINJAUI_BINDINGS
 // QThread has issues working in the bindings on some platforms
-class GetTypesListThread;
 class ParseTypeThread;
 #else
 
@@ -23,30 +20,6 @@ class ParseTypeThread;
 	\defgroup typedialog TypeDialog
  	\ingroup uiapi
 */
-
-/*!
-
-    \ingroup typedialog
-*/
-class BINARYNINJAUIAPI GetTypesListThread : public QThread
-{
-	Q_OBJECT
-
-	QStringList m_allTypes;
-	std::function<void()> m_completeFunc;
-	std::mutex m_mutex;
-	bool m_done;
-	BinaryNinja::TypeContainer m_typeContainer;
-
-  protected:
-	virtual void run() override;
-
-  public:
-	GetTypesListThread(BinaryNinja::TypeContainer typeContainer, const std::function<void()>& completeFunc);
-	void cancel();
-
-	const QStringList& getTypes() const { return m_allTypes; }
-};
 
 Q_DECLARE_METATYPE(BinaryNinja::QualifiedNameAndType);
 
@@ -80,28 +53,22 @@ class BINARYNINJAUIAPI TypeDialog : public QDialog
 {
 	Q_OBJECT
 
-	QComboBox* m_combo;
+	TypeCompletionComboBox* m_combo;
 	QStringListModel* m_model;
 	QLabel* m_prompt;
 	QString m_promptText;
 	std::optional<BinaryNinja::TypeContainer> m_typeContainer;
-	bool m_resultValid;
-	QStringList m_historyEntries;
-	int m_historySize;
-	GetTypesListThread* m_updateThread;
-	QFont m_defaultFont;
-	bool m_initialTextSelection;
+	bool m_resultValid = true;
+	bool m_resolved = false;
 	BinaryNinja::QualifiedNameAndType m_type;
 	QPushButton* m_acceptButton;
 	QTimer* m_updateTimer;
 	QTimer* m_parseTimer;
-	bool m_isParsing;
-	std::atomic_bool m_comboBoxTextChanged;
+	bool m_isParsing = false;
 	QPalette m_defaultPalette;
 	QString m_parseError;
 
 	void commitHistory();
-	void customEvent(QEvent* event);
 	void saveLocation();
 	void reject();
 	void accept();
