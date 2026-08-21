@@ -9,6 +9,7 @@ members = [
     "arch/riscv",
     "arch/msp430",
     "rust/plugin_examples/data_renderer",
+    "rust/plugin_examples/flowgraph_layout",
     "view/minidump",
     "plugins/dwarf/dwarf_import",
     "plugins/dwarf/dwarf_import/demo",
@@ -16,19 +17,26 @@ members = [
     "plugins/dwarf/dwarfdump",
     "plugins/dwarf/shared",
     "plugins/idb_import",
+    "plugins/idb_import/demo",
     "plugins/pdb-ng",
     "plugins/pdb-ng/demo",
     "plugins/svd",
     "plugins/svd/demo",
     "plugins/warp",
     "plugins/warp/demo",
+    "plugins/warp/examples/headless",
     "plugins/workflow_objc",
     "plugins/workflow_objc/demo",
+    "plugins/bntl_utils",
+    "plugins/bntl_utils/cli",
+    "plugins/workflow_swift",
+    "plugins/workflow_swift/demo",
 ]
 
 [workspace.dependencies]
 binaryninja = { path = "rust" }
 binaryninjacore-sys = { path = "rust/binaryninjacore-sys" }
+warp_ninja = { path = "plugins/warp" }
 
 [profile.release]
 lto = "thin"

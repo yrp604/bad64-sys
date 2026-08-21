@@ -141,13 +141,14 @@ void GenericEntryModel::sort(int col, Qt::SortOrder order)
 }
 
 
-void GenericEntryModel::setFilter(const std::string& filterText)
+void GenericEntryModel::setFilter(const std::string& filterText, FilterOptions options)
 {
 	beginResetModel();
 	m_entries.clear();
+	bool caseSensitive = options.testFlag(FilterOption::CaseSensitiveOption);
 	for (auto& entry : m_allEntries)
 	{
-		if (FilteredView::match(entry->GetSymbol()->GetFullName(), filterText))
+		if (FilteredView::match(entry->GetSymbol()->GetFullName(), filterText, caseSensitive))
 			m_entries.push_back(entry);
 	}
 	performSort(m_sortCol, m_sortOrder);
@@ -224,9 +225,6 @@ bool EntryTreeView::canCopySelection() const
 
 void EntryTreeView::entrySelected(const QModelIndex& cur, const QModelIndex&)
 {
-	FunctionRef func = m_model->getEntry(cur);
-	if (func)
-		m_view->setCurrentOffset(func->GetStart());
 }
 
 
@@ -253,9 +251,9 @@ void EntryTreeView::entryDoubleClicked(const QModelIndex& cur)
 }
 
 
-void EntryTreeView::setFilter(const std::string& filterText)
+void EntryTreeView::setFilter(const std::string& filterText, FilterOptions options)
 {
-	m_model->setFilter(filterText);
+	m_model->setFilter(filterText, options);
 }
 
 
@@ -271,15 +269,18 @@ void EntryTreeView::scrollToCurrentItem()
 }
 
 
-void EntryTreeView::selectFirstItem()
+void EntryTreeView::ensureSelection()
 {
-	setCurrentIndex(m_model->index(0, 0, QModelIndex()));
+	if (auto current = currentIndex(); !current.isValid())
+		setCurrentIndex(m_model->index(0, 0, QModelIndex()));
 }
 
 
-void EntryTreeView::activateFirstItem()
+void EntryTreeView::activateSelection()
 {
-	entryDoubleClicked(m_model->index(0, 0, QModelIndex()));
+	ensureSelection();
+	if (auto current = currentIndex(); current.isValid())
+		entryDoubleClicked(current);
 }
 
 

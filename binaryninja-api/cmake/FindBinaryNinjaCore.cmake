@@ -42,8 +42,7 @@ if(NOT BN_INTERNAL_BUILD)
     include(FindPackageHandleStandardArgs)
     find_package_handle_standard_args(BinaryNinjaCore
         FOUND_VAR BinaryNinjaCore_FOUND
-        REQUIRED_VARS CORE_LIBRARY
-        FAIL_MESSAGE "Could NOT find Binary Ninja installation. Please configure with -DBN_INSTALL_DIR=<path to Binary Ninja> or set the BN_INSTALL_DIR environment variable.")
+        REQUIRED_VARS CORE_LIBRARY)
 
     message(STATUS "Found Binary Ninja Core: ${CORE_LIBRARY}")
 

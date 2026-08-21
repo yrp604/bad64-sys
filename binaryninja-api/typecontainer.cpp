@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -80,6 +80,10 @@ TypeContainer::TypeContainer(const TypeContainer& other)
 
 TypeContainer& TypeContainer::operator=(const TypeContainer& other)
 {
+	if (this == &other)
+		return *this;
+	if (m_object)
+		BNFreeTypeContainer(m_object);
 	m_object = BNDuplicateTypeContainer(other.m_object);
 	return *this;
 }
@@ -87,7 +91,11 @@ TypeContainer& TypeContainer::operator=(const TypeContainer& other)
 
 TypeContainer& TypeContainer::operator=(TypeContainer&& other)
 {
-	m_object = std::move(other.m_object);
+	if (this == &other)
+		return *this;
+	if (m_object)
+		BNFreeTypeContainer(m_object);
+	m_object = other.m_object;
 	other.m_object = nullptr;
 	return *this;
 }
@@ -370,6 +378,7 @@ bool TypeContainer::ParseTypeString(
 
 	if (!success)
 	{
+		BNFreeQualifiedNameAndType(&apiResult);
 		return false;
 	}
 

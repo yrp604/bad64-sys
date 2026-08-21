@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -65,7 +65,7 @@ map<string, string> g_pythonKeywordReplacements = {
 };
 
 
-void OutputType(FILE* out, Type* type, bool isReturnType = false, bool isCallback = false)
+void OutputType(FILE* out, Type* type, bool isReturnType = false, bool isCallback = false, bool isTypeHint = false)
 {
 	switch (type->GetClass())
 	{
@@ -129,7 +129,9 @@ void OutputType(FILE* out, Type* type, bool isReturnType = false, bool isCallbac
 		else if ((type->GetChildType()->GetClass() == IntegerTypeClass) && (type->GetChildType()->GetWidth() == 1)
 		         && (type->GetChildType()->IsSigned()))
 		{
-			if (isReturnType)
+			if (isTypeHint)
+				fprintf(out, "ctypes._Pointer[ctypes.c_byte]");
+			else if (isReturnType)
 				fprintf(out, "ctypes.POINTER(ctypes.c_byte)");
 			else
 				fprintf(out, "ctypes.c_char_p");
@@ -137,22 +139,37 @@ void OutputType(FILE* out, Type* type, bool isReturnType = false, bool isCallbac
 		}
 		else if (type->GetChildType()->GetClass() == FunctionTypeClass)
 		{
-			fprintf(out, "ctypes.CFUNCTYPE(");
-			OutputType(out, type->GetChildType()->GetChildType().GetValue(), true, true);
+			if (isTypeHint)
+				fprintf(out, "ctypes.CFUNCTYPE[");
+			else
+				fprintf(out, "ctypes.CFUNCTYPE(");
+			OutputType(out, type->GetChildType()->GetChildType().GetValue(), true, true, isTypeHint);
 			for (auto& i : type->GetChildType()->GetParameters())
 			{
 				fprintf(out, ", ");
-				OutputType(out, i.type.GetValue());
+				OutputType(out, i.type.GetValue(), false, false, isTypeHint);
 			}
-			fprintf(out, ")");
+
+			if (isTypeHint)
+				fprintf(out, "]");
+			else
+				fprintf(out, ")");
 			break;
 		}
-		fprintf(out, "ctypes.POINTER(");
-		OutputType(out, type->GetChildType().GetValue());
-		fprintf(out, ")");
+		if (isTypeHint)
+			fprintf(out, "ctypes._Pointer[");
+		else
+			fprintf(out, "ctypes.POINTER(");
+
+		OutputType(out, type->GetChildType().GetValue(), false, false, isTypeHint);
+
+		if (isTypeHint)
+			fprintf(out, "]");
+		else
+			fprintf(out, ")");
 		break;
 	case ArrayTypeClass:
-		OutputType(out, type->GetChildType().GetValue());
+		OutputType(out, type->GetChildType().GetValue(), false, false, isTypeHint);
 		fprintf(out, " * %" PRId64, type->GetElementCount());
 		break;
 	default:
@@ -162,7 +179,7 @@ void OutputType(FILE* out, Type* type, bool isReturnType = false, bool isCallbac
 }
 
 
-void OutputSwizzledType(FILE* out, Type* type)
+void OutputSwizzledType(FILE* out, Type* type, bool isTypeHint = false)
 {
 	switch (type->GetClass())
 	{
@@ -202,22 +219,35 @@ void OutputSwizzledType(FILE* out, Type* type)
 		}
 		else if (type->GetChildType()->GetClass() == FunctionTypeClass)
 		{
-			fprintf(out, "ctypes.CFUNCTYPE(");
-			OutputType(out, type->GetChildType()->GetChildType().GetValue(), true, true);
+			if (isTypeHint)
+				fprintf(out, "ctypes.CFUNCTYPE[");
+			else
+				fprintf(out, "ctypes.CFUNCTYPE(");
+			OutputType(out, type->GetChildType()->GetChildType().GetValue(), true, true, isTypeHint);
 			for (auto& i : type->GetChildType()->GetParameters())
 			{
 				fprintf(out, ", ");
-				OutputType(out, i.type.GetValue());
+				OutputType(out, i.type.GetValue(), false, false, isTypeHint);
 			}
-			fprintf(out, ")");
+			if (isTypeHint)
+				fprintf(out, "]");
+			else
+				fprintf(out, ")");
+
 			break;
 		}
-		fprintf(out, "ctypes.POINTER(");
-		OutputType(out, type->GetChildType().GetValue());
-		fprintf(out, ")");
+		if (isTypeHint)
+			fprintf(out, "ctypes._Pointer[");
+		else
+			fprintf(out, "ctypes.POINTER(");
+		OutputType(out, type->GetChildType().GetValue(), false, false, isTypeHint);
+		if (isTypeHint)
+			fprintf(out, "]");
+		else
+			fprintf(out, ")");
 		break;
 	case ArrayTypeClass:
-		OutputType(out, type->GetChildType().GetValue());
+		OutputType(out, type->GetChildType().GetValue(), false, false, isTypeHint);
 		fprintf(out, " * %" PRId64, type->GetElementCount());
 		break;
 	default:
@@ -283,8 +313,8 @@ int main(int argc, char* argv[])
 	fprintf(out, "		return var\n");
 	fprintf(out, "	return var.encode(\"utf-8\")\n\n\n");
 
-	fprintf(out, "def pyNativeStr(arg: AnyStr) -> str:\n");
-	fprintf(out, "	if isinstance(arg, str):\n");
+	fprintf(out, "def pyNativeStr(arg: Optional[AnyStr]) -> Optional[str]:\n");
+	fprintf(out, "	if arg is None or isinstance(arg, str):\n");
 	fprintf(out, "		return arg\n");
 	fprintf(out, "	else:\n");
 	fprintf(out, "		try:\n");
@@ -333,12 +363,39 @@ int main(int argc, char* argv[])
 			if (name.size() > 2 && name.substr(0, 2) == "BN")
 				name = name.substr(2);
 
-			fprintf(out, "%sEnum = ctypes.c_int\n", name.c_str());
+			const char* ctypesType = nullptr;
+			switch (i.second->GetWidth())
+			{
+			case 1:
+				ctypesType = i.second->IsSigned() ? "ctypes.c_int8" : "ctypes.c_uint8";
+				break;
+			case 2:
+				ctypesType = i.second->IsSigned() ? "ctypes.c_int16" : "ctypes.c_uint16";
+				break;
+			case 4:
+				ctypesType = i.second->IsSigned() ? "ctypes.c_int32" : "ctypes.c_uint32";
+				break;
+			default:
+				ctypesType = i.second->IsSigned() ? "ctypes.c_int64" : "ctypes.c_uint64";
+				break;
+			}
+			fprintf(out, "%sEnum = %s\n", name.c_str(), ctypesType);
 
-			fprintf(enums, "\n\nclass %s(enum.IntEnum):\n", name.c_str());
+			if (i.second->GetAttribute("options").has_value())
+				fprintf(enums, "\n\nclass %s(enum.IntFlag):\n", name.c_str());
+			else
+				fprintf(enums, "\n\nclass %s(enum.IntEnum):\n", name.c_str());
+
 			for (auto& j : i.second->GetEnumeration()->GetMembers())
 			{
-				fprintf(enums, "\t%s = %" PRId32 "\n", j.name.c_str(), (int32_t)j.value);
+				if (i.second->IsSigned())
+				{
+					fprintf(enums, "\t%s = %" PRId64 "\n", j.name.c_str(), (int64_t)BNSignExtend(j.value, i.second->GetWidth(), 8));
+				}
+				else
+				{
+					fprintf(enums, "\t%s = %" PRIu64 "\n", j.name.c_str(), j.value);
+				}
 			}
 		}
 		else if ((i.second->GetClass() == BoolTypeClass) || (i.second->GetClass() == IntegerTypeClass)
@@ -435,15 +492,19 @@ int main(int argc, char* argv[])
 
 		// Check for a string result, these will be automatically wrapped to free the string
 		// memory and return a Python string
-		bool stringResult = (i.second->GetChildType()->GetClass() == PointerTypeClass)
-		                    && (i.second->GetChildType()->GetChildType()->GetWidth() == 1)
-		                    && (i.second->GetChildType()->GetChildType()->IsSigned());
+		bool stringResult = i.second->GetChildType()->GetClass() == PointerTypeClass
+		                    && i.second->GetChildType()->GetChildType()->GetClass() == IntegerTypeClass
+		                    && i.second->GetChildType()->GetChildType()->GetWidth() == 1
+		                    && i.second->GetChildType()->GetChildType()->IsSigned();
 		// Pointer returns will be automatically wrapped to return None on null pointer
 		bool pointerResult = (i.second->GetChildType()->GetClass() == PointerTypeClass);
+		// Enum returns will automatically cast to the enum type
+		bool enumResult = (i.second->GetChildType()->GetClass() == NamedTypeReferenceClass
+		                   && i.second->GetChildType()->GetNamedTypeReference()->GetTypeReferenceClass() == EnumNamedTypeClass);
 
 		// From python -> C python3 requires str -> str.encode('charmap')
 		bool swizzleArgs = true;
-		if (name == "BNFreeString")
+		if (name == "BNFreeString" || name == "BNFreeParseError")
 			swizzleArgs = false;
 
 		bool callbackConvention = false;
@@ -470,9 +531,9 @@ int main(int argc, char* argv[])
 			for (auto& j : i.second->GetParameters())
 			{
 				fprintf(out, "\t\t");
-				if (name == "BNFreeString")
+				if (name == "BNFreeString" || name == "BNFreeParseError")
 				{
-					// BNFreeString expects a pointer to a string allocated by the core, so do not use
+					// These expect a pointer to a string allocated by the core, so do not use
 					// a c_char_p here, as that would be allocated by the Python runtime.  This can
 					// be enforced by outputting like a return value.
 					OutputType(out, j.type.GetValue(), true);
@@ -522,20 +583,21 @@ int main(int argc, char* argv[])
 				if (argN > 0)
 					fprintf(out, ", ");
 				fprintf(out, "\n\t\t");
-				fprintf(out, "%s: ", argName.c_str());
+				fprintf(out, "%s: '", argName.c_str());
 				if (swizzleArgs)
-					OutputSwizzledType(out, arg.type.GetValue());
+					OutputSwizzledType(out, arg.type.GetValue(), true);
 				else
-					OutputType(out, arg.type.GetValue());
+					OutputType(out, arg.type.GetValue(), false, false, true);
+				fprintf(out, "'");
 				argN++;
 			}
 		}
 		fprintf(out, "\n\t\t) -> ");
 		if (stringResult || pointerResult)
-			fprintf(out, "Optional[");
-		OutputSwizzledType(out, i.second->GetChildType().GetValue());
+			fprintf(out, "Optional['");
+		OutputSwizzledType(out, i.second->GetChildType().GetValue(), true);
 		if (stringResult || pointerResult)
-			fprintf(out, "]");
+			fprintf(out, "']");
 		fprintf(out, ":\n");
 
 		string stringArgFuncCall = funcName + "(";
@@ -585,6 +647,13 @@ int main(int argc, char* argv[])
 			fprintf(out, "\tif not result:\n");
 			fprintf(out, "\t\treturn None\n");
 			fprintf(out, "\treturn result\n");
+		}
+		else if (enumResult)
+		{
+			// Emit wrapper to cast result to enum type
+			fprintf(out, "\treturn ");
+			OutputSwizzledType(out, i.second->GetChildType().GetValue());
+			fprintf(out, "(%s)", stringArgFuncCall.c_str());
 		}
 		else
 		{

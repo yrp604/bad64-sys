@@ -3,12 +3,11 @@
 
 using namespace BinaryNinja;
 
-SharedCacheMachOProcessor::SharedCacheMachOProcessor(Ref<BinaryView> view, std::shared_ptr<VirtualMemory> vm)
+SharedCacheMachOProcessor::SharedCacheMachOProcessor(Ref<BinaryView> view, std::shared_ptr<VirtualMemory> vm) :
+	m_view(std::move(view)),
+	m_logger(new Logger("SharedCache.MachOProcessor", m_view->GetFile()->GetSessionId())),
+	m_vm(std::move(vm))
 {
-	m_view = view;
-	m_logger = new Logger("SharedCache.MachOProcessor", view->GetFile()->GetSessionId());
-	m_vm = std::move(vm);
-
 	// Adjust processor settings.
 	if (Ref<Settings> settings = m_view->GetLoadSettings(VIEW_NAME))
 	{
@@ -19,6 +18,7 @@ SharedCacheMachOProcessor::SharedCacheMachOProcessor(Ref<BinaryView> view, std::
 
 void SharedCacheMachOProcessor::ApplyHeader(const SharedCache& cache, SharedCacheMachOHeader& header)
 {
+	const auto demanglerConfig = DemanglerConfig::ForBinaryView(m_view);
 	auto typeLibraryFromName = [&](const std::string& name) -> Ref<TypeLibrary> {
 		// Check to see if we have already loaded the type library.
 		if (auto typeLib = m_view->GetTypeLibrary(name))
@@ -31,12 +31,15 @@ void SharedCacheMachOProcessor::ApplyHeader(const SharedCache& cache, SharedCach
 	};
 
 	// Add a section for the header itself.
+	m_view->BeginBulkAddSegments();
 	std::string headerSection = fmt::format("{}::__macho_header", header.identifierPrefix);
 	uint64_t machHeaderSize = m_vm->GetAddressSize() == 8 ? sizeof(mach_header_64) : sizeof(mach_header);
 	uint64_t headerSectionSize = machHeaderSize + header.ident.sizeofcmds;
 	m_view->AddUserSection(headerSection, header.textBase, headerSectionSize, ReadOnlyDataSectionSemantics);
 
 	ApplyHeaderSections(header);
+	m_view->EndBulkAddSegments();
+
 	ApplyHeaderDataVariables(header);
 
 	// Pull the available type library for the image we are loading, so we can apply known types.
@@ -52,7 +55,7 @@ void SharedCacheMachOProcessor::ApplyHeader(const SharedCache& cache, SharedCach
 				m_view->AddFunctionForAnalysis(targetPlatform, func, false);
 		}
 
-		m_view->BeginBulkModifySymbols();
+		BulkSymbolModification bulkSymbolModification(m_view);
 
 		// Apply symbols from symbol table.
 		if (header.symtab.symoff != 0)
@@ -64,7 +67,7 @@ void SharedCacheMachOProcessor::ApplyHeader(const SharedCache& cache, SharedCach
 			const auto symbols = header.ReadSymbolTable(*m_vm, symbolInfo, stringInfo);
 			for (const auto& sym : symbols)
 			{
-				auto [symbol, symbolType] = sym.GetBNSymbolAndType(*m_view);
+				auto [symbol, symbolType] = sym.GetBNSymbolAndType(demanglerConfig);
 				ApplySymbol(m_view, typeLib, symbol, symbolType);
 			}
 		}
@@ -76,11 +79,10 @@ void SharedCacheMachOProcessor::ApplyHeader(const SharedCache& cache, SharedCach
 			const auto exportSymbols = header.ReadExportSymbolTrie(*m_vm);
 			for (const auto& sym : exportSymbols)
 			{
-				auto [symbol, symbolType] = sym.GetBNSymbolAndType(*m_view);
+				auto [symbol, symbolType] = sym.GetBNSymbolAndType(demanglerConfig);
 				ApplySymbol(m_view, typeLib, symbol, symbolType);
 			}
 		}
-		m_view->EndBulkModifySymbols();
 	}
 
 	// Apply symbols from the .symbols cache files.
@@ -89,6 +91,7 @@ void SharedCacheMachOProcessor::ApplyHeader(const SharedCache& cache, SharedCach
 
 void SharedCacheMachOProcessor::ApplyUnmappedLocalSymbols(const SharedCache& cache, const SharedCacheMachOHeader& header, Ref<TypeLibrary> typeLib)
 {
+	const auto demanglerConfig = DemanglerConfig::ForBinaryView(m_view);
 	const auto& localSymbolsCacheEntry = cache.GetLocalSymbolsEntry();
 	auto localSymbolsVM = cache.GetLocalSymbolsVM();
 	if (!localSymbolsCacheEntry || !localSymbolsVM)
@@ -127,14 +130,13 @@ void SharedCacheMachOProcessor::ApplyUnmappedLocalSymbols(const SharedCache& cac
 		uint64_t symbolTableStart = localSymbolsAddr + (localSymbolsEntry.nlistStartIndex * sizeof(nlist_64));
 		TableInfo symbolInfo = {symbolTableStart, localSymbolsEntry.nlistCount};
 		TableInfo stringInfo = {localStringsAddr, localSymbolsInfo.stringsSize};
-		m_view->BeginBulkModifySymbols();
-		const auto symbols = header.ReadSymbolTable(*localSymbolsVM, symbolInfo, stringInfo);
+		BulkSymbolModification bulkSymbolModification(m_view);
+		const auto symbols = header.ReadSymbolTable(*localSymbolsVM, symbolInfo, stringInfo, LocalBinding);
 		for (const auto &sym: symbols)
 		{
-			auto [symbol, symbolType] = sym.GetBNSymbolAndType(*m_view);
+			auto [symbol, symbolType] = sym.GetBNSymbolAndType(demanglerConfig);
 			ApplySymbol(m_view, typeLib, std::move(symbol), std::move(symbolType));
 		}
-		m_view->EndBulkModifySymbols();
 		return;
 	}
 }

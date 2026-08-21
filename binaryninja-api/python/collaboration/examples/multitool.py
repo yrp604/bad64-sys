@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -32,7 +32,7 @@ def print_remote_info(remote: Remote, extended=False):
 	try:
 		if not remote.is_connected:
 			remote.connect()
-	except:
+	except Exception:
 		pass
 	if extended:
 		print(f"Name: {remote.name}\n"

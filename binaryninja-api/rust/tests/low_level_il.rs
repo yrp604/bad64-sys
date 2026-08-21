@@ -1,5 +1,6 @@
-use binaryninja::architecture::{ArchitectureExt, Intrinsic, Register};
-use binaryninja::binary_view::BinaryViewExt;
+use binaryninja::architecture::{
+    Architecture, ArchitectureExt, CoreArchitecture, Intrinsic, Register,
+};
 use binaryninja::headless::Session;
 use binaryninja::low_level_il::expression::{
     ExpressionHandler, LowLevelExpressionIndex, LowLevelILExpressionKind,
@@ -8,7 +9,9 @@ use binaryninja::low_level_il::instruction::{
     InstructionHandler, LowLevelILInstructionKind, LowLevelInstructionIndex,
 };
 use binaryninja::low_level_il::operation::IntrinsicOutput;
-use binaryninja::low_level_il::{LowLevelILRegisterKind, LowLevelILSSARegisterKind, VisitorAction};
+use binaryninja::low_level_il::{
+    LowLevelILMutableFunction, LowLevelILRegisterKind, LowLevelILSSARegisterKind, VisitorAction,
+};
 use std::path::PathBuf;
 
 #[test]
@@ -255,13 +258,19 @@ fn test_llil_ssa() {
         LowLevelILInstructionKind::SetRegSsa(op) => {
             assert_eq!(op.size(), 4);
             match op.dest_reg() {
-                LowLevelILSSARegisterKind::Full { kind, version } => {
-                    assert_eq!(kind.name(), "edi");
-                    assert_eq!(version, 1);
+                LowLevelILSSARegisterKind::Full(reg) => {
+                    assert_eq!(reg.name(), "edi");
+                    assert_eq!(reg.version, 1);
                 }
                 _ => panic!("Expected LowLevelILSSARegisterKind::Full"),
             }
             assert_eq!(op.source_expr().index, LowLevelExpressionIndex(0));
+
+            // Verify dest_reg does not have a use, so let's verify the ssa register definition.
+            let dest_reg_def = llil_ssa_function
+                .get_ssa_register_definition(op.dest_reg())
+                .expect("Valid ssa reg def");
+            assert_eq!(dest_reg_def.address(), ssa_instr_0.address());
         }
         _ => panic!("Expected SetRegSsa"),
     }
@@ -283,6 +292,23 @@ fn test_llil_ssa() {
             let dest_memory_version = op.dest_memory_version();
             assert_eq!(dest_memory_version, 1);
             assert_eq!(dest_expr.index, LowLevelExpressionIndex(4));
+
+            // Grab the SP register so we can verify its use.
+            let dest_expr_kind = dest_expr.kind();
+            let sub_expr = dest_expr_kind.as_binary_op().unwrap();
+            match sub_expr.left().kind() {
+                LowLevelILExpressionKind::RegSsa(reg) => {
+                    // Verify esp#0 has a single use in the next instruction (same address however).
+                    let sp_0_uses = llil_ssa_function.get_ssa_register_uses(reg.source_reg());
+                    println!("{:?}", sp_0_uses);
+                    assert_eq!(sp_0_uses.len(), 2);
+                    let _next_instr_use = sp_0_uses
+                        .iter()
+                        .find(|inst| inst.index != ssa_instr_1.index)
+                        .expect("Failed to get next instructions use of sp");
+                }
+                _ => panic!("Expected RegSsa"),
+            }
         }
         _ => panic!("Expected StoreSsa"),
     }
@@ -348,4 +374,30 @@ fn test_llil_intrinsic() {
         }
         _ => panic!("Expected Intrinsic"),
     }
+}
+
+#[test]
+fn test_llil_unbacked_function_creation() {
+    let _session = Session::new().expect("Failed to initialize session");
+    let arch = CoreArchitecture::by_name("x86_64").unwrap();
+    // Create an LLIL function backed by no Function.
+    let llil = LowLevelILMutableFunction::new(arch, None);
+    let (instr_len, _) = arch.instruction_llil(&[0x8b, 0xd9], 0x0, &llil).unwrap();
+    assert_eq!(instr_len, 2);
+    let llil = llil.finalized();
+
+    // Validate to make sure we can read the llil instruction for a non-backed LLIL function.
+    let inst = llil
+        .instruction_from_index(LowLevelInstructionIndex(0))
+        .unwrap();
+    let LowLevelILInstructionKind::SetReg(inst_operation) = inst.kind() else {
+        panic!("Expected SetReg");
+    };
+    let LowLevelILExpressionKind::Reg(src_operation) = inst_operation.source_expr().kind() else {
+        panic!("Expected Reg");
+    };
+    let src_reg = src_operation.source_reg();
+    assert_eq!(src_reg.name(), "ecx");
+    let dest_reg = inst_operation.dest_reg();
+    assert_eq!(dest_reg.name(), "ebx");
 }

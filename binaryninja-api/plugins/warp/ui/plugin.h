@@ -39,6 +39,8 @@ public:
 	void notifyViewChanged(ViewFrame*) override;
 
 	void notifyViewLocationChanged(View*, const ViewLocation&) override;
+
+	void focus() override;
 };
 
 class WarpSidebarWidgetType : public SidebarWidgetType
@@ -46,7 +48,7 @@ class WarpSidebarWidgetType : public SidebarWidgetType
 public:
 	WarpSidebarWidgetType();
 
-	SidebarWidgetLocation defaultLocation() const override { return SidebarWidgetLocation::RightContent; }
+	SidebarWidgetLocation defaultLocation() const override { return RightContent; }
 	SidebarContextSensitivity contextSensitivity() const override { return PerViewTypeSidebarContext; }
 
 	WarpSidebarWidget* createWidget(ViewFrame* viewFrame, BinaryViewRef data) override

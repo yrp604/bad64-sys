@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,20 +19,22 @@ mod helpers;
 mod types;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use crate::dwarfdebuginfo::{DebugInfoBuilder, DebugInfoBuilderContext};
 use crate::functions::parse_function_entry;
-use crate::helpers::{get_attr_die, get_name, get_uid, DieReference};
+use crate::helpers::{
+    find_local_debug_file_from_path, get_attr_die, get_name, get_uid, DieReference,
+};
 use crate::types::parse_variable;
 
 use binaryninja::binary_view::BinaryViewBase;
 use binaryninja::{
-    binary_view::{BinaryView, BinaryViewExt},
+    binary_view::BinaryView,
     debuginfo::{CustomDebugInfoParser, DebugInfo, DebugInfoParser},
     settings::Settings,
-    template_simplifier::simplify_str_to_str,
 };
-use dwarfreader::{create_section_reader_object, get_endian, is_dwo_dwarf, is_non_dwo_dwarf};
+use dwarfreader::create_section_reader_object;
 
 use functions::parse_lexical_block;
 use gimli::{
@@ -40,10 +42,9 @@ use gimli::{
     SectionId, Unit, UnwindContext, UnwindSection,
 };
 
-use binaryninja::logger::Logger;
 use helpers::{get_build_id, load_debug_info_for_build_id};
 use iset::IntervalMap;
-use log::{debug, error, warn};
+use object::read::macho::FatArch;
 use object::{Object, ObjectSection};
 
 trait ReaderType: Reader<Offset = usize> {}
@@ -122,7 +123,7 @@ fn recover_names_internal<R: ReaderType>(
     while let Ok(Some(header)) = iter.next() {
         let unit_offset = header.offset().as_debug_info_offset().map_or_else(
             || {
-                log::warn!("Failed to get debug info offset for {:?}", header.offset());
+                tracing::warn!("Failed to get debug info offset for {:?}", header.offset());
                 0
             },
             |x| x.0,
@@ -130,7 +131,7 @@ fn recover_names_internal<R: ReaderType>(
         let unit = match dwarf.unit(header) {
             Ok(x) => x,
             Err(e) => {
-                log::error!("Failed to get unit at {:#x}: {}", unit_offset, e);
+                tracing::error!("Failed to get unit at {:#x}: {}", unit_offset, e);
                 continue;
             }
         };
@@ -159,7 +160,7 @@ fn recover_names_internal<R: ReaderType>(
 
             depth += delta_depth;
             if depth < 0 {
-                error!("DWARF information is seriously malformed. Aborting parsing.");
+                tracing::error!("DWARF information is seriously malformed. Aborting parsing.");
                 return false;
             }
 
@@ -192,7 +193,7 @@ fn recover_names_internal<R: ReaderType>(
                                     let resolved_entry = match entry_unit.entry(entry_offset) {
                                         Ok(x) => x,
                                         Err(e) => {
-                                            log::error!("Failed to resolve entry in unit {:?} at offset {:#x} (resolve_namespace_name): {}", entry_unit.header.offset(), entry_offset.0, e);
+                                            tracing::error!("Failed to resolve entry in unit {:?} at offset {:#x} (resolve_namespace_name): {}", entry_unit.header.offset(), entry_offset.0, e);
                                             return;
                                         }
                                     };
@@ -206,7 +207,7 @@ fn recover_names_internal<R: ReaderType>(
                                     )
                                 }
                                 DieReference::Err => {
-                                    warn!(
+                                    tracing::warn!(
                                         "Failed to fetch DIE when resolving namespace. Debug information may be incomplete."
                                     );
                                 }
@@ -245,15 +246,11 @@ fn recover_names_internal<R: ReaderType>(
                     }
                     debug_info_builder_context.set_name(
                         get_uid(dwarf, &unit, entry),
-                        simplify_str_to_str(
-                            namespace_qualifiers
-                                .iter()
-                                .map(|(_, namespace)| namespace.to_owned())
-                                .collect::<Vec<String>>()
-                                .join("::"),
-                        )
-                        .to_string_lossy()
-                        .to_string(),
+                        namespace_qualifiers
+                            .iter()
+                            .map(|(_, namespace)| namespace.to_owned())
+                            .collect::<Vec<String>>()
+                            .join("::"),
                     );
                 }
                 constants::DW_TAG_typedef
@@ -262,16 +259,12 @@ fn recover_names_internal<R: ReaderType>(
                     if let Some(name) = get_name(dwarf, &unit, entry, debug_info_builder_context) {
                         debug_info_builder_context.set_name(
                             get_uid(dwarf, &unit, entry),
-                            simplify_str_to_str(
-                                namespace_qualifiers
-                                    .iter()
-                                    .chain(vec![&(-1, name)].into_iter())
-                                    .map(|(_, namespace)| namespace.to_owned())
-                                    .collect::<Vec<String>>()
-                                    .join("::"),
-                            )
-                            .to_string_lossy()
-                            .to_string(),
+                            namespace_qualifiers
+                                .iter()
+                                .chain(vec![&(-1, name)].into_iter())
+                                .map(|(_, namespace)| namespace.to_owned())
+                                .collect::<Vec<String>>()
+                                .join("::"),
                         );
                     }
                 }
@@ -432,7 +425,7 @@ where
                 }) {
                     Ok(fde) => fde,
                     Err(e) => {
-                        error!("Failed to parse FDE: {}", e);
+                        tracing::error!("Failed to parse FDE: {}", e);
                         continue;
                     }
                 };
@@ -443,7 +436,7 @@ where
                 }
 
                 if fde.initial_address().overflowing_add(fde.len()).1 {
-                    warn!(
+                    tracing::warn!(
                         "FDE at offset {:?} exceeds bounds of memory space! {:#x} + length {:#x}",
                         fde.offset(),
                         fde.initial_address(),
@@ -477,7 +470,7 @@ where
                                     cfa_offsets
                                         .insert(row.start_address()..row.end_address(), *offset);
                                 } else {
-                                    debug!(
+                                    tracing::debug!(
                                         "Invalid FDE table row addresses: {:#x}..{:#x}",
                                         row.start_address(),
                                         row.end_address()
@@ -485,7 +478,7 @@ where
                                 }
                             }
                             CfaRule::Expression(_) => {
-                                debug!("Unhandled CFA expression when determining offset");
+                                tracing::debug!("Unhandled CFA expression when determining offset");
                             }
                         };
                     }
@@ -495,32 +488,7 @@ where
     }
 }
 
-fn get_supplementary_build_id(bv: &BinaryView) -> Option<String> {
-    let raw_view = bv.raw_view()?;
-    if let Some(section) = raw_view.section_by_name(".gnu_debugaltlink") {
-        let start = section.start();
-        let len = section.len();
-
-        if len < 20 {
-            // Not large enough to hold a build id
-            return None;
-        }
-
-        raw_view
-            .read_vec(start, len)
-            .splitn(2, |x| *x == 0)
-            .last()
-            .map(|a| a.iter().map(|b| format!("{:02x}", b)).collect())
-    } else {
-        None
-    }
-}
-
-fn parse_range_data_offsets(bv: &BinaryView) -> Result<IntervalMap<u64, i64>, String> {
-    let raw_view = bv.raw_view().unwrap();
-    let raw_view_data = raw_view.read_vec(0, raw_view.len() as usize);
-    let file =
-        object::File::parse(&*raw_view_data).map_err(|e| format!("Failed to parse bv: {}", e))?;
+fn parse_range_data_offsets(file: &object::File) -> Result<IntervalMap<u64, i64>, String> {
     let dwo_file = file.section_by_name(".debug_info.dwo").is_some();
     let endian = match file.endianness() {
         object::Endianness::Little => gimli::RunTimeEndian::Little,
@@ -539,9 +507,12 @@ fn parse_range_data_offsets(bv: &BinaryView) -> Result<IntervalMap<u64, i64>, St
             eh_frame.set_vendor(gimli::Vendor::AArch64);
         }
 
-        if let Some(address_size) = file.architecture().address_size() {
-            eh_frame.set_address_size(address_size.bytes());
-        }
+        let address_size = file
+            .architecture()
+            .address_size()
+            .map(|s| s.bytes())
+            .unwrap_or(if file.is_64() { 8 } else { 4 });
+        eh_frame.set_address_size(address_size);
 
         parse_unwind_section(&file, eh_frame).map_err(|e| format!("Error parsing .eh_frame: {}", e))
     } else if file.section_by_name(".debug_frame").is_some() {
@@ -552,9 +523,13 @@ fn parse_range_data_offsets(bv: &BinaryView) -> Result<IntervalMap<u64, i64>, St
             debug_frame.set_vendor(gimli::Vendor::AArch64);
         }
 
-        if let Some(address_size) = file.architecture().address_size() {
-            debug_frame.set_address_size(address_size.bytes());
-        }
+        let address_size = file
+            .architecture()
+            .address_size()
+            .map(|s| s.bytes())
+            .unwrap_or(if file.is_64() { 8 } else { 4 });
+        debug_frame.set_address_size(address_size);
+
         parse_unwind_section(&file, debug_frame)
             .map_err(|e| format!("Error parsing .debug_frame: {}", e))
     } else {
@@ -564,33 +539,21 @@ fn parse_range_data_offsets(bv: &BinaryView) -> Result<IntervalMap<u64, i64>, St
 
 fn parse_dwarf(
     bv: &BinaryView,
-    debug_bv: &BinaryView,
-    supplementary_bv: Option<&BinaryView>,
+    debug_file: &object::File,
+    supplementary_data: Option<&object::File>,
     progress: Box<dyn Fn(usize, usize) -> Result<(), ()>>,
 ) -> Result<DebugInfoBuilder, String> {
-    // TODO: warn if no supplementary file and .gnu_debugaltlink section present
+    if debug_file.section_by_name(".gnu_debugaltlink").is_some() && supplementary_data.is_none() {
+        tracing::warn!(".gnu_debugaltlink section present but no supplementary data provided. DWARF parsing may fail.")
+    }
 
-    // Determine if this is a DWO
-    // TODO : Make this more robust...some DWOs follow non-DWO conventions
-
-    // Figure out if it's the given view or the raw view that has the dwarf info in it
-    let raw_view = &debug_bv
-        .raw_view()
-        .ok_or("Failed to get raw view for debug binary view".to_string())?;
-
-    let address_size = if is_dwo_dwarf(debug_bv) || is_non_dwo_dwarf(debug_bv) {
-        debug_bv.address_size()
-    } else {
-        raw_view.address_size()
+    let address_size = match debug_file.architecture().address_size() {
+        Some(x) => x.bytes() as usize,
+        None => bv.address_size(),
     };
 
-    // Parse this early to reduce peak memory usage
-    let range_data_offsets = parse_range_data_offsets(bv).unwrap_or_default();
+    let range_data_offsets = parse_range_data_offsets(debug_file).unwrap_or_default();
 
-    // Read the raw view to an object::File so relocations get handled for us
-    let raw_view_data = raw_view.read_vec(0, raw_view.len() as usize);
-    let debug_file =
-        object::File::parse(&*raw_view_data).map_err(|e| format!("Failed to parse bv: {}", e))?;
     let dwo_file = debug_file.section_by_name(".debug_info.dwo").is_some();
     let endian = match debug_file.endianness() {
         object::Endianness::Little => gimli::RunTimeEndian::Little,
@@ -610,20 +573,18 @@ fn parse_dwarf(
         dwarf.file_type = DwarfFileType::Main;
     }
 
-    if let Some(sup_bv) = supplementary_bv {
-        let sup_raw_view = sup_bv
-            .raw_view()
-            .ok_or_else(|| format!("Failed to get raw view for supplementary bv"))?;
-        let sup_view_data = sup_raw_view.read_vec(0, sup_raw_view.len() as usize);
-        let sup_file = object::File::parse(&*sup_view_data)
-            .map_err(|e| format!("Failed to parse supplementary bv: {}", e))?;
-        let sup_endian = get_endian(sup_bv);
+    if let Some(sup_file) = supplementary_data {
+        let sup_endian = match sup_file.endianness() {
+            object::Endianness::Little => gimli::RunTimeEndian::Little,
+            object::Endianness::Big => gimli::RunTimeEndian::Big,
+        };
+
         let sup_dwo_file = sup_file.section_by_name(".debug_info.dwo").is_some();
         let sup_section_reader = |section_id: SectionId| -> _ {
             create_section_reader_object(section_id, &sup_file, sup_endian, sup_dwo_file)
         };
         if let Err(e) = dwarf.load_sup(sup_section_reader) {
-            error!("Failed to load supplementary file: {}", e);
+            tracing::error!("Failed to load supplementary file: {}", e);
         }
     }
 
@@ -655,7 +616,7 @@ fn parse_dwarf(
             let sup = match dwarf.sup() {
                 Some(x) => x,
                 None => {
-                    log::error!(
+                    tracing::error!(
                         "Supplemental units found but no supplementary DWARF info available"
                     );
                     break;
@@ -686,6 +647,60 @@ fn parse_dwarf(
     Ok(debug_info_builder)
 }
 
+fn parse_data_to_object<'a>(
+    data: &'a [u8],
+    target_bv: &BinaryView,
+) -> Result<object::File<'a>, String> {
+    // Try to parse as normal file, fall back to parsing as fat macho and selecting the right arch from the target bv
+    if let Ok(o) = object::File::parse(data) {
+        return Ok(o);
+    }
+
+    if let Some(bv_arch) = target_bv.default_arch() {
+        let target_obj_arch = match bv_arch.name().as_str() {
+            "x86" => object::Architecture::I386,
+            "x86_64" => object::Architecture::X86_64,
+            "aarch64" => object::Architecture::Aarch64,
+            "armv7" | "thumb2" => object::Architecture::Arm,
+            "mips32" => object::Architecture::Mips,
+            "mips64" => object::Architecture::Mips64,
+            "ppc" => object::Architecture::PowerPc,
+            "ppc64" => object::Architecture::PowerPc64,
+            _ => {
+                return Err(format!(
+                    "Unable to determine architecture to load from \"{}\"",
+                    bv_arch.name()
+                ));
+            }
+        };
+        if let Ok(o) = object::read::macho::MachOFatFile32::parse(data) {
+            for arch in o.arches() {
+                if arch.architecture() == target_obj_arch {
+                    let arch_data = arch
+                        .data(data)
+                        .map_err(|e| format!("Failed to read FatArch32: {}", e))?;
+                    return object::File::parse(arch_data)
+                        .map_err(|e| format!("Failed to parse object from FatArch32 data: {}", e));
+                }
+            }
+        }
+
+        if let Ok(o) = object::read::macho::MachOFatFile64::parse(data) {
+            for arch in o.arches() {
+                if arch.architecture() == target_obj_arch {
+                    let arch_data = arch
+                        .data(data)
+                        .map_err(|e| format!("Failed to read FatArch64: {}", e))?;
+                    return object::File::parse(arch_data)
+                        .map_err(|e| format!("Failed to parse object from FatArch64 data: {}", e));
+                }
+            }
+        }
+    }
+
+    Err("Unable to load object from data".to_string())
+}
+
 struct DWARFParser;
 
 impl CustomDebugInfoParser for DWARFParser {
@@ -694,7 +709,7 @@ impl CustomDebugInfoParser for DWARFParser {
             return true;
         }
         if dwarfreader::has_build_id_section(view) {
-            if let Ok(build_id) = get_build_id(view) {
+            if let Ok(Some(build_id)) = get_build_id(view) {
                 if helpers::find_local_debug_file_for_build_id(&build_id, view).is_some() {
                     return true;
                 }
@@ -710,56 +725,135 @@ impl CustomDebugInfoParser for DWARFParser {
         &self,
         debug_info: &mut DebugInfo,
         bv: &BinaryView,
-        debug_file: &BinaryView,
+        debug_bv: &BinaryView,
         progress: Box<dyn Fn(usize, usize) -> Result<(), ()>>,
     ) -> bool {
-        let (external_file, close_external) = if !dwarfreader::is_valid(bv) {
-            if let (Some(debug_view), x) = helpers::load_sibling_debug_file(bv) {
-                (Some(debug_view), x)
-            } else if let Ok(build_id) = get_build_id(bv) {
-                load_debug_info_for_build_id(&build_id, bv)
-            } else {
-                (None, false)
-            }
-        } else {
-            (None, false)
+        let Some(debug_data_vec) = dwarfreader::is_valid(debug_bv)
+            .then(|| {
+                // Load the raw view of the debug bv passed in if it has valid debug info
+                let raw_view = debug_bv.raw_view().expect("Failed to get raw view");
+                raw_view.read_vec(0, raw_view.len() as usize)
+            })
+            .or_else(|| {
+                // Try loading sibling debug files
+                match helpers::load_sibling_debug_file(bv) {
+                    Ok(x) => x,
+                    Err(e) => {
+                        tracing::error!("Failed loading sibling debug file: {}", e);
+                        None
+                    }
+                }
+            })
+            .or_else(|| {
+                // Try loading from the file's build id
+                if let Ok(Some(build_id)) = get_build_id(bv) {
+                    match load_debug_info_for_build_id(&build_id, bv) {
+                        Ok(x) => x,
+                        Err(e) => {
+                            tracing::error!("Failed loading debug info from build id: {}", e);
+                            None
+                        }
+                    }
+                } else {
+                    // No build id found
+                    None
+                }
+            })
+        else {
+            // There isn't any dwarf info available to load
+            return false;
         };
 
-        let sup_bv = get_supplementary_build_id(external_file.as_deref().unwrap_or(debug_file))
-            .and_then(|build_id| {
-                load_debug_info_for_build_id(&build_id, bv)
-                    .0
-                    .map(|x| x.raw_view().expect("Failed to get raw view"))
-            });
+        let debug_file = match parse_data_to_object(debug_data_vec.as_slice(), bv) {
+            Ok(x) => x,
+            Err(e) => {
+                tracing::error!("Failed to parse debug data: {}", e);
+                return false;
+            }
+        };
 
-        let result = match parse_dwarf(
-            bv,
-            external_file.as_deref().unwrap_or(debug_file),
-            sup_bv.as_deref(),
-            progress,
-        ) {
+        // TODO: allow passing a supplementary file path as a setting?
+        // Try to load supplementary file from build id, falling back to file path
+        let sup_view_data = debug_file.gnu_debugaltlink().ok().flatten().and_then(
+            |(sup_filename, sup_build_id)| {
+                // Try loading from build id
+                let sup_data = match load_debug_info_for_build_id(sup_build_id, bv) {
+                    Ok(x) => x,
+                    Err(e) => {
+                        tracing::error!("Failed to load supplementary debug file: {}", e);
+                        None
+                    }
+                };
+
+                // Try loading from file path if build id loading didn't work
+                sup_data.or_else(|| match std::str::from_utf8(sup_filename) {
+                    Ok(x) => find_local_debug_file_from_path(&PathBuf::from(x), bv).and_then(
+                        |sup_file_path| match std::fs::read(sup_file_path) {
+                            Ok(sup_data) => Some(sup_data),
+                            Err(e) => {
+                                tracing::error!("Failed reading supplementary file {}: {}", x, e);
+                                None
+                            }
+                        },
+                    ),
+                    Err(e) => {
+                        tracing::error!("Supplementary file path is invalid utf8: {}", e);
+                        None
+                    }
+                })
+            },
+        );
+
+        let sup_file = sup_view_data.as_ref().and_then(|data| {
+            match parse_data_to_object(data.as_slice(), bv) {
+                Ok(x) => Some(x),
+                Err(e) => {
+                    tracing::error!("Failed to parse supplementary debug data: {}", e);
+                    None
+                }
+            }
+        });
+
+        // If we have a sup file, verify its build id with the expected build id, else warn
+        if let Some(sup_file) = &sup_file {
+            if let Ok(Some((_, expected_build_id))) = debug_file.gnu_debugaltlink() {
+                if let Ok(Some(loaded_sup_build_id)) = sup_file.build_id() {
+                    if loaded_sup_build_id != expected_build_id {
+                        tracing::warn!(
+                            "Supplementary debug info build id ({}) does not match expected ({})",
+                            loaded_sup_build_id
+                                .iter()
+                                .map(|b| format!("{:02x}", b))
+                                .collect::<String>(),
+                            expected_build_id
+                                .iter()
+                                .map(|b| format!("{:02x}", b))
+                                .collect::<String>()
+                        );
+                    }
+                }
+            }
+        }
+
+        let result = match parse_dwarf(bv, &debug_file, sup_file.as_ref(), progress) {
             Ok(mut builder) => {
                 builder.post_process(bv, debug_info).commit_info(debug_info);
                 true
             }
             Err(e) => {
-                log::error!("Failed to parse DWARF: {}", e);
+                tracing::error!("Failed to parse DWARF: {}", e);
                 false
             }
         };
-
-        if let (Some(ext), true) = (external_file, close_external) {
-            ext.file().close();
-        }
 
         result
     }
 }
 
 fn plugin_init() {
-    Logger::new("DWARF").init();
+    binaryninja::tracing_init!("DWARF Import");
 
-    let settings = Settings::new();
+    let settings = Settings::global();
 
     settings.register_setting_json(
         "network.enableDebuginfod",
@@ -802,7 +896,7 @@ fn plugin_init() {
             "type" : "array",
             "sorted" : true,
             "default" : [],
-            "description" : "Paths to folder containing DWARF debug info stored by build id.",
+            "description" : "Paths to search for DWARF debug info.",
             "ignore" : []
         }"#,
     );

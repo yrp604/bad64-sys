@@ -121,6 +121,7 @@ bool TypePrinter::PrintAllTypesCallback(void* ctxt, BNQualifiedName* names, BNTy
 {
 	TypePrinter* printer = (TypePrinter*)ctxt;
 	vector<pair<QualifiedName, Ref<Type>>> apiTypes;
+	apiTypes.reserve(typeCount);
 	for (size_t i = 0; i < typeCount; ++i)
 	{
 		apiTypes.push_back({QualifiedName::FromAPIObject(&names[i]), new Type(types[i])});
@@ -173,6 +174,7 @@ std::vector<Ref<TypePrinter>> TypePrinter::GetList()
 	size_t count;
 	BNTypePrinter** list = BNGetTypePrinterList(&count);
 	vector<Ref<TypePrinter>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(new CoreTypePrinter(list[i]));
 	BNFreeTypePrinterList(list);
@@ -449,7 +451,7 @@ std::vector<TypeDefinitionLine> CoreTypePrinter::GetTypeLines(Ref<Type> type,
 		return {};
 
 	vector<TypeDefinitionLine> cppLines;
-
+	cppLines.reserve(lineCount);
 	for (size_t i = 0; i < lineCount; ++i)
 	{
 		cppLines.push_back(TypeDefinitionLine::FromAPIObject(&lines[i]));

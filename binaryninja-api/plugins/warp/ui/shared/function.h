@@ -112,10 +112,9 @@ public:
 	void RegisterContextMenuAction(
 		const QString& name, const std::function<void(WarpFunctionItem*, std::optional<uint64_t>)>& callback);
 
-	void RegisterContextMenuAction(
-		const QString &name,
-		const std::function<void(WarpFunctionItem *, std::optional<uint64_t>)> &callback,
-		const std::function<bool(WarpFunctionItem *, std::optional<uint64_t>)> &isValid);
+	void RegisterContextMenuAction(const QString& name,
+		const std::function<void(WarpFunctionItem*, std::optional<uint64_t>)>& callback,
+		const std::function<bool(WarpFunctionItem*, std::optional<uint64_t>)>& isValid);
 
 	void SetFunctions(QVector<WarpFunctionItem*> functions);
 
@@ -123,15 +122,15 @@ public:
 
 	void RemoveFunction(uint64_t address);
 
-	void setFilter(const std::string&) override;
+	void setFilter(const std::string&, FilterOptions options) override;
 
 	void scrollToFirstItem() override {}
 
 	void scrollToCurrentItem() override {}
 
-	void selectFirstItem() override {}
+	void ensureSelection() override {}
 
-	void activateFirstItem() override {}
+	void activateSelection() override {}
 };
 
 class WarpFunctionInfoWidget : public QWidget

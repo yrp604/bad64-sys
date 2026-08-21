@@ -1086,9 +1086,12 @@ static const char* const reg_lookup_c[16] = {"c0", "c1", "c2", "c3", "c4", "c5",
 	i++;
 
 #define ADD_OPERAND_FLOAT32(VALUE) \
-	instr->operands[i].operandClass = FIMM32; \
-	*(float*)&(instr->operands[i].immediate) = VALUE; \
-	i++;
+	do { \
+		float value = VALUE; \
+		instr->operands[i].operandClass = FIMM32; \
+		memcpy(&instr->operands[i].immediate, &value, sizeof(float)); \
+		i++; \
+	} while (0)
 
 #define ADD_OPERAND_CONST  ADD_OPERAND_IMM64(const_, 0)
 #define ADD_OPERAND_FBITS  ADD_OPERAND_IMM32(fbits, 0)

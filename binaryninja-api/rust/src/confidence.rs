@@ -3,10 +3,11 @@
 use crate::architecture::{Architecture, CoreArchitecture};
 use crate::calling_convention::CoreCallingConvention;
 use crate::rc::{Ref, RefCountable};
-use crate::types::Type;
+use crate::types::{Type, ValueLocation};
 use binaryninjacore_sys::{
     BNBoolWithConfidence, BNCallingConventionWithConfidence, BNGetCallingConventionArchitecture,
-    BNOffsetWithConfidence, BNTypeWithConfidence,
+    BNInlineDuringAnalysis, BNInlineDuringAnalysisWithConfidence, BNOffsetWithConfidence,
+    BNTypeWithConfidence, BNValueLocation, BNValueLocationWithConfidence,
 };
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
@@ -224,6 +225,19 @@ impl Conf<Ref<Type>> {
     }
 }
 
+impl Conf<ValueLocation> {
+    pub(crate) fn into_rust_raw(value: Self) -> BNValueLocationWithConfidence {
+        BNValueLocationWithConfidence {
+            location: ValueLocation::into_rust_raw(&value.contents),
+            confidence: value.confidence,
+        }
+    }
+
+    pub(crate) fn free_rust_raw(value: BNValueLocationWithConfidence) {
+        ValueLocation::free_rust_raw(value.location);
+    }
+}
+
 impl Conf<Ref<CoreCallingConvention>> {
     pub(crate) fn from_raw(value: &BNCallingConventionWithConfidence) -> Self {
         let arch = unsafe {
@@ -280,6 +294,15 @@ impl From<BNOffsetWithConfidence> for Conf<i64> {
     }
 }
 
+impl From<BNInlineDuringAnalysisWithConfidence> for Conf<BNInlineDuringAnalysis> {
+    fn from(inline_with_confidence: BNInlineDuringAnalysisWithConfidence) -> Self {
+        Self::new(
+            inline_with_confidence.value,
+            inline_with_confidence.confidence,
+        )
+    }
+}
+
 impl From<Conf<bool>> for BNBoolWithConfidence {
     fn from(conf: Conf<bool>) -> Self {
         Self {
@@ -291,6 +314,15 @@ impl From<Conf<bool>> for BNBoolWithConfidence {
 
 impl From<Conf<i64>> for BNOffsetWithConfidence {
     fn from(conf: Conf<i64>) -> Self {
+        Self {
+            value: conf.contents,
+            confidence: conf.confidence,
+        }
+    }
+}
+
+impl From<Conf<BNInlineDuringAnalysis>> for BNInlineDuringAnalysisWithConfidence {
+    fn from(conf: Conf<BNInlineDuringAnalysis>) -> Self {
         Self {
             value: conf.contents,
             confidence: conf.confidence,

@@ -92,21 +92,30 @@ std::shared_ptr<ObjCReader> SharedCacheObjCProcessor::GetReader()
 	return std::make_shared<SharedCacheObjCReader>(reader);
 }
 
-void SharedCacheObjCProcessor::GetRelativeMethod(ObjCReader* reader, method_t& meth)
+void SharedCacheObjCProcessor::GetRelativeMethod(ObjCReader* reader, method_t& meth, bool typesAreOffsetsFromSelectorBase)
 {
 	if (m_customRelativeMethodSelectorBase.has_value())
 	{
 		meth.name = m_customRelativeMethodSelectorBase.value() + reader->ReadS32();
 
-		uint64_t offset = reader->GetOffset();
-		meth.types = offset + reader->ReadS32();
+		// `typesAreOffsetsFromSelectorBase` indicates that `types` is an unsigned offset into the cache's
+		// deduplicated string pool, relative to the same base address as relative method selectors.
+		if (typesAreOffsetsFromSelectorBase)
+		{
+			meth.types = m_customRelativeMethodSelectorBase.value() + reader->Read32();
+		}
+		else
+		{
+			uint64_t offset = reader->GetOffset();
+			meth.types = offset + reader->ReadS32();
+		}
 
-		offset += sizeof(int32_t);
+		uint64_t offset = reader->GetOffset();
 		meth.imp = offset + reader->ReadS32();
 	}
 	else
 	{
-		ObjCProcessor::GetRelativeMethod(reader, meth);
+		ObjCProcessor::GetRelativeMethod(reader, meth, typesAreOffsetsFromSelectorBase);
 	}
 }
 

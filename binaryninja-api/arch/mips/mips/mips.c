@@ -3580,6 +3580,7 @@ uint32_t mips_disassemble(
 	const char* reg = NULL;
 
 	strncpy(operation, OperationStrings[instruction->operation], sizeof(operation));
+	operation[sizeof(operation) - 1] = '\0';
 	if (instruction->operands[0].operandClass == V_DEST)
 	{
 		char* p = dest;
@@ -3744,7 +3745,7 @@ uint32_t mips_decompose(
 		const uint32_t* instructionValue,
 		size_t size,
 		Instruction* restrict instruction,
-		uint32_t version,
+		MipsVersion version,
 		uint64_t address,
 		uint32_t endianBig,
 		uint32_t flags)

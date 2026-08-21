@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
 use crate::rc::*;
-use crate::type_archive::TypeArchiveSnapshotId;
 use crate::types::QualifiedName;
 
 // TODO: Remove or refactor this.
@@ -285,14 +284,6 @@ impl IntoCStr for &Path {
     fn to_cstr(self) -> Self::Result {
         CString::new(self.as_os_str().as_encoded_bytes())
             .expect("can't pass paths with internal nul bytes to core!")
-    }
-}
-
-impl IntoCStr for TypeArchiveSnapshotId {
-    type Result = CString;
-
-    fn to_cstr(self) -> Self::Result {
-        self.to_string().to_cstr()
     }
 }
 

@@ -9,10 +9,8 @@ use thiserror::Error;
 pub enum EnterpriseCheckoutError {
     #[error("enterprise server returned error: {0}")]
     ServerError(String),
-    #[error("no username set for credential authentication")]
-    NoUsername,
-    #[error("no password set for credential authentication")]
-    NoPassword,
+    #[error("no credentials set for authentication")]
+    NoCredentials,
     #[error("failed to authenticate with username and password")]
     NotAuthenticated,
     #[error("failed to refresh expired license: {0}")]
@@ -59,16 +57,36 @@ pub fn checkout_license(
 
         #[allow(clippy::collapsible_if)]
         if !is_server_authenticated() {
-            // We have yet to authenticate with the server, we should try all available authentication methods.
-            if !authenticate_server_with_method("Keychain", false) {
-                // We could not authenticate with the system keychain, we should try with credentials.
-                let username = std::env::var("BN_ENTERPRISE_USERNAME")
-                    .map_err(|_| EnterpriseCheckoutError::NoUsername)?;
-                let password = std::env::var("BN_ENTERPRISE_PASSWORD")
-                    .map_err(|_| EnterpriseCheckoutError::NoPassword)?;
-                if !authenticate_server_with_credentials(&username, &password, true) {
-                    return Err(EnterpriseCheckoutError::NotAuthenticated);
+            'auth: {
+                // We have yet to authenticate with the server, we should try all available authentication methods.
+                if authenticate_server_with_method("Keychain", false) {
+                    break 'auth;
                 }
+
+                // We could not authenticate with the system keychain, we should try with credentials.
+                let username = std::env::var("BN_ENTERPRISE_USERNAME");
+                let password = std::env::var("BN_ENTERPRISE_PASSWORD");
+                if let Ok(username) = username {
+                    if let Ok(password) = password {
+                        // Having creds that don't work is a hard error
+                        if !authenticate_server_with_credentials(&username, &password, true) {
+                            return Err(EnterpriseCheckoutError::NotAuthenticated);
+                        }
+                        // Otherwise, if the creds worked, we got auth
+                        break 'auth;
+                    }
+                }
+
+                let token = std::env::var("BN_ENTERPRISE_TOKEN");
+                if let Ok(token) = token {
+                    if !authenticate_server_with_token(&token, true) {
+                        return Err(EnterpriseCheckoutError::NotAuthenticated);
+                    }
+                    break 'auth;
+                }
+
+                // If we're still here, we don't have any credentials for authentication.
+                return Err(EnterpriseCheckoutError::NoCredentials);
             }
         }
     }
@@ -181,6 +199,16 @@ pub fn is_server_floating_license() -> bool {
 
 pub fn is_server_license_still_activated() -> bool {
     unsafe { binaryninjacore_sys::BNIsEnterpriseServerLicenseStillActivated() }
+}
+
+pub fn authenticate_server_with_token(token: &str, remember: bool) -> bool {
+    let token = token.to_cstr();
+    unsafe {
+        binaryninjacore_sys::BNAuthenticateEnterpriseServerWithToken(
+            token.as_ref().as_ptr() as *const std::os::raw::c_char,
+            remember,
+        )
+    }
 }
 
 pub fn authenticate_server_with_credentials(

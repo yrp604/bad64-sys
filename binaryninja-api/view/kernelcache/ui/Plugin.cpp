@@ -14,6 +14,7 @@ extern "C"
 	{
 		UINotifications::init();
 		UIAction::registerAction("KC Load IMGHERE");
+		UIAction::registerAction("KC Load Image by Address");
 
 		KCTriageViewType::Register();
 

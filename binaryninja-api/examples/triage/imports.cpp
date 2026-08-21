@@ -205,19 +205,20 @@ void GenericImportsModel::sort(int col, Qt::SortOrder order)
 }
 
 
-void GenericImportsModel::setFilter(const std::string& filterText)
+void GenericImportsModel::setFilter(const std::string& filterText, FilterOptions options)
 {
 	beginResetModel();
 	m_entries.clear();
+	bool caseSensitive = options.testFlag(FilterOption::CaseSensitiveOption);
 	for (auto& entry : m_allEntries)
 	{
-		if (FilteredView::match(entry->GetFullName(), filterText))
+		if (FilteredView::match(entry->GetFullName(), filterText, caseSensitive))
 			m_entries.push_back(entry);
-		else if (FilteredView::match(getNamespace(entry).toStdString(), filterText))
+		else if (FilteredView::match(getNamespace(entry).toStdString(), filterText, caseSensitive))
 			m_entries.push_back(entry);
-		else if (FilteredView::match(std::to_string(entry->GetOrdinal()), filterText))
+		else if (FilteredView::match(std::to_string(entry->GetOrdinal()), filterText, caseSensitive))
 			m_entries.push_back(entry);
-		else if (FilteredView::match(getLibrarySource(entry).toStdString(), filterText))
+		else if (FilteredView::match(getLibrarySource(entry).toStdString(), filterText, caseSensitive))
 		    m_entries.push_back(entry);
 	}
 	performSort(m_sortCol, m_sortOrder);
@@ -325,9 +326,9 @@ void ImportsTreeView::importDoubleClicked(const QModelIndex& cur)
 }
 
 
-void ImportsTreeView::setFilter(const std::string& filterText)
+void ImportsTreeView::setFilter(const std::string& filterText, FilterOptions options)
 {
-	m_model->setFilter(filterText);
+	m_model->setFilter(filterText, options);
 }
 
 
@@ -343,15 +344,18 @@ void ImportsTreeView::scrollToCurrentItem()
 }
 
 
-void ImportsTreeView::selectFirstItem()
+void ImportsTreeView::ensureSelection()
 {
-	setCurrentIndex(m_model->index(0, 0, QModelIndex()));
+	if (auto current = currentIndex(); !current.isValid())
+		setCurrentIndex(m_model->index(0, 0, QModelIndex()));
 }
 
 
-void ImportsTreeView::activateFirstItem()
+void ImportsTreeView::activateSelection()
 {
-	importDoubleClicked(m_model->index(0, 0, QModelIndex()));
+	ensureSelection();
+	if (auto current = currentIndex(); current.isValid())
+		importDoubleClicked(current);
 }
 
 

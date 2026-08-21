@@ -20,6 +20,7 @@ vector<Ref<TypeParser>> TypeParser::GetList()
 	size_t count;
 	BNTypeParser** list = BNGetTypeParserList(&count);
 	vector<Ref<TypeParser>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(new CoreTypeParser(list[i]));
 	BNFreeTypeParserList(list);
@@ -63,6 +64,7 @@ std::vector<std::string> TypeParser::ParseOptionsText(const std::string& options
 	char** options = BNParseTypeParserOptionsText(optionsText.c_str(), &count);
 
 	std::vector<std::string> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		result.push_back(options[i]);
@@ -95,7 +97,9 @@ std::string TypeParser::FormatParseErrors(const std::vector<TypeParserError>& er
 		BNFreeString(apiError.fileName);
 	}
 
-	return string;
+	std::string result = string ? string : "";
+	BNFreeString(string);
+	return result;
 }
 
 
@@ -140,12 +144,14 @@ bool TypeParser::PreprocessSourceCallback(void* ctxt,
 	TypeParser* parser = (TypeParser*)ctxt;
 
 	vector<string> optionsCpp;
+	optionsCpp.reserve(optionCount);
 	for (size_t i = 0; i < optionCount; i ++)
 	{
 		optionsCpp.push_back(options[i]);
 	}
 
 	vector<string> includeDirsCpp;
+	includeDirsCpp.reserve(includeDirCount);
 	for (size_t i = 0; i < includeDirCount; i ++)
 	{
 		includeDirsCpp.push_back(includeDirs[i]);
@@ -200,12 +206,14 @@ bool TypeParser::ParseTypesFromSourceCallback(void* ctxt,
 	TypeParser* parser = (TypeParser*)ctxt;
 
 	vector<string> optionsCpp;
+	optionsCpp.reserve(optionCount);
 	for (size_t i = 0; i < optionCount; i ++)
 	{
 		optionsCpp.push_back(options[i]);
 	}
 
 	vector<string> includeDirsCpp;
+	includeDirsCpp.reserve(includeDirCount);
 	for (size_t i = 0; i < includeDirCount; i ++)
 	{
 		includeDirsCpp.push_back(includeDirs[i]);
@@ -577,6 +585,7 @@ bool CoreTypeParser::ParseTypeString(const std::string& source, Ref<Platform> pl
 
 	if (!success)
 	{
+		BNFreeQualifiedNameAndType(&apiResult);
 		return false;
 	}
 

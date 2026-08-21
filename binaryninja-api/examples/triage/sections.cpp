@@ -1,10 +1,56 @@
 #include <QtWidgets/QGridLayout>
 #include <QtWidgets/QHBoxLayout>
+#include <QtWidgets/QLabel>
 #include <algorithm>
 #include <vector>
 #include "sections.h"
 #include "headers.h"
 #include "fontsettings.h"
+
+
+SectionsModel::SectionsModel(QObject* parent, BinaryViewRef data) : QObject(parent), BinaryDataNotification(SectionUpdates)
+{
+	m_data = data;
+	m_data->RegisterNotification(this);
+	updateSections();
+}
+
+
+SectionsModel::~SectionsModel()
+{
+	m_data->UnregisterNotification(this);
+}
+
+
+void SectionsModel::updateSections()
+{
+	m_sections.clear();
+	for (auto& section : m_data->GetSections())
+		if (section->GetSemantics() != ExternalSectionSemantics)
+			m_sections.push_back(section);
+	sort(m_sections.begin(), m_sections.end(),
+	    [&](SectionRef a, SectionRef b) { return a->GetStart() < b->GetStart(); });
+
+	emit sectionsChanged();
+}
+
+
+void SectionsModel::OnSectionAdded(BinaryNinja::BinaryView* data, BinaryNinja::Section* section)
+{
+	QMetaObject::invokeMethod(this, &SectionsModel::updateSections, Qt::QueuedConnection);
+}
+
+
+void SectionsModel::OnSectionRemoved(BinaryNinja::BinaryView* data, BinaryNinja::Section* section)
+{
+	QMetaObject::invokeMethod(this, &SectionsModel::updateSections, Qt::QueuedConnection);
+}
+
+
+void SectionsModel::OnSectionUpdated(BinaryNinja::BinaryView* data, BinaryNinja::Section* section)
+{
+	QMetaObject::invokeMethod(this, &SectionsModel::updateSections, Qt::QueuedConnection);
+}
 
 
 SegmentsWidget::SegmentsWidget(QWidget* parent, BinaryViewRef data) : QWidget(parent)
@@ -63,29 +109,77 @@ SegmentsWidget::SegmentsWidget(QWidget* parent, BinaryViewRef data) : QWidget(pa
 }
 
 
-SectionsWidget::SectionsWidget(QWidget* parent, BinaryViewRef data) : QWidget(parent)
+SectionsWidget::SectionsWidget(QWidget* parent, BinaryViewRef data) : QWidget(parent), m_data(data), m_model(nullptr), m_layout(nullptr), m_isRebuilding(false)
 {
-	QGridLayout* layout = new QGridLayout();
-	layout->setContentsMargins(0, 0, 0, 0);
-	layout->setVerticalSpacing(1);
-	layout->setHorizontalSpacing(UIContext::getScaledWindowSize(16, 16).width());
+	m_model = new SectionsModel(this, data);
+
+	m_layout = new QGridLayout();
+	m_layout->setContentsMargins(0, 0, 0, 0);
+	m_layout->setVerticalSpacing(1);
+	m_layout->setHorizontalSpacing(UIContext::getScaledWindowSize(16, 16).width());
+	setLayout(m_layout);
+
+	connect(m_model, &SectionsModel::sectionsChanged, this, &SectionsWidget::rebuildLayout, Qt::QueuedConnection);
+
+	rebuildLayout();
+}
+
+
+SectionsWidget::~SectionsWidget()
+{
+	if (m_model)
+	{
+		disconnect(m_model, nullptr, this, nullptr);
+		m_model->blockSignals(true);
+	}
+}
+
+
+void SectionsWidget::rebuildLayout()
+{
+	if (m_isRebuilding)
+		return;
+
+	m_isRebuilding = true;
+	setUpdatesEnabled(false);
+
+	QObjectList children = this->children();
+	for (QObject* child : children)
+	{
+		if (QWidget* widget = qobject_cast<QWidget*>(child))
+			delete widget;
+	}
+
+	delete m_layout;
+
+	m_layout = new QGridLayout();
+	m_layout->setContentsMargins(0, 0, 0, 0);
+	m_layout->setVerticalSpacing(1);
+	m_layout->setHorizontalSpacing(UIContext::getScaledWindowSize(16, 16).width());
+	setLayout(m_layout);
+
+	auto sections = m_model->GetSections();
+
+	if (sections.empty())
+	{
+		setUpdatesEnabled(true);
+		m_isRebuilding = false;
+		return;
+	}
 
 	size_t maxNameLen = 0;
-	for (auto& section : data->GetSections())
+	for (auto& section : sections)
+	{
 		if (section->GetName().size() > maxNameLen)
 			maxNameLen = section->GetName().size();
+	}
 	if (maxNameLen > 32)
 		maxNameLen = 32;
 
-	for (auto& section : data->GetSections())
-		if (section->GetSemantics() != ExternalSectionSemantics)
-			m_sections.push_back(section);
-	sort(m_sections.begin(), m_sections.end(),
-	    [&](SectionRef a, SectionRef b) { return a->GetStart() < b->GetStart(); });
-
 	int row = 0;
-	for (auto& section : m_sections)
+	for (auto& section : sections)
 	{
+
 		std::string name = section->GetName();
 		if (name.size() > maxNameLen)
 			name = name.substr(0, maxNameLen - 1) + std::string("…");
@@ -95,15 +189,15 @@ SectionsWidget::SectionsWidget(QWidget* parent, BinaryViewRef data) : QWidget(pa
 		QString typeName = QString::fromStdString(section->GetType());
 
 		QString permissions;
-		if (data->IsOffsetReadable(section->GetStart()))
+		if (m_data->IsOffsetReadable(section->GetStart()))
 			permissions += "r";
 		else
 			permissions += "-";
-		if (data->IsOffsetWritable(section->GetStart()))
+		if (m_data->IsOffsetWritable(section->GetStart()))
 			permissions += "w";
 		else
 			permissions += "-";
-		if (data->IsOffsetExecutable(section->GetStart()))
+		if (m_data->IsOffsetExecutable(section->GetStart()))
 			permissions += "x";
 		else
 			permissions += "-";
@@ -118,7 +212,7 @@ SectionsWidget::SectionsWidget(QWidget* parent, BinaryViewRef data) : QWidget(pa
 
 		QLabel* nameLabel = new QLabel(QString::fromStdString(name));
 		nameLabel->setFont(getMonospaceFont(this));
-		layout->addWidget(nameLabel, row, 0);
+		m_layout->addWidget(nameLabel, row, 0);
 
 		QHBoxLayout* rangeLayout = new QHBoxLayout();
 		rangeLayout->setContentsMargins(0, 0, 0, 0);
@@ -129,21 +223,23 @@ SectionsWidget::SectionsWidget(QWidget* parent, BinaryViewRef data) : QWidget(pa
 		rangeLayout->addWidget(beginLabel);
 		rangeLayout->addWidget(dashLabel);
 		rangeLayout->addWidget(endLabel);
-		layout->addLayout(rangeLayout, row, 1);
+		m_layout->addLayout(rangeLayout, row, 1);
 
 		QLabel* permissionsLabel = new QLabel(permissions);
 		permissionsLabel->setFont(getMonospaceFont(this));
-		layout->addWidget(permissionsLabel, row, 2);
+		m_layout->addWidget(permissionsLabel, row, 2);
 		QLabel* typeLabel = new QLabel(typeName);
 		typeLabel->setFont(getMonospaceFont(this));
-		layout->addWidget(typeLabel, row, 3);
+		m_layout->addWidget(typeLabel, row, 3);
 		QLabel* semanticsLabel = new QLabel(semantics);
 		semanticsLabel->setFont(getMonospaceFont(this));
-		layout->addWidget(semanticsLabel, row, 4);
+		m_layout->addWidget(semanticsLabel, row, 4);
 
 		row++;
 	}
 
-	layout->setColumnStretch(5, 1);
-	setLayout(layout);
+	m_layout->setColumnStretch(5, 1);
+
+	setUpdatesEnabled(true);
+	m_isRebuilding = false;
 }

@@ -1,4 +1,3 @@
-# Binary Ninja Intermediate Language Series, Part 2: Medium Level IL
 # Binary Ninja Intermediate Language: Medium Level IL
 
 The Medium Level Intermediate Language (MLIL) is the second major representation in the Binary Ninja Intermediate Language (BNIL) family of intermediate languages. Much like [LLIL](./bnil-llil.md) this representation is tree based and has many of the same instructions. This representation is distinct in a few key ways.
@@ -26,7 +25,7 @@ In the rest of this article we will explore the variable object, the type object
 
 First, it's important to understand what we mean when we talk about a MLIL variable. Continuing from our example above we can get a [`Variable`](https://api.binary.ninja/binaryninja.variable-module.html#binaryninja.variable.Variable) object.
 
-```
+```pycon
 >>> inst.output
 [<var int64_t rax>]
 >>> var = inst.output[0]
@@ -42,7 +41,7 @@ So let's look at the properties available on a [`Variable`](https://api.binary.n
 
 The `source_type` represents the storage location type and can be one of the following :
 
-```
+```c
 enum VariableSourceType
 {
 	StackVariableSourceType,
@@ -52,7 +51,7 @@ enum VariableSourceType
 ```
 
 
-```
+```pycon
 >>> var.source_type
 <VariableSourceType.RegisterVariableSourceType: 1>
 ```
@@ -61,7 +60,7 @@ enum VariableSourceType
 
 The `storage` property changes meaning depending on the [`VariableSourceType`](https://api.binary.ninja/binaryninja.enums-module.html#binaryninja.enums.VariableSourceType). When a variable is of type `RegisterVariableSourceType`, its `storage` property represents the index into the register list for the given architecture. If the `source_type` is `StackVariableSourceType`, its `storage` property represents the stack offset of the variable.
 
-```
+```pycon
 >>> var
 <var int64_t rax>
 >>> var.source_type
@@ -85,7 +84,7 @@ The `index` is an identifier chosen to be unique across different analysis passe
 
 The `type` property returns the `Type` object associated with the variable:
 
-```
+```pycon
 >>> var.type
 <type: int64_t, 0% confidence>
 ```
@@ -97,7 +96,7 @@ Type objects are described in detail in the next section.
 
 Type objects are very similar to standard C types. A Type object's type can be determined through the object’s `type_class` property. Valid types are in the [`TypeClass`](https://api.binary.ninja/binaryninja.enums-module.html#binaryninja.enums.TypeClass) enumeration:
 
-```
+```c
 enum TypeClass
 {
 	VoidTypeClass = 0,
@@ -112,7 +111,8 @@ enum TypeClass
 	VarArgsTypeClass = 9,
 	ValueTypeClass = 10,
 	NamedTypeReferenceClass = 11,
-	WideCharTypeClass = 12
+	WideCharTypeClass = 12,
+	FragmentTypeClass = 13
 };
 ```
 
@@ -130,7 +130,7 @@ A boolean type is an integer which has a value of False (0) or True (!0).
 
 An integer type has a sign, a width (in bytes), and a display type. The display type determines how the integer should be displayed; the options are self-explanatory:
 
-```
+```c
 enum IntegerDisplayType
 {
 	DefaultIntegerDisplayType,
@@ -191,6 +191,14 @@ Array types function similarly to pointer types however the array type knows how
 * `count` - the count of array elements
 * `width` - the size of the array (`count * target.width`)
 
+### FragmentTypeClass
+
+A fragment type describes a bitwise slice of a larger type while that slice is carried in
+integer-like storage. Analysis uses fragments to preserve type information through partial
+register moves, such as calling-convention transfers and optimized inline copies. The live
+fragment size and placement within its container are tracked in bits. See
+[Type Fragments](../guide/types/fragments.md) for its behavior, text syntax, and API examples.
+
 ### EnumerationTypeClass
 
 `Enumeration` types function much the same way they do in C, providing a mapping between a name and corresponding constant. The object itself contains a `members` property and a list of [`EnumerationMember`](https://api.binary.ninja/binaryninja.types-module.html#binaryninja.types.EnumerationMember) objects each containing a name and value.
@@ -203,7 +211,7 @@ Structure types are simple in principle but are complicated by the need for them
 
 NamedTypeReference types are symbolic references to other types. They function much like a C `typedef` (i.e. Name X corresponds to type Y). The NamedTypeReference has a `type_class` property describing what sort of type it is pointing at.
 
-```
+```c
 enum NamedTypeReferenceClass
 {
 	UnknownNamedTypeClass = 0,
@@ -221,7 +229,7 @@ Most of the above should be self-explanatory except for the `UnknownNamedTypeCla
 
 The instruction set is made up of [`MediumLevelILInstruction`](https://api.binary.ninja/binaryninja.mediumlevelil-module.html#binaryninja.mediumlevelil.MediumLevelILInstruction) objects. Let's start exploring by using the python console to poke around at some instructions. Open up a binary in Binary Ninja and retrieve an MLIL instruction:
 
-```
+```pycon
 >>> inst = current_mlil[8]
 <il: rax = 0x402cb0("PORT")>
 >>> type(inst)
@@ -232,27 +240,27 @@ The instruction set is made up of [`MediumLevelILInstruction`](https://api.binar
 
 There are a number of properties that can be queried on the [`MediumLevelILInstruction`](https://api.binary.ninja/binaryninja.mediumlevelil-module.html#binaryninja.mediumlevelil.MediumLevelILInstruction) object, and the validity of these properties changes depending on what the current operation is. If we look at the `operation` of `inst` we can see it is a `MLIL_CALL` instruction.
 
-```
+```pycon
 >>> inst.operation
 <MediumLevelILOperation.MLIL_CALL: 51>
 ```
 
 From the code in [`mediumlevelil.py`](https://github.com/Vector35/binaryninja-api/blob/dev/python/mediumlevelil.py#L175) we can see that the `MLIL_CALL` operation has three properties in addition to the operations available to all `MediumLevelILInstruction` objects
 
-```
+```text
 MediumLevelILOperation.MLIL_CALL: [("output", "var_list"), ("dest", "expr"), ("params", "expr_list")],
 ```
 
 Thus, we can query the call's `output` which is a list of variables:
 
-```
+```pycon
 >>> inst.output
 [<var int64_t rax>]
 ```
 
 The call's `dest` (destination expression) which in this case is a `MLIL_CONST_PTR`:
 
-```
+```pycon
 >>> inst.dest
 <il: 0x402cb0>
 >>> inst.dest.operation
@@ -265,7 +273,7 @@ The call's `dest` (destination expression) which in this case is a `MLIL_CONST_P
 
 The parameter list can be accessed through the `params` property:
 
-```
+```pycon
 >>> inst.params
 [<il: "PORT">]
 >>> inst.params[0]
@@ -278,9 +286,8 @@ The parameter list can be accessed through the `params` property:
 
 * `MLIL_JUMP` - Branch to the `dest` expression's address
 * `MLIL_JUMP_TO` - A jump table dispatch instruction. Uses the `dest` expression to calculate the MLIL instruction target `targets` to branch to
-* `MLIL_CALL` - Branch to the `dest` expression function, saving the return address, with the list of parameters `params` and returning the list of return values `output`
+* `MLIL_CALL` - Branch to the `dest` expression function, saving the return address, with the list of parameters `params` and a list of output expressions `output_exprs` describing how each return value is delivered
 * `MLIL_CALL_UNTYPED` - This is a call instruction where stack resolution could not be determined, and thus a list of parameters and return values do not exist
-* `MLIL_CALL_OUTPUT` - This expression holds a set of return values `dest` from a call
 * `MLIL_CALL_PARAM` - This expression holds the set of parameters `src` for a call instruction
 * `MLIL_RET` - Return to the calling function.
 * `MLIL_RET_HINT` - Indirect jump to `dest` expression (only used in internal analysis passes.)
@@ -319,7 +326,7 @@ The parameter list can be accessed through the `params` property:
 * `MLIL_FLOAT_CONST` - A floating point constant `constant`
 * `MLIL_IMPORT` - A `constant` integral value representing an imported address
 * `MLIL_LOW_PART` - `size` bytes from the low end of `src` expression
-
+* `MLIL_PASS_BY_REF` - Wraps `src` to indicate that the calling convention is passing a parameter by reference. The inner expression has the reference taken and has a pointer type. Only appears as a parameter expression on a call instruction.
 
 ### Arithmetic Operations
 
@@ -350,6 +357,17 @@ The parameter list can be accessed through the `params` property:
 * `MLIL_MODS_DP` - Signed double-precision modulus of `left` expression by the `right` expression
 * `MLIL_NEG` - Sign inversion of `src` expression
 * `MLIL_NOT` - Bitwise inversion of `src` expression
+* `MLIL_BSWAP` - Reverse the byte order of `src` expression
+* `MLIL_POPCNT` - Population count (number of set bits) of `src` expression
+* `MLIL_CLZ` - Count leading zero bits of `src` expression; the result is `8 * size` when `src` is zero
+* `MLIL_CTZ` - Count trailing zero bits of `src` expression; the result is `8 * size` when `src` is zero
+* `MLIL_RBIT` - Reverse the bit order of `src` expression
+* `MLIL_CLS` - Count leading sign bits of `src` expression (the number of bits below the sign bit that match it)
+* `MLIL_MINS` - Signed minimum of `left` expression and `right` expression
+* `MLIL_MAXS` - Signed maximum of `left` expression and `right` expression
+* `MLIL_MINU` - Unsigned minimum of `left` expression and `right` expression
+* `MLIL_MAXU` - Unsigned maximum of `left` expression and `right` expression
+* `MLIL_ABS` - Signed absolute value of `src` expression
 * `MLIL_FADD` - IEEE754 floating point addition of `left` expression with `right` expression
 * `MLIL_FSUB` - IEEE754 floating point subtraction of `left` expression with `right` expression
 * `MLIL_FMUL` - IEEE754 floating point multiplication of `left` expression with `right` expression
@@ -402,4 +420,14 @@ The parameter list can be accessed through the `params` property:
 * `MLIL_UNIMPL` - The expression is not implemented
 * `MLIL_UNIMPL_MEM` - The expression is not implemented but does access `src` memory
 
+### Function Call Outputs
 
+Prior to version 5.4, a function call could only return a list of variables as output. The `output` property on call instructions remains a list of variables, but a function call's `output_exprs` is a list of expressions that describe in more detail how each return value is delivered to the caller, and also adds support for indirect stores. The expressions in the list are one of:
+
+* `MLIL_VAR_OUTPUT` - a whole variable is written. The simplest, most common case.
+* `MLIL_VAR_OUTPUT_FIELD` - a field of a variable (at byte `offset`) is written. Used when the return value is placed into part of a larger structure.
+* `MLIL_STORE_OUTPUT` - the return value is stored to memory at the given destination expression. Used for indirect returns that do not target a local variable.
+
+Additionally, a return value can be the following expression, wrapping one of the above:
+
+* `MLIL_RETURN_BY_REF` - Wraps `src` to indicate that the value is being returned indirectly through a caller-supplied pointer. The inner expression will be one of the `MLIL_VAR_OUTPUT`, `MLIL_VAR_OUTPUT_FIELD`, or `MLIL_STORE_OUTPUT` instructions.

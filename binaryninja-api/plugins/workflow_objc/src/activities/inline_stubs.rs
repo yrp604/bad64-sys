@@ -1,4 +1,4 @@
-use binaryninja::workflow::AnalysisContext;
+use binaryninja::{function::InlineDuringAnalysis, workflow::AnalysisContext};
 
 use crate::{metadata::GlobalState, Error};
 
@@ -19,7 +19,7 @@ pub fn process(ac: &AnalysisContext) -> Result<(), Error> {
     };
 
     if objc_stubs.contains(&func.start()) {
-        func.set_auto_inline_during_analysis(true);
+        func.set_auto_inline_during_analysis(InlineDuringAnalysis::InlineUsingCallAddress);
     }
 
     Ok(())

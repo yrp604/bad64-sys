@@ -1,4 +1,4 @@
-// Copyright 2016-2025 Vector 35 Inc.
+// Copyright 2016-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,16 +13,15 @@
 // limitations under the License.
 
 #pragma once
-#include <stdexcept>
-#include <exception>
+#include <functional>
+#include <string_view>
+#include <utility>
 
-// XXX: Compiled directly into the core for performance reasons
-// Will still work fine compiled independently, just at about a
-// 50-100% performance penalty due to FFI overhead
+// Compiled directly into the core for performance reasons. It also works when
+// compiled independently, but benchmarks after the DemangledTypeNode and
+// template simplifier refactors showed approximately 25% better performance
+// when compiled directly into the core instead of through the FFI.
 #ifdef BINARYNINJACORE_LIBRARY
-#include "qualifiedname.h"
-#include "type.h"
-#include "architecture.h"
 #include "binaryview.h"
 #include "demangle.h"
 #define BN BinaryNinjaCore
@@ -35,105 +34,147 @@
 #define _STD_VECTOR std::vector
 #endif
 
-class DemangleException: public std::exception
-{
-	_STD_STRING m_message;
-public:
-	DemangleException(_STD_STRING msg="Attempt to read beyond bounds or missing expected character"): m_message(msg){}
-	virtual const char* what() const noexcept { return m_message.c_str(); }
-};
+#include "demangler/demangled_reader.h"
+
 
 class DemangleGNU3
 {
-	class Reader
+public:
+	using ParamList = _STD_VECTOR<DemangledTypeNode::Param>;
+	using TypeNodeRef = DemangledTypeNode::NodeRef;
+private:
+	struct NodeRef
 	{
-	public:
-		Reader(const _STD_STRING& data);
-		_STD_STRING PeekString(size_t count=1);
-		char Peek();
-		bool NextIsOneOf(const _STD_STRING& list);
-		_STD_STRING GetRaw();
-		char Read();
-		_STD_STRING ReadString(size_t count=1);
-		_STD_STRING ReadUntil(char sentinal);
-		void Consume(size_t count=1);
-		size_t Length() const;
-		void UnRead(size_t count=1);
-	private:
-		_STD_STRING m_data;
-		size_t m_offset;
-	};
+		TypeNodeRef type;
+		std::shared_ptr<ParamList> templatePack;
+		bool emptyTemplatePack = false;
+		bool templatePackExpansion = false;
 
-	class SubstitutionList
-	{
-		_STD_VECTOR<BN::TypeBuilder> m_typeList;
-	public:
-		SubstitutionList();
-		~SubstitutionList();
-		void PushType(BN::TypeBuilder t);
-		void PopType();
-		const BN::TypeBuilder& GetType(size_t reference) const;
-		void PrintSubstitutionTable() const;
-		size_t Size() const { return m_typeList.size(); }
-		void Clear() { m_typeList.clear(); }
-	};
+		NodeRef() = default;
+		NodeRef(std::nullptr_t) {}
+		NodeRef(TypeNodeRef typeRef): type(std::move(typeRef)) {}
 
-	BN::QualifiedName m_varName;
-	Reader m_reader;
-	BN::Architecture* m_arch;
-	_STD_VECTOR<BN::TypeBuilder> m_substitute;
-	_STD_VECTOR<BN::TypeBuilder> m_templateSubstitute;
-	_STD_VECTOR<_STD_VECTOR<BN::TypeBuilder>> m_functionSubstitute;
+		static NodeRef EmptyTemplatePack()
+		{
+			NodeRef ref;
+			ref.emptyTemplatePack = true;
+			return ref;
+		}
+
+		static NodeRef TemplateParamPack(ParamList args)
+		{
+			NodeRef ref;
+			ref.templatePack = std::make_shared<ParamList>(std::move(args));
+			ref.emptyTemplatePack = ref.templatePack->empty();
+			for (auto& arg : *ref.templatePack)
+			{
+				if (arg.type)
+				{
+					ref.type = arg.type;
+					break;
+				}
+			}
+			return ref;
+		}
+
+		static NodeRef TemplateParamPackExpansion(ParamList args)
+		{
+			NodeRef ref = TemplateParamPack(std::move(args));
+			ref.templatePackExpansion = true;
+			return ref;
+		}
+
+		explicit operator bool() const { return type != nullptr; }
+		[[nodiscard]] bool IsTemplateParamPack() const { return templatePack != nullptr; }
+		[[nodiscard]] bool IsTemplateParamPackExpansion() const { return templatePackExpansion; }
+		DemangledTypeNode& operator*() const { return *type; }
+		DemangledTypeNode* operator->() const { return type.get(); }
+		operator TypeNodeRef() const { return type; }
+	};
+	using NodeRefList = _STD_VECTOR<NodeRef>;
+
+	static constexpr size_t MAX_DEMANGLE_NODE_LENGTH = 8192;
+	static constexpr size_t MAX_DEMANGLE_NESTING_DEPTH = 1024;
+	_STD_STRING m_mangledName;
+	DemangleReader m_reader{m_mangledName, MAX_DEMANGLE_NODE_LENGTH, false};
+	std::reference_wrapper<BN::Platform> m_platform;
+	NodeRefList m_substitute;
+	NodeRefList m_templateSubstitute;
+	_STD_VECTOR<NodeRefList> m_functionSubstitute;
+	NodeRef m_lastTypeRef;
 	_STD_STRING m_lastName;
-	BNNameType m_nameType;
-	bool m_localType;
-	bool m_hasReturnType;
 	bool m_isParameter;
-	bool m_shouldDeleteReader;
 	bool m_topLevel;
 	bool m_isOperatorOverload;
+	bool m_parsingLambdaParams;
+	size_t m_lambdaTemplateParamBase;
+	// Forward template reference support (for cv conversion operator types).
+	// When m_permitForwardTemplateRefs is true, DemangleTemplateSubstitution()
+	// returns a shared placeholder node instead of throwing for out-of-bounds
+	// template params. m_pendingForwardRefs records those nodes so that
+	// ResolveForwardTemplateRefs() can replace their contents once args are known.
+	bool m_permitForwardTemplateRefs;
+	bool m_inLocalName;
+	size_t m_nestingDepth;
+	struct ForwardRef
+	{
+		size_t index;
+		NodeRef typeRef;
+	};
+	_STD_VECTOR<ForwardRef> m_pendingForwardRefs;
+	using NestingGuard = DemangleNestingGuard<MAX_DEMANGLE_NESTING_DEPTH>;
+	void ResolveForwardTemplateRefs(DemangledTypeNode& type, const ParamList& args);
 	enum SymbolType { Function, FunctionWithReturn, Data, VTable, Rtti, Name};
-	BN::QualifiedName DemangleBaseUnresolvedName();
-	BN::TypeBuilder DemangleUnresolvedType();
-	_STD_STRING DemangleUnarySuffixExpression(const _STD_STRING& op);
-	_STD_STRING DemangleUnaryPrefixExpression(const _STD_STRING& op);
-	_STD_STRING DemangleBinaryExpression(const _STD_STRING& op);
-	_STD_STRING DemangleUnaryPrefixType(const _STD_STRING& op);
+	StringList DemangleBaseUnresolvedName();
+	DemangledTypeNode DemangleUnresolvedType();
+	_STD_STRING DemangleUnarySuffixExpression(std::string_view op);
+	_STD_STRING DemangleUnaryPrefixExpression(std::string_view op, DemangledTypeNode* outNode = nullptr);
+	_STD_STRING DemangleBinaryExpression(std::string_view op, DemangledTypeNode* outNode = nullptr);
+	_STD_STRING DemangleUnaryPrefixType(std::string_view op);
 	_STD_STRING DemangleTypeString();
 	_STD_STRING DemangleExpressionList();
-	BN::TypeBuilder DemangleUnqualifiedName();
-	_STD_STRING DemangleSourceName();
+	DemangledTypeNode DemangleUnqualifiedName();
+	std::string_view DemangleSourceName();
 	_STD_STRING DemangleNumberAsString();
-	_STD_STRING DemangleInitializer();
-	_STD_STRING DemangleExpression();
+	_STD_STRING DemangleExpression(DemangledTypeNode* outNode = nullptr);
 	_STD_STRING DemanglePrimaryExpression();
-	BN::TypeBuilder DemangleName();
-	BN::TypeBuilder DemangleLocalName();
+	NodeRef DemangleTemplateSubstitutionEntry(NodeRef* outTypeRef = nullptr);
+	bool TryDemangleTemplateParamExpressionPackExpansion(_STD_STRING& expr, bool& emptyPack);
+	DemangledTypeNode DemangleName(bool* mayHaveImplicitThis = nullptr);
+	DemangledTypeNode DemangleLocalName();
 
 	void DemangleCVQualifiers(bool& cnst, bool& vltl, bool& rstrct);
-	BN::TypeBuilder DemangleSubstitution();
-	const BN::TypeBuilder& DemangleTemplateSubstitution();
-	void DemangleTemplateArgs(_STD_VECTOR<BN::FunctionParameter>& args);
-	bool DemangleEncoding(BN::Type** type, BN::QualifiedName& outName);
-	BN::TypeBuilder DemangleFunction(bool cnst, bool vltl);
-	BN::TypeBuilder DemangleType();
+	DemangledTypeNode DemangleSubstitution(NodeRef* outTypeRef = nullptr);
+	DemangledTypeNode DemangleTemplateSubstitution(NodeRef* outTypeRef = nullptr);
+	bool DemangleTemplateArg(ParamList& args, bool* hadNonTypeArg = nullptr);
+	void DemangleTemplateArgs(ParamList& args, bool* hadNonTypeArg = nullptr);
+	DemangledTypeNode DemangleFunction(bool cnst, bool vltl);
+	DemangledTypeNode DemangleType();
 	int64_t DemangleNumber();
-	BN::TypeBuilder DemangleNestedName();
-	void PushTemplateType(BN::TypeBuilder type);
-	const BN::TypeBuilder& GetTemplateType(size_t ref);
-	void PushType(BN::TypeBuilder type);
-	const BN::TypeBuilder& GetType(size_t ref);
-	static bool DemangleGlobalHeader(_STD_STRING& name, _STD_STRING& header);
+	DemangledTypeNode DemangleNestedName(bool* allTypeTemplateArgs = nullptr, bool pushBareTemplatePrefix = true);
+	void PushEmptyTemplateParamSubstitution();
+	NodeRef PushType(const DemangledTypeNode& type);
+	NodeRef PushType(DemangledTypeNode&& type);
+	NodeRef GetTypeRef(size_t ref);
+	const DemangledTypeNode& GetType(size_t ref);
+	bool AppendTemplateParamPackExpansion(ParamList& params, NodeRef expansion, bool functionParameter);
+
+#ifdef GNUDEMANGLE_DEBUG
+	const DemangledTypeNode& GetTemplateType(size_t ref);
+	void PrintTables();
+#endif
 
 public:
-	DemangleGNU3(BN::Architecture* arch, const _STD_STRING& mangledName);
-	BN::TypeBuilder DemangleSymbol(BN::QualifiedName& varName);
-	BN::QualifiedName GetVarName() const { return m_varName; }
-	static bool IsGNU3MangledString(const _STD_STRING& name);
+	DemangleGNU3(BN::Platform& platform, _STD_STRING mangledName);
+	void Reset(BN::Platform& platform, _STD_STRING mangledName);
+	DemangledTypeNode DemangleSymbol(
+		StringList& varName, bool simplifyTemplates = false, bool recoverImplicitThis = true);
+};
 
-	// Tread lightly on this landmine; a BinaryView* will be converted to a bool; use an explicit (BN::Ref<BN::BinaryView>)view cast
-	static bool DemangleStringGNU3(BN::Architecture* arch, const _STD_STRING& name, BN::Ref<BN::Type>& outType, BN::QualifiedName& outVarName, const BN::Ref<BN::BinaryView>& view);
-	static bool DemangleStringGNU3(BN::Architecture* arch, const _STD_STRING& name, BN::Ref<BN::Type>& outType, BN::QualifiedName& outVarName, BN::BinaryView* view);
-	static bool DemangleStringGNU3(BN::Architecture* arch, const _STD_STRING& name, BN::Ref<BN::Type>& outType, BN::QualifiedName& outVarName);
-	void PrintTables();
+
+class DemangleGNU3Static
+{
+public:
+	static bool IsGNU3MangledString(std::string_view name);
+	static bool DemangleGlobalHeader(_STD_STRING& name, _STD_STRING& header);
 };

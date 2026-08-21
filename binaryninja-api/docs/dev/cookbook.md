@@ -9,7 +9,64 @@ One of the best ways to learn a complicated API is to simply find the right exam
 
  That said, most of those examples tend to be more complex and so the following recipes are meant to be simple but useful building-blocks with which to learn useful techniques. Many of them also make use of the built-in Python console's [magic variables](../guide/index.md#magic-console-variables):
 
-# Recipes
+## Loading Files & Databases
+
+When scripting from the Binary Ninja UI, the `bv` magic variable is already defined and available in the Python console or scripts loaded via `File -> Run Script...`. You can directly use `bv` to access the currently open binary.
+
+If you have Binary Ninja Commercial and above (Commercial, Ultimate, and Enterprise), you can also use Binary Ninja headlessly as a library. This allows you to write standalone scripts that load and analyze files without the UI.
+
+!!! note "Headless Usage Requirement"
+    Using Binary Ninja as a library (headlessly) is only available in Binary Ninja Commercial and above. This feature is not available in the Personal edition.
+
+### Basic file loading
+
+```python
+from binaryninja import load
+
+# Using context manager (recommended)
+with load('/bin/ls') as bv:
+    if bv is not None:
+        print(f"{bv.arch.name}: {hex(bv.entry_point)}")
+
+# Without context manager - must close manually
+bv = load('/bin/ls')
+if bv is not None:
+    print(f"Loaded {bv.file.filename}")
+    bv.file.close()  # Important: prevents memory leaks
+```
+
+### Loading with options
+
+```python
+from binaryninja import load
+
+bv = load('/bin/ls', options={
+    'loader.imageBase': 0xfffffff0000,
+    'loader.macho.processFunctionStarts': False,
+    'analysis.mode': 'basic'
+})
+```
+
+### Loading a database
+
+```python
+from binaryninja import load
+
+# .bndb files use the same API
+bv = load('/path/to/analysis.bndb')
+```
+
+### Controlling analysis
+
+```python
+from binaryninja import load
+
+# Load without running analysis
+bv = load('/bin/ls', update_analysis=False)
+if bv is not None:
+    bv.update_analysis_and_wait()  # Run analysis manually
+    bv.file.close()
+```
 
 ## Navigation / Search
 
@@ -138,7 +195,7 @@ As defined by having the highest sum of incoming and outgoing calls. Adjust acco
 ```python
 max(bv.functions, key=lambda x: len(x.callers + x.callees))
 ```
-j
+
 ### Accessing cross references
 
 This recipe is useful for iterating over all of the HLIL cross-references of a given interesting function:
@@ -314,6 +371,32 @@ from binaryninjaui import FileContext, UIContext
 data = BinaryView.new(b'\x00\x00\x01')
 context = FileContext(data.file, data, '')
 execute_on_main_thread(lambda: UIContext.activeContext().openFileContext(context))
+```
+
+## Version Checking
+
+### Checking Binary Ninja version
+
+Plugins often need to check the Binary Ninja version to ensure compatibility or conditionally enable features. Use [`core_version_info()`](https://api.binary.ninja/#binaryninja.core_version_info) and [`CoreVersionInfo`](https://api.binary.ninja/#binaryninja.CoreVersionInfo) for clean version comparisons:
+
+```python
+from binaryninja import core_version_info, CoreVersionInfo
+
+# Check minimum version requirement
+if core_version_info() >= CoreVersionInfo(5, 1, 8104):
+    # Use API only available in 5.1.8104 and later
+    print("New API is available")
+else:
+    # Fall back to older API
+    print("Using legacy API")
+
+# Parse and compare against a version string
+if core_version_info() >= CoreVersionInfo("4.2.0"):
+    print("Version 4.2.0 or later detected")
+
+# Access individual version components
+version = core_version_info()
+print(f"Running Binary Ninja {version.major}.{version.minor}.{version.build}-{version.channel}")
 ```
 
 ## Debuging & Logging

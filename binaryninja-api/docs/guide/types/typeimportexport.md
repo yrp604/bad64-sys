@@ -57,51 +57,61 @@ Since you need to specify the include paths for system headers, you will need to
 
 On these systems, you can run a command to print the default search path for compilation:
 
-    gcc -Wp,-v -E -
-    clang -Wp,-v -E -
+```bash
+gcc -Wp,-v -E -
+clang -Wp,-v -E -
+```
 
 For the directories printed by this command, you should include them with `-isystem<path>` in the order specified.
 
 For example on macOS, with Xcode 13:
 
-    $ clang -Wp,-v -E -
-    clang -cc1 version 13.0.0 (clang-1300.0.29.3) default target arm64-apple-darwin21.6.0
-    ignoring nonexistent directory "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/local/include"
-    ignoring nonexistent directory "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/Library/Frameworks"
-    #include "..." search starts here:
-    #include <...> search starts here:
-     /usr/local/include
-     /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/13.0.0/include
-     /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include
-     /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include
-     /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks (framework directory)
-    End of search list.
+```text
+$ clang -Wp,-v -E -
+clang -cc1 version 13.0.0 (clang-1300.0.29.3) default target arm64-apple-darwin21.6.0
+ignoring nonexistent directory "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/local/include"
+ignoring nonexistent directory "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/Library/Frameworks"
+#include "..." search starts here:
+#include <...> search starts here:
+ /usr/local/include
+ /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/13.0.0/include
+ /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include
+ /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include
+ /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks (framework directory)
+End of search list.
+```
 
 From this example, the flags would be: (note: not including the framework directory line)
 
-    -isystem/usr/local/include
-    -isystem/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/13.0.0/include
-    -isystem/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include
-    -isystem/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include
+```text
+-isystem/usr/local/include
+-isystem/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/13.0.0/include
+-isystem/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include
+-isystem/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include
+```
 
 Another example on Arch Linux:
 
-    $ gcc -Wp,-v -E -
-    ignoring nonexistent directory "/usr/lib/gcc/x86_64-pc-linux-gnu/12.2.0/../../../../../../../../x86_64-pc-linux-gnu/include"
-    #include "..." search starts here:
-    #include <...> search starts here:
-     /usr/lib/gcc/x86_64-pc-linux-gnu/12.2.0/include
-     /usr/local/include
-     /usr/lib/gcc/x86_64-pc-linux-gnu/12.2.0/include-fixed
-     /usr/include
-    End of search list.
+```text
+$ gcc -Wp,-v -E -
+ignoring nonexistent directory "/usr/lib/gcc/x86_64-pc-linux-gnu/12.2.0/../../../../../../../../x86_64-pc-linux-gnu/include"
+#include "..." search starts here:
+#include <...> search starts here:
+ /usr/lib/gcc/x86_64-pc-linux-gnu/12.2.0/include
+ /usr/local/include
+ /usr/lib/gcc/x86_64-pc-linux-gnu/12.2.0/include-fixed
+ /usr/include
+End of search list.
+```
 
 From this example, the flags would be:
 
-    -isystem/usr/lib/gcc/x86_64-pc-linux-gnu/12.2.0/include
-    -isystem/usr/local/include
-    -isystem/usr/lib/gcc/x86_64-pc-linux-gnu/12.2.0/include-fixed
-    -isystem/usr/include
+```text
+-isystem/usr/lib/gcc/x86_64-pc-linux-gnu/12.2.0/include
+-isystem/usr/local/include
+-isystem/usr/lib/gcc/x86_64-pc-linux-gnu/12.2.0/include-fixed
+-isystem/usr/include
+```
 
 ##### For Windows
 
@@ -109,29 +119,35 @@ For windows, there's no easy command to list all the include paths, so you have 
 
 You will end up with something like the following for user mode:
 
-    -x c -std=c99
-    -isystem"C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Tools\MSVC\14.28.29333\include"
-    -isystem"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\ucrt"
-    -isystem"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\shared"
-    -isystem"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\um"
+```text
+-x c -std=c99
+-isystem"C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Tools\MSVC\14.28.29333\include"
+-isystem"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\ucrt"
+-isystem"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\shared"
+-isystem"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\um"
+```
 
 Or, for kernel mode:
 
-    -x c -std=c99
-    -isystem"C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Tools\MSVC\14.28.29333\include"
-    -isystem"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\ucrt"
-    -isystem"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\shared"
-    -isystem"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\km"
+```text
+-x c -std=c99
+-isystem"C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Tools\MSVC\14.28.29333\include"
+-isystem"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\ucrt"
+-isystem"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\shared"
+-isystem"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\km"
+```
 
 Note that some header files might require manually including a specific `windows.h` header which necessitates specifying a target platform to get the appropriate includes:
 
-    --target=x86_64-pc-windows-msvc
-    -x c -std=c99
-    -include"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\um\windows.h"
-    -isystem"C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Tools\MSVC\14.28.29333\include"
-    -isystem"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\ucrt"
-    -isystem"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\shared"
-    -isystem"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\um"
+```text
+--target=x86_64-pc-windows-msvc
+-x c -std=c99
+-include"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\um\windows.h"
+-isystem"C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Tools\MSVC\14.28.29333\include"
+-isystem"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\ucrt"
+-isystem"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\shared"
+-isystem"C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\um"
+```
 
 
 ##### Cross-Platform Targets
@@ -146,24 +162,24 @@ If you want to compile code using the structures you defined during your analysi
 
 Binary Ninja pulls type information from a variety of sources. The highest-level source are the platform types loaded for the given platform (which includes operating system and architecture). There are two sources of platform types. The first are shipped with the product in a [binary path](../index.md#directories). The second location is in your [user folder](../index.md#user-folder) and is intended for you to put custom platform types.
 
-???+ Danger "Warning"
+!!! Warning "Warning"
     Do NOT make changes to platform types in the binary path as they will be overwritten any time Binary Ninja updates.
 
 Platform types are used to define types that should be available to all programs available on that particular platform. They are only for global common types. Consider, for example, that you might want to add the following on Windows:
 
-```
+```c
 typedef uint8_t u8;
 ```
 
 You could write this type into:
 
-```
+```text
 /home/user/.binaryninja/types/platform/windows-x86.c
 ```
 
 And any time you opened a 32bit Windows binary, that type would be available to use. However, please note that these are not substitutes for [Type Libraries](../../dev/annotation.md#type-libraries).  Type Libraries are used to provide a collection of types for a given library such as a libc, or common DLL.
 
-???+ Warning "Tip"
+!!! Tip "Tip"
     If you don't know the specific platform (and thus filename) you need to create for a given file, just enter `bv.platform` in the scripting console.
 
 ### Common Types
@@ -172,7 +188,7 @@ You may wish to provide types that are common across multiple architectures or p
 
 For example, something like:
 
-```
+```bash
 $ pwd
 /home/user/.binaryninja/types/platform
 $ cat windows-x86.c

@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -318,14 +318,6 @@ where
 
 #[allow(private_bounds)]
 impl<P: CoreArrayProviderInner> ArrayGuard<P> {
-    pub(crate) unsafe fn new(raw: *mut P::Raw, count: usize, context: P::Context) -> Self {
-        Self {
-            contents: raw,
-            count,
-            context,
-        }
-    }
-
     #[inline]
     pub fn len(&self) -> usize {
         self.count

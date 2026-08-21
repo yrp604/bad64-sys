@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -30,6 +30,13 @@ impl DataBuffer {
 
     pub(crate) fn as_raw(&self) -> *mut BNDataBuffer {
         self.0
+    }
+
+    /// Return the raw pointer to the underlying data buffer, to be freed later with `BNFreeDataBuffer`.
+    pub fn into_raw(self) -> *mut BNDataBuffer {
+        let ptr = self.0;
+        std::mem::forget(self);
+        ptr
     }
 
     pub fn new(data: &[u8]) -> Self {
@@ -234,7 +241,7 @@ impl Eq for DataBuffer {}
 
 impl PartialOrd for DataBuffer {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.as_ref().cmp(other.as_ref()))
+        Some(self.cmp(other))
     }
 }
 

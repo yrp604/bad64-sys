@@ -4,6 +4,7 @@
 
 #include "SharedCacheUINotifications.h"
 #include <sharedcacheapi.h>
+#include "mediumlevelilinstruction.h"
 #include "ui/sidebar.h"
 #include "ui/linearview.h"
 #include "ui/viewframe.h"
@@ -14,6 +15,57 @@ using namespace BinaryNinja;
 using namespace SharedCacheAPI;
 
 UINotifications* UINotifications::m_instance = nullptr;
+
+// Resolve a stub function at `addr` to the constant target of its jump or tail call. Stub functions
+// are identified by the `j_` symbol prefix that the shared cache workflow applies when renaming them.
+static std::optional<uint64_t> ResolveStubTarget(BinaryView& view, uint64_t addr)
+{
+	auto symbol = view.GetSymbolByAddress(addr);
+	if (!symbol || symbol->GetShortName().rfind("j_", 0) != 0)
+		return std::nullopt;
+
+	auto func = view.GetAnalysisFunction(view.GetDefaultPlatform(), addr);
+	if (!func)
+		return std::nullopt;
+
+	// Skip any function that is very clearly not a stub (not a single basic block with only a few instructions).
+	const auto blocks = func->GetBasicBlocks();
+	constexpr uint64_t maxStubLength = 0x20;
+	if (blocks.size() != 1 || blocks[0]->GetLength() > maxStubLength)
+		return std::nullopt;
+
+	auto mlil = func->GetMediumLevelIL();
+	if (!mlil)
+		return std::nullopt;
+
+	const auto mlilBlocks = mlil->GetBasicBlocks();
+	if (mlilBlocks.size() != 1 || mlilBlocks[0]->GetEnd() == mlilBlocks[0]->GetStart())
+		return std::nullopt;
+
+	// The jump or tail call terminates the stub's single basic block, so it can only be the last instruction.
+	const auto instr = mlil->GetInstruction(mlilBlocks[0]->GetEnd() - 1);
+	if (instr.operation != MLIL_JUMP && instr.operation != MLIL_TAILCALL)
+		return std::nullopt;
+
+	const auto dest = instr.GetDestExpr();
+	if (dest.operation != MLIL_CONST_PTR && dest.operation != MLIL_CONST)
+		return std::nullopt;
+
+	return dest.GetConstant();
+}
+
+// The address a token-based load action should operate on. A stub function's address is in an
+// already-loaded image, so resolve it to its target and offer to load what the stub jumps to.
+static uint64_t TokenAddress(const UIActionContext& ctx)
+{
+	uint64_t addr = ctx.token.token.value;
+	if (!ctx.binaryView->GetSectionsAt(addr).empty())
+	{
+		if (auto target = ResolveStubTarget(*ctx.binaryView, addr))
+			return *target;
+	}
+	return addr;
+}
 
 void UINotifications::init()
 {
@@ -95,19 +147,21 @@ void UINotifications::OnViewChange(UIContext* context, ViewFrame* frame, const Q
 	};
 
 	auto loadRegionTokenAction = [](const UIActionContext& ctx) {
+		uint64_t addr = TokenAddress(ctx);
 		BackgroundThread::create(ctx.context->mainWindow())
-			->thenBackground([ctx](){ loadRegionAtAddr(*ctx.binaryView, ctx.token.token.value); })
+			->thenBackground([ctx, addr](){ loadRegionAtAddr(*ctx.binaryView, addr); })
 			->start();
 	};
 
 	auto loadImageTokenAction = [](const UIActionContext& ctx) {
+		uint64_t addr = TokenAddress(ctx);
 		BackgroundThread::create(ctx.context->mainWindow())
-			->thenBackground([ctx](){ loadImageAtAddr(*ctx.binaryView, ctx.token.token.value); })
+			->thenBackground([ctx, addr](){ loadImageAtAddr(*ctx.binaryView, addr); })
 			->start();
 	};
 
 	auto isValidUnloadedRegionAction = [](const UIActionContext& ctx) {
-		uint64_t addr = ctx.token.token.value;
+		uint64_t addr = TokenAddress(ctx);
 		// Check if the region is already loaded in the view.
 		if (!ctx.binaryView->GetSectionsAt(addr).empty())
 			return false;
@@ -118,7 +172,7 @@ void UINotifications::OnViewChange(UIContext* context, ViewFrame* frame, const Q
 	};
 
 	auto isValidUnloadedImageAction = [](const UIActionContext& ctx) {
-		uint64_t addr = ctx.token.token.value;
+		uint64_t addr = TokenAddress(ctx);
 		// Check if the image is already loaded in the view.
 		if (!ctx.binaryView->GetSectionsAt(addr).empty())
 			return false;
@@ -139,7 +193,7 @@ void UINotifications::OnViewChange(UIContext* context, ViewFrame* frame, const Q
 		auto controller = SharedCacheController::GetController(*ctx.binaryView);
 		if (!controller)
 			return QString("NO CONTROLLER");
-		uint64_t addr = ctx.token.token.value;
+		uint64_t addr = TokenAddress(ctx);
 		auto region = controller->GetRegionContaining(addr);
 		if (!region)
 			return QString("NO REGION");
@@ -150,7 +204,7 @@ void UINotifications::OnViewChange(UIContext* context, ViewFrame* frame, const Q
 		auto controller = SharedCacheController::GetController(*ctx.binaryView);
 		if (!controller)
 			return QString("NO CONTROLLER");
-		uint64_t addr = ctx.token.token.value;
+		uint64_t addr = TokenAddress(ctx);
 		auto image = controller->GetImageContaining(addr);
 		if (!image)
 			return QString("NO IMAGE");

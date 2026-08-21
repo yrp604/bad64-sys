@@ -1,4 +1,5 @@
 use std::ffi::c_void;
+use std::fmt::Debug;
 use std::path::PathBuf;
 use std::ptr::NonNull;
 use std::time::SystemTime;
@@ -7,10 +8,10 @@ use binaryninjacore_sys::*;
 
 use super::{
     sync, CollaborationPermissionLevel, NameChangeset, Permission, Remote, RemoteFile,
-    RemoteFileType, RemoteFolder,
+    RemoteFileType, RemoteFolder, RemoteUser,
 };
 
-use crate::binary_view::{BinaryView, BinaryViewExt};
+use crate::binary_view::BinaryView;
 use crate::database::Database;
 use crate::file_metadata::FileMetadata;
 use crate::progress::{NoProgressCallback, ProgressCallback};
@@ -760,42 +761,40 @@ impl RemoteProject {
         success.then_some(()).ok_or(())
     }
 
-    /// Determine if a user is in any of the view/edit/admin groups.
+    /// Determine if a user has view permission (either directly or from a group)
     ///
     /// # Arguments
     ///
-    /// * `username` - Username of user to check
-    pub fn can_user_view(&self, username: &str) -> bool {
-        let username = username.to_cstr();
-        unsafe { BNRemoteProjectCanUserView(self.handle.as_ptr(), username.as_ptr()) }
+    /// * `user` - User to check
+    pub fn can_user_view(&self, user: &RemoteUser) -> bool {
+        unsafe { BNRemoteProjectCanUserView(self.handle.as_ptr(), user.handle.as_ptr()) }
     }
 
-    /// Determine if a user is in any of the edit/admin groups.
+    /// Determine if a user has edit permission (either directly or from a group)
     ///
     /// # Arguments
     ///
-    /// * `username` - Username of user to check
-    pub fn can_user_edit(&self, username: &str) -> bool {
-        let username = username.to_cstr();
-        unsafe { BNRemoteProjectCanUserEdit(self.handle.as_ptr(), username.as_ptr()) }
+    /// * `user` - User to check
+    pub fn can_user_edit(&self, user: &RemoteUser) -> bool {
+        unsafe { BNRemoteProjectCanUserEdit(self.handle.as_ptr(), user.handle.as_ptr()) }
     }
 
-    /// Determine if a user is in the admin group.
+    /// Determine if a user has admin permission (either directly or from a group)
     ///
     /// # Arguments
     ///
-    /// * `username` - Username of user to check
-    pub fn can_user_admin(&self, username: &str) -> bool {
-        let username = username.to_cstr();
-        unsafe { BNRemoteProjectCanUserAdmin(self.handle.as_ptr(), username.as_ptr()) }
+    /// * `user` - User to check
+    pub fn can_user_admin(&self, user: &RemoteUser) -> bool {
+        unsafe { BNRemoteProjectCanUserAdmin(self.handle.as_ptr(), user.handle.as_ptr()) }
     }
 
     /// Get the default directory path for a remote Project. This is based off
     /// the Setting for collaboration.directory, the project's id, and the
     /// project's remote's id.
-    pub fn default_project_path(&self) -> String {
+    pub fn default_project_path(&self) -> PathBuf {
         let result = unsafe { BNCollaborationDefaultProjectPath(self.handle.as_ptr()) };
-        unsafe { BnString::into_string(result) }
+        let result_str = unsafe { BnString::into_string(result) };
+        PathBuf::from(result_str)
     }
 
     /// Upload a file, with database, to the remote under the given project
@@ -870,11 +869,22 @@ impl RemoteProject {
     //}
 }
 
+impl Debug for RemoteProject {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RemoteProject")
+            .field("id", &self.id())
+            .field("name", &self.name())
+            .field("description", &self.description())
+            .finish()
+    }
+}
+
 impl PartialEq for RemoteProject {
     fn eq(&self, other: &Self) -> bool {
         self.id() == other.id()
     }
 }
+
 impl Eq for RemoteProject {}
 
 impl ToOwned for RemoteProject {
@@ -884,6 +894,9 @@ impl ToOwned for RemoteProject {
         unsafe { RefCountable::inc_ref(self) }
     }
 }
+
+unsafe impl Send for RemoteProject {}
+unsafe impl Sync for RemoteProject {}
 
 unsafe impl RefCountable for RemoteProject {
     unsafe fn inc_ref(handle: &Self) -> Ref<Self> {

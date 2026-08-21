@@ -58,13 +58,13 @@ public:
 
 	void SetMatchedConstraints(const std::vector<Warp::Constraint>& analysisConstraints);
 
-	void setFilter(const std::string&) override;
+	void setFilter(const std::string&, FilterOptions options) override;
 
 	void scrollToFirstItem() override {}
 
 	void scrollToCurrentItem() override {}
 
-	void selectFirstItem() override {}
+	void ensureSelection() override {}
 
-	void activateFirstItem() override {}
+	void activateSelection() override {}
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -65,6 +65,13 @@ PluginCommand& PluginCommand::operator=(const PluginCommand& cmd)
 	m_command.name = BNAllocString(cmd.m_command.name);
 	m_command.description = BNAllocString(cmd.m_command.description);
 	return *this;
+}
+
+
+void PluginCommand::GlobalPluginCommandActionCallback(void* ctxt)
+{
+	RegisteredGlobalCommand* cmd = (RegisteredGlobalCommand*)ctxt;
+	cmd->action();
 }
 
 
@@ -172,6 +179,13 @@ void PluginCommand::ProjectPluginCommandActionCallback(void *ctxt, BNProject* pr
 }
 
 
+bool PluginCommand::GlobalPluginCommandIsValidCallback(void* ctxt)
+{
+	RegisteredGlobalCommand* cmd = (RegisteredGlobalCommand*)ctxt;
+	return cmd->isValid();
+}
+
+
 bool PluginCommand::DefaultPluginCommandIsValidCallback(void* ctxt, BNBinaryView* view)
 {
 	RegisteredDefaultCommand* cmd = (RegisteredDefaultCommand*)ctxt;
@@ -273,6 +287,23 @@ bool PluginCommand::ProjectPluginCommandIsValidCallback(void* ctxt, BNProject* p
 	RegisteredProjectCommand* cmd = (RegisteredProjectCommand*)ctxt;
 	Ref<Project> projectObject = new Project(BNNewProjectReference(project));
 	return cmd->isValid(projectObject);
+}
+
+
+void PluginCommand::RegisterGlobal(const string& name, const string& description, const function<void()>& action)
+{
+	RegisterGlobal(name, description, action, []() { return true; });
+}
+
+
+void PluginCommand::RegisterGlobal(const string& name, const string& description,
+	const function<void()>& action, const function<bool()>& isValid)
+{
+	RegisteredGlobalCommand* cmd = new RegisteredGlobalCommand;
+	cmd->action = action;
+	cmd->isValid = isValid;
+	BNRegisterPluginCommandGlobal(name.c_str(), description.c_str(), GlobalPluginCommandActionCallback,
+		GlobalPluginCommandIsValidCallback, cmd);
 }
 
 
@@ -515,6 +546,10 @@ bool PluginCommand::IsValid(const PluginCommandContext& ctxt) const
 {
 	switch (m_command.type)
 	{
+	case GlobalPluginCommand:
+		if (!m_command.globalIsValid)
+			return true;
+		return m_command.globalIsValid(m_command.context);
 	case DefaultPluginCommand:
 		if (!ctxt.binaryView)
 			return false;
@@ -606,6 +641,9 @@ void PluginCommand::Execute(const PluginCommandContext& ctxt) const
 
 	switch (m_command.type)
 	{
+	case GlobalPluginCommand:
+		m_command.globalCommand(m_command.context);
+		break;
 	case DefaultPluginCommand:
 		m_command.defaultCommand(m_command.context, ctxt.binaryView->GetObject());
 		break;

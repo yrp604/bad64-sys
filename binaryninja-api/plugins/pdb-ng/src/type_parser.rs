@@ -1,4 +1,4 @@
-// Copyright 2022-2025 Vector 35 Inc.
+// Copyright 2022-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,17 +19,17 @@ use crate::struct_grouper::group_structure;
 use crate::PDBParserInstance;
 use anyhow::{anyhow, Result};
 use binaryninja::architecture::Architecture;
-use binaryninja::binary_view::BinaryViewExt;
-use binaryninja::calling_convention::CoreCallingConvention;
+use binaryninja::calling_convention::{CallingConvention, CoreCallingConvention};
 use binaryninja::confidence::{Conf, MAX_CONFIDENCE};
 use binaryninja::platform::Platform;
 use binaryninja::rc::Ref;
 use binaryninja::types::{
     BaseStructure, EnumerationBuilder, EnumerationMember, FunctionParameter, MemberAccess,
-    MemberScope, NamedTypeReference, NamedTypeReferenceClass, QualifiedName, StructureBuilder,
-    StructureMember, StructureType, Type, TypeBuilder, TypeClass,
+    MemberScope, NamedTypeReference, NamedTypeReferenceClass, ReturnValue, StructureBuilder,
+    StructureMember, StructureType, Type, TypeBuilder, TypeClass, ValueLocation,
+    ValueLocationComponent,
 };
-use log::warn;
+use binaryninja::variable::{Variable, VariableSourceType};
 use pdb::Error::UnimplementedTypeKind;
 use pdb::{
     ArgumentList, ArrayType, BaseClassType, BitfieldType, ClassKind, ClassType, EnumerateType,
@@ -79,7 +79,7 @@ pub struct ParsedMember {
     pub ty: Conf<Ref<Type>>,
     /// Member name
     pub name: String,
-    /// Offset in structure
+    /// Offset in structure (bytes)
     pub offset: u64,
     /// Access flags
     pub access: MemberAccess,
@@ -136,7 +136,7 @@ pub struct ParsedMemberFunction {
 #[derive(Debug, Clone)]
 pub struct VirtualBaseClass {
     /// Base class name
-    pub base_name: QualifiedName,
+    pub base_name: String,
     /// Base class type
     pub base_type: Ref<Type>,
     /// Offset in this class where the base's fields are located
@@ -153,7 +153,7 @@ pub enum ParsedType {
     /// No info other than type data
     Bare(Ref<Type>),
     /// Named fully parsed class/enum/union/etc type
-    Named(QualifiedName, Ref<Type>),
+    Named(String, Ref<Type>),
     /// Function procedure
     Procedure(ParsedProcedureType),
     /// Bitfield entries
@@ -163,7 +163,7 @@ pub enum ParsedType {
     /// One member in a structure/union
     Member(ParsedMember),
     /// Base class name and offset details
-    BaseClass(QualifiedName, StructureMember),
+    BaseClass(String, StructureMember),
     /// One member in an enumeration
     Enumerate(EnumerationMember),
     /// List of arguments to a function
@@ -352,7 +352,8 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
                     let name = ty
                         .get_named_type_reference()
                         .ok_or(anyhow!("expected ntr"))?
-                        .name();
+                        .name()
+                        .to_string();
                     if Self::is_name_anonymous(&name) {
                         continue;
                     }
@@ -405,9 +406,8 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
 
         // Cleanup a couple builtin names
         for &name in BUILTIN_NAMES {
-            let builtin_qualified_name = QualifiedName::from(name);
-            if self.named_types.contains_key(&builtin_qualified_name) {
-                self.named_types.remove(&builtin_qualified_name);
+            if self.named_types.contains_key(name) {
+                self.named_types.remove(name);
                 self.log(|| format!("Remove builtin type {}", name));
             }
         }
@@ -556,7 +556,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
                                         if let Some(_old) =
                                             self.named_types.insert(name.clone(), parsed.clone())
                                         {
-                                            warn!("Found two types both named `{}`, only one will be used.", name);
+                                            tracing::warn!("Found two types both named `{}`, only one will be used.", name);
                                         }
                                     }
                                 }
@@ -570,7 +570,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
                     }
                 }
                 Err(UnimplementedTypeKind(k)) if k != 0 => {
-                    warn!("Not parsing unimplemented type {}: kind {:x?}", ty, k);
+                    tracing::warn!("Not parsing unimplemented type {}: kind {:x?}", ty, k);
                 }
                 Err(e) => {
                     self.log(|| format!("Could not parse type: {}: {}", ty, e));
@@ -742,7 +742,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
         self.log(|| format!("Got Class type: {:x?}", data));
 
         let raw_class_name = data.name.to_string();
-        let class_name = QualifiedName::from(raw_class_name);
+        let class_name = raw_class_name.to_string();
 
         self.log(|| format!("Named: {}", class_name));
 
@@ -776,7 +776,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
         structure.packed(data.properties.packed());
 
         if let Some(fields) = data.fields {
-            self.namespace_stack.push(class_name.to_string());
+            self.namespace_stack.push(class_name.clone());
             let success = self.parse_structure_fields(&mut structure, fields, finder);
             self.namespace_stack.pop();
             let _ = success?;
@@ -852,7 +852,6 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
             &format!(
                 "`{}`",
                 self.namespace_stack
-                    .items
                     .last()
                     .ok_or_else(|| anyhow!("Expected class in ns stack"))?
             ),
@@ -922,10 +921,9 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
                         *base_offset,
                         base_type.width(),
                     ));
-                    warn!(
+                    tracing::warn!(
                         "Class `{}` uses virtual inheritance. Type information may be inaccurate.",
                         self.namespace_stack
-                            .items
                             .last()
                             .ok_or_else(|| anyhow!("Expected class in ns stack"))?
                     );
@@ -935,10 +933,9 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
         }
 
         if bases.len() > 1 {
-            warn!(
+            tracing::warn!(
                 "Class `{}` has multiple base classes. Type information may be inaccurate.",
                 self.namespace_stack
-                    .items
                     .last()
                     .ok_or_else(|| anyhow!("Expected class in ns stack"))?
             );
@@ -957,8 +954,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
             for base_class in &base_classes {
                 match base_class {
                     ParsedType::BaseClass(base_name, _base_type) => {
-                        let mut vt_base_name = base_name.clone();
-                        vt_base_name.items.push("VTable".to_string());
+                        let vt_base_name = format!("{}::VTable", base_name);
 
                         match self.named_types.get(&vt_base_name) {
                             Some(vt_base_type)
@@ -1034,8 +1030,8 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
                 return Err(anyhow!("Expected class in ns stack"));
             }
 
-            let mut vt_name = self.namespace_stack.clone();
-            vt_name.items.push("VTable".to_string());
+            let class_name = self.namespace_stack.last().cloned().unwrap_or_default();
+            let vt_name = format!("{}::VTable", class_name);
             self.named_types.insert(vt_name.clone(), vt_type.clone());
 
             let vt_pointer = Type::pointer(
@@ -1148,29 +1144,11 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
             }
         }
 
-        let mut fancy_return_type = return_type.clone();
+        let mut fancy_return_value = ReturnValue {
+            ty: Conf::new(return_type.clone(), MAX_CONFIDENCE),
+            location: None,
+        };
         let mut fancy_arguments = arguments.clone();
-
-        if data.attributes.cxx_return_udt()
-            || !self.can_fit_in_register(data.return_type, finder, true)
-        {
-            // Return UDT??
-            // This probably means the return value got pushed to the stack
-            fancy_return_type =
-                Type::pointer(&self.arch, &Conf::new(return_type.clone(), MAX_CONFIDENCE));
-            fancy_arguments.insert(
-                0,
-                FunctionParameter::new(
-                    Conf::new(fancy_return_type.clone(), MAX_CONFIDENCE),
-                    "__return".to_string(),
-                    None,
-                ),
-            );
-        }
-
-        if let Some(this_ptr) = &this_pointer_type {
-            self.insert_this_pointer(&mut fancy_arguments, this_ptr.clone())?;
-        }
 
         let convention = self
             .cv_call_t_to_calling_convention(data.attributes.calling_convention())
@@ -1185,6 +1163,37 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
                 }
             });
 
+        if data.attributes.cxx_return_udt()
+            || !self.can_fit_in_register(data.return_type, finder, true)
+        {
+            // Return UDT??
+            // This probably means the return value got pushed to the stack
+            if self.settings.get_bool_with_opts(
+                "pdb.features.passStructuresByValue",
+                &mut self.settings_query_opts,
+            ) {
+                fancy_return_value.location =
+                    self.indirect_return_value_location(&convention, &fancy_return_value);
+            } else {
+                fancy_return_value.ty = Conf::new(
+                    Type::pointer(&self.arch, &return_type.clone()),
+                    MAX_CONFIDENCE,
+                );
+                fancy_arguments.insert(
+                    0,
+                    FunctionParameter::new(
+                        fancy_return_value.ty.clone(),
+                        "__return".to_string(),
+                        None,
+                    ),
+                );
+            }
+        }
+
+        if let Some(this_ptr) = &this_pointer_type {
+            self.insert_this_pointer(&mut fancy_arguments, this_ptr.clone())?;
+        }
+
         let func = Type::function_with_opts(
             &Conf::new(return_type, MAX_CONFIDENCE),
             arguments.as_slice(),
@@ -1194,7 +1203,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
         );
 
         let fancy_func = Type::function_with_opts(
-            &Conf::new(fancy_return_type, MAX_CONFIDENCE),
+            fancy_return_value,
             fancy_arguments.as_slice(),
             is_varargs,
             convention,
@@ -1268,9 +1277,12 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
     ) -> Result<Option<Box<ParsedType>>> {
         self.log(|| format!("Got Nested type: {:x?}", data));
         let mut class_name_ns = self.namespace_stack.clone();
-        class_name_ns.push(data.name.to_string().into());
+        class_name_ns.push(data.name.to_string().to_string());
         let ty = self.type_index_to_bare(data.nested_type, finder, false)?;
-        Ok(Some(Box::new(ParsedType::Named(class_name_ns, ty))))
+        Ok(Some(Box::new(ParsedType::Named(
+            class_name_ns.join("::"),
+            ty,
+        ))))
     }
 
     fn handle_base_class_type(
@@ -1289,7 +1301,8 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
                 let name = t
                     .get_named_type_reference()
                     .ok_or(anyhow!("Expected NTR to have NTR"))?
-                    .name();
+                    .name()
+                    .to_string();
                 (name, t.clone())
             }
             e => return Err(anyhow!("Unexpected base class type: {:x?}", e)),
@@ -1297,7 +1310,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
 
         // Try to resolve the full base type
         let resolved_type = match self.try_type_index_to_bare(data.base_class, finder, true)? {
-            Some(ty) => Type::named_type_from_type(member_name.clone(), ty.as_ref()),
+            Some(ty) => Type::named_type_from_type(&member_name, ty.as_ref()),
             None => t.clone(),
         };
 
@@ -1313,7 +1326,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
             member_name.clone(),
             StructureMember::new(
                 Conf::new(resolved_type, MAX_CONFIDENCE),
-                member_name.to_string(),
+                member_name,
                 base_offset as u64,
                 access,
                 scope,
@@ -1334,7 +1347,8 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
                 let name = t
                     .get_named_type_reference()
                     .ok_or(anyhow!("Expected NTR to have NTR"))?
-                    .name();
+                    .name()
+                    .to_string();
                 (name, t.clone())
             }
             e => return Err(anyhow!("Unexpected base class type: {:x?}", e)),
@@ -1423,8 +1437,17 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
             }
         }
 
-        let mut fancy_return_type = return_type.clone();
+        let mut fancy_return_value = ReturnValue {
+            ty: return_type.clone(),
+            location: None,
+        };
         let mut fancy_arguments = arguments.clone();
+
+        let convention = self
+            .cv_call_t_to_calling_convention(data.attributes.calling_convention())
+            .map(|cc| Conf::new(cc, MAX_CONFIDENCE))
+            .unwrap_or(Conf::new(self.default_cc.clone(), 0));
+        self.log(|| format!("Convention: {:?}", convention));
 
         let mut return_stacky = data.attributes.cxx_return_udt();
         if let Some(return_type_index) = data.return_type {
@@ -1432,21 +1455,27 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
         }
         if return_stacky {
             // Stack return via a pointer in the first parameter
-            fancy_return_type = Conf::new(
-                Type::pointer(&self.arch, &return_type.clone()),
-                MAX_CONFIDENCE,
-            );
-            fancy_arguments.insert(
-                0,
-                FunctionParameter::new(fancy_return_type.clone(), "__return".to_string(), None),
-            );
+            if self.settings.get_bool_with_opts(
+                "pdb.features.passStructuresByValue",
+                &mut self.settings_query_opts,
+            ) {
+                fancy_return_value.location =
+                    self.indirect_return_value_location(&convention, &fancy_return_value);
+            } else {
+                fancy_return_value.ty = Conf::new(
+                    Type::pointer(&self.arch, &return_type.clone()),
+                    MAX_CONFIDENCE,
+                );
+                fancy_arguments.insert(
+                    0,
+                    FunctionParameter::new(
+                        fancy_return_value.ty.clone(),
+                        "__return".to_string(),
+                        None,
+                    ),
+                );
+            }
         }
-
-        let convention = self
-            .cv_call_t_to_calling_convention(data.attributes.calling_convention())
-            .map(|cc| Conf::new(cc, MAX_CONFIDENCE))
-            .unwrap_or(Conf::new(self.default_cc.clone(), 0));
-        self.log(|| format!("Convention: {:?}", convention));
 
         let func = Type::function_with_opts(
             &return_type,
@@ -1457,7 +1486,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
         );
 
         let fancy_func = Type::function_with_opts(
-            &fancy_return_type,
+            fancy_return_value,
             fancy_arguments.as_slice(),
             is_varargs,
             convention,
@@ -1523,7 +1552,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
         self.log(|| format!("Got Enumeration type: {:x?}", data));
 
         let raw_enum_name = data.name.to_string();
-        let enum_name = QualifiedName::from(raw_enum_name);
+        let enum_name = raw_enum_name.to_string();
         self.log(|| format!("Named: {}", enum_name));
 
         if data.properties.forward_reference() {
@@ -1651,7 +1680,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
         self.log(|| format!("Got Union type: {:x?}", data));
 
         let raw_union_name = data.name.to_string();
-        let union_name = QualifiedName::from(raw_union_name);
+        let union_name = raw_union_name.to_string();
         self.log(|| format!("Named: {}", union_name));
 
         if data.properties.forward_reference() {
@@ -1815,8 +1844,13 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
                 Some(ty) => {
                     // On x86_32, structures are stored on the stack directly
                     // On x64, they are put into pointers if they are not a int size
-                    // TODO: Ugly hack
-                    if self.arch.address_size() == 4 || Self::size_can_fit_in_register(ty.width()) {
+                    if self.arch.address_size() == 4
+                        || Self::size_can_fit_in_register(ty.width())
+                        || self.settings.get_bool_with_opts(
+                            "pdb.features.passStructuresByValue",
+                            &mut self.settings_query_opts,
+                        )
+                    {
                         args.push(FunctionParameter::new(
                             Conf::new(ty.clone(), MAX_CONFIDENCE),
                             "".to_string(),
@@ -1908,7 +1942,8 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
                 let name = type_
                     .get_named_type_reference()
                     .ok_or(anyhow!("expected ntr"))?
-                    .name();
+                    .name()
+                    .to_string();
                 if let Some(full_ntr) = self.named_types.get(&name) {
                     type_ = Type::named_type_from_type(name, full_ntr.as_ref());
                 }
@@ -1955,7 +1990,8 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
             let name = type_
                 .get_named_type_reference()
                 .ok_or(anyhow!("expected ntr"))?
-                .name();
+                .name()
+                .to_string();
             if Self::is_name_anonymous(&name) {
                 if let Some(inner) = inner.as_ref() {
                     type_ = inner.clone();
@@ -1992,8 +2028,8 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
     }
 
     /// Is this name one of the stupid microsoft unnamed type names
-    fn is_name_anonymous(name: &QualifiedName) -> bool {
-        match name.items.last() {
+    fn is_name_anonymous(name: &String) -> bool {
+        match name.split("::").last() {
             Some(item) if item == "<anonymous-tag>" => true,
             Some(item) if item.contains("<unnamed-") => true,
             _ => false,
@@ -2368,6 +2404,58 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
                 true
             }
             _ => false,
+        }
+    }
+
+    /// Determines if there is a non-default location for an indirect return value and returns
+    /// the location if there is one.
+    fn indirect_return_value_location(
+        &self,
+        convention: &Conf<Ref<CoreCallingConvention>>,
+        return_value: &ReturnValue,
+    ) -> Option<Conf<ValueLocation>> {
+        // Non-POD data types are always returned as indirect values. The calling convention
+        // may not know this and try to place them in registers, so check the calling convention
+        // to see if it wants to pass indirectly.
+        // TODO: The structures themselves should have some kind of non-POD attribute so
+        // that the calling convention can determine this by default
+        let default_return_location = convention
+            .contents
+            .return_value_location(Some(self.bv), &return_value);
+        if default_return_location.indirect {
+            None
+        } else {
+            let variable = if let Some(reg) = convention.contents.int_arg_registers().get(0) {
+                Variable::new(
+                    VariableSourceType::RegisterVariableSourceType,
+                    0,
+                    reg.0 as i64,
+                )
+            } else {
+                Variable::new(
+                    VariableSourceType::StackVariableSourceType,
+                    0,
+                    self.arch.address_size() as i64,
+                )
+            };
+            Some(Conf::new(
+                ValueLocation {
+                    components: vec![ValueLocationComponent {
+                        variable,
+                        offset: 0,
+                        size: Some(return_value.ty.contents.width()),
+                    }],
+                    indirect: true,
+                    returned_pointer: convention.contents.return_int_reg().map(|reg| {
+                        Variable::new(
+                            VariableSourceType::RegisterVariableSourceType,
+                            0,
+                            reg.0 as i64,
+                        )
+                    }),
+                },
+                MAX_CONFIDENCE,
+            ))
         }
     }
 }

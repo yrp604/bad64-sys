@@ -44,7 +44,7 @@ Besides the typical `&&` bitwise operators, BNIL makes use of `sx` and `zx` to i
 
 Expressions in BNIL can have one of the following suffixes to indicate a size:
 
-```
+```text
 .q -- Qword (8 bytes)
 .d -- Dword (4 bytes)
 .w -- Word (2 bytes)
@@ -53,7 +53,7 @@ Expressions in BNIL can have one of the following suffixes to indicate a size:
 
 Note that floating point IL instructions have their own possible size suffixes:
 
-```
+```text
 .h -- Half (2 bytes)
 .s -- Single (4 bytes)
 .d -- Double (8 bytes)
@@ -63,7 +63,7 @@ Note that floating point IL instructions have their own possible size suffixes:
 
 Additionally, floating point IL operations are indicated with a prefixed `f`, like:
 
-```
+```text
 f* -- Floating-point multiplication
 f/ -- Floating-point division
 f+ -- Floating-point addition
@@ -89,7 +89,7 @@ A number of macros are used to simplify output when rendering IL where no standa
 
 So putting all that together, if you were to see the following in an IL expression:
 
-```
+```text
 sx.q(rax_2:0.d)
 ```
 
@@ -97,13 +97,13 @@ It represents the lower 32-bits of variable `rax_2`, sign-extended into a 64-bit
 
 ## Using the API with ILs
 
-When you want to use the API to access BNIL instructions, here are a few tips that will help you with the task. First, if you want to learn what properties different instructions have, instead of manually using `dir()` or looking in the documentation ([1](https://docs.binary.ninja/dev/bnil-llil.html#the-instructions), [2](https://docs.binary.ninja/dev/bnil-mlil.html#the-instruction-set)) lists is to use the [BNIL Graph](https://github.com/Vector35/community-plugins#:~:text=BNIL%20Instruction%20Graph) plugin. Another very useful plugin is the [IL Hierarch](https://github.com/Vector35/community-plugins#:~:text=into%20Binary%20Ninja.-,ilhierarchy,-Fabian%20Freyer) plugin. This plugin is extremely useful for showing the _structure_ of IL instructions relative to one another. You can use several APIs ([1](https://api.binary.ninja/binaryninja.lowlevelil-module.html#binaryninja.lowlevelil.LowLevelILInstruction.show_llil_hierarchy), [2](https://api.binary.ninja/binaryninja.mediumlevelil-module.html#binaryninja.mediumlevelil.MediumLevelILInstruction.show_mlil_hierarchy), [3](https://api.binary.ninja/binaryninja.highlevelil-module.html#binaryninja.highlevelil.HighLevelILInstruction.show_hlil_hierarchy)) to see this overall structure, but the IL Hierarchy plugin lets you select a single IL instruction and see visually which categories of IL instructions it is in.
+When you want to use the API to access BNIL instructions, here are a few tips that will help you with the task. First, if you want to learn what properties different instructions have, instead of manually using `dir()` or looking in the documentation ([1](https://docs.binary.ninja/dev/bnil-llil.html#the-instructions), [2](https://docs.binary.ninja/dev/bnil-mlil.html#the-instruction-set)) lists is to use the [BNIL Graph](https://github.com/Vector35/community-plugins#:~:text=BNIL%20Instruction%20Graph) plugin. Another very useful plugin is the [IL Hierarchy](https://github.com/Vector35/community-plugins#:~:text=into%20Binary%20Ninja.-,ilhierarchy,-Fabian%20Freyer) plugin. This plugin is extremely useful for showing the _structure_ of IL instructions relative to one another. You can use several APIs ([1](https://api.binary.ninja/binaryninja.lowlevelil-module.html#binaryninja.lowlevelil.LowLevelILInstruction.show_llil_hierarchy), [2](https://api.binary.ninja/binaryninja.mediumlevelil-module.html#binaryninja.mediumlevelil.MediumLevelILInstruction.show_mlil_hierarchy), [3](https://api.binary.ninja/binaryninja.highlevelil-module.html#binaryninja.highlevelil.HighLevelILInstruction.show_hlil_hierarchy)) to see this overall structure, but the IL Hierarchy plugin lets you select a single IL instruction and see visually which categories of IL instructions it is in.
 
 ![LLIL Hierarchy](../img/llil-hierarchy.png)
 
 So for example, if you want to try to determine whether a given instruction is a Call (which includes syscalls) you can use:
 
-```
+```python
 for h in current_hlil.instructions:
     if isinstance(h, Call):
         print(f"{str(h)} is a Call of some sort")

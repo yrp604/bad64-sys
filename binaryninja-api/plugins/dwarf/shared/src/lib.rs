@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ use gimli::{EndianRcSlice, Endianity, RunTimeEndian, SectionId};
 use object::{Object, ObjectSection};
 
 use binaryninja::{
-    binary_view::{BinaryView, BinaryViewBase, BinaryViewExt},
+    binary_view::{BinaryView, BinaryViewBase},
     settings::Settings,
     Endianness,
 };
@@ -69,7 +69,7 @@ pub fn is_raw_dwo_dwarf(view: &BinaryView) -> bool {
 pub fn can_use_debuginfod(view: &BinaryView) -> bool {
     let mut query_options = QueryOptions::new_with_view(view);
     has_build_id_section(view)
-        && Settings::new().get_bool_with_opts("network.enableDebuginfod", &mut query_options)
+        && Settings::global().get_bool_with_opts("network.enableDebuginfod", &mut query_options)
 }
 
 pub fn has_build_id_section(view: &BinaryView) -> bool {

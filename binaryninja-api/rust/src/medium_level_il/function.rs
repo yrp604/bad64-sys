@@ -8,12 +8,10 @@ use super::{
 };
 use crate::architecture::CoreArchitecture;
 use crate::basic_block::BasicBlock;
-use crate::confidence::Conf;
 use crate::disassembly::DisassemblySettings;
 use crate::flowgraph::FlowGraph;
 use crate::function::{Function, Location};
 use crate::rc::{Array, CoreArrayProvider, CoreArrayProviderInner, Ref, RefCountable};
-use crate::types::Type;
 use crate::variable::{PossibleValueSet, RegisterValue, SSAVariable, UserVariableValue, Variable};
 
 // TODO: Does this belong here?
@@ -116,44 +114,6 @@ impl MediumLevelILFunction {
         unsafe { Array::new(blocks, count, context) }
     }
 
-    #[deprecated = "Use `Function::create_user_stack_var` instead"]
-    pub fn create_user_stack_var<'a, C: Into<Conf<&'a Type>>>(
-        &self,
-        offset: i64,
-        var_type: C,
-        name: &str,
-    ) {
-        self.function()
-            .create_user_stack_var(offset, var_type, name)
-    }
-
-    #[deprecated = "Use `Function::delete_user_stack_var` instead"]
-    pub fn delete_user_stack_var(&self, offset: i64) {
-        self.function().delete_user_stack_var(offset)
-    }
-
-    #[deprecated = "Use `Function::create_user_var` instead"]
-    pub fn create_user_var<'a, C: Into<Conf<&'a Type>>>(
-        &self,
-        var: &Variable,
-        var_type: C,
-        name: &str,
-        ignore_disjoint_uses: bool,
-    ) {
-        self.function()
-            .create_user_var(var, var_type, name, ignore_disjoint_uses)
-    }
-
-    #[deprecated = "Use `Function::delete_user_var` instead"]
-    pub fn delete_user_var(&self, var: &Variable) {
-        self.function().delete_user_var(var)
-    }
-
-    #[deprecated = "Use `Function::is_var_user_defined` instead"]
-    pub fn is_var_user_defined(&self, var: &Variable) -> bool {
-        self.function().is_var_user_defined(var)
-    }
-
     /// Allows the user to specify a PossibleValueSet value for an MLIL
     /// variable at its definition site.
     ///
@@ -245,34 +205,6 @@ impl MediumLevelILFunction {
         Ok(())
     }
 
-    #[deprecated = "Use `Function::create_auto_stack_var` instead"]
-    pub fn create_auto_stack_var<'a, T: Into<Conf<&'a Type>>>(
-        &self,
-        offset: i64,
-        var_type: T,
-        name: &str,
-    ) {
-        self.function()
-            .create_auto_stack_var(offset, var_type, name)
-    }
-
-    #[deprecated = "Use `Function::delete_auto_stack_var` instead"]
-    pub fn delete_auto_stack_var(&self, offset: i64) {
-        self.function().delete_auto_stack_var(offset)
-    }
-
-    #[deprecated = "Use `Function::create_auto_var` instead"]
-    pub fn create_auto_var<'a, C: Into<Conf<&'a Type>>>(
-        &self,
-        var: &Variable,
-        var_type: C,
-        name: &str,
-        ignore_disjoint_uses: bool,
-    ) {
-        self.function()
-            .create_auto_var(var, var_type, name, ignore_disjoint_uses)
-    }
-
     /// Returns a list of ILReferenceSource objects (IL xrefs or cross-references)
     /// that reference the given variable. The variable is a local variable that can be either on the stack,
     /// in a register, or in a flag.
@@ -288,7 +220,7 @@ impl MediumLevelILFunction {
     /// # use binaryninja::variable::Variable;
     /// # let mlil_fun: MediumLevelILFunction = todo!();
     /// # let mlil_var: Variable = todo!();
-    /// let instr_idx = mlil_fun.var_refs(&mlil_var).get(0).expr_idx;
+    /// let instr_addr = mlil_fun.var_refs(&mlil_var).get(0).addr;
     /// ```
     pub fn var_refs(&self, var: &Variable) -> Array<ILReferenceSource> {
         let mut count = 0;
@@ -593,7 +525,7 @@ pub struct ILReferenceSource {
     pub arch: CoreArchitecture,
     pub addr: u64,
     pub graph_type: FunctionGraphType,
-    pub expr_idx: usize,
+    pub expr_idx: MediumLevelExpressionIndex,
 }
 
 impl From<BNILReferenceSource> for ILReferenceSource {
@@ -603,7 +535,7 @@ impl From<BNILReferenceSource> for ILReferenceSource {
             arch: unsafe { CoreArchitecture::from_raw(value.arch) },
             addr: value.addr,
             graph_type: value.type_,
-            expr_idx: value.exprId,
+            expr_idx: MediumLevelExpressionIndex(value.exprId),
         }
     }
 }
@@ -615,7 +547,7 @@ impl From<&BNILReferenceSource> for ILReferenceSource {
             arch: unsafe { CoreArchitecture::from_raw(value.arch) },
             addr: value.addr,
             graph_type: value.type_,
-            expr_idx: value.exprId,
+            expr_idx: MediumLevelExpressionIndex(value.exprId),
         }
     }
 }

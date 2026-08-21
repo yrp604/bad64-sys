@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -51,6 +51,14 @@ namespace BinaryNinja
 		    \return True if successful
 		 */
 		bool Initialize();
+
+		/*!
+		    Authenticate to the server with an access token
+		    \param token Token of auth session
+		    \param remember Remember token in keychain
+		    \return True if successful
+		 */
+		bool AuthenticateWithToken(const std::string& token, bool remember);
 
 		/*!
 		    Authenticate to the Enterprise server with username and password
@@ -233,8 +241,8 @@ namespace BinaryNinja
 		public:
 			/*!
 			    RAII constructor that checks out a license. License will be refreshed
-			    automatically in a background thread while checked out, in intervals of `duration`
-			    In the event of program crash, the license will expire `duration` seconds after
+			    automatically in a background thread while checked out, in intervals of \c duration
+			    In the event of program crash, the license will expire \c duration seconds after
 			    the most recent background refresh, so you may want a smaller value like 60 if
 			    you expect your program to crash / be killed often.
 			    See class docs for example usage.

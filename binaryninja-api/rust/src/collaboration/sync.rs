@@ -6,14 +6,14 @@ use std::ffi::{c_char, c_void};
 use std::path::{Path, PathBuf};
 use std::ptr::NonNull;
 
-use crate::binary_view::{BinaryView, BinaryViewExt};
+use crate::binary_view::BinaryView;
 use crate::database::{snapshot::Snapshot, Database};
 use crate::file_metadata::FileMetadata;
 use crate::progress::{NoProgressCallback, ProgressCallback};
 use crate::project::file::ProjectFile;
 use crate::rc::Ref;
 use crate::string::{raw_to_string, BnString, IntoCStr};
-use crate::type_archive::{TypeArchive, TypeArchiveMergeConflict};
+use crate::types::archive::{TypeArchive, TypeArchiveMergeConflict};
 
 /// Get the default directory path for a remote Project. This is based off the Setting for
 /// collaboration.directory, the project's id, and the project's remote's id.
@@ -138,7 +138,7 @@ pub fn get_remote_for_local_database(database: &Database) -> Result<Option<Ref<R
         .ok_or(())
 }
 
-/// Get the Remote for a BinaryView
+/// Get the [`Remote`] for the given [`BinaryView`].
 pub fn get_remote_for_binary_view(bv: &BinaryView) -> Result<Option<Ref<Remote>>, ()> {
     let Some(db) = bv.file().database() else {
         return Ok(None);
@@ -243,18 +243,18 @@ where
 
 /// Completely sync a database, pushing/pulling/merging/applying changes
 ///
-/// * `database` - Database to sync
+/// * `metadata` - File opened from database to sync
 /// * `file` - File to sync with
 /// * `conflict_handler` - Function to call to resolve snapshot conflicts
 /// * `name_changeset` - Function to call for naming a pushed changeset, if necessary
 pub fn sync_database<C: DatabaseConflictHandler, N: NameChangeset>(
-    database: &Database,
+    metadata: &FileMetadata,
     file: &RemoteFile,
     conflict_handler: C,
     name_changeset: N,
 ) -> Result<(), ()> {
     sync_database_with_progress(
-        database,
+        metadata,
         file,
         conflict_handler,
         name_changeset,
@@ -264,7 +264,7 @@ pub fn sync_database<C: DatabaseConflictHandler, N: NameChangeset>(
 
 /// Completely sync a database, pushing/pulling/merging/applying changes
 ///
-/// * `database` - Database to sync
+/// * `metadata` - File opened from database to sync
 /// * `file` - File to sync with
 /// * `conflict_handler` - Function to call to resolve snapshot conflicts
 /// * `name_changeset` - Function to call for naming a pushed changeset, if necessary
@@ -274,7 +274,7 @@ pub fn sync_database_with_progress<
     P: ProgressCallback,
     N: NameChangeset,
 >(
-    database: &Database,
+    metadata: &FileMetadata,
     file: &RemoteFile,
     mut conflict_handler: C,
     mut name_changeset: N,
@@ -282,7 +282,7 @@ pub fn sync_database_with_progress<
 ) -> Result<(), ()> {
     let success = unsafe {
         BNCollaborationSyncDatabase(
-            database.handle.as_ptr(),
+            metadata.handle,
             file.handle.as_ptr(),
             Some(C::cb_handle_conflict),
             &mut conflict_handler as *mut C as *mut c_void,

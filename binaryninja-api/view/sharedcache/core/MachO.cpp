@@ -457,7 +457,8 @@ std::optional<SharedCacheMachOHeader> SharedCacheMachOHeader::ParseHeaderForAddr
 	return header;
 }
 
-std::vector<CacheSymbol> SharedCacheMachOHeader::ReadSymbolTable(VirtualMemory& vm, const TableInfo &symbolInfo, const TableInfo &stringInfo) const
+std::vector<CacheSymbol> SharedCacheMachOHeader::ReadSymbolTable(VirtualMemory& vm, const TableInfo &symbolInfo, const TableInfo &stringInfo,
+	BNSymbolBinding bindingOverride) const
 {
 	std::vector<CacheSymbol> symbolList;
 	// TODO: This assumes that 95% (or more) are going to be added.
@@ -530,8 +531,16 @@ std::vector<CacheSymbol> SharedCacheMachOHeader::ReadSymbolTable(VirtualMemory& 
 		{
 			if (!flags.has_value())
 			{
-				// TODO: where logger?
-				LogErrorF("Symbol {:?} at address {:#x} is not in any section", symbolName.c_str(), symbolAddress);
+				// In iOS / macOS 27 shared caches, sections such as __objc_stubs are coalesced out of
+				// individual dylibs, leaving a zero-size section whose symbols no longer point at
+				// anything in this image. These are not an error.
+				bool coalescedSection = nlist.n_sect > 0 && (size_t)(nlist.n_sect - 1) < sections.size()
+					&& sections[nlist.n_sect - 1].size == 0;
+				if (!coalescedSection)
+				{
+					// TODO: where logger?
+					LogErrorF("Symbol {:?} at address {:#x} is not in any section", symbolName, symbolAddress);
+				}
 				continue;
 			}
 
@@ -544,11 +553,15 @@ std::vector<CacheSymbol> SharedCacheMachOHeader::ReadSymbolTable(VirtualMemory& 
 		if ((nlist.n_desc & N_ARM_THUMB_DEF) == N_ARM_THUMB_DEF)
 			symbolAddress++;
 
-		CacheSymbol symbol;
-		symbol.address = symbolAddress;
-		symbol.name = std::move(symbolName);
-		symbol.type = symbolType.value();
-		symbolList.emplace_back(symbol);
+		BNSymbolBinding symbolBinding = GlobalBinding;
+		if (bindingOverride != NoBinding)
+			symbolBinding = bindingOverride;
+		else if (dysymPresent && dysymtab.nlocalsym && entryIndex >= dysymtab.ilocalsym && entryIndex < dysymtab.ilocalsym + dysymtab.nlocalsym)
+			symbolBinding = LocalBinding;
+		else if (nlist.n_desc & N_WEAK_DEF)
+			symbolBinding = WeakBinding;
+
+		symbolList.emplace_back(symbolType.value(), symbolBinding, symbolAddress, std::move(symbolName));
 	}
 
 	return symbolList;
@@ -565,6 +578,9 @@ bool SharedCacheMachOHeader::AddExportTerminalSymbol(
 	uint64_t symbolAddress = textBase + imageOffset;
 	if (symbolName.empty() || symbolAddress == 0)
 		return false;
+
+	// Export trie entries are exported by definition.
+	BNSymbolBinding symbolBinding = (symbolFlags & EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION) ? WeakBinding : GlobalBinding;
 
 	// Tries to get the symbol type based off the section containing it.
 	auto sectionSymbolType = [&]() -> BNSymbolType {
@@ -593,10 +609,10 @@ bool SharedCacheMachOHeader::AddExportTerminalSymbol(
 	{
 	case EXPORT_SYMBOL_FLAGS_KIND_REGULAR:
 	case EXPORT_SYMBOL_FLAGS_KIND_THREAD_LOCAL:
-		symbols.emplace_back(sectionSymbolType(), symbolAddress, symbolName);
+		symbols.emplace_back(sectionSymbolType(), symbolBinding, symbolAddress, symbolName);
 		break;
 	case EXPORT_SYMBOL_FLAGS_KIND_ABSOLUTE:
-		symbols.emplace_back(DataSymbol, symbolAddress, symbolName);
+		symbols.emplace_back(DataSymbol, symbolBinding, symbolAddress, symbolName);
 		break;
 	default:
 		LogWarnF("Unhandled export symbol kind: {:#x}", symbolFlags & EXPORT_SYMBOL_FLAGS_KIND_MASK);
@@ -613,7 +629,9 @@ std::vector<CacheSymbol> SharedCacheMachOHeader::ReadExportSymbolTrie(VirtualMem
 		return {};
 	std::vector<CacheSymbol> symbols = {};
 	try {
-		auto [begin, end] = vm.ReadSpan(GetLinkEditFileBase() + exportTrie.dataoff, exportTrie.datasize);
+		auto trieSpan = vm.ReadSpan(GetLinkEditFileBase() + exportTrie.dataoff, exportTrie.datasize);
+		const uint8_t *begin = trieSpan.data();
+		const uint8_t *end = begin + trieSpan.size();
 		const uint8_t *cursor = begin;
 
 		struct Node
@@ -702,7 +720,7 @@ std::vector<CacheSymbol> SharedCacheMachOHeader::ReadExportSymbolTrie(VirtualMem
 			}
 		}
 	}
-	catch (ReadException&)
+	catch (std::exception&)
 	{
 		LogError("Export trie is malformed. Could not load Exported symbol names.");
 	}

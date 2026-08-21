@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -22,6 +22,19 @@
 #include "binaryninjacore.h"
 
 using namespace BinaryNinja;
+
+namespace
+{
+	std::string StringOrEmpty(char* value)
+	{
+		if (!value)
+			return "";
+
+		std::string result = value;
+		BNFreeString(value);
+		return result;
+	}
+}
 
 
 bool ProjectNotification::BeforeOpenProjectCallback(void* ctxt, BNProject* object)
@@ -288,9 +301,7 @@ std::string Project::GetPath() const
 std::string Project::GetFilePathInProject(const Ref<ProjectFile>& file) const
 {
 	char* path = BNProjectGetFilePathInProject(m_object, file->m_object);
-	std::string result = path;
-	BNFreeString(path);
-	return result;
+	return StringOrEmpty(path);
 }
 
 
@@ -514,6 +525,25 @@ std::vector<Ref<ProjectFile>> Project::GetFilesByPathInProject(
 }
 
 
+std::vector<Ref<ProjectFile>> Project::GetFilesInFolder(Ref<ProjectFolder> folder) const
+{
+	size_t count;
+	BNProjectFile** files = BNProjectGetFilesInFolder(m_object, folder ? folder->m_object : nullptr, &count);
+	if (!files)
+		return {};
+
+	std::vector<Ref<ProjectFile>> result;
+	result.reserve(count);
+	for (size_t i = 0; i < count; i++)
+	{
+		result.emplace_back(new ProjectFile(BNNewProjectFileReference(files[i])));
+	}
+
+	BNFreeProjectFileList(files, count);
+	return result;
+}
+
+
 bool Project::PushFile(Ref<ProjectFile> file)
 {
 	return BNProjectPushFile(m_object, file->m_object);
@@ -575,17 +605,13 @@ Ref<Project> ProjectFile::GetProject() const
 std::string ProjectFile::GetPathOnDisk() const
 {
 	char* path = BNProjectFileGetPathOnDisk(m_object);
-	std::string result = path;
-	BNFreeString(path);
-	return result;
+	return StringOrEmpty(path);
 }
 
 std::string ProjectFile::GetPathInProject() const
 {
 	char* path = BNProjectFileGetPathInProject(m_object);
-	std::string result = path;
-	BNFreeString(path);
-	return result;
+	return StringOrEmpty(path);
 }
 
 
@@ -661,6 +687,48 @@ int64_t ProjectFile::GetCreationTimestamp() const
 }
 
 
+bool ProjectFile::AddDependency(Ref<ProjectFile> file)
+{
+	return BNProjectFileAddDependency(m_object, file->m_object);
+}
+
+
+bool ProjectFile::RemoveDependency(Ref<ProjectFile> file)
+{
+	return BNProjectFileRemoveDependency(m_object, file->m_object);
+}
+
+
+std::vector<Ref<ProjectFile>> ProjectFile::GetDependencies() const
+{
+	size_t count = 0;
+	BNProjectFile** deps = BNProjectFileGetDependencies(m_object, &count);
+	std::vector<Ref<ProjectFile>> out;
+	out.reserve(count);
+	for (size_t i = 0; i < count; i++)
+	{
+		out.push_back(new ProjectFile(BNNewProjectFileReference(deps[i])));
+	}
+	BNFreeProjectFileList(deps, count);
+	return out;
+}
+
+
+std::vector<Ref<ProjectFile>> ProjectFile::GetRequiredBy() const
+{
+	size_t count = 0;
+	BNProjectFile** reqBy = BNProjectFileGetRequiredBy(m_object, &count);
+	std::vector<Ref<ProjectFile>> out;
+	out.reserve(count);
+	for (size_t i = 0; i < count; i++)
+	{
+		out.push_back(new ProjectFile(BNNewProjectFileReference(reqBy[i])));
+	}
+	BNFreeProjectFileList(reqBy, count);
+	return out;
+}
+
+
 ProjectFolder::ProjectFolder(BNProjectFolder* folder)
 {
 	m_object = folder;
@@ -732,4 +800,22 @@ bool ProjectFolder::Export(const std::string& destination, const ProgressFunctio
 	ProgressContext cb;
 	cb.callback = progressCallback;
 	return BNProjectFolderExport(m_object, destination.c_str(), &cb, ProgressCallback);
+}
+
+
+std::vector<Ref<ProjectFile>> ProjectFolder::GetFiles() const
+{
+	size_t count = 0;
+	BNProjectFile** files = BNProjectFolderGetFiles(m_object, &count);
+	if (!files)
+		return {};
+
+	std::vector<Ref<ProjectFile>> out;
+	out.reserve(count);
+	for (size_t i = 0; i < count; i++)
+	{
+		out.push_back(new ProjectFile(BNNewProjectFileReference(files[i])));
+	}
+	BNFreeProjectFileList(files, count);
+	return out;
 }

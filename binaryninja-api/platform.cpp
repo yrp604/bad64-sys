@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -124,11 +124,14 @@ void Platform::AdjustTypeParserInputCallback(
 	Ref<TypeParser> parserCpp = new CoreTypeParser(parser);
 
 	vector<string> arguments;
+	arguments.reserve(argumentsLenIn);
 	for (size_t i = 0; i < argumentsLenIn; i ++)
 	{
 		arguments.push_back(argumentsIn[i]);
 	}
+
 	vector<pair<string, string>> sourceFiles;
+	sourceFiles.reserve(sourceFilesLenIn);
 	for (size_t i = 0; i < sourceFilesLenIn; i ++)
 	{
 		sourceFiles.push_back(make_pair(sourceFileNamesIn[i], sourceFileValuesIn[i]));
@@ -141,6 +144,7 @@ void Platform::AdjustTypeParserInputCallback(
 	);
 
 	vector<const char*> argumentsPtrs;
+	argumentsPtrs.reserve(arguments.size());
 	for (auto& argument : arguments)
 	{
 		argumentsPtrs.push_back(argument.c_str());
@@ -446,6 +450,7 @@ std::vector<uint32_t> CorePlatform::GetGlobalRegisters()
 	uint32_t* regs = BNGetPlatformGlobalRegisters(m_object, &count);
 
 	std::vector<uint32_t> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(regs[i]);
 
@@ -489,6 +494,7 @@ void CorePlatform::AdjustTypeParserInput(
 )
 {
 	vector<const char*> argumentsIn;
+	argumentsIn.reserve(arguments.size());
 	for (size_t i = 0; i < arguments.size(); i ++)
 	{
 		argumentsIn.push_back(arguments[i].c_str());
@@ -560,6 +566,7 @@ std::vector<Ref<Platform>> Platform::GetRelatedPlatforms()
 	BNPlatform** related = BNGetRelatedPlatforms(m_object, &count);
 
 	std::vector<Ref<Platform>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		result.push_back(new CorePlatform(BNNewPlatformReference(related[i])));
@@ -655,6 +662,7 @@ vector<Ref<TypeLibrary>> Platform::GetTypeLibraries()
 	BNTypeLibrary** libs = BNGetPlatformTypeLibraries(m_object, &count);
 
 	vector<Ref<TypeLibrary>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		result.push_back(new TypeLibrary(BNNewTypeLibraryReference(libs[i])));
@@ -671,6 +679,7 @@ vector<Ref<TypeLibrary>> Platform::GetTypeLibrariesByName(const std::string& nam
 	BNTypeLibrary** libs = BNGetPlatformTypeLibrariesByName(m_object, name.c_str(), &count);
 
 	vector<Ref<TypeLibrary>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		result.push_back(new TypeLibrary(BNNewTypeLibraryReference(libs[i])));

@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -177,6 +177,7 @@ std::vector<std::string> TypeArchive::GetAllSnapshotIds() const
 		throw ExceptionWithStackTrace("BNGetTypeArchiveAllSnapshotIds");
 
 	std::vector<std::string> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i ++)
 	{
 		result.push_back(ids[i]);
@@ -195,6 +196,7 @@ std::vector<std::string> TypeArchive::GetSnapshotParentIds(const std::string& id
 		throw ExceptionWithStackTrace("BNGetTypeArchiveSnapshotParentIds");
 
 	std::vector<std::string> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i ++)
 	{
 		result.push_back(ids[i]);
@@ -213,6 +215,7 @@ std::vector<std::string> TypeArchive::GetSnapshotChildIds(const std::string& id)
 		throw ExceptionWithStackTrace("BNGetTypeArchiveSnapshotChildIds");
 
 	std::vector<std::string> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i ++)
 	{
 		result.push_back(ids[i]);
@@ -232,6 +235,7 @@ TypeContainer TypeArchive::GetTypeContainer() const
 bool TypeArchive::AddTypes(const std::vector<QualifiedNameAndType>& types)
 {
 	std::vector<BNQualifiedNameAndType> apiTypes;
+	apiTypes.reserve(types.size());
 	for (auto& type : types)
 	{
 		BNQualifiedNameAndType qnat;
@@ -347,6 +351,7 @@ std::vector<std::string> TypeArchive::GetTypeIds(std::string snapshot) const
 		throw ExceptionWithStackTrace("BNGetTypeArchiveTypeIds");
 
 	std::vector<std::string> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		result.push_back(ids[i]);
@@ -366,6 +371,7 @@ std::vector<QualifiedName> TypeArchive::GetTypeNames(std::string snapshot) const
 		throw ExceptionWithStackTrace("BNGetTypeArchiveTypeNames");
 
 	std::vector<QualifiedName> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		result.push_back(QualifiedName::FromAPIObject(&names[i]));
@@ -499,6 +505,7 @@ std::string TypeArchive::NewSnapshotTransaction(std::function<void(const std::st
 	ctxt.func = func;
 
 	std::vector<const char*> apiParents;
+	apiParents.reserve(parents.size());
 	for (const auto& parent: parents)
 	{
 		apiParents.push_back(parent.c_str());

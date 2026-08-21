@@ -6,13 +6,13 @@ use binaryninjacore_sys::*;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::fmt::Debug;
+use std::path::Path;
 use std::ptr::NonNull;
 
 use crate::binary_view::BinaryView;
 use crate::data_buffer::DataBuffer;
 use crate::database::kvs::KeyValueStore;
 use crate::database::snapshot::{Snapshot, SnapshotId};
-use crate::file_metadata::FileMetadata;
 use crate::progress::{NoProgressCallback, ProgressCallback};
 use crate::rc::{Array, Ref, RefCountable};
 use crate::string::{BnString, IntoCStr};
@@ -30,7 +30,18 @@ impl Database {
         Ref::new(Self { handle })
     }
 
-    /// Get a snapshot by its id, or None if no snapshot with that id exists
+    /// Open a database with the given file path
+    pub fn open_existing(path: impl AsRef<Path>) -> Result<Ref<Self>, ()> {
+        let db = unsafe { Self::ref_from_raw(NonNull::new(BNCreateDatabaseInstance()).ok_or(())?) };
+        let path_raw = path.as_ref().to_cstr();
+        if unsafe { BNDatabaseOpenExisting(db.handle.as_ptr(), path_raw.as_ptr()) } {
+            Ok(db)
+        } else {
+            Err(())
+        }
+    }
+
+    /// Get a [`Snapshot`] by its `id`, or `None` if no snapshot with that `id` exists.
     pub fn snapshot_by_id(&self, id: SnapshotId) -> Option<Ref<Snapshot>> {
         let result = unsafe { BNGetDatabaseSnapshot(self.handle.as_ptr(), id.0) };
         NonNull::new(result).map(|handle| unsafe { Snapshot::ref_from_raw(handle) })
@@ -113,8 +124,9 @@ impl Database {
         SnapshotId(new_id)
     }
 
-    /// Trim a snapshot's contents in the database by id, but leave the parent/child
-    /// hierarchy intact. Future references to this snapshot will return False for has_contents
+    /// Trim a snapshot's contents in the database but leave the parent/child hierarchy intact.
+    ///
+    /// NOTE: Future references to this snapshot will return `false` for [`Database::snapshot_has_data`]
     pub fn trim_snapshot(&self, id: SnapshotId) -> Result<(), ()> {
         if unsafe { BNTrimDatabaseSnapshot(self.handle.as_ptr(), id.0) } {
             Ok(())
@@ -180,22 +192,15 @@ impl Database {
         unsafe { BNWriteDatabaseGlobalData(self.handle.as_ptr(), key_raw.as_ptr(), value.as_raw()) }
     }
 
-    /// Get the owning FileMetadata
-    pub fn file(&self) -> Ref<FileMetadata> {
-        let result = unsafe { BNGetDatabaseFile(self.handle.as_ptr()) };
-        assert!(!result.is_null());
-        FileMetadata::ref_from_raw(result)
-    }
-
     /// Get the backing analysis cache kvs
     pub fn analysis_cache(&self) -> Ref<KeyValueStore> {
         let result = unsafe { BNReadDatabaseAnalysisCache(self.handle.as_ptr()) };
         unsafe { KeyValueStore::ref_from_raw(NonNull::new(result).unwrap()) }
     }
 
-    pub fn reload_connection(&self) {
-        unsafe { BNDatabaseReloadConnection(self.handle.as_ptr()) }
-    }
+    #[deprecated(note = "Use crate::file_metadata::FileMetadata::reopen_moved_database instead")]
+    /// Closes then reopens the database.
+    pub fn reload_connection(&self) {}
 
     pub fn write_analysis_cache(&self, val: &KeyValueStore) -> Result<(), ()> {
         if unsafe { BNWriteDatabaseAnalysisCache(self.handle.as_ptr(), val.handle.as_ptr()) } {

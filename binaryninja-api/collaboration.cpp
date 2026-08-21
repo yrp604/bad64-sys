@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -437,6 +437,7 @@ bool BinaryNinja::Collaboration::TypeArchiveConflictHandlerCallback(void* ctxt, 
 	if (!chctxt->callback)
 		return true;
 	std::vector<Ref<TypeArchiveMergeConflict>> conflictVec;
+	conflictVec.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		conflictVec.push_back(new TypeArchiveMergeConflict(conflicts[i]));
@@ -454,7 +455,7 @@ bool BinaryNinja::Collaboration::NameChangesetCallback(void* ctxt, BNCollaborati
 };
 
 
-void BinaryNinja::Collaboration::SyncDatabase(Ref<Database> database, Ref<RemoteFile> file, std::function<bool(const std::unordered_map<std::string, Ref<AnalysisMergeConflict>>& conflicts)> conflictHandler, ProgressFunction progress, NameChangesetFunction nameChangeset)
+void BinaryNinja::Collaboration::SyncDatabase(Ref<FileMetadata> metadata, Ref<RemoteFile> file, std::function<bool(const std::unordered_map<std::string, Ref<AnalysisMergeConflict>>& conflicts)> conflictHandler, ProgressFunction progress, NameChangesetFunction nameChangeset)
 {
 	ProgressContext pctxt;
 	pctxt.callback = progress;
@@ -465,7 +466,7 @@ void BinaryNinja::Collaboration::SyncDatabase(Ref<Database> database, Ref<Remote
 	NameChangesetContext ncctxt;
 	ncctxt.callback = nameChangeset;
 
-	BNCollaborationSyncDatabase(database->m_object, file->m_object,
+	BNCollaborationSyncDatabase(metadata->m_object, file->m_object,
 		DatabaseConflictHandlerCallback, &chctxt,
 		ProgressCallback, &pctxt,
 		NameChangesetCallback, &ncctxt
@@ -631,11 +632,15 @@ int Remote::GetServerVersion()
 }
 
 
-std::string Remote::GetServerBuildVersion()
+VersionInfo Remote::GetServerBuildVersion()
 {
-	char* buildVersion = BNRemoteGetServerBuildVersion(m_object);
-	std::string result = buildVersion;
-	BNFreeString(buildVersion);
+	BNVersionInfo bnVersion = BNRemoteGetServerBuildVersion(m_object);
+	VersionInfo result;
+	result.major = bnVersion.major;
+	result.minor = bnVersion.minor;
+	result.build = bnVersion.build;
+	result.channel = bnVersion.channel;
+	BNFreeString(bnVersion.channel);
 	return result;
 }
 
@@ -658,6 +663,7 @@ std::vector<std::pair<std::string, std::string>> Remote::GetAuthBackends()
 		throw RemoteException("Failed to get authentication backends");
 
 	std::vector<std::pair<std::string, std::string>> results;
+	results.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		results.push_back({methods[i], names[i]});
@@ -855,6 +861,7 @@ std::vector<std::pair<uint64_t, std::string>> Remote::SearchGroups(const std::st
 		throw RemoteException("Failed to search groups");
 
 	std::vector<std::pair<uint64_t, std::string>> results;
+	results.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		results.push_back({ids[i], names[i]});
@@ -875,16 +882,16 @@ void Remote::PullGroups(ProgressFunction progress)
 }
 
 
-Ref<CollabGroup> Remote::CreateGroup(const std::string& name, const std::vector<std::string>& usernames)
+Ref<CollabGroup> Remote::CreateGroup(const std::string& name, const std::vector<Ref<CollabUser>>& users)
 {
-	const char** cstrNames = new const char*[usernames.size()];
-	for (size_t i = 0; i < usernames.size(); i++)
+	BNCollaborationUser** cUsers = new BNCollaborationUser*[users.size()];
+	for (size_t i = 0; i < users.size(); i++)
 	{
-		cstrNames[i] = usernames[i].c_str();
+		cUsers[i] = users[i]->m_object;
 	}
 
-	BNCollaborationGroup* group = BNRemoteCreateGroup(m_object, name.c_str(), cstrNames, usernames.size());
-	delete[] cstrNames;
+	BNCollaborationGroup* group = BNRemoteCreateGroup(m_object, name.c_str(), cUsers, users.size());
+	delete[] cUsers;
 	if (!group)
 		return nullptr;
 	return new CollabGroup(group);
@@ -965,6 +972,7 @@ std::vector<std::pair<std::string, std::string>> Remote::SearchUsers(const std::
 		throw RemoteException("Failed to search users");
 
 	std::vector<std::pair<std::string, std::string>> results;
+	results.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		results.push_back({ids[i], names[i]});
@@ -1072,22 +1080,38 @@ void CollabGroup::SetName(const std::string& name)
 }
 
 
-void CollabGroup::SetUsernames(const std::vector<std::string>& usernames)
+std::vector<Ref<CollabUser>> CollabGroup::GetUsers()
 {
-	const char** cNames = new const char*[usernames.size()];
-	for (size_t i = 0; i < usernames.size(); i++)
+	size_t count = 0;
+	BNCollaborationUser** users = BNCollaborationGroupGetUsers(m_object, &count);
+	std::vector<Ref<CollabUser>> out;
+	out.reserve(count);
+	for (size_t i = 0; i < count; i++)
 	{
-		cNames[i] = usernames[i].c_str();
+		out.push_back(new CollabUser(BNNewCollaborationUserReference(users[i])));
 	}
-
-	BNCollaborationGroupSetUsernames(m_object, cNames, usernames.size());
-	delete[] cNames;
+	BNFreeCollaborationUserList(users, count);
+	return out;
 }
 
 
-bool CollabGroup::ContainsUser(const std::string& username)
+void CollabGroup::SetUsers(const std::vector<Ref<CollabUser>>& users)
 {
-	return BNCollaborationGroupContainsUser(m_object, username.c_str());
+	size_t count = users.size();
+	BNCollaborationUser** cUsers = new BNCollaborationUser*[count];
+	for (size_t i = 0; i < count; i++)
+	{
+		cUsers[i] = users[i]->m_object;
+	}
+
+	BNCollaborationGroupSetUsers(m_object, cUsers, count);
+	delete[] cUsers;
+}
+
+
+bool CollabGroup::ContainsUser(Ref<CollabUser> user)
+{
+	return BNCollaborationGroupContainsUser(m_object, user->m_object);
 }
 
 
@@ -1562,21 +1586,21 @@ void RemoteProject::DeletePermission(Ref<CollabPermission> permission)
 }
 
 
-bool RemoteProject::CanUserView(const std::string& username)
+bool RemoteProject::CanUserView(Ref<CollabUser> user)
 {
-	return BNRemoteProjectCanUserView(m_object, username.c_str());
+	return BNRemoteProjectCanUserView(m_object, user->m_object);
 }
 
 
-bool RemoteProject::CanUserEdit(const std::string& username)
+bool RemoteProject::CanUserEdit(Ref<CollabUser> user)
 {
-	return BNRemoteProjectCanUserEdit(m_object, username.c_str());
+	return BNRemoteProjectCanUserEdit(m_object, user->m_object);
 }
 
 
-bool RemoteProject::CanUserAdmin(const std::string& username)
+bool RemoteProject::CanUserAdmin(Ref<CollabUser> user)
 {
-	return BNRemoteProjectCanUserAdmin(m_object, username.c_str());
+	return BNRemoteProjectCanUserAdmin(m_object, user->m_object);
 }
 
 
@@ -1853,14 +1877,23 @@ void RemoteFile::DeleteSnapshot(const Ref<CollabSnapshot> snapshot)
 }
 
 
-std::vector<uint8_t> RemoteFile::Download(ProgressFunction progress)
+void RemoteFile::Download(ProgressFunction progress)
+{
+	ProgressContext pctxt;
+	pctxt.callback = progress;
+	if (!BNRemoteFileDownload(m_object, ProgressCallback, &pctxt))
+		throw RemoteException("Failed to download file");
+}
+
+
+std::vector<uint8_t> RemoteFile::DownloadContents(ProgressFunction progress)
 {
 	ProgressContext pctxt;
 	pctxt.callback = progress;
 	size_t size = 0;
 	uint8_t* data;
-	if (!BNRemoteFileDownload(m_object, ProgressCallback, &pctxt, &data, &size))
-		throw SyncException("Failed to download file");
+	if (!BNRemoteFileDownloadContents(m_object, ProgressCallback, &pctxt, &data, &size))
+		throw SyncException("Failed to download file contents");
 
 	std::vector<uint8_t> out;
 	out.insert(out.end(), &data[0], &data[size]);
@@ -2518,6 +2551,7 @@ std::vector<std::string> CollabSnapshot::GetParentIds()
 	size_t count = 0;
 	char** strs = BNCollaborationSnapshotGetParentIds(m_object, &count);
 	std::vector<std::string> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		result.push_back(strs[i]);
@@ -2532,6 +2566,7 @@ std::vector<std::string> CollabSnapshot::GetChildIds()
 	size_t count = 0;
 	char** strs = BNCollaborationSnapshotGetParentIds(m_object, &count);
 	std::vector<std::string> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		result.push_back(strs[i]);

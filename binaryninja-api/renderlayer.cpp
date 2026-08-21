@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -215,11 +215,13 @@ void RenderLayer::ApplyToLinearViewObject(
 					if (!disasmLines.empty())
 					{
 						ApplyToBlock(lastBlock, disasmLines);
+						Ref<BinaryView> view = blockLines[0].view;
 						Ref<Function> func = blockLines[0].function;
 						Ref<BasicBlock> block = blockLines[0].block;
 						for (auto& blockLine: disasmLines)
 						{
 							LinearDisassemblyLine newLine;
+							newLine.view = view;
 							newLine.type = CodeDisassemblyLineType;
 							newLine.function = func;
 							newLine.block = block;

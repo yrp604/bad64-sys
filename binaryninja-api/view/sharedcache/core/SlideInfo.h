@@ -33,10 +33,10 @@ class SlideInfoProcessor
 public:
 	explicit SlideInfoProcessor(uint64_t baseAddress);
 
-	std::vector<SlideMappingInfo> ReadEntryInfo(const MappedFileAccessor& accessor, const CacheEntry& entry) const;
+	std::vector<SlideMappingInfo> ReadEntryInfo(const MappedFileRegion& file, const CacheEntry& entry) const;
 
 	// Write the slide information back to the entries memory mapped regions.
-	void ApplyMappings(MappedFileAccessor& accessor, const std::vector<SlideMappingInfo>& mappings) const;
+	void ApplyMappings(MappedFileRegion& file, const std::vector<SlideMappingInfo>& mappings) const;
 
-	std::vector<SlideMappingInfo> ProcessEntry(MappedFileAccessor& accessor, const CacheEntry& entry) const;
+	std::vector<SlideMappingInfo> ProcessEntry(MappedFileRegion& file, const CacheEntry& entry) const;
 };

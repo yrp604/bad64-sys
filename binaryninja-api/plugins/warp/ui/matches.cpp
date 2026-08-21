@@ -1,17 +1,16 @@
-#include <QGridLayout>
-#include <QHeaderView>
-
 #include "matches.h"
-
-#include <QClipboard>
-#include <QFormLayout>
-#include <thread>
-
 #include "theme.h"
 #include "warp.h"
 #include "shared/misc.h"
 
-WarpCurrentFunctionWidget::WarpCurrentFunctionWidget()
+#include <QClipboard>
+#include <QFormLayout>
+#include <thread>
+#include <QGridLayout>
+#include <QHeaderView>
+#include <QtConcurrent/QtConcurrent>
+
+WarpCurrentFunctionWidget::WarpCurrentFunctionWidget(QWidget* parent) : QWidget(parent)
 {
 	// We must explicitly support no current function.
 	m_current = nullptr;
@@ -31,10 +30,27 @@ WarpCurrentFunctionWidget::WarpCurrentFunctionWidget()
 	m_splitter = new QSplitter(Qt::Vertical);
 	m_splitter->setContentsMargins(0, 0, 0, 0);
 
+	// Wrap the table and the spinner so that we can overlay the spinner on the table.
+	QWidget* tableWrapper = new QWidget(m_splitter);
+	QGridLayout* wrapperLayout = new QGridLayout(tableWrapper);
+	wrapperLayout->setContentsMargins(0, 0, 0, 0);
+
 	// Add a widget to display the matches.
-	m_tableWidget = new WarpFunctionTableWidget(this);
+	m_tableWidget = new WarpFunctionTableWidget(tableWrapper);
 	m_tableWidget->setContentsMargins(0, 0, 0, 0);
-	m_splitter->addWidget(m_tableWidget);
+
+	// Spinner for when we are fetching functions over the network.
+	m_spinner = new QProgressBar(tableWrapper);
+	m_spinner->setRange(0, 0);
+	m_spinner->setTextVisible(false);
+	m_spinner->setFixedHeight(6);
+	m_spinner->hide();
+
+	// The table has no alignment, so it expands to fill the entire cell.
+	wrapperLayout->addWidget(m_tableWidget, 0, 0);
+	wrapperLayout->addWidget(m_spinner, 0, 0, Qt::AlignBottom);
+
+	m_splitter->addWidget(tableWrapper);
 
 	// Add a widget to display the info about the selected function match.
 	m_infoWidget = new WarpFunctionInfoWidget(this);
@@ -57,28 +73,29 @@ WarpCurrentFunctionWidget::WarpCurrentFunctionWidget()
 		m_tableWidget->GetModel()->SetMatchedFunction(selectedFunction);
 	});
 	// If the selected function is the current match, let the user remove the match.
-	m_tableWidget->RegisterContextMenuAction("Remove Match",
+	m_tableWidget->RegisterContextMenuAction(
+		"Remove Match",
 		[this](WarpFunctionItem*, std::optional<uint64_t>) {
 			WarpRemoveMatchDialog dlg(this, m_current);
 			if (dlg.execute())
 				m_tableWidget->GetModel()->SetMatchedFunction(nullptr);
 		},
 		[this](WarpFunctionItem* item, std::optional<uint64_t>) {
-		if (item == nullptr)
-			return false;
-		Warp::Ref<Warp::Function> selectedFunction = item->GetFunction();
-		if (!selectedFunction)
-			return false;
-		Warp::Ref<Warp::Function> matchedFunction = m_tableWidget->GetModel()->GetMatchedFunction();
-		if (!matchedFunction)
-			return false;
-		return BNWARPFunctionsEqual(selectedFunction->m_object, matchedFunction->m_object);
-	});
+			if (item == nullptr)
+				return false;
+			Warp::Ref<Warp::Function> selectedFunction = item->GetFunction();
+			if (!selectedFunction)
+				return false;
+			Warp::Ref<Warp::Function> matchedFunction = m_tableWidget->GetModel()->GetMatchedFunction();
+			if (!matchedFunction)
+				return false;
+			return BNWARPFunctionsEqual(selectedFunction->m_object, matchedFunction->m_object);
+		});
 	m_tableWidget->RegisterContextMenuAction(
 		"Search for Source", [this](WarpFunctionItem* item, std::optional<uint64_t>) {
 			// Apply the source as the filter.
 			if (const auto source = item->GetSource(); source)
-				m_tableWidget->setFilter(source->ToString());
+				m_tableWidget->setFilter(source->ToString(), NoFilterOption);
 		});
 
 	connect(m_tableWidget->GetTableView(), &QTableView::clicked, this, [this](const QModelIndex& index) {
@@ -135,20 +152,38 @@ void WarpCurrentFunctionWidget::SetCurrentFunction(FunctionRef current)
 	m_current = current;
 	m_infoWidget->SetAnalysisFunction(m_current);
 
-	// If we have a fetcher we should also let it know to try and fetch the possible functions from the containers.
+	// If we have a fetcher, we should also let it know to try and fetch the possible functions from the containers.
 	if (current && m_fetcher)
 	{
 		m_fetcher->AddPendingFunction(current);
-
-		// TODO: Automatically fetch the function, I need to figure out how to make this debounce correctly so that all
-		// requests are processed in line.
 		if (!m_fetcher->m_requestInProgress.exchange(true))
 		{
-			BinaryNinja::WorkerPriorityEnqueue([this]() {
+			// Don't block the UI thread when fetching, also unlike other cases where we reach for QtConcurrent::run we
+			// do not use a watcher to tie the future to the widget's lifetime, this is because network requests can
+			// take a long time, and we want to avoid blocking the UI thread in the widget destructor. Instead of
+			// ensuring the widget is alive, we just use a weak pointer that can tell us when it (self) has been
+			// destructed.
+			auto future = QtConcurrent::run([self = QPointer(this), current, fetcher = m_fetcher]() {
+				if (!self)
+					return;
+				QMetaObject::invokeMethod(
+					self,
+					[self] {
+						if (self)
+							self->m_spinner->show();
+					},
+					Qt::QueuedConnection);
 				BinaryNinja::Ref bgTask = new BinaryNinja::BackgroundTask("Fetching WARP Functions...", true);
-				const auto allowedTags = GetAllowedTagsFromView(m_current->GetView());
-				m_fetcher->FetchPendingFunctions(allowedTags);
+				const auto allowedTags = GetAllowedTagsFromView(current->GetView());
+				fetcher->FetchPendingFunctions(allowedTags);
 				bgTask->Finish();
+				QMetaObject::invokeMethod(
+					self,
+					[self] {
+						if (self)
+							self->m_spinner->hide();
+					},
+					Qt::QueuedConnection);
 			});
 		}
 	}

@@ -903,7 +903,7 @@ extern "C"
 #endif
 
 	int aarch64_decompose(uint32_t instructionValue, Instruction* instr, uint64_t address);
-	size_t get_register_size(enum Register);
+	size_t aarch64_get_register_size(enum Register);
 
 #ifdef __cplusplus
 }

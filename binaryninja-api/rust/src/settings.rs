@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -35,15 +35,33 @@ pub struct Settings {
 }
 
 impl Settings {
+    pub(crate) unsafe fn from_raw(handle: *mut BNSettings) -> Self {
+        Self { handle }
+    }
+
     pub(crate) unsafe fn ref_from_raw(handle: *mut BNSettings) -> Ref<Self> {
         debug_assert!(!handle.is_null());
         Ref::new(Self { handle })
     }
 
-    pub fn new() -> Ref<Self> {
+    /// Retrieve the global settings instance, this will be populated by both the core and plugins.
+    ///
+    /// If you wish to construct your own instance, use [`Settings::new_with_id`] instead.
+    pub fn global() -> Ref<Self> {
         Self::new_with_id(GLOBAL_INSTANCE_ID)
     }
 
+    /// Retrieve the default global settings instance, this is the same as [`Settings::global`] but
+    /// the values will be set to the registered default values.
+    ///
+    /// If you wish to construct your own instance, use [`Settings::new_with_id`] instead.
+    pub fn global_default() -> Ref<Self> {
+        Self::new_with_id(DEFAULT_INSTANCE_ID)
+    }
+
+    /// Create (or get) the settings instance with the given id.
+    ///
+    /// Two special instances can be retrieved by passing [`DEFAULT_INSTANCE_ID`] and [`GLOBAL_INSTANCE_ID`].
     pub fn new_with_id(instance_id: &str) -> Ref<Self> {
         let instance_id = instance_id.to_cstr();
         unsafe { Self::ref_from_raw(BNCreateSettings(instance_id.as_ptr())) }
@@ -503,11 +521,11 @@ impl Settings {
         unsafe { BNSettingsRegisterGroup(self.handle, group.as_ptr(), title.as_ptr()) }
     }
 
-    pub fn register_setting_json(&self, group: &str, properties: &str) -> bool {
-        let group = group.to_cstr();
+    pub fn register_setting_json(&self, key: &str, properties: &str) -> bool {
+        let key = key.to_cstr();
         let properties = properties.to_cstr();
 
-        unsafe { BNSettingsRegisterSetting(self.handle, group.as_ptr(), properties.as_ptr()) }
+        unsafe { BNSettingsRegisterSetting(self.handle, key.as_ptr(), properties.as_ptr()) }
     }
 
     // TODO: register_setting but type-safely turn it into json

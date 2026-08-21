@@ -114,4 +114,5 @@ private Q_SLOTS:
 
 protected:
 	virtual void showEvent(QShowEvent* e) override;
+	virtual void keyPressEvent(QKeyEvent* e) override;
 };

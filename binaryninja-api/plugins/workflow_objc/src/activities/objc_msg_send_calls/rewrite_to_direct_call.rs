@@ -48,7 +48,7 @@ pub fn process_call(
             Ok(())
         }
         _ => {
-            log::error!(
+            tracing::error!(
                 "Unexpected LLIL operation for objc_msgSend call at {:#x}",
                 insn.address()
             );

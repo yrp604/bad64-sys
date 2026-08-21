@@ -86,6 +86,43 @@ public:
 };
 
 
+class FreeBSDPpcPlatform: public Platform
+{
+public:
+	FreeBSDPpcPlatform(Architecture* arch, const std::string& name): Platform(arch, name)
+	{
+		Ref<CallingConvention> cc;
+
+		cc = arch->GetCallingConventionByName("svr4");
+		if (cc)
+			RegisterDefaultCallingConvention(cc);
+	}
+};
+
+
+class FreeBSDRiscVPlatform: public Platform
+{
+public:
+	FreeBSDRiscVPlatform(Architecture* arch, const std::string& name): Platform(arch, name)
+	{
+		Ref<CallingConvention> cc;
+
+		cc = arch->GetCallingConventionByName("default");
+		if (cc)
+		{
+			RegisterDefaultCallingConvention(cc);
+			RegisterCdeclCallingConvention(cc);
+			RegisterFastcallCallingConvention(cc);
+			RegisterStdcallCallingConvention(cc);
+		}
+
+		cc = arch->GetCallingConventionByName("syscall");
+		if (cc)
+			SetSystemCallConvention(cc);
+	}
+};
+
+
 extern "C"
 {
 	BN_DECLARE_CORE_ABI_VERSION
@@ -96,6 +133,8 @@ extern "C"
 		AddOptionalPluginDependency("arch_x86");
 		AddOptionalPluginDependency("arch_armv7");
 		AddOptionalPluginDependency("arch_arm64");
+		AddOptionalPluginDependency("arch_powerpc");
+		AddOptionalPluginDependency("arch_riscv");
 		AddOptionalPluginDependency("view_elf");
 	}
 #endif
@@ -147,6 +186,46 @@ extern "C"
 			Ref<Platform> platform;
 
 			platform = new FreeBSDArm64Platform(arm64);
+			Platform::Register("freebsd", platform);
+			BinaryViewType::RegisterPlatform("ELF", 9, platform);
+		}
+
+		Ref<Architecture> ppc = Architecture::GetByName("ppc");
+		if (ppc)
+		{
+			Ref<Platform> platform;
+
+			platform = new FreeBSDPpcPlatform(ppc, "freebsd-ppc32");
+			Platform::Register("freebsd", platform);
+			BinaryViewType::RegisterPlatform("ELF", 9, platform);
+		}
+
+		Ref<Architecture> ppc64 = Architecture::GetByName("ppc64");
+		if (ppc64)
+		{
+			Ref<Platform> platform;
+
+			platform = new FreeBSDPpcPlatform(ppc64, "freebsd-ppc64");
+			Platform::Register("freebsd", platform);
+			BinaryViewType::RegisterPlatform("ELF", 9, platform);
+		}
+
+		Ref<Architecture> ppc64le = Architecture::GetByName("ppc64_le");
+		if (ppc64le)
+		{
+			Ref<Platform> platform;
+
+			platform = new FreeBSDPpcPlatform(ppc64le, "freebsd-ppc64_le");
+			Platform::Register("freebsd", platform);
+			BinaryViewType::RegisterPlatform("ELF", 9, platform);
+		}
+
+		Ref<Architecture> rv64 = Architecture::GetByName("rv64gc");
+		if (rv64)
+		{
+			Ref<Platform> platform;
+
+			platform = new FreeBSDRiscVPlatform(rv64, "freebsd-rv64gc");
 			Platform::Register("freebsd", platform);
 			BinaryViewType::RegisterPlatform("ELF", 9, platform);
 		}

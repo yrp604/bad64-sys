@@ -13,7 +13,8 @@ WarpConstraintItem::WarpConstraintItem(const Warp::Constraint& constraint) : m_c
 	setText(guidStr);
 }
 
-WarpConstraintItemModel::WarpConstraintItemModel(const QStringList& labels, QObject* parent)
+WarpConstraintItemModel::WarpConstraintItemModel(const QStringList& labels, QObject* parent) :
+	QStandardItemModel(parent)
 {
 	this->setHorizontalHeaderLabels(labels);
 }
@@ -124,8 +125,10 @@ void WarpConstraintTableWidget::SetMatchedConstraints(const std::vector<Warp::Co
 	m_model->SetMatchedConstraints(analysisConstraints);
 }
 
-void WarpConstraintTableWidget::setFilter(const std::string& filter)
+void WarpConstraintTableWidget::setFilter(const std::string& filter, FilterOptions options)
 {
 	m_proxyModel->setFilterFixedString(QString::fromStdString(filter));
+	m_proxyModel->setFilterCaseSensitivity(
+		options.testFlag(CaseSensitiveOption) ? Qt::CaseSensitive : Qt::CaseInsensitive);
 	m_filterView->showFilter(QString::fromStdString(filter));
 }

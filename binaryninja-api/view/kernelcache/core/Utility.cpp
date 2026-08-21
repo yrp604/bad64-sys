@@ -104,7 +104,7 @@ void ApplySymbol(Ref<BinaryView> view, Ref<TypeLibrary> typeLib, Ref<Symbol> sym
 
 			if (auto idType = view->GetTypeByName({"id"}))
 			{
-				callTypeParams.emplace_back("obj", idType, true, Variable());
+				callTypeParams.emplace_back("obj", idType, DefaultLocationSource, Variable());
 				auto funcType = Type::FunctionType(idType, cc, callTypeParams);
 				func->SetUserType(funcType);
 			}

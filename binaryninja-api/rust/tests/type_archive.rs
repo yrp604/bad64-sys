@@ -1,7 +1,6 @@
 use binaryninja::headless::Session;
 use binaryninja::platform::Platform;
-use binaryninja::type_archive::TypeArchive;
-use binaryninja::types::{Type, TypeClass};
+use binaryninja::types::{Type, TypeArchive, TypeClass};
 
 #[test]
 fn test_create_archive() {
@@ -23,4 +22,8 @@ fn test_create_archive() {
         .expect("Found test type");
     assert_eq!(test_type.width(), 7);
     assert_eq!(test_type.type_class(), TypeClass::IntegerTypeClass);
+
+    let lookup_type_archive =
+        TypeArchive::lookup_by_id(&type_archive.id()).expect("Failed to lookup type archive");
+    assert_eq!(lookup_type_archive, type_archive);
 }

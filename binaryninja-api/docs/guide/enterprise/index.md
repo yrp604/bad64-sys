@@ -104,7 +104,7 @@ Permissions can be set on *users* or *groups* of users. Available permissions ar
 * **Admin**: Lets the user or group modify the project permissions, in addition to edit permissions
 
 #### Server Area
-Across the of the Remote Dialog are five buttons:
+Across the top of the Remote Dialog are five buttons:
 
 * **Refresh**: Refreshes the projects and files shown from the currently active server.
 * **Connect**/**Disconnect**: Connects to (or disconnect from) an Enterprise server. If connecting, it will show the "Connect to Remote" window (see below).

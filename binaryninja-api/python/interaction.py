@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -381,12 +381,12 @@ class SaveFileNameField:
 	"""
 	``SaveFileNameField`` prompts the user to specify a file name to save. Result is stored in self.result as a string.
 	"""
-	def __init__(self, prompt, ext="", default_name="", default=None):
+	def __init__(self, prompt: str, ext: str = "", default_name: str = "", default: Optional[str] = None):
 		self._prompt = prompt
 		self._ext = ext
 		self._default_name = default_name
 		self._default = default
-		self._result = None
+		self._result: Optional[str] = None
 
 	def _fill_core_struct(self, value):
 		value.type = FormInputFieldType.SaveFileNameFormField
@@ -408,7 +408,7 @@ class SaveFileNameField:
 		return self._prompt
 
 	@prompt.setter
-	def prompt(self, value):
+	def prompt(self, value: str):
 		self._prompt = value
 
 	@property
@@ -416,7 +416,7 @@ class SaveFileNameField:
 		return self._ext
 
 	@ext.setter
-	def ext(self, value):
+	def ext(self, value: str):
 		self._ext = value
 
 	@property
@@ -424,7 +424,7 @@ class SaveFileNameField:
 		return self._default_name
 
 	@default_name.setter
-	def default_name(self, value):
+	def default_name(self, value: str):
 		self._default_name = value
 
 	@property
@@ -432,7 +432,7 @@ class SaveFileNameField:
 		return self._result
 
 	@result.setter
-	def result(self, value):
+	def result(self, value: Optional[str]):
 		self._result = value
 
 
@@ -441,7 +441,7 @@ class DirectoryNameField:
 	``DirectoryNameField`` prompts the user to specify a directory name to open. Result is stored in self.result as
 	a string.
 	"""
-	def __init__(self, prompt, default_name="", default=None):
+	def __init__(self, prompt: str, default_name: str = "", default: Optional[str] = None):
 		self._prompt = prompt
 		self._default_name = default_name
 		self._default = default
@@ -466,7 +466,7 @@ class DirectoryNameField:
 		return self._prompt
 
 	@prompt.setter
-	def prompt(self, value):
+	def prompt(self, value: str):
 		self._prompt = value
 
 	@property
@@ -474,7 +474,7 @@ class DirectoryNameField:
 		return self._default_name
 
 	@default_name.setter
-	def default_name(self, value):
+	def default_name(self, value: str):
 		self._default_name = value
 
 	@property
@@ -482,7 +482,7 @@ class DirectoryNameField:
 		return self._result
 
 	@result.setter
-	def result(self, value):
+	def result(self, value: Optional[str]):
 		self._result = value
 
 
@@ -494,7 +494,7 @@ class CheckboxField:
 	:param str prompt: Prompt to be presented to the user
 	:param bool default: Default state of the checkbox (False == unchecked, True == checked)
 	"""
-	def __init__(self, prompt, default):
+	def __init__(self, prompt: str, default: Optional[bool]):
 		self._prompt = prompt
 		self._result = None
 		self._default = default
@@ -516,7 +516,7 @@ class CheckboxField:
 		return self._prompt
 
 	@prompt.setter
-	def prompt(self, value):
+	def prompt(self, value: str):
 		self._prompt = value
 
 	@property
@@ -524,7 +524,7 @@ class CheckboxField:
 		return self._result
 
 	@result.setter
-	def result(self, value):
+	def result(self, value: bool):
 		self._result = value
 
 	@property
@@ -532,7 +532,7 @@ class CheckboxField:
 		return self._default
 
 	@default.setter
-	def default(self, value):
+	def default(self, value: Optional[bool]):
 		self._default = value
 
 
@@ -572,7 +572,7 @@ class InteractionHandler:
 			else:
 				view = None
 			self.show_plain_text_report(view, title, contents)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in InteractionHandler._show_plain_text_report")
 
 	def _show_markdown_report(self, ctxt, view, title, contents, plaintext):
@@ -582,7 +582,7 @@ class InteractionHandler:
 			else:
 				view = None
 			self.show_markdown_report(view, title, contents, plaintext)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in InteractionHandler._show_markdown_report")
 
 	def _show_html_report(self, ctxt, view, title, contents, plaintext):
@@ -592,7 +592,7 @@ class InteractionHandler:
 			else:
 				view = None
 			self.show_html_report(view, title, contents, plaintext)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in InteractionHandler._show_html_report")
 
 	def _show_graph_report(self, ctxt, view, title, graph):
@@ -602,13 +602,13 @@ class InteractionHandler:
 			else:
 				view = None
 			self.show_graph_report(view, title, flowgraph.CoreFlowGraph(core.BNNewFlowGraphReference(graph)))
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in InteractionHandler._show_graph_report")
 
 	def _show_report_collection(self, ctxt, title, reports):
 		try:
 			self.show_report_collection(title, ReportCollection(core.BNNewReportCollectionReference(reports)))
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in InteractionHandler._show_report_collection")
 
 	def _get_text_line_input(self, ctxt, result, prompt, title):
@@ -618,7 +618,7 @@ class InteractionHandler:
 				return False
 			result[0] = core.BNAllocString(str(value))
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_text_line_input")
 
 	def _get_int_input(self, ctxt, result, prompt, title):
@@ -628,7 +628,7 @@ class InteractionHandler:
 				return False
 			result[0] = value
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_int_input")
 
 	def _get_address_input(self, ctxt, result, prompt, title, view, current_address):
@@ -642,7 +642,7 @@ class InteractionHandler:
 				return False
 			result[0] = value
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_address_input")
 
 	def _get_choice_input(self, ctxt, result, prompt, title, choice_buf, count):
@@ -655,7 +655,7 @@ class InteractionHandler:
 				return False
 			result[0] = value
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_choice_input")
 
 	def _get_large_choice_input(self, ctxt, result, prompt, title, choice_buf, count):
@@ -668,7 +668,7 @@ class InteractionHandler:
 				return False
 			result[0] = value
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_large_choice_input")
 
 	def _get_open_filename_input(self, ctxt, result, prompt, ext):
@@ -678,7 +678,7 @@ class InteractionHandler:
 				return False
 			result[0] = core.BNAllocString(str(value))
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_open_filename_input")
 
 	def _get_save_filename_input(self, ctxt, result, prompt, ext, default_name):
@@ -688,7 +688,7 @@ class InteractionHandler:
 				return False
 			result[0] = core.BNAllocString(str(value))
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_save_filename_input")
 
 	def _get_directory_name_input(self, ctxt, result, prompt, default_name):
@@ -698,7 +698,7 @@ class InteractionHandler:
 				return False
 			result[0] = core.BNAllocString(str(value))
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_directory_name_input")
 
 	def _get_checkbox_input(self, ctxt, result, prompt, default_choice):
@@ -708,7 +708,7 @@ class InteractionHandler:
 				return False
 			result[0] = value
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_checkbox_input")
 
 	def _get_form_input(self, ctxt, fields, count, title):
@@ -789,19 +789,19 @@ class InteractionHandler:
 			for i in range(0, count):
 				field_objs[i]._fill_core_result(fields[i])
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in InteractionHandler._get_form_input")
 
 	def _show_message_box(self, ctxt, title, text, buttons, icon):
 		try:
 			return self.show_message_box(title, text, buttons, icon)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in InteractionHandler._show_message_box")
 
 	def _open_url(self, ctxt, url):
 		try:
 			return self.open_url(url)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in InteractionHandler._open_url")
 			return False
 
@@ -812,7 +812,7 @@ class InteractionHandler:
 				task(task_ctxt, progress_c, None)
 
 			return self.run_progress_dialog(title, can_cancel, py_task)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in InteractionHandler._run_progress_dialog")
 			return False
 
@@ -833,7 +833,7 @@ class InteractionHandler:
 		pass
 
 	def get_text_line_input(self, prompt, title):
-		return NotImplemented
+		raise NotImplementedError
 
 	def get_int_input(self, prompt, title):
 		while True:
@@ -842,17 +842,17 @@ class InteractionHandler:
 				return False
 			try:
 				return int(text)
-			except:
+			except Exception:
 				continue
 
 	def get_address_input(self, prompt, title, view, current_address):
 		return get_int_input(prompt, title)
 
 	def get_choice_input(self, prompt, title, choices):
-		return NotImplemented
+		raise NotImplementedError
 
 	def get_large_choice_input(self, prompt, title, choices):
-		return NotImplemented
+		raise NotImplementedError
 
 	def get_open_filename_input(self, prompt, ext):
 		return get_text_line_input(prompt, "Open File")
@@ -882,7 +882,7 @@ class InteractionHandler:
 
 
 class PlainTextReport:
-	def __init__(self, title, contents, view=None):
+	def __init__(self, title: str, contents: str, view: Optional['binaryview.BinaryView'] = None):
 		self._view = view
 		self._title = title
 		self._contents = contents
@@ -898,7 +898,7 @@ class PlainTextReport:
 		return self._view
 
 	@view.setter
-	def view(self, value):
+	def view(self, value: Optional['binaryview.BinaryView']):
 		self._view = value
 
 	@property
@@ -906,7 +906,7 @@ class PlainTextReport:
 		return self._title
 
 	@title.setter
-	def title(self, value):
+	def title(self, value: str):
 		self._title = value
 
 	@property
@@ -914,12 +914,12 @@ class PlainTextReport:
 		return self._contents
 
 	@contents.setter
-	def contents(self, value):
+	def contents(self, value: str):
 		self._contents = value
 
 
 class MarkdownReport:
-	def __init__(self, title, contents, plaintext="", view=None):
+	def __init__(self, title: str, contents: str, plaintext: str = "", view: Optional['binaryview.BinaryView'] = None):
 		self._view = view
 		self._title = title
 		self._contents = contents
@@ -936,7 +936,7 @@ class MarkdownReport:
 		return self._view
 
 	@view.setter
-	def view(self, value):
+	def view(self, value: Optional['binaryview.BinaryView']):
 		self._view = value
 
 	@property
@@ -944,7 +944,7 @@ class MarkdownReport:
 		return self._title
 
 	@title.setter
-	def title(self, value):
+	def title(self, value: str):
 		self._title = value
 
 	@property
@@ -952,7 +952,7 @@ class MarkdownReport:
 		return self._contents
 
 	@contents.setter
-	def contents(self, value):
+	def contents(self, value: str):
 		self._contents = value
 
 	@property
@@ -960,12 +960,12 @@ class MarkdownReport:
 		return self._plaintext
 
 	@plaintext.setter
-	def plaintext(self, value):
+	def plaintext(self, value: str):
 		self._plaintext = value
 
 
 class HTMLReport:
-	def __init__(self, title, contents, plaintext="", view=None):
+	def __init__(self, title: str, contents: str, plaintext: str = "", view: Optional['binaryview.BinaryView'] = None):
 		self._view = view
 		self._title = title
 		self._contents = contents
@@ -982,7 +982,7 @@ class HTMLReport:
 		return self._view
 
 	@view.setter
-	def view(self, value):
+	def view(self, value: Optional['binaryview.BinaryView']):
 		self._view = value
 
 	@property
@@ -990,7 +990,7 @@ class HTMLReport:
 		return self._title
 
 	@title.setter
-	def title(self, value):
+	def title(self, value: str):
 		self._title = value
 
 	@property
@@ -998,7 +998,7 @@ class HTMLReport:
 		return self._contents
 
 	@contents.setter
-	def contents(self, value):
+	def contents(self, value: str):
 		self._contents = value
 
 	@property
@@ -1006,12 +1006,12 @@ class HTMLReport:
 		return self._plaintext
 
 	@plaintext.setter
-	def plaintext(self, value):
+	def plaintext(self, value: str):
 		self._plaintext = value
 
 
 class FlowGraphReport:
-	def __init__(self, title, graph, view=None):
+	def __init__(self, title: str, graph: 'flowgraph.FlowGraph', view: Optional['binaryview.BinaryView'] = None):
 		self._view = view
 		self._title = title
 		self._graph = graph
@@ -1024,7 +1024,7 @@ class FlowGraphReport:
 		return self._view
 
 	@view.setter
-	def view(self, value):
+	def view(self, value: Optional['binaryview.BinaryView']):
 		self._view = value
 
 	@property
@@ -1032,7 +1032,7 @@ class FlowGraphReport:
 		return self._title
 
 	@title.setter
-	def title(self, value):
+	def title(self, value: str):
 		self._title = value
 
 	@property
@@ -1040,7 +1040,7 @@ class FlowGraphReport:
 		return self._graph
 
 	@graph.setter
-	def graph(self, value):
+	def graph(self, value: 'flowgraph.FlowGraph'):
 		self._graph = value
 
 
@@ -1056,22 +1056,22 @@ class ReportCollection:
 
 	def _report_from_index(self, i):
 		report_type = core.BNGetReportType(self.handle, i)
-		title = core.BNGetReportTitle(self.handle, i)
+		title: str = core.BNGetReportTitle(self.handle, i) # type: ignore
 		view = core.BNGetReportView(self.handle, i)
 		if view:
 			view = binaryview.BinaryView(handle=view)
 		else:
 			view = None
 		if report_type == ReportType.PlainTextReportType:
-			contents = core.BNGetReportContents(self.handle, i)
+			contents: str = core.BNGetReportContents(self.handle, i) # type: ignore
 			return PlainTextReport(title, contents, view)
 		elif report_type == ReportType.MarkdownReportType:
-			contents = core.BNGetReportContents(self.handle, i)
-			plaintext = core.BNGetReportPlainText(self.handle, i)
+			contents: str = core.BNGetReportContents(self.handle, i) # type: ignore
+			plaintext: str = core.BNGetReportPlainText(self.handle, i) # type: ignore
 			return MarkdownReport(title, contents, plaintext, view)
 		elif report_type == ReportType.HTMLReportType:
-			contents = core.BNGetReportContents(self.handle, i)
-			plaintext = core.BNGetReportPlainText(self.handle, i)
+			contents: str = core.BNGetReportContents(self.handle, i) # type: ignore
+			plaintext: str = core.BNGetReportPlainText(self.handle, i) # type: ignore
 			return HTMLReport(title, contents, plaintext, view)
 		elif report_type == ReportType.FlowGraphReportType:
 			graph = flowgraph.CoreFlowGraph(core.BNGetReportFlowGraph(self.handle, i))
@@ -1522,14 +1522,14 @@ def show_message_box(title, text, buttons=MessageBoxButtonSet.OKButtonSet, icon=
 
 	:note: This uses a standard QDialog which means simple HTML will render as HTML, but links are not clickable and special characters need to be escaped.
 
-	:param str title: Text title for the message box.
-	:param str text: Text for the main body of the message box.
+	:param str | None title: Text title for the message box.
+	:param str | None text: Text for the main body of the message box.
 	:param MessageBoxButtonSet buttons: One of :py:class:`MessageBoxButtonSet`
 	:param MessageBoxIcon icon: One of :py:class:`MessageBoxIcon`
 	:return: Which button was selected
 	:rtype: MessageBoxButtonResult
 	"""
-	return core.BNShowMessageBox(title, text, buttons, icon)
+	return core.BNShowMessageBox(title or "", text or "", buttons, icon)
 
 
 def open_url(url):

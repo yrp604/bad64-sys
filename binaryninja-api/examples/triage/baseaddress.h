@@ -4,6 +4,7 @@
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QComboBox>
+#include <QtWidgets/QRadioButton>
 #include <QtWidgets/QTableWidget>
 #include <QHeaderView>
 #include <QCoreApplication>
@@ -18,12 +19,21 @@
 struct BaseAddressDetectionQtInputs
 {
 	QComboBox* ArchitectureBox;
+	QRadioButton* SamplingModeRadio;
+	QRadioButton* InstructionAnalysisModeRadio;
+	QLabel* AnalysisLabel;
 	QComboBox* AnalysisBox;
+	QLabel* StrlenLabel;
 	QLineEdit* StrlenLineEdit;
+	QLabel* AlignmentLabel;
 	QLineEdit* AlignmentLineEdit;
+	QLabel* LowerBoundaryLabel;
 	QLineEdit* LowerBoundary;
+	QLabel* UpperBoundaryLabel;
 	QLineEdit* UpperBoundary;
+	QLabel* POILabel;
 	QComboBox* POIBox;
+	QLabel* MaxPointersPerClusterLabel;
 	QLineEdit* MaxPointersPerCluster;
 };
 
@@ -32,6 +42,7 @@ struct BaseAddressDetectionQtResults
 	std::string Status;
 	std::set<std::pair<size_t, uint64_t>> Scores;
 	BNBaseAddressDetectionConfidence Confidence;
+	BNBaseAddressDetectionAnalysisMode AnalysisMode = SamplingBaseAddressDetection;
 	std::map<uint64_t, std::vector<BNBaseAddressDetectionReason>> Reasons;
 	uint64_t LastTestedBaseAddress;
 };
@@ -71,8 +82,9 @@ class BaseAddressDetectionWidget : public QWidget
 	QLabel* m_status;
 	QLineEdit* m_reloadBase;
 	QPushButton* m_rebaseButton;
+	QWidget* m_detectionModeWidget = nullptr;
 	QTableWidget* m_resultsTableWidget;
-	ExpandableGroup* m_advancedSettingsGroup;
+	ExpandableGroup* m_advancedSettingsGroup = nullptr;
 
 	void DetectBaseAddress();
 	const std::string GetRebaseViewName();
@@ -81,6 +93,8 @@ class BaseAddressDetectionWidget : public QWidget
 	void HandleResults(const BaseAddressDetectionQtResults& results);
 	void HideResultsWidgets(bool hide);
 	void CreateAdvancedSettingsGroup();
+	void ConfigureResultsTable(BNBaseAddressDetectionAnalysisMode analysisMode);
+	void UpdateModeSpecificSettingsVisibility();
 	void GetClickedBaseAddress(const QModelIndex& index);
 
 public:

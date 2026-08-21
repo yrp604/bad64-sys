@@ -63,6 +63,7 @@ class BINARYNINJAUIAPI FlowGraphHistoryEntry : public HistoryEntry
 	void setCurrentAddress(uint64_t a) { m_addr = a; }
 	void setHighlightTokenState(const HighlightTokenState& state) { m_highlight = state; }
 
+	virtual QString getDescription() const override;
 	virtual Json::Value serialize() const override;
 	virtual bool deserialize(const Json::Value& value) override;
 };
@@ -92,7 +93,9 @@ class BINARYNINJAUIAPI FlowGraphWidget :
 		bool operator<=(const CursorPosition& other) const;
 	};
 
+	BinaryViewRef m_defaultData;
 	BinaryViewRef m_data;
+	bool m_dataNotificationRegistered = false;
 	FlowGraphRef m_graph;
 	FlowGraphRef m_updateGraph;
 	FlowGraphLayoutRequestRef m_graphLayoutRequest;
@@ -100,6 +103,8 @@ class BINARYNINJAUIAPI FlowGraphWidget :
 	FunctionRef m_func;
 	BinaryNinja::AdvancedFunctionAnalysisDataRequestor m_advancedAnalysisData;
 	View* m_navigationTarget;
+
+	void setFunctionAndData(FunctionRef func, BinaryViewRef data, bool notify);
 
 	bool m_ready;
 	QTimer* m_loadingTimer;
@@ -344,6 +349,8 @@ class BINARYNINJAUIAPI FlowGraphWidget :
 	bool getEdgeForMouseEvent(QMouseEvent* event, FlowGraphNodeRef& source, BinaryNinja::FlowGraphEdge& edge, bool& incoming);
 
 	FlowGraphWidget* duplicate();
+	std::vector<BinaryNinja::TagReference> getTagsAtCurrentLocation(bool includeBookmarks);
+	void removeTagAtCurrentLocation();
 
   Q_SIGNALS:
 	void layoutComplete();

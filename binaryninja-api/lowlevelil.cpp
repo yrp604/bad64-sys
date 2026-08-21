@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -97,6 +97,12 @@ void LowLevelILFunction::SetCurrentAddress(Architecture* arch, uint64_t addr)
 }
 
 
+void LowLevelILFunction::SetCurrentSourceBlock(BasicBlock* source)
+{
+	BNLowLevelILSetCurrentSourceBlock(m_object, source->GetObject());
+}
+
+
 size_t LowLevelILFunction::GetInstructionStart(Architecture* arch, uint64_t addr)
 {
 	return BNLowLevelILGetInstructionStart(m_object, arch ? arch->GetObject() : nullptr, addr);
@@ -142,6 +148,12 @@ void LowLevelILFunction::SetIndirectBranches(const vector<ArchAndAddr>& branches
 	}
 	BNLowLevelILSetIndirectBranches(m_object, branchList, branches.size());
 	delete[] branchList;
+}
+
+
+bool LowLevelILFunction::HasIndirectBranches() const
+{
+	return BNLowLevelILFunctionHasIndirectBranches(m_object);
 }
 
 

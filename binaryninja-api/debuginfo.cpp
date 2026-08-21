@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -44,6 +44,7 @@ vector<string> DebugInfo::GetParsers() const
 	char** parsers = BNGetDebugParserNames(m_object, &count);
 
 	vector<string> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		result.emplace_back(parsers[i]);
@@ -70,6 +71,7 @@ vector<NameAndType> DebugInfo::GetTypes(const string& parserName) const
 		return {};
 
 	vector<NameAndType> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		result.emplace_back(nameAndTypes[i].name,
@@ -91,13 +93,16 @@ vector<DebugFunctionInfo> DebugInfo::GetFunctions(const string& parserName) cons
 		return {};
 
 	vector<DebugFunctionInfo> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		vector<string> components;
+		components.reserve(functions[i].componentN);
 		for (size_t componentN = 0; componentN < functions[i].componentN; ++componentN)
 			components.emplace_back(functions[i].components[componentN]);
 
 		vector<VariableNameAndType> localVariables;
+		localVariables.reserve(functions[i].localVariableN);
 		for (size_t localVariableN = 0; localVariableN < functions[i].localVariableN; ++localVariableN)
 		{
 			auto& bnVar = functions[i].localVariables[localVariableN];
@@ -133,6 +138,7 @@ vector<DataVariableAndName> DebugInfo::GetDataVariables(const string& parserName
 		return {};
 
 	vector<DataVariableAndName> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		result.emplace_back(variablesAndName[i].address,
@@ -190,6 +196,7 @@ vector<tuple<string, Ref<Type>>> DebugInfo::GetTypesByName(const string& name) c
 		return {};
 
 	vector<tuple<string, Ref<Type>>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		result.emplace_back(namesAndTypes[i].name, Ref<Type>(new Type(BNNewTypeReference(namesAndTypes[i].type))));
@@ -210,6 +217,7 @@ vector<tuple<string, uint64_t, Ref<Type>>> DebugInfo::GetDataVariablesByName(con
 		return {};
 
 	vector<tuple<string, uint64_t, Ref<Type>>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		result.emplace_back(variablesAndName[i].name, variablesAndName[i].address,
@@ -231,6 +239,7 @@ vector<tuple<string, string, Ref<Type>>> DebugInfo::GetDataVariablesByAddress(co
 		return {};
 
 	vector<tuple<string, string, Ref<Type>>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		result.emplace_back(variablesAndName[i].parser, variablesAndName[i].name,
@@ -362,7 +371,7 @@ Ref<DebugInfoParser> DebugInfoParser::GetByName(const string& name)
 {
 	BNDebugInfoParser* parser = BNGetDebugInfoParserByName(name.c_str());
 	if (parser)
-		return new DebugInfoParser(BNNewDebugInfoParserReference(parser));
+		return new DebugInfoParser(parser);
 	return nullptr;
 }
 
@@ -373,6 +382,7 @@ vector<Ref<DebugInfoParser>> DebugInfoParser::GetList()
 	BNDebugInfoParser** parsers = BNGetDebugInfoParsers(&count);
 
 	vector<Ref<DebugInfoParser>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		result.emplace_back(new DebugInfoParser(BNNewDebugInfoParserReference(parsers[i])));
@@ -389,6 +399,7 @@ vector<Ref<DebugInfoParser>> DebugInfoParser::GetListForView(const Ref<BinaryVie
 	BNDebugInfoParser** parsers = BNGetDebugInfoParsersForView(data->GetObject(), &count);
 
 	vector<Ref<DebugInfoParser>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		result.emplace_back(new DebugInfoParser(BNNewDebugInfoParserReference(parsers[i])));
@@ -461,6 +472,5 @@ bool CustomDebugInfoParser::ParseCallback(void* ctxt, BNDebugInfo* debugInfo, BN
 
 
 CustomDebugInfoParser::CustomDebugInfoParser(const string& name) :
-    DebugInfoParser(
-        BNNewDebugInfoParserReference(BNRegisterDebugInfoParser(name.c_str(), IsValidCallback, ParseCallback, this)))
+    DebugInfoParser(BNRegisterDebugInfoParser(name.c_str(), IsValidCallback, ParseCallback, this))
 {}

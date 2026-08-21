@@ -12,6 +12,8 @@ EntropyThread::EntropyThread(BinaryViewRef data, size_t blockSize, QImage* image
 	m_blockSize = blockSize;
 	m_updated = false;
 	m_running = true;
+	m_averageEntropy = 0.0;
+	m_sampleCount = 0;
 	m_thread = std::thread([=, this]() { Run(); });
 }
 
@@ -33,10 +35,22 @@ void EntropyThread::Run()
 		std::vector<float> entropy =
 		    m_data->GetEntropy(m_data->GetStart() + ((uint64_t)i * m_blockSize), m_blockSize, m_blockSize);
 		int v;
+		float entropyValue = 0.0f;
 		if (entropy.size() == 0)
 			v = 0;
 		else
-			v = (int)(entropy[0] * 255);
+		{
+			entropyValue = entropy[0];
+			v = (int)(entropyValue * 255);
+		}
+
+		// Update running average
+		{
+			std::lock_guard<std::mutex> lock(m_mutex);
+			m_sampleCount++;
+			m_averageEntropy += (entropyValue - m_averageEntropy) / m_sampleCount;
+		}
+
 		if (v >= 240)
 		{
 			QColor color = getThemeColor(YellowStandardHighlightColor);
@@ -51,6 +65,13 @@ void EntropyThread::Run()
 		}
 		m_updated = true;
 	}
+}
+
+
+double EntropyThread::GetAverageEntropy() const
+{
+	std::lock_guard<std::mutex> lock(m_mutex);
+	return m_averageEntropy;
 }
 
 
@@ -74,6 +95,8 @@ EntropyWidget::EntropyWidget(QWidget* parent, TriageView* view, BinaryViewRef da
 	timer->setSingleShot(false);
 	timer->start();
 
+	setCursor(Qt::PointingHandCursor);
+	setMouseTracking(true);
 	setMinimumHeight(UIContext::getScaledWindowSize(32, 32).height());
 }
 
@@ -104,6 +127,7 @@ void EntropyWidget::timerExpired()
 	{
 		m_thread->ResetUpdated();
 		update();
+		emit entropyUpdated(m_thread->GetAverageEntropy());
 	}
 }
 
@@ -115,4 +139,23 @@ void EntropyWidget::mousePressEvent(QMouseEvent* event)
 	float frac = (float)event->pos().x() / (float)rect().width();
 	uint64_t offset = (uint64_t)(frac * m_width * m_blockSize);
 	m_view->navigateToFileOffset(offset);
+}
+
+
+void EntropyWidget::mouseMoveEvent(QMouseEvent* event)
+{
+	float frac = (float)event->pos().x() / (float)rect().width();
+	uint64_t offset = (uint64_t)(frac * m_width * m_blockSize);
+	uint64_t addr = 0;
+	bool hasAddr = m_data->GetAddressForDataOffset(offset, addr);
+	if (hasAddr)
+		setToolTip(QString("0x%1").arg(addr, 0, 16));
+	else
+		setToolTip(QString("File offset: 0x%1").arg(offset, 0, 16));
+}
+
+
+double EntropyWidget::getAverageEntropy() const
+{
+	return m_thread->GetAverageEntropy();
 }

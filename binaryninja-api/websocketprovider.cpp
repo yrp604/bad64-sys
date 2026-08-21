@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -165,6 +165,7 @@ vector<Ref<WebsocketProvider>> WebsocketProvider::GetList()
 	size_t count;
 	BNWebsocketProvider** list = BNGetWebsocketProviderList(&count);
 	vector<Ref<WebsocketProvider>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(new CoreWebsocketProvider(list[i]));
 	BNFreeWebsocketProviderList(list);

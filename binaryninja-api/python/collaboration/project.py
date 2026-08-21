@@ -11,7 +11,7 @@ from ..binaryview import BinaryView, ProgressFuncType
 from ..database import Database
 from ..filemetadata import FileMetadata
 from ..project import Project
-from . import databasesync, file, folder, permission, remote, util
+from . import databasesync, file, folder, permission, remote, user, util
 
 
 def _nop(*args, **kwargs):
@@ -713,35 +713,35 @@ class RemoteProject:
 		if not core.BNRemoteProjectDeletePermission(self._handle, permission._handle):
 			raise RuntimeError(util._last_error())
 
-	def can_user_view(self, username: str) -> bool:
+	def can_user_view(self, user: user.User) -> bool:
 		"""
 		Determine if a user is in any of the view/edit/admin groups
 
-		:param username: Username of user to check
-		:return: True if they are in any of those groups
+		:param user: User to check
+		:return: True if the user has view permission (either directly or from a group)
 		:raises: RuntimeError if there was an error
 		"""
-		return core.BNRemoteProjectCanUserView(self._handle, username)
+		return core.BNRemoteProjectCanUserView(self._handle, user._handle)
 
-	def can_user_edit(self, username: str) -> bool:
+	def can_user_edit(self, user: user.User) -> bool:
 		"""
 		Determine if a user is in any of the edit/admin groups
 
-		:param username: Username of user to check
-		:return: True if they are in any of those groups
+		:param user: User to check
+		:return: True if the user has edit permission (either directly or from a group)
 		:raises: RuntimeError if there was an error
 		"""
-		return core.BNRemoteProjectCanUserEdit(self._handle, username)
+		return core.BNRemoteProjectCanUserEdit(self._handle, user._handle)
 
-	def can_user_admin(self, username: str) -> bool:
+	def can_user_admin(self, user: user.User) -> bool:
 		"""
 		Determine if a user is in the admin group
 
-		:param username: Username of user to check
-		:return: True if they are in any of those groups
+		:param user: User to check
+		:return: True if the user has admin permission (either directly or from a group)
 		:raises: RuntimeError if there was an error
 		"""
-		return core.BNRemoteProjectCanUserAdmin(self._handle, username)
+		return core.BNRemoteProjectCanUserAdmin(self._handle, user._handle)
 
 	def upload_new_file(
 			self,

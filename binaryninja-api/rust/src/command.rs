@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -32,11 +32,7 @@
 //!
 //! The return value of these functions should indicate whether they successfully initialized themselves.
 
-use binaryninjacore_sys::{
-    BNBinaryView, BNFunction, BNProject, BNRegisterPluginCommand,
-    BNRegisterPluginCommandForAddress, BNRegisterPluginCommandForFunction,
-    BNRegisterPluginCommandForProject, BNRegisterPluginCommandForRange,
-};
+use binaryninjacore_sys::*;
 
 use crate::binary_view::BinaryView;
 use crate::function::Function;
@@ -45,6 +41,42 @@ use crate::string::IntoCStr;
 use std::ops::Range;
 use std::os::raw::c_void;
 use std::ptr::NonNull;
+
+pub trait GlobalCommand: 'static + Sync {
+    fn action(&self);
+    fn valid(&self) -> bool;
+}
+
+pub fn register_global_command<C: GlobalCommand>(name: &str, desc: &str, command: C) {
+    extern "C" fn cb_action<C>(ctxt: *mut c_void)
+    where
+        C: GlobalCommand,
+    {
+        let cmd = unsafe { &*(ctxt as *const C) };
+        cmd.action();
+    }
+
+    extern "C" fn cb_valid<C>(ctxt: *mut c_void) -> bool
+    where
+        C: GlobalCommand,
+    {
+        let cmd = unsafe { &*(ctxt as *const C) };
+        cmd.valid()
+    }
+
+    let name = name.to_cstr();
+    let desc = desc.to_cstr();
+    let ctxt = Box::into_raw(Box::new(command));
+    unsafe {
+        BNRegisterPluginCommandGlobal(
+            name.as_ptr(),
+            desc.as_ptr(),
+            Some(cb_action::<C>),
+            Some(cb_valid::<C>),
+            ctxt as *mut _,
+        );
+    }
+}
 
 /// The trait required for generic commands.  See [register_command] for example usage.
 pub trait Command: 'static + Sync {
@@ -100,42 +132,31 @@ pub fn register_command<C: Command>(name: &str, desc: &str, command: C) {
     where
         C: Command,
     {
-        ffi_wrap!("Command::action", unsafe {
-            let cmd = &*(ctxt as *const C);
-
-            debug_assert!(!view.is_null());
-            let view = BinaryView { handle: view };
-
-            cmd.action(&view);
-        })
+        let cmd = unsafe { &*(ctxt as *const C) };
+        debug_assert!(!view.is_null());
+        let view = BinaryView { handle: view };
+        let _span = ffi_span!("Command::action", view);
+        cmd.action(&view);
     }
 
     extern "C" fn cb_valid<C>(ctxt: *mut c_void, view: *mut BNBinaryView) -> bool
     where
         C: Command,
     {
-        ffi_wrap!("Command::valid", unsafe {
-            let cmd = &*(ctxt as *const C);
-
-            debug_assert!(!view.is_null());
-            let view = BinaryView { handle: view };
-
-            cmd.valid(&view)
-        })
+        let cmd = unsafe { &*(ctxt as *const C) };
+        debug_assert!(!view.is_null());
+        let view = BinaryView { handle: view };
+        let _span = ffi_span!("Command::valid", view);
+        cmd.valid(&view)
     }
 
     let name = name.to_cstr();
     let desc = desc.to_cstr();
-
-    let name_ptr = name.as_ptr();
-    let desc_ptr = desc.as_ptr();
-
     let ctxt = Box::into_raw(Box::new(command));
-
     unsafe {
         BNRegisterPluginCommand(
-            name_ptr,
-            desc_ptr,
+            name.as_ptr(),
+            desc.as_ptr(),
             Some(cb_action::<C>),
             Some(cb_valid::<C>),
             ctxt as *mut _,
@@ -197,42 +218,31 @@ pub fn register_command_for_address<C: AddressCommand>(name: &str, desc: &str, c
     where
         C: AddressCommand,
     {
-        ffi_wrap!("AddressCommand::action", unsafe {
-            let cmd = &*(ctxt as *const C);
-
-            debug_assert!(!view.is_null());
-            let view = BinaryView { handle: view };
-
-            cmd.action(&view, addr);
-        })
+        let cmd = unsafe { &*(ctxt as *const C) };
+        debug_assert!(!view.is_null());
+        let view = BinaryView { handle: view };
+        let _span = ffi_span!("AddressCommand::action", view);
+        cmd.action(&view, addr);
     }
 
     extern "C" fn cb_valid<C>(ctxt: *mut c_void, view: *mut BNBinaryView, addr: u64) -> bool
     where
         C: AddressCommand,
     {
-        ffi_wrap!("AddressCommand::valid", unsafe {
-            let cmd = &*(ctxt as *const C);
-
-            debug_assert!(!view.is_null());
-            let view = BinaryView { handle: view };
-
-            cmd.valid(&view, addr)
-        })
+        let cmd = unsafe { &*(ctxt as *const C) };
+        debug_assert!(!view.is_null());
+        let view = BinaryView { handle: view };
+        let _span = ffi_span!("AddressCommand::valid", view);
+        cmd.valid(&view, addr)
     }
 
     let name = name.to_cstr();
     let desc = desc.to_cstr();
-
-    let name_ptr = name.as_ptr();
-    let desc_ptr = desc.as_ptr();
-
     let ctxt = Box::into_raw(Box::new(command));
-
     unsafe {
         BNRegisterPluginCommandForAddress(
-            name_ptr,
-            desc_ptr,
+            name.as_ptr(),
+            desc.as_ptr(),
             Some(cb_action::<C>),
             Some(cb_valid::<C>),
             ctxt as *mut _,
@@ -298,14 +308,11 @@ where
     where
         C: RangeCommand,
     {
-        ffi_wrap!("RangeCommand::action", unsafe {
-            let cmd = &*(ctxt as *const C);
-
-            debug_assert!(!view.is_null());
-            let view = BinaryView { handle: view };
-
-            cmd.action(&view, addr..addr.wrapping_add(len));
-        })
+        let cmd = unsafe { &*(ctxt as *const C) };
+        debug_assert!(!view.is_null());
+        let view = BinaryView { handle: view };
+        let _span = ffi_span!("RangeCommand::action", view);
+        cmd.action(&view, addr..addr.wrapping_add(len));
     }
 
     extern "C" fn cb_valid<C>(
@@ -317,28 +324,20 @@ where
     where
         C: RangeCommand,
     {
-        ffi_wrap!("RangeCommand::valid", unsafe {
-            let cmd = &*(ctxt as *const C);
-
-            debug_assert!(!view.is_null());
-            let view = BinaryView { handle: view };
-
-            cmd.valid(&view, addr..addr.wrapping_add(len))
-        })
+        let cmd = unsafe { &*(ctxt as *const C) };
+        debug_assert!(!view.is_null());
+        let view = BinaryView { handle: view };
+        let _span = ffi_span!("RangeCommand::valid", view);
+        cmd.valid(&view, addr..addr.wrapping_add(len))
     }
 
     let name = name.to_cstr();
     let desc = desc.to_cstr();
-
-    let name_ptr = name.as_ptr();
-    let desc_ptr = desc.as_ptr();
-
     let ctxt = Box::into_raw(Box::new(command));
-
     unsafe {
         BNRegisterPluginCommandForRange(
-            name_ptr,
-            desc_ptr,
+            name.as_ptr(),
+            desc.as_ptr(),
             Some(cb_action::<C>),
             Some(cb_valid::<C>),
             ctxt as *mut _,
@@ -401,17 +400,13 @@ pub fn register_command_for_function<C: FunctionCommand>(name: &str, desc: &str,
     where
         C: FunctionCommand,
     {
-        ffi_wrap!("FunctionCommand::action", unsafe {
-            let cmd = &*(ctxt as *const C);
-
-            debug_assert!(!view.is_null());
-            let view = BinaryView { handle: view };
-
-            debug_assert!(!func.is_null());
-            let func = Function { handle: func };
-
-            cmd.action(&view, &func);
-        })
+        let cmd = unsafe { &*(ctxt as *const C) };
+        debug_assert!(!view.is_null());
+        let view = BinaryView { handle: view };
+        debug_assert!(!func.is_null());
+        let func = Function { handle: func };
+        let _span = ffi_span!("FunctionCommand::action", view);
+        cmd.action(&view, &func);
     }
 
     extern "C" fn cb_valid<C>(
@@ -422,31 +417,22 @@ pub fn register_command_for_function<C: FunctionCommand>(name: &str, desc: &str,
     where
         C: FunctionCommand,
     {
-        ffi_wrap!("FunctionCommand::valid", unsafe {
-            let cmd = &*(ctxt as *const C);
-
-            debug_assert!(!view.is_null());
-            let view = BinaryView { handle: view };
-
-            debug_assert!(!func.is_null());
-            let func = Function { handle: func };
-
-            cmd.valid(&view, &func)
-        })
+        let cmd = unsafe { &*(ctxt as *const C) };
+        debug_assert!(!view.is_null());
+        let view = BinaryView { handle: view };
+        debug_assert!(!func.is_null());
+        let func = Function { handle: func };
+        let _span = ffi_span!("FunctionCommand::valid", view);
+        cmd.valid(&view, &func)
     }
 
     let name = name.to_cstr();
     let desc = desc.to_cstr();
-
-    let name_ptr = name.as_ptr();
-    let desc_ptr = desc.as_ptr();
-
     let ctxt = Box::into_raw(Box::new(command));
-
     unsafe {
         BNRegisterPluginCommandForFunction(
-            name_ptr,
-            desc_ptr,
+            name.as_ptr(),
+            desc.as_ptr(),
             Some(cb_action::<C>),
             Some(cb_valid::<C>),
             ctxt as *mut _,
@@ -464,42 +450,29 @@ pub fn register_command_for_project<C: ProjectCommand>(name: &str, desc: &str, c
     where
         C: ProjectCommand,
     {
-        ffi_wrap!("Command::action", unsafe {
-            let cmd = &*(ctxt as *const C);
-
-            let handle = NonNull::new(project).expect("project handle is null");
-            let project = Project { handle };
-
-            cmd.action(&project);
-        })
+        let cmd = unsafe { &*(ctxt as *const C) };
+        let handle = NonNull::new(project).expect("project handle is null");
+        let project = Project { handle };
+        cmd.action(&project);
     }
 
     extern "C" fn cb_valid<C>(ctxt: *mut c_void, project: *mut BNProject) -> bool
     where
         C: ProjectCommand,
     {
-        ffi_wrap!("Command::valid", unsafe {
-            let cmd = &*(ctxt as *const C);
-
-            let handle = NonNull::new(project).expect("project handle is null");
-            let project = Project { handle };
-
-            cmd.valid(&project)
-        })
+        let cmd = unsafe { &*(ctxt as *const C) };
+        let handle = NonNull::new(project).expect("project handle is null");
+        let project = Project { handle };
+        cmd.valid(&project)
     }
 
     let name = name.to_cstr();
     let desc = desc.to_cstr();
-
-    let name_ptr = name.as_ptr();
-    let desc_ptr = desc.as_ptr();
-
     let ctxt = Box::into_raw(Box::new(command));
-
     unsafe {
         BNRegisterPluginCommandForProject(
-            name_ptr,
-            desc_ptr,
+            name.as_ptr(),
+            desc.as_ptr(),
             Some(cb_action::<C>),
             Some(cb_valid::<C>),
             ctxt as *mut _,

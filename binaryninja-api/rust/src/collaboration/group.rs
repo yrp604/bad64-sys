@@ -1,4 +1,5 @@
 use super::Remote;
+use crate::collaboration::RemoteUser;
 use crate::rc::{Array, CoreArrayProvider, CoreArrayProviderInner, Guard, Ref, RefCountable};
 use crate::string::{BnString, IntoCStr};
 use binaryninjacore_sys::*;
@@ -55,55 +56,40 @@ impl RemoteGroup {
     }
 
     /// Get list of users in the group
-    pub fn users(&self) -> Result<(Array<BnString>, Array<BnString>), ()> {
-        let mut usernames = std::ptr::null_mut();
-        let mut user_ids = std::ptr::null_mut();
+    pub fn users(&self) -> Result<Array<RemoteUser>, ()> {
         let mut count = 0;
         // TODO: This should only fail if collaboration is not supported.
         // TODO: Because you should not have a RemoteGroup at that point we can ignore?
-        let success = unsafe {
-            BNCollaborationGroupGetUsers(
-                self.handle.as_ptr(),
-                &mut user_ids,
-                &mut usernames,
-                &mut count,
-            )
-        };
-        success
-            .then(|| unsafe {
-                let ids = Array::new(user_ids, count, ());
-                let users = Array::new(usernames, count, ());
-                (ids, users)
-            })
+        let result = unsafe { BNCollaborationGroupGetUsers(self.handle.as_ptr(), &mut count) };
+        (!result.is_null())
+            .then(|| unsafe { Array::new(result, count, ()) })
             .ok_or(())
     }
 
     // TODO: Are any permissions required to the set the remote group users?
-    /// Set the list of users in a group by their usernames.
+    /// Set the list of users in a group.
     /// You will need to push the group to update the Remote.
-    pub fn set_users<I>(&self, usernames: I) -> Result<(), ()>
+    pub fn set_users<I>(&self, users: I) -> Result<(), ()>
     where
-        I: IntoIterator<Item = String>,
+        I: IntoIterator<Item = Ref<RemoteUser>>,
     {
-        let usernames: Vec<_> = usernames.into_iter().map(|u| u.to_cstr()).collect();
-        let mut usernames_raw: Vec<_> = usernames.iter().map(|s| s.as_ptr()).collect();
+        let mut users_raw: Vec<_> = users.into_iter().map(|s| s.handle.as_ptr()).collect();
         // TODO: This should only fail if collaboration is not supported.
         // TODO: Because you should not have a RemoteGroup at that point we can ignore?
         // TODO: Do you need any permissions to do this?
         let success = unsafe {
-            BNCollaborationGroupSetUsernames(
+            BNCollaborationGroupSetUsers(
                 self.handle.as_ptr(),
-                usernames_raw.as_mut_ptr(),
-                usernames_raw.len(),
+                users_raw.as_mut_ptr(),
+                users_raw.len(),
             )
         };
         success.then_some(()).ok_or(())
     }
 
-    /// Test if a group has a user with the given username
-    pub fn contains_user(&self, username: &str) -> bool {
-        let username = username.to_cstr();
-        unsafe { BNCollaborationGroupContainsUser(self.handle.as_ptr(), username.as_ptr()) }
+    /// Test if a group contains a user
+    pub fn contains_user(&self, user: Ref<RemoteUser>) -> bool {
+        unsafe { BNCollaborationGroupContainsUser(self.handle.as_ptr(), user.handle.as_ptr()) }
     }
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -44,7 +44,7 @@ Ref<ProjectFile> ExternalLibrary::GetBackingFile() const
 	BNProjectFile* file = BNExternalLibraryGetBackingFile(m_object);
 	if (!file)
 		return nullptr;
-	return new ProjectFile(BNNewProjectFileReference(file));
+	return new ProjectFile(file);
 }
 
 
@@ -81,7 +81,10 @@ std::optional<std::string> ExternalLocation::GetTargetSymbol()
 {
 	if (BNExternalLocationHasTargetSymbol(m_object))
 	{
-		return BNExternalLocationGetTargetSymbol(m_object);
+		char* sym = BNExternalLocationGetTargetSymbol(m_object);
+		std::string result = sym;
+		BNFreeString(sym);
+		return result;
 	}
 	return {};
 }

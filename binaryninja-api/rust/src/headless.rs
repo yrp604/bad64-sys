@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ use crate::enterprise::EnterpriseCheckoutStatus;
 use crate::main_thread::{MainThreadAction, MainThreadHandler};
 use crate::progress::ProgressCallback;
 use crate::rc::Ref;
-use binaryninjacore_sys::{BNInitPlugins, BNInitRepoPlugins};
+use binaryninjacore_sys::BNInitPlugins;
 use std::sync::mpsc::Sender;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
@@ -221,10 +221,6 @@ pub fn init_with_opts(options: InitializationOptions) -> Result<(), Initializati
 
     unsafe {
         BNInitPlugins(options.user_plugins);
-        if options.repo_plugins {
-            // We are allowed to initialize repo plugins, so do it!
-            BNInitRepoPlugins();
-        }
     }
 
     if !is_license_validated() {
@@ -299,7 +295,7 @@ pub fn license_location() -> Option<LicenseLocation> {
 }
 
 /// Wrapper for [`init`] and [`shutdown`]. Instantiating this at the top of your script will initialize everything correctly and then clean itself up at exit as well.
-#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, PartialEq, Eq, Hash)]
 pub struct Session {
     license_duration: Option<Duration>,
 }
@@ -423,6 +419,15 @@ impl Session {
             options,
             progress,
         )
+    }
+}
+
+impl Clone for Session {
+    fn clone(&self) -> Self {
+        SESSION_COUNT.fetch_add(1, SeqCst);
+        Self {
+            license_duration: self.license_duration,
+        }
     }
 }
 

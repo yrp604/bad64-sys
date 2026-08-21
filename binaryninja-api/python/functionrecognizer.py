@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -59,7 +59,7 @@ class FunctionRecognizer:
 			func = function.Function(view, handle=core.BNNewFunctionReference(func))
 			il = lowlevelil.LowLevelILFunction(func.arch, handle=core.BNNewLowLevelILFunctionReference(il))
 			return self.recognize_low_level_il(view, func, il)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in FunctionRecognizer._recognize_low_level_il")
 			return False
 
@@ -73,7 +73,7 @@ class FunctionRecognizer:
 			func = function.Function(view, handle=core.BNNewFunctionReference(func))
 			il = mediumlevelil.MediumLevelILFunction(func.arch, handle=core.BNNewMediumLevelILFunctionReference(il))
 			return self.recognize_medium_level_il(view, func, il)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in FunctionRecognizer._recognize_mediumlevel_il")
 			return False
 

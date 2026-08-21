@@ -61,15 +61,17 @@ impl Activity {
 
     pub fn new_with_action<F>(config: impl AsConfig, mut action: F) -> Ref<Self>
     where
-        F: FnMut(&AnalysisContext),
+        F: Fn(&AnalysisContext) + Send + Sync + 'static,
     {
-        unsafe extern "C" fn cb_action<F: FnMut(&AnalysisContext)>(
+        unsafe extern "C" fn cb_action<F: Fn(&AnalysisContext)>(
             ctxt: *mut c_void,
             analysis: *mut BNAnalysisContext,
         ) {
             let ctxt = &mut *(ctxt as *mut F);
             if let Some(analysis) = NonNull::new(analysis) {
-                ctxt(&AnalysisContext::from_raw(analysis))
+                let analysis = AnalysisContext::from_raw(analysis);
+                let _span = ffi_span!("Activity::action", analysis.view());
+                ctxt(&analysis)
             }
         }
         let config = config.as_config();

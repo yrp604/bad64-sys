@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -23,6 +23,7 @@ import ctypes
 from json import dumps
 import sys
 import traceback
+from typing import Any, Optional
 from urllib.parse import urlencode
 
 # Binary Ninja Components
@@ -58,6 +59,23 @@ class _SecretsProviderMetaclass(type):
 			raise KeyError(f"'{value}' is not a valid secrets provider")
 		return SecretsProvider(provider)
 
+	def __contains__(cls: '_SecretsProviderMetaclass', name: object) -> bool:
+		if not isinstance(name, str):
+			return False
+		try:
+			cls[name]
+			return True
+		except KeyError:
+			return False
+
+	def get(cls: '_SecretsProviderMetaclass', name: str, default: Any = None) -> Optional['SecretsProvider']:
+		try:
+			return cls[name]
+		except KeyError:
+			if default is not None:
+				return default
+			return None
+
 
 class SecretsProvider(metaclass=_SecretsProviderMetaclass):
 	name = None
@@ -82,7 +100,7 @@ class SecretsProvider(metaclass=_SecretsProviderMetaclass):
 	def _has_data(self, ctxt, key: str) -> bool:
 		try:
 			return self.perform_has_data(key)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in SecretsProvider._has_data")
 			return False
 
@@ -90,21 +108,21 @@ class SecretsProvider(metaclass=_SecretsProviderMetaclass):
 		try:
 			data = self.perform_get_data(key)
 			return core.BNAllocString(data)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in SecretsProvider._get_data")
 			return None
 
 	def _store_data(self, ctxt, key: str, data: str) -> bool:
 		try:
 			return self.perform_store_data(key, data)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in SecretsProvider._store_data")
 			return False
 
 	def _delete_data(self, ctxt, key: str) -> bool:
 		try:
 			return self.perform_delete_data(key)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in SecretsProvider._delete_data")
 			return False
 

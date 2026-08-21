@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 //! Interfaces for the various kinds of symbols in a binary.
 
 use std::fmt;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ptr;
 
@@ -267,6 +267,16 @@ impl Symbol {
         unsafe { BNGetSymbolAddress(self.handle) }
     }
 
+    /// Get the symbols ordinal, this will return `None` if the symbol ordinal is `0`.
+    pub fn ordinal(&self) -> Option<u64> {
+        let ordinal = unsafe { BNGetSymbolOrdinal(self.handle) };
+        if ordinal == u64::MIN {
+            None
+        } else {
+            Some(ordinal)
+        }
+    }
+
     pub fn auto_defined(&self) -> bool {
         unsafe { BNIsSymbolAutoDefined(self.handle) }
     }
@@ -347,5 +357,11 @@ impl Hash for Symbol {
 impl PartialEq for Symbol {
     fn eq(&self, other: &Self) -> bool {
         self.handle == other.handle
+    }
+}
+
+impl Display for Symbol {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.short_name().to_string_lossy())
     }
 }

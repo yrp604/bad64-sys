@@ -110,11 +110,11 @@ int main(int ac, char **av)
 		baseaddr = 0;
 		if (0 == disassemble(insword, baseaddr, version, flags, instxt))
 		{
-			printf("%08llX: %08X %s\n", baseaddr, insword, instxt);
+			printf("%08" PRIX64 ": %08X %s\n", baseaddr, insword, instxt);
 		}
 		else
 		{
-			printf("%08llX: %08X ??\n", baseaddr, insword);
+			printf("%08" PRIX64 ": %08X ??\n", baseaddr, insword);
 		}
 		// disassemble(0x14E00003, 0, version, flags, instxt);
 		if (version < MIPS_32)
@@ -124,11 +124,11 @@ int main(int ac, char **av)
 		baseaddr = 0x405a58;
 		if (0 == disassemble(insword, baseaddr, version, flags, instxt))
 		{
-			printf("%08llX: %08X %s\n", baseaddr, insword, instxt);
+			printf("%08" PRIX64 ": %08X %s\n", baseaddr, insword, instxt);
 		}
 		else
 		{
-			printf("%08llX: %08X ??\n", baseaddr, insword);
+			printf("%08" PRIX64 ": %08X ??\n", baseaddr, insword);
 		}
 		// disassemble(0x14E00003, 4, version, flags, instxt);
 		if (version < MIPS_32)
@@ -186,11 +186,11 @@ int main(int ac, char **av)
 #endif
 			if (0 == disassemble(insword, baseaddr, version, flags, instxt))
 			{
-				printf("%08llX: %08X %s\n", baseaddr, insword, instxt);
+				printf("%08" PRIX64 ": %08X %s\n", baseaddr, insword, instxt);
 			}
 			else
 			{
-				printf("%08llX: %08X ??\n", baseaddr, insword);
+				printf("%08" PRIX64 ": %08X ??\n", baseaddr, insword);
 			}
 			baseaddr += 4;
 			p += 8;
@@ -202,3 +202,4 @@ int main(int ac, char **av)
 cleanup:
 	return result;
 }
+

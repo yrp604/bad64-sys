@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -1365,6 +1365,7 @@ BinaryView::BinaryView(const std::string& typeName, FileMetadata* file, BinaryVi
 	view.isRelocatable = IsRelocatableCallback;
 	view.getAddressSize = GetAddressSizeCallback;
 	view.save = SaveCallback;
+	view.onAfterSnapshotDataApplied = OnAfterSnapshotDataAppliedCallback;
 	m_file = file;
 	AddRefForRegistration();
 	m_object = BNCreateCustomBinaryView(
@@ -1383,8 +1384,39 @@ BinaryView::BinaryView(BNBinaryView* view)
 
 bool BinaryView::InitCallback(void* ctxt)
 {
-	CallbackRef<BinaryView> view(ctxt);
-	return view->Init();
+	try
+	{
+		CallbackRef<BinaryView> view(ctxt);
+		return view->Init();
+	}
+	catch (const std::exception& e)
+	{
+		LogError("BinaryView::Init failed: %s", e.what());
+		return false;
+	}
+	catch (...)
+	{
+		LogError("BinaryView::Init failed with unknown exception");
+		return false;
+	}
+}
+
+
+void BinaryView::OnAfterSnapshotDataAppliedCallback(void* ctxt)
+{
+	try
+	{
+		CallbackRef<BinaryView> view(ctxt);
+		view->OnAfterSnapshotDataApplied();
+	}
+	catch (const std::exception& e)
+	{
+		LogError("BinaryView::OnAfterSnapshotDataApplied failed: %s", e.what());
+	}
+	catch (...)
+	{
+		LogError("BinaryView::OnAfterSnapshotDataApplied failed with unknown exception");
+	}
 }
 
 
@@ -1523,9 +1555,22 @@ size_t BinaryView::GetAddressSizeCallback(void* ctxt)
 
 bool BinaryView::SaveCallback(void* ctxt, BNFileAccessor* file)
 {
-	CallbackRef<BinaryView> view(ctxt);
-	CoreFileAccessor accessor(file);
-	return view->PerformSave(&accessor);
+	try
+	{
+		CallbackRef<BinaryView> view(ctxt);
+		CoreFileAccessor accessor(file);
+		return view->PerformSave(&accessor);
+	}
+	catch (const std::exception& e)
+	{
+		LogError("BinaryView::Save failed: %s", e.what());
+		return false;
+	}
+	catch (...)
+	{
+		LogError("BinaryView::Save failed with unknown exception");
+		return false;
+	}
 }
 
 
@@ -2013,6 +2058,12 @@ bool BinaryView::IsOffsetWritableSemantics(uint64_t offset) const
 }
 
 
+bool BinaryView::IsOffsetReadOnlySemantics(uint64_t offset) const
+{
+	return BNIsOffsetReadOnlySemantics(m_object, offset);
+}
+
+
 uint64_t BinaryView::GetNextValidOffset(uint64_t offset) const
 {
 	return BNGetNextValidOffset(m_object, offset);
@@ -2412,6 +2463,7 @@ vector<Ref<Function>> BinaryView::GetAllEntryFunctions()
 		return {};
 
 	vector<Ref<Function>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(new Function(BNNewFunctionReference(funcs[i])));
 	BNFreeFunctionList(funcs, count);
@@ -3088,6 +3140,7 @@ unordered_set<QualifiedName> BinaryView::GetOutgoingRecursiveTypeReferences(cons
 {
 	size_t count;
 	vector<BNQualifiedName> apiTypes;
+	apiTypes.reserve(types.size());
 	for (auto& type: types)
 	{
 		apiTypes.push_back(type.GetAPIObject());
@@ -3139,6 +3192,7 @@ unordered_set<QualifiedName> BinaryView::GetIncomingRecursiveTypeReferences(cons
 {
 	size_t count;
 	vector<BNQualifiedName> apiTypes;
+	apiTypes.reserve(types.size());
 	for (auto& type: types)
 	{
 		apiTypes.push_back(type.GetAPIObject());
@@ -4033,11 +4087,80 @@ vector<BNStringReference> BinaryView::GetStrings(uint64_t start, uint64_t len)
 }
 
 
+StringDetectionParameters StringDetectionParameters::FromSettings(Ref<Settings> settings, Ref<BinaryView> view)
+{
+	StringDetectionParameters params;
+	params.minStringLength = settings->Get<uint64_t>("analysis.limits.minStringLength", view);
+	params.utf8Enabled = settings->Get<bool>("analysis.unicode.utf8", view);
+	params.utf16Enabled = settings->Get<bool>("analysis.unicode.utf16", view);
+	params.utf32Enabled = settings->Get<bool>("analysis.unicode.utf32", view);
+	params.unicodeBlockNames = settings->Get<vector<string>>("analysis.unicode.blocks", view);
+	return params;
+}
+
+
+StringDetector::StringDetector(const StringDetectionParameters& params)
+{
+	BNStringDetectionParameters apiParams;
+	apiParams.minStringLength = params.minStringLength;
+	apiParams.utf8Enabled = params.utf8Enabled;
+	apiParams.utf16Enabled = params.utf16Enabled;
+	apiParams.utf32Enabled = params.utf32Enabled;
+	vector<const char*> blockNames;
+	blockNames.reserve(params.unicodeBlockNames.size());
+	for (const auto& name : params.unicodeBlockNames)
+		blockNames.push_back(name.c_str());
+	apiParams.unicodeBlockNames = blockNames.data();
+	apiParams.unicodeBlockNameCount = blockNames.size();
+	m_object = BNCreateStringDetector(&apiParams);
+}
+
+
+StringDetector::~StringDetector()
+{
+	if (m_object)
+		BNFreeStringDetector(m_object);
+}
+
+
+StringDetector::StringDetector(StringDetector&& other) noexcept : m_object(other.m_object)
+{
+	other.m_object = nullptr;
+}
+
+
+StringDetector& StringDetector::operator=(StringDetector&& other) noexcept
+{
+	if (this != &other)
+	{
+		if (m_object)
+			BNFreeStringDetector(m_object);
+		m_object = other.m_object;
+		other.m_object = nullptr;
+	}
+	return *this;
+}
+
+
+vector<BNStringReference> StringDetector::DetectStrings(const void* data, size_t dataLen, size_t blockLen,
+	uint64_t baseAddress, BNStringReference* lastFoundString) const
+{
+	size_t count = 0;
+	BNStringReference* strings = BNStringDetectorDetectStrings(m_object, static_cast<const uint8_t*>(data),
+		dataLen, blockLen, baseAddress, lastFoundString, &count);
+	vector<BNStringReference> result;
+	result.insert(result.end(), strings, strings + count);
+	BNFreeStringReferenceList(strings);
+	return result;
+}
+
+
 vector<DerivedString> BinaryView::GetDerivedStrings()
 {
 	size_t count;
 	BNDerivedString* strings = BNGetDerivedStrings(m_object, &count);
 	vector<DerivedString> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(DerivedString::FromAPIObject(&strings[i], false));
 	BNFreeDerivedStringList(strings, count);
@@ -4274,10 +4397,12 @@ bool BinaryView::ParseTypesFromSource(const string& source, const vector<string>
 	}
 
 	vector<const char*> coreOptions;
+	coreOptions.reserve(options.size());
 	for (auto& option : options)
 		coreOptions.push_back(option.c_str());
 
 	vector<const char*> coreIncludeDirs;
+	coreIncludeDirs.reserve(includeDirs.size());
 	for (auto& includeDir : includeDirs)
 		coreIncludeDirs.push_back(includeDir.c_str());
 
@@ -4371,6 +4496,7 @@ vector<pair<QualifiedName, Ref<Type>>> BinaryView::GetDependencySortedTypes()
 	BNQualifiedNameAndType* types = BNGetAnalysisDependencySortedTypeList(m_object, &count);
 
 	vector<pair<QualifiedName, Ref<Type>>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		QualifiedName name = QualifiedName::FromAPIObject(&types[i].name);
@@ -4641,6 +4767,7 @@ std::vector<Ref<TypeLibrary>> BinaryView::GetTypeLibraries()
 	BNTypeLibrary** libs = BNGetBinaryViewTypeLibraries(m_object, &count);
 
 	vector<Ref<TypeLibrary>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		result.push_back(new TypeLibrary(BNNewTypeLibraryReference(libs[i])));
@@ -4902,6 +5029,7 @@ bool BinaryView::DisassociateTypeArchiveType(const std::string& typeId)
 bool BinaryView::PullTypeArchiveTypes(const std::string& archiveId, const std::unordered_set<std::string>& archiveTypeIds, std::unordered_map<std::string, std::string>& updatedTypes)
 {
 	std::vector<const char*> apiArchiveTypeIds;
+	apiArchiveTypeIds.reserve(archiveTypeIds.size());
 	for (const auto& archiveTypeId: archiveTypeIds)
 	{
 		apiArchiveTypeIds.push_back(archiveTypeId.c_str());
@@ -4926,6 +5054,7 @@ bool BinaryView::PullTypeArchiveTypes(const std::string& archiveId, const std::u
 bool BinaryView::PushTypeArchiveTypes(const std::string& archiveId, const std::unordered_set<std::string>& typeIds, std::unordered_map<std::string, std::string>& updatedTypes)
 {
 	std::vector<const char*> apiTypeIds;
+	apiTypeIds.reserve(typeIds.size());
 	for (const auto& typeId: typeIds)
 	{
 		apiTypeIds.push_back(typeId.c_str());
@@ -5263,6 +5392,12 @@ void BinaryView::AddAutoSection(const string& name, uint64_t start, uint64_t len
 }
 
 
+void BinaryView::AddAutoSections(const vector<BNSectionInfo>& sections)
+{
+	BNAddAutoSections(m_object, sections.data(), sections.size());
+}
+
+
 void BinaryView::RemoveAutoSection(const string& name)
 {
 	BNRemoveAutoSection(m_object, name.c_str());
@@ -5275,6 +5410,12 @@ void BinaryView::AddUserSection(const string& name, uint64_t start, uint64_t len
 {
 	BNAddUserSection(m_object, name.c_str(), start, length, semantics, type.c_str(), align, entrySize,
 	    linkedSection.c_str(), infoSection.c_str(), infoData);
+}
+
+
+void BinaryView::AddUserSections(const vector<BNSectionInfo>& sections)
+{
+	BNAddUserSections(m_object, sections.data(), sections.size());
 }
 
 
@@ -5405,11 +5546,11 @@ void BinaryView::SetCommentForAddress(uint64_t addr, const string& comment)
 }
 
 
-void BinaryView::StoreMetadata(const std::string& key, Ref<Metadata> inValue, bool isAuto)
+void BinaryView::StoreMetadata(const std::string& key, Ref<Metadata> inValue, BNMetadataStoreFlag flags)
 {
 	if (!inValue)
 		return;
-	BNBinaryViewStoreMetadata(m_object, key.c_str(), inValue->GetObject(), isAuto);
+	BNBinaryViewStoreMetadata(m_object, key.c_str(), inValue->GetObject(), flags);
 }
 
 
@@ -5692,7 +5833,7 @@ Ref<ExternalLibrary> BinaryView::GetExternalLibrary(const std::string& name)
 	BNExternalLibrary* lib = BNBinaryViewGetExternalLibrary(m_object, name.c_str());
 	if (!lib)
 		return nullptr;
-	return new ExternalLibrary(BNNewExternalLibraryReference(lib));
+	return new ExternalLibrary(lib);
 }
 
 
@@ -5723,7 +5864,7 @@ Ref<ExternalLocation> BinaryView::AddExternalLocation(Ref<Symbol> sourceSymbol, 
 
 	if (!loc)
 		return nullptr;
-	return new ExternalLocation(BNNewExternalLocationReference(loc));
+	return new ExternalLocation(loc);
 }
 
 
@@ -5738,7 +5879,7 @@ Ref<ExternalLocation> BinaryView::GetExternalLocation(Ref<Symbol> sourceSymbol)
 	BNExternalLocation* loc = BNBinaryViewGetExternalLocation(m_object, sourceSymbol->GetObject());
 	if (!loc)
 		return nullptr;
-	return new ExternalLocation(BNNewExternalLocationReference(loc));
+	return new ExternalLocation(loc);
 }
 
 
@@ -5759,32 +5900,102 @@ std::vector<Ref<ExternalLocation>> BinaryView::GetExternalLocations()
 
 Confidence<RegisterValue> BinaryView::GetGlobalPointerValue() const
 {
-	BNRegisterValueWithConfidence value = BNGetGlobalPointerValue(m_object);
-	return Confidence<RegisterValue>(RegisterValue::FromAPIObject(value.value), value.confidence);
+	auto values = GetGlobalPointerValues();
+	if (values.empty())
+		return Confidence<RegisterValue>();
+	return values[0].second;
+}
+
+
+static vector<pair<uint32_t, Confidence<RegisterValue>>> ConvertGlobalPointerValues(
+	BNRegisterValueWithConfidenceAndRegister* values, size_t count)
+{
+	vector<pair<uint32_t, Confidence<RegisterValue>>> result;
+	result.reserve(count);
+	for (size_t i = 0; i < count; i++)
+		result.emplace_back(values[i].reg,
+			Confidence<RegisterValue>(RegisterValue::FromAPIObject(values[i].value.value), values[i].value.confidence));
+	BNFreeRegisterValueWithConfidenceAndRegisterList(values);
+	return result;
+}
+
+
+vector<pair<uint32_t, Confidence<RegisterValue>>> BinaryView::GetGlobalPointerValues() const
+{
+	size_t count;
+	BNRegisterValueWithConfidenceAndRegister* values = BNGetGlobalPointerValues(m_object, &count);
+	return ConvertGlobalPointerValues(values, count);
+}
+
+
+vector<pair<uint32_t, Confidence<RegisterValue>>> BinaryView::GetDefaultGlobalPointerValues() const
+{
+	size_t count;
+	BNRegisterValueWithConfidenceAndRegister* values = BNGetDefaultGlobalPointerValues(m_object, &count);
+	return ConvertGlobalPointerValues(values, count);
+}
+
+
+vector<pair<uint32_t, Confidence<RegisterValue>>> BinaryView::GetUserGlobalPointerValues() const
+{
+	size_t count;
+	BNRegisterValueWithConfidenceAndRegister* values = BNGetUserGlobalPointerValues(m_object, &count);
+	return ConvertGlobalPointerValues(values, count);
 }
 
 
 bool BinaryView::UserGlobalPointerValueSet() const
 {
-	return BNUserGlobalPointerValueSet(m_object);
+	return UserGlobalPointerValuesSet();
+}
+
+
+bool BinaryView::UserGlobalPointerValuesSet() const
+{
+	return BNUserGlobalPointerValuesSet(m_object);
 }
 
 
 void BinaryView::ClearUserGlobalPointerValue()
 {
-	return BNClearUserGlobalPointerValue(m_object);
+	ClearUserGlobalPointerValues();
+}
+
+
+void BinaryView::ClearUserGlobalPointerValues()
+{
+	return BNClearUserGlobalPointerValues(m_object);
 }
 
 
 void BinaryView::SetUserGlobalPointerValue(const Confidence<RegisterValue>& value)
 {
-	BNRegisterValueWithConfidence v;
-	v.confidence = value.GetConfidence();
-	v.value.value = value.GetValue().value;
-	v.value.state = value.GetValue().state;
-	v.value.size = value.GetValue().size;
-	v.value.offset = value.GetValue().offset;
-	BNSetUserGlobalPointerValue(m_object, v);
+	vector<pair<uint32_t, Confidence<RegisterValue>>> values;
+	for (auto& [reg, _] : GetGlobalPointerValues())
+		if (reg != BN_INVALID_REGISTER)
+			values.emplace_back(reg, value);
+	if (values.empty())
+		values.emplace_back(BN_INVALID_REGISTER, value);
+	SetUserGlobalPointerValues(values);
+}
+
+
+void BinaryView::SetUserGlobalPointerValues(const vector<pair<uint32_t, Confidence<RegisterValue>>>& values)
+{
+	vector<BNRegisterValueWithConfidenceAndRegister> apiValues;
+	apiValues.reserve(values.size());
+	for (auto& [reg, value] : values)
+	{
+		BNRegisterValueWithConfidenceAndRegister v;
+		v.reg = reg;
+		v.value.confidence = value.GetConfidence();
+		v.value.value.value = value.GetValue().value;
+		v.value.value.state = value.GetValue().state;
+		v.value.value.size = value.GetValue().size;
+		v.value.value.offset = value.GetValue().offset;
+		apiValues.push_back(v);
+	}
+	BNSetUserGlobalPointerValues(m_object, apiValues.data(), apiValues.size());
 }
 
 
@@ -5798,6 +6009,36 @@ optional<pair<string, BNStringType>> BinaryView::StringifyUnicodeData(Architectu
 	string result(str);
 	BNFreeString(str);
 	return make_pair(result, type);
+}
+
+
+Ref<Relocation> BinaryView::GetNextRelocation(uint64_t addr, uint64_t maxAddr)
+{
+	BNRelocation* reloc = BNGetNextRelocation(m_object, addr, maxAddr);
+	if (!reloc)
+		return nullptr;
+
+	return new Relocation(reloc);
+}
+
+
+vector<FunctionParameter> BinaryView::DerefParameterNamedTypeRefs(const vector<FunctionParameter>& params)
+{
+	vector<FunctionParameter> result;
+	result.reserve(params.size());
+	for (auto& i : params)
+		result.emplace_back(i.name, i.type->DerefNamedTypeReference(this)->WithConfidence(i.type.GetConfidence()),
+			i.locationSource, i.location);
+	return result;
+}
+
+
+ReturnValue BinaryView::DerefReturnValueNamedTypeRefs(const ReturnValue& returnValue)
+{
+	ReturnValue result = returnValue;
+	if (result.type.GetValue())
+		result.type.SetValue(result.type->DerefNamedTypeReference(this));
+	return result;
 }
 
 

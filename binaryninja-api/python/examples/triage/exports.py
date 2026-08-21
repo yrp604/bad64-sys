@@ -154,11 +154,14 @@ class ExportsTreeView(QTreeView, FilterTarget):
 	def scrollToCurrentItem(self):
 		self.scrollTo(self.currentIndex())
 
-	def selectFirstItem(self):
-		self.setCurrentIndex(self.model.index(0, 0, QModelIndex()))
+	def ensureSelection(self):
+		if not self.currentIndex().isValid():
+			self.setCurrentIndex(self.model.index(0, 0, QModelIndex()))
 
-	def activateFirstItem(self):
-		self.exportDoubleClicked(self.model.index(0, 0, QModelIndex()))
+	def activateSelection(self):
+		self.ensureSelection()
+		if self.currentIndex().isValid():
+			self.exportDoubleClicked(self.currentIndex())
 
 	def closeFilter(self):
 		self.setFocus(Qt.OtherFocusReason)

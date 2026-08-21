@@ -1,10 +1,12 @@
+use binaryninja::file_metadata::SessionId;
+use binaryninja::object_destructor::register_object_destructor;
 use binaryninja::{
-    binary_view::{BinaryView, BinaryViewBase, BinaryViewExt},
+    binary_view::{BinaryView, BinaryViewBase},
     file_metadata::FileMetadata,
     metadata::Metadata,
+    object_destructor::ObjectDestructor,
     rc::Ref,
     settings::{QueryOptions, Settings},
-    ObjectDestructor,
 };
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
@@ -31,8 +33,8 @@ struct SelectorImplementations {
     sel_to_impl: HashMap<u64, Vec<u64>>,
 }
 
-static VIEW_INFOS: Lazy<DashMap<usize, Arc<AnalysisInfo>>> = Lazy::new(DashMap::new);
-static IGNORED_VIEWS: Lazy<DashMap<usize, bool>> = Lazy::new(DashMap::new);
+static VIEW_INFOS: Lazy<DashMap<SessionId, Arc<AnalysisInfo>>> = Lazy::new(DashMap::new);
+static IGNORED_VIEWS: Lazy<DashMap<SessionId, bool>> = Lazy::new(DashMap::new);
 
 struct ObjectLifetimeObserver;
 
@@ -65,11 +67,11 @@ pub struct GlobalState;
 
 impl GlobalState {
     pub fn register_cleanup() {
-        let observer = Box::leak(Box::new(ObjectLifetimeObserver));
-        observer.register();
+        let destructor = register_object_destructor(ObjectLifetimeObserver);
+        std::mem::forget(destructor);
     }
 
-    fn id(bv: &BinaryView) -> usize {
+    fn id(bv: &BinaryView) -> SessionId {
         bv.file().session_id()
     }
 
@@ -100,7 +102,7 @@ impl GlobalState {
 
 impl AnalysisInfo {
     fn from_view(bv: &BinaryView) -> Option<Self> {
-        let should_rewrite_to_direct_calls = Settings::new().get_bool_with_opts(
+        let should_rewrite_to_direct_calls = Settings::global().get_bool_with_opts(
             "analysis.objectiveC.resolveDynamicDispatch",
             &mut QueryOptions::new_with_view(bv),
         );
@@ -153,14 +155,11 @@ impl AnalysisInfo {
     }
 
     fn load_selector_impls(&self, bv: &BinaryView) -> Option<SelectorImplementations> {
-        let Some(Ok(meta)) = bv.get_metadata::<HashMap<String, Ref<Metadata>>>("Objective-C")
-        else {
-            return None;
-        };
+        let meta = bv.get_metadata::<HashMap<String, Ref<Metadata>>>("Objective-C")?;
         let version_meta = meta.get("version")?;
-        if version_meta.get_unsigned_integer()? != 1 {
-            log::error!(
-                "workflow_objc: Unexpected Objective-C metadata version. Expected 1, got {}.",
+        if version_meta.get_unsigned_integer()? != 2 {
+            tracing::error!(
+                "workflow_objc: Unexpected Objective-C metadata version. Expected 2, got {}.",
                 version_meta.get_unsigned_integer()?
             );
             return None;
@@ -192,7 +191,7 @@ impl AnalysisInfo {
         for item in &array {
             let item = item.get_array()?;
             if item.len() != 2 {
-                log::warn!(
+                tracing::warn!(
                     "Expected selector implementation metadata to have 2 items, found {}",
                     item.len()
                 );

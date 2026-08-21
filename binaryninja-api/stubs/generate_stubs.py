@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -53,7 +53,7 @@ output_source = os.path.join(options.build_dir, 'stubs.cpp')
 
 with open(output_source, 'w') as stubs:
     stubs.write("""
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -104,7 +104,7 @@ extern "C" {
 
     # Pull out all core api functions to generate stubs
     for match in re.finditer(
-        r'(?m:)\t(BINARYNINJACOREAPI [^;]*);',
+        r'(?m:^)[ \t]+(BINARYNINJACOREAPI [^;]*);',
         header_conts
     ):
         group = match.group(1)

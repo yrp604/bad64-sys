@@ -166,7 +166,7 @@ static const char* const RegisterString[] = {"NONE", "w0", "w1", "w2", "w3", "w4
     "pstl1keep", "pstl1strm", "pstl2keep", "pstl2strm", "pstl3keep", "pstl3strm", "#0x16", "#0x17",
     "#0x18", "#0x19", "#0x1a", "#0x1b", "#0x1c", "#0x1d", "#0x1e", "#0x1f", "zt0", "END"};
 
-const char* get_register_name(enum Register r)
+const char* aarch64_get_register_name(enum Register r)
 {
 	if (r > REG_NONE && r < REG_END)
 		return RegisterString[r];
@@ -174,7 +174,7 @@ const char* get_register_name(enum Register r)
 	return "";
 }
 
-size_t get_register_size(enum Register r)
+size_t aarch64_get_register_size(enum Register r)
 {
 	// Comparison done in order of likelyhood to occur
 	if ((r >= REG_X0 && r <= REG_SP) || (r >= REG_D0 && r <= REG_D31))

@@ -1,4 +1,7 @@
 #include "baseaddress.h"
+#include <QButtonGroup>
+#include <QScrollArea>
+#include <QScrollBar>
 
 using namespace std;
 
@@ -10,6 +13,14 @@ BNBaseAddressDetectionPOISetting BaseAddressDetectionPOISettingFromString(const 
 	if (setting == "Functions only")
 		return POIAnalysisFunctionsOnly;
 	return POIAnalysisAll; // Default to All
+}
+
+
+BNBaseAddressDetectionAnalysisMode SelectedBaseAddressDetectionAnalysisMode(const BaseAddressDetectionQtInputs* inputs)
+{
+	if (inputs->InstructionAnalysisModeRadio->isChecked())
+		return InstructionAnalysisBaseAddressDetection;
+	return SamplingBaseAddressDetection; // Default to sampling
 }
 
 
@@ -52,15 +63,6 @@ void BaseAddressDetectionThread::run()
 	string errorStr;
 
 	if (!BinaryNinja::BinaryView::ParseExpression(
-		m_view, m_inputs->AlignmentLineEdit->text().toStdString(), value, 0, errorStr))
-	{
-		results.Status = "Invalid alignment value (" + errorStr + ")";
-		emit ResultReady(results);
-		return;
-	}
-	uint32_t alignment = value;
-
-	if (!BinaryNinja::BinaryView::ParseExpression(
 		m_view, m_inputs->StrlenLineEdit->text().toStdString(), value, 0, errorStr))
 	{
 		results.Status = "Invalid minimum string length (" + errorStr + ")";
@@ -95,36 +97,71 @@ void BaseAddressDetectionThread::run()
 	}
 
 	if (!BinaryNinja::BinaryView::ParseExpression(
-		m_view, m_inputs->MaxPointersPerCluster->text().toStdString(), value, 0, errorStr))
+		m_view, m_inputs->AlignmentLineEdit->text().toStdString(), value, 0, errorStr))
 	{
-		results.Status = "Invalid max pointers (" + errorStr + ")";
+		results.Status = "Invalid alignment value (" + errorStr + ")";
+		emit ResultReady(results);
+		return;
+	}
+	uint32_t alignment = value;
+	if (alignment == 0)
+	{
+		results.Status = "Invalid alignment value (must be > 0)";
 		emit ResultReady(results);
 		return;
 	}
 
-	uint32_t maxPointersPerCluster = value;
-	if (maxPointersPerCluster < 2)
+	auto analysisMode = SelectedBaseAddressDetectionAnalysisMode(m_inputs);
+	bool detectionCompleted = false;
+	if (analysisMode == SamplingBaseAddressDetection)
 	{
-		results.Status = "Invalid max pointers (must be >= 2)";
+		results.AnalysisMode = SamplingBaseAddressDetection;
+		BinaryNinja::BaseAddressDetectionSamplingSettings settings;
+		settings.Architecture = m_inputs->ArchitectureBox->currentText().toStdString();
+		settings.MinStrlen = minStrlen;
+		settings.LowerBoundary = lowerBoundary;
+		settings.UpperBoundary = upperBoundary;
+		settings.Alignment = alignment;
+		detectionCompleted = m_baseDetection->DetectBaseAddressWithSampling(settings);
+	}
+	else
+	{
+		results.AnalysisMode = InstructionAnalysisBaseAddressDetection;
+		if (!BinaryNinja::BinaryView::ParseExpression(
+			m_view, m_inputs->MaxPointersPerCluster->text().toStdString(), value, 0, errorStr))
+		{
+			results.Status = "Invalid max pointers (" + errorStr + ")";
+			emit ResultReady(results);
+			return;
+		}
+
+		uint32_t maxPointersPerCluster = value;
+		if (maxPointersPerCluster < 2)
+		{
+			results.Status = "Invalid max pointers (must be >= 2)";
+			emit ResultReady(results);
+			return;
+		}
+
+		BNBaseAddressDetectionPOISetting poiSetting = BaseAddressDetectionPOISettingFromString(
+			m_inputs->POIBox->currentText().toStdString());
+		BinaryNinja::BaseAddressDetectionInstructionAnalysisSettings settings;
+		settings.Architecture = m_inputs->ArchitectureBox->currentText().toStdString();
+		settings.MinStrlen = minStrlen;
+		settings.LowerBoundary = lowerBoundary;
+		settings.UpperBoundary = upperBoundary;
+		settings.Analysis = m_inputs->AnalysisBox->currentText().toStdString();
+		settings.Alignment = alignment;
+		settings.POIAnalysis = poiSetting;
+		settings.MaxPointersPerCluster = maxPointersPerCluster;
+		detectionCompleted = m_baseDetection->DetectBaseAddressWithInstructionAnalysis(settings);
+	}
+
+	if (!detectionCompleted)
+	{
 		emit ResultReady(results);
 		return;
 	}
-
-	BNBaseAddressDetectionPOISetting poiSetting = BaseAddressDetectionPOISettingFromString(
-		m_inputs->POIBox->currentText().toStdString());
-	BinaryNinja::BaseAddressDetectionSettings settings = {
-		m_inputs->ArchitectureBox->currentText().toStdString(),
-		m_inputs->AnalysisBox->currentText().toStdString(),
-		minStrlen,
-		alignment,
-		lowerBoundary,
-		upperBoundary,
-		poiSetting,
-		maxPointersPerCluster,
-	};
-
-	if (!m_baseDetection->DetectBaseAddress(settings))
-		emit ResultReady(results);
 
 	auto scores = m_baseDetection->GetScores(&results.Confidence, &results.LastTestedBaseAddress);
 	results.Scores = scores;
@@ -175,6 +212,23 @@ void BaseAddressDetectionWidget::GetClickedBaseAddress(const QModelIndex& index)
 
 void BaseAddressDetectionWidget::HandleResults(const BaseAddressDetectionQtResults& results)
 {
+	// Save scroll position to prevent unwanted scrolling when hiding/showing widgets
+	QScrollArea* scrollArea = nullptr;
+	int savedVerticalScrollPosition = 0;
+	int savedHorizontalScrollPosition = 0;
+	QWidget* ancestor = parentWidget();
+	while (ancestor)
+	{
+		scrollArea = qobject_cast<QScrollArea*>(ancestor);
+		if (scrollArea)
+		{
+			savedVerticalScrollPosition = scrollArea->verticalScrollBar()->value();
+			savedHorizontalScrollPosition = scrollArea->horizontalScrollBar()->value();
+			break;
+		}
+		ancestor = ancestor->parentWidget();
+	}
+
 	if (!results.Status.empty())
 		m_status->setText(QString::fromStdString(results.Status));
 
@@ -200,6 +254,7 @@ void BaseAddressDetectionWidget::HandleResults(const BaseAddressDetectionQtResul
 		m_reloadBase->setText(QString("0x%1").arg(results.Scores.rbegin()->second, 0, 16));
 	}
 
+	ConfigureResultsTable(results.AnalysisMode);
 	m_resultsTableWidget->clearContents();
 	m_resultsTableWidget->setRowCount(results.Scores.size());
 	size_t row = 0;
@@ -229,20 +284,47 @@ void BaseAddressDetectionWidget::HandleResults(const BaseAddressDetectionQtResul
 
 		m_resultsTableWidget->setItem(row, 0, new QTableWidgetItem(QString("0x%1").arg(baseaddr, 0, 16)));
 		m_resultsTableWidget->setItem(row, 1, new QTableWidgetItem(QString::number(score)));
-		m_resultsTableWidget->setItem(row, 2, new QTableWidgetItem(QString::number(strHits)));
-		m_resultsTableWidget->setItem(row, 3, new QTableWidgetItem(QString::number(funcHits)));
-		m_resultsTableWidget->setItem(row, 4, new QTableWidgetItem(QString::number(dataHits)));
+		if (results.AnalysisMode == InstructionAnalysisBaseAddressDetection)
+		{
+			m_resultsTableWidget->setItem(row, 2, new QTableWidgetItem(QString::number(strHits)));
+			m_resultsTableWidget->setItem(row, 3, new QTableWidgetItem(QString::number(funcHits)));
+			m_resultsTableWidget->setItem(row, 4, new QTableWidgetItem(QString::number(dataHits)));
+		}
 		row++;
 	}
 
 	m_abortButton->setHidden(true);
 	m_startButton->setHidden(false);
 	m_startButton->setEnabled(true);
+
+	// Restore scroll position after widget visibility changes
+	if (scrollArea)
+	{
+		scrollArea->verticalScrollBar()->setValue(savedVerticalScrollPosition);
+		scrollArea->horizontalScrollBar()->setValue(savedHorizontalScrollPosition);
+	}
 }
 
 
 void BaseAddressDetectionWidget::DetectBaseAddress()
 {
+	// Save scroll position to prevent unwanted scrolling when hiding/showing widgets
+	QScrollArea* scrollArea = nullptr;
+	int savedVerticalScrollPosition = 0;
+	int savedHorizontalScrollPosition = 0;
+	QWidget* ancestor = parentWidget();
+	while (ancestor)
+	{
+		scrollArea = qobject_cast<QScrollArea*>(ancestor);
+		if (scrollArea)
+		{
+			savedVerticalScrollPosition = scrollArea->verticalScrollBar()->value();
+			savedHorizontalScrollPosition = scrollArea->horizontalScrollBar()->value();
+			break;
+		}
+		ancestor = ancestor->parentWidget();
+	}
+
 	HideResultsWidgets(true);
 	m_status->setText("Running...");
 	m_resultsTableWidget->clearContents();
@@ -254,6 +336,13 @@ void BaseAddressDetectionWidget::DetectBaseAddress()
 	connect(m_worker, &BaseAddressDetectionThread::finished, m_worker, &QObject::deleteLater);
 	m_worker->start();
 	m_abortButton->setHidden(false);
+
+	// Restore scroll position after widget visibility changes
+	if (scrollArea)
+	{
+		scrollArea->verticalScrollBar()->setValue(savedVerticalScrollPosition);
+		scrollArea->horizontalScrollBar()->setValue(savedHorizontalScrollPosition);
+	}
 }
 
 
@@ -363,36 +452,104 @@ void BaseAddressDetectionWidget::CreateAdvancedSettingsGroup()
 {
 	int32_t row = 0;
 	int32_t column = 0;
+	const int32_t controlWidth = 220;
 	auto grid = new QGridLayout();
+	grid->setHorizontalSpacing(24);
+	grid->setColumnStretch(column, 0);
+	grid->setColumnStretch(column + 1, 0);
+	grid->setColumnStretch(column + 2, 0);
+	grid->setColumnStretch(column + 3, 0);
+	grid->setColumnStretch(column + 4, 1);
 
-	grid->addWidget(new QLabel("Min. String Length:"), row, column, Qt::AlignLeft);
+	m_inputs.StrlenLabel = new QLabel("Min. String Length:");
+	grid->addWidget(m_inputs.StrlenLabel, row, column, Qt::AlignLeft);
 	m_inputs.StrlenLineEdit = new QLineEdit("0n10");
+	m_inputs.StrlenLineEdit->setFixedWidth(controlWidth);
 	grid->addWidget(m_inputs.StrlenLineEdit, row, column + 1, Qt::AlignLeft);
 
-	grid->addWidget(new QLabel("Alignment:"), row, column + 2, Qt::AlignLeft);
-	m_inputs.AlignmentLineEdit = new QLineEdit("0n1024");
+	m_inputs.AlignmentLabel = new QLabel("Alignment:");
+	grid->addWidget(m_inputs.AlignmentLabel, row, column + 2, Qt::AlignLeft);
+	m_inputs.AlignmentLineEdit = new QLineEdit("0x1000");
+	m_inputs.AlignmentLineEdit->setFixedWidth(controlWidth);
 	grid->addWidget(m_inputs.AlignmentLineEdit, row++, column + 3, Qt::AlignLeft);
 
-	grid->addWidget(new QLabel("Lower Boundary:"), row, column, Qt::AlignLeft);
+	m_inputs.LowerBoundaryLabel = new QLabel("Lower Boundary:");
+	grid->addWidget(m_inputs.LowerBoundaryLabel, row, column, Qt::AlignLeft);
 	m_inputs.LowerBoundary = new QLineEdit("0x0");
+	m_inputs.LowerBoundary->setFixedWidth(controlWidth);
 	grid->addWidget(m_inputs.LowerBoundary, row, column + 1, Qt::AlignLeft);
 
-	grid->addWidget(new QLabel("Upper Boundary:"), row, column + 2, Qt::AlignLeft);
+	m_inputs.UpperBoundaryLabel = new QLabel("Upper Boundary:");
+	grid->addWidget(m_inputs.UpperBoundaryLabel, row, column + 2, Qt::AlignLeft);
 	m_inputs.UpperBoundary = new QLineEdit("0xffffffffffffffff");
+	m_inputs.UpperBoundary->setFixedWidth(controlWidth);
 	grid->addWidget(m_inputs.UpperBoundary, row++, column + 3, Qt::AlignLeft);
 
-	grid->addWidget(new QLabel("Points Of Interest:"), row, column, Qt::AlignLeft);
+	m_inputs.POILabel = new QLabel("Points Of Interest:");
+	grid->addWidget(m_inputs.POILabel, row, column, Qt::AlignLeft);
 	auto poiList = QStringList() << "All" << "Strings only" << "Functions only";
 	m_inputs.POIBox = new QComboBox(this);
 	m_inputs.POIBox->addItems(poiList);
+	m_inputs.POIBox->setFixedWidth(controlWidth);
 	grid->addWidget(m_inputs.POIBox, row, column + 1, Qt::AlignLeft);
 
-	grid->addWidget(new QLabel("Max Pointers:"), row, column + 2, Qt::AlignLeft);
+	m_inputs.MaxPointersPerClusterLabel = new QLabel("Max Pointers:");
+	grid->addWidget(m_inputs.MaxPointersPerClusterLabel, row, column + 2, Qt::AlignLeft);
 	m_inputs.MaxPointersPerCluster = new QLineEdit("0n128");
+	m_inputs.MaxPointersPerCluster->setFixedWidth(controlWidth);
 	grid->addWidget(m_inputs.MaxPointersPerCluster, row++, column + 3, Qt::AlignLeft);
 
 	m_advancedSettingsGroup = new ExpandableGroup(grid);
 	m_advancedSettingsGroup->setTitle("Advanced Settings");
+}
+
+
+void BaseAddressDetectionWidget::ConfigureResultsTable(BNBaseAddressDetectionAnalysisMode analysisMode)
+{
+	QStringList header;
+	header << "Base Address" << "Score";
+	if (analysisMode == InstructionAnalysisBaseAddressDetection)
+		header << "String Hits" << "Function Hits" << "Data Hits";
+
+	m_resultsTableWidget->setColumnCount(header.size());
+	m_resultsTableWidget->setHorizontalHeaderLabels(header);
+
+	if (m_detectionModeWidget)
+	{
+		const int tableWidth = m_detectionModeWidget->sizeHint().width();
+		m_resultsTableWidget->setMinimumWidth(tableWidth);
+		m_resultsTableWidget->setMaximumWidth(tableWidth);
+	}
+	else
+	{
+		m_resultsTableWidget->setMinimumWidth(0);
+		m_resultsTableWidget->setMaximumWidth(QWIDGETSIZE_MAX);
+	}
+}
+
+
+void BaseAddressDetectionWidget::UpdateModeSpecificSettingsVisibility()
+{
+	const bool showInstructionAnalysisSettings =
+		SelectedBaseAddressDetectionAnalysisMode(&m_inputs) == InstructionAnalysisBaseAddressDetection;
+	m_inputs.AnalysisLabel->setVisible(showInstructionAnalysisSettings);
+	m_inputs.AnalysisBox->setVisible(showInstructionAnalysisSettings);
+	m_inputs.AlignmentLabel->setVisible(true);
+	m_inputs.AlignmentLineEdit->setVisible(true);
+	m_inputs.POILabel->setVisible(showInstructionAnalysisSettings);
+	m_inputs.POIBox->setVisible(showInstructionAnalysisSettings);
+	m_inputs.MaxPointersPerClusterLabel->setVisible(showInstructionAnalysisSettings);
+	m_inputs.MaxPointersPerCluster->setVisible(showInstructionAnalysisSettings);
+
+	if (m_advancedSettingsGroup)
+	{
+		m_advancedSettingsGroup->setContentExpandable(false);
+		m_advancedSettingsGroup->updateGeometry();
+		if (m_advancedSettingsGroup->layout())
+			m_advancedSettingsGroup->layout()->activate();
+	}
+	if (m_layout)
+		m_layout->activate();
 }
 
 
@@ -412,16 +569,71 @@ BaseAddressDetectionWidget::BaseAddressDetectionWidget(QWidget* parent,
 	for (const auto& arch : architectures)
 		archItemList << QString::fromStdString(arch->GetName());
 	m_inputs.ArchitectureBox->addItems(archItemList);
+	if (m_view->GetDefaultArchitecture())
+	{
+		auto currentArchIndex = m_inputs.ArchitectureBox->findText(
+			QString::fromStdString(m_view->GetDefaultArchitecture()->GetName()));
+		if (currentArchIndex >= 0)
+			m_inputs.ArchitectureBox->setCurrentIndex(currentArchIndex);
+	}
 	m_layout->addWidget(m_inputs.ArchitectureBox, row++, column + 1, Qt::AlignLeft);
 
-	m_layout->addWidget(new QLabel("Analysis Level:"), row, column, Qt::AlignLeft);
+	m_detectionModeWidget = new QWidget(this);
+	auto modeLayout = new QGridLayout();
+	modeLayout->setContentsMargins(0, 0, 0, 0);
+	modeLayout->setHorizontalSpacing(8);
+	modeLayout->setVerticalSpacing(2);
+	auto modeButtonGroup = new QButtonGroup(this);
+	m_inputs.SamplingModeRadio = new QRadioButton("Sampling Mode", this);
+	m_inputs.SamplingModeRadio->setChecked(true);
+	m_inputs.InstructionAnalysisModeRadio = new QRadioButton("IL Analysis Mode", this);
+	modeButtonGroup->addButton(m_inputs.SamplingModeRadio);
+	modeButtonGroup->addButton(m_inputs.InstructionAnalysisModeRadio);
+
+	auto samplingDescription = new QLabel(
+		"Samples raw binary data and correlates global pointers with string offsets. Recommended for most binaries "
+		"and typically provides the fastest results.", this);
+	auto ilAnalysisDescription = new QLabel(
+		"Analyzes instructions and correlates derived pointers with strings, data variables, and function starts. "
+		"Recommended for binaries that contain few or no strings.", this);
+	samplingDescription->setWordWrap(true);
+	ilAnalysisDescription->setWordWrap(true);
+	samplingDescription->setFixedWidth(620);
+	ilAnalysisDescription->setFixedWidth(620);
+	auto setDescriptionHeight = [](QLabel* label) {
+		const auto margins = label->contentsMargins();
+		const int textWidth = label->width() - margins.left() - margins.right();
+		const QRect textBounds = label->fontMetrics().boundingRect(
+			QRect(0, 0, textWidth, QWIDGETSIZE_MAX), Qt::TextWordWrap, label->text());
+		label->setMinimumHeight(textBounds.height() + margins.top() + margins.bottom());
+	};
+	setDescriptionHeight(samplingDescription);
+	setDescriptionHeight(ilAnalysisDescription);
+	auto descriptionPalette = samplingDescription->palette();
+	descriptionPalette.setColor(QPalette::WindowText, getThemeColor(AnnotationColor));
+	samplingDescription->setPalette(descriptionPalette);
+	ilAnalysisDescription->setPalette(descriptionPalette);
+	modeLayout->addWidget(m_inputs.SamplingModeRadio, 0, 0, Qt::AlignLeft | Qt::AlignTop);
+	modeLayout->addWidget(samplingDescription, 1, 0, Qt::AlignLeft | Qt::AlignTop);
+	modeLayout->addWidget(m_inputs.InstructionAnalysisModeRadio, 2, 0, Qt::AlignLeft | Qt::AlignTop);
+	modeLayout->addWidget(ilAnalysisDescription, 3, 0, Qt::AlignLeft | Qt::AlignTop);
+	m_detectionModeWidget->setLayout(modeLayout);
+	m_layout->addWidget(m_detectionModeWidget, row++, column, 1, 4, Qt::AlignLeft);
+
+	m_inputs.AnalysisLabel = new QLabel("Analysis Level:");
+	m_layout->addWidget(m_inputs.AnalysisLabel, row, column, Qt::AlignLeft);
 	m_inputs.AnalysisBox = new QComboBox(this);
 	auto analysisItemList = QStringList() << "full" << "basic" << "controlFlow";
 	m_inputs.AnalysisBox->addItems(analysisItemList);
 	m_layout->addWidget(m_inputs.AnalysisBox, row++, column + 1, Qt::AlignLeft);
+	connect(m_inputs.SamplingModeRadio, &QRadioButton::toggled,
+		this, &BaseAddressDetectionWidget::UpdateModeSpecificSettingsVisibility);
+	connect(m_inputs.InstructionAnalysisModeRadio, &QRadioButton::toggled,
+		this, &BaseAddressDetectionWidget::UpdateModeSpecificSettingsVisibility);
 
 	CreateAdvancedSettingsGroup();
 	m_layout->addWidget(m_advancedSettingsGroup, row++, column, 1, 4);
+	UpdateModeSpecificSettingsVisibility();
 
 	m_startButton = new QPushButton("Start");
 	connect(m_startButton, &QPushButton::clicked, this, &BaseAddressDetectionWidget::DetectBaseAddress);
@@ -455,10 +667,7 @@ BaseAddressDetectionWidget::BaseAddressDetectionWidget(QWidget* parent,
 	m_layout->addWidget(m_confidence, row++, column + 3, Qt::AlignLeft);
 
 	m_resultsTableWidget = new QTableWidget(this);
-	m_resultsTableWidget->setColumnCount(5);
-	QStringList header;
-	header << "Base Address" << "Score" << "String Hits" << "Function Hits" << "Data Hits";
-	m_resultsTableWidget->setHorizontalHeaderLabels(header);
+	ConfigureResultsTable(SamplingBaseAddressDetection);
 	m_resultsTableWidget->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft);
 	m_resultsTableWidget->horizontalHeader()->setStretchLastSection(true);
 	m_resultsTableWidget->verticalHeader()->setVisible(false);

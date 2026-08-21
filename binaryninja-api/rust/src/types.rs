@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,36 +11,65 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#![allow(unused)]
+//! The model for representing types in Binary Ninja.
+//!
+//! [`Type`]'s are fundamental to analysis. With types, you can influence how decompilation resolves accesses,
+//! renders data, and tell the analysis of properties such as volatility and constness.
+//!
+//! Types are typically stored within a [`BinaryView`], [`TypeArchive`] or a [`TypeLibrary`].
+//!
+//! Types can be created using the [`TypeBuilder`] or one of the convenience functions. Another way
+//! to create a type is with a [`TypeParser`] if you have C type definitions.
+//!
+//! Some interfaces may expect to be passed a [`TypeContainer`] which itself does not store any type
+//! information, rather a generic interface to query for types by name or by id.
 
-// TODO : More widely enforce the use of ref_from_raw vs just from_raw to simplify internal binding usage?  Perhaps remove from_raw functions?
-// TODO : Add documentation and fix examples
-// TODO : Test the get_enumeration and get_structure methods
+pub mod archive;
+pub mod container;
+pub mod enumeration;
+pub mod library;
+pub mod parser;
+pub mod printer;
+pub mod structure;
 
 use binaryninjacore_sys::*;
 
 use crate::{
-    architecture::{Architecture, CoreArchitecture},
-    binary_view::{BinaryView, BinaryViewExt},
+    architecture::{Architecture, Register, RegisterId},
+    binary_view::BinaryView,
     calling_convention::CoreCallingConvention,
+    platform::Platform,
     rc::*,
     string::{BnString, IntoCStr},
 };
 
 use crate::confidence::{Conf, MAX_CONFIDENCE, MIN_CONFIDENCE};
-use crate::string::{raw_to_string, strings_to_string_list};
-use crate::type_container::TypeContainer;
+use crate::string::raw_to_string;
 use crate::variable::{Variable, VariableSourceType};
-use std::borrow::Cow;
 use std::num::NonZeroUsize;
-use std::ops::{Index, IndexMut};
 use std::{
     collections::HashSet,
-    ffi::CStr,
     fmt::{Debug, Display, Formatter},
     hash::{Hash, Hasher},
     iter::IntoIterator,
 };
+
+pub use archive::{TypeArchive, TypeArchiveId, TypeArchiveSnapshotId};
+pub use container::TypeContainer;
+pub use enumeration::{Enumeration, EnumerationBuilder, EnumerationMember};
+pub use library::TypeLibrary;
+pub use parser::{
+    CoreTypeParser, ParsedType, TypeParser, TypeParserError, TypeParserErrorSeverity,
+    TypeParserResult,
+};
+pub use printer::{CoreTypePrinter, TypePrinter};
+pub use structure::{
+    BaseStructure, InheritedStructureMember, Structure, StructureBuilder, StructureMember,
+};
+
+#[deprecated(note = "Use crate::qualified_name::QualifiedName instead")]
+// Re-export QualifiedName so that we do not break public consumers.
+pub use crate::qualified_name::QualifiedName;
 
 pub type StructureType = BNStructureVariant;
 pub type ReferenceType = BNReferenceType;
@@ -66,12 +95,10 @@ impl TypeBuilder {
         Self { handle }
     }
 
-    // Chainable terminal
+    /// Turn the [`TypeBuilder`] into a [`Type`].
     pub fn finalize(&self) -> Ref<Type> {
         unsafe { Type::ref_from_raw(BNFinalizeTypeBuilder(self.handle)) }
     }
-
-    // Settable properties
 
     pub fn set_can_return<T: Into<Conf<bool>>>(&self, value: T) -> &Self {
         let mut bool_with_confidence = value.into().into();
@@ -94,6 +121,22 @@ impl TypeBuilder {
     pub fn set_volatile<T: Into<Conf<bool>>>(&self, value: T) -> &Self {
         let mut bool_with_confidence = value.into().into();
         unsafe { BNTypeBuilderSetVolatile(self.handle, &mut bool_with_confidence) };
+        self
+    }
+
+    /// Set the width of the type.
+    ///
+    /// Typically only done for named type references, which will not have their width set otherwise.
+    pub fn set_width(&self, width: usize) -> &Self {
+        unsafe { BNTypeBuilderSetWidth(self.handle, width) }
+        self
+    }
+
+    /// Set the alignment of the type.
+    ///
+    /// Typically only done for named type references, which will not have their alignment set otherwise.
+    pub fn set_alignment(&self, alignment: usize) -> &Self {
+        unsafe { BNTypeBuilderSetAlignment(self.handle, alignment) }
         self
     }
 
@@ -123,6 +166,17 @@ impl TypeBuilder {
         self.set_child_type(ty)
     }
 
+    pub fn set_signed<T: Into<Conf<bool>>>(&self, value: T) -> &Self {
+        let mut bool_with_confidence = value.into().into();
+        unsafe { BNTypeBuilderSetSigned(self.handle, &mut bool_with_confidence) };
+        self
+    }
+
+    pub fn set_integer_display_type(&self, display_type: IntegerDisplayType) -> &Self {
+        unsafe { BNSetIntegerTypeDisplayType(self.handle, display_type) };
+        self
+    }
+
     // Readable properties
 
     pub fn type_class(&self) -> TypeClass {
@@ -139,6 +193,10 @@ impl TypeBuilder {
 
     pub fn is_signed(&self) -> Conf<bool> {
         unsafe { BNIsTypeBuilderSigned(self.handle).into() }
+    }
+
+    pub fn integer_display_type(&self) -> IntegerDisplayType {
+        self.finalize().integer_display_type()
     }
 
     pub fn is_const(&self) -> Conf<bool> {
@@ -270,18 +328,22 @@ impl TypeBuilder {
     // TODO : This and properties
     // pub fn tokens(&self) -> ? {}
 
+    /// Create a void [`TypeBuilder`]. Analogous to [`Type::void`].
     pub fn void() -> Self {
         unsafe { Self::from_raw(BNCreateVoidTypeBuilder()) }
     }
 
+    /// Create a bool [`TypeBuilder`]. Analogous to [`Type::bool`].
     pub fn bool() -> Self {
         unsafe { Self::from_raw(BNCreateBoolTypeBuilder()) }
     }
 
+    /// Create a signed one byte integer [`TypeBuilder`]. Analogous to [`Type::char`].
     pub fn char() -> Self {
         Self::int(1, true)
     }
 
+    /// Create an integer [`TypeBuilder`] with the given width and signedness. Analogous to [`Type::int`].
     pub fn int(width: usize, is_signed: bool) -> Self {
         let mut is_signed = Conf::new(is_signed, MAX_CONFIDENCE).into();
 
@@ -289,15 +351,16 @@ impl TypeBuilder {
             Self::from_raw(BNCreateIntegerTypeBuilder(
                 width,
                 &mut is_signed,
-                BnString::new("").as_ptr() as *mut _,
+                c"".as_ptr() as _,
             ))
         }
     }
 
+    /// Create an integer [`TypeBuilder`] with the given width and signedness and an alternative name.
+    /// Analogous to [`Type::named_int`].
     pub fn named_int(width: usize, is_signed: bool, alt_name: &str) -> Self {
         let mut is_signed = Conf::new(is_signed, MAX_CONFIDENCE).into();
-        // let alt_name = BnString::new(alt_name);
-        let alt_name = alt_name.to_cstr(); // This segfaulted once, so the above version is there if we need to change to it, but in theory this is copied into a `const string&` on the C++ side; I'm just not 100% confident that a constant reference copies data
+        let alt_name = alt_name.to_cstr();
 
         unsafe {
             Self::from_raw(BNCreateIntegerTypeBuilder(
@@ -308,20 +371,25 @@ impl TypeBuilder {
         }
     }
 
+    /// Create a float [`TypeBuilder`] with the given width. Analogous to [`Type::float`].
     pub fn float(width: usize) -> Self {
         unsafe { Self::from_raw(BNCreateFloatTypeBuilder(width, c"".as_ptr())) }
     }
 
+    /// Create a float [`TypeBuilder`] with the given width and alternative name. Analogous to [`Type::named_float`].
     pub fn named_float(width: usize, alt_name: &str) -> Self {
         let alt_name = alt_name.to_cstr();
         unsafe { Self::from_raw(BNCreateFloatTypeBuilder(width, alt_name.as_ptr())) }
     }
 
+    /// Create an array [`TypeBuilder`] with the given element type and count. Analogous to [`Type::array`].
     pub fn array<'a, T: Into<Conf<&'a Type>>>(ty: T, count: u64) -> Self {
         let owned_raw_ty = Conf::<&Type>::into_raw(ty.into());
         unsafe { Self::from_raw(BNCreateArrayTypeBuilder(&owned_raw_ty, count)) }
     }
 
+    /// Create an enumeration [`TypeBuilder`] with the given width and signedness. Analogous to [`Type::enumeration`].
+    ///
     /// ## NOTE
     ///
     /// The C/C++ APIs require an associated architecture, but in the core we only query the default_int_size if the given width is 0.
@@ -343,11 +411,13 @@ impl TypeBuilder {
         }
     }
 
+    /// Create a structure [`TypeBuilder`]. Analogous to [`Type::structure`].
     pub fn structure(structure_type: &Structure) -> Self {
         unsafe { Self::from_raw(BNCreateStructureTypeBuilder(structure_type.handle)) }
     }
 
-    pub fn named_type(type_reference: NamedTypeReference) -> Self {
+    /// Create a named type reference [`TypeBuilder`]. Analogous to [`Type::named_type`].
+    pub fn named_type(type_reference: &NamedTypeReference) -> Self {
         let mut is_const = Conf::new(false, MIN_CONFIDENCE).into();
         let mut is_volatile = Conf::new(false, MIN_CONFIDENCE).into();
         unsafe {
@@ -361,6 +431,7 @@ impl TypeBuilder {
         }
     }
 
+    /// Create a named type reference [`TypeBuilder`] from a type and name. Analogous to [`Type::named_type_from_type`].
     pub fn named_type_from_type<T: Into<QualifiedName>>(name: T, t: &Type) -> Self {
         let mut raw_name = QualifiedName::into_raw(name.into());
         let id = c"";
@@ -376,36 +447,129 @@ impl TypeBuilder {
         result
     }
 
-    // TODO : BNCreateFunctionTypeBuilder
+    // TODO: Deprecate this for a FunctionBuilder (along with the Type variant?)
+    /// NOTE: This is likely to be deprecated and removed in favor of a function type builder, please
+    /// use [`Type::function`] where possible.
+    pub fn function<T: Into<ReturnValue>>(
+        return_value: T,
+        parameters: Vec<FunctionParameter>,
+        variable_arguments: bool,
+    ) -> Self {
+        let mut owned_raw_return_value = ReturnValue::into_rust_raw(&return_value.into());
+        let mut variable_arguments = Conf::new(variable_arguments, MAX_CONFIDENCE).into();
+        let mut can_return = Conf::new(true, MIN_CONFIDENCE).into();
+        let mut pure = Conf::new(false, MIN_CONFIDENCE).into();
 
-    pub fn pointer<'a, A: Architecture, T: Into<Conf<&'a Type>>>(arch: &A, ty: T) -> Self {
-        let mut is_const = Conf::new(false, MIN_CONFIDENCE).into();
-        let mut is_volatile = Conf::new(false, MIN_CONFIDENCE).into();
-        let owned_raw_ty = Conf::<&Type>::into_raw(ty.into());
-        unsafe {
-            Self::from_raw(BNCreatePointerTypeBuilder(
-                arch.as_ref().handle,
-                &owned_raw_ty,
-                &mut is_const,
-                &mut is_volatile,
-                ReferenceType::PointerReferenceType,
+        let mut raw_calling_convention: BNCallingConventionWithConfidence =
+            BNCallingConventionWithConfidence {
+                convention: std::ptr::null_mut(),
+                confidence: MIN_CONFIDENCE,
+            };
+
+        let mut stack_adjust = Conf::new(0, MIN_CONFIDENCE).into();
+        let mut raw_parameters = parameters
+            .into_iter()
+            .map(FunctionParameter::into_raw)
+            .collect::<Vec<_>>();
+        let reg_stack_adjust_regs = std::ptr::null_mut();
+        let reg_stack_adjust_values = std::ptr::null_mut();
+
+        let result = unsafe {
+            Self::from_raw(BNCreateFunctionTypeBuilder(
+                &mut owned_raw_return_value,
+                &mut raw_calling_convention,
+                raw_parameters.as_mut_ptr(),
+                raw_parameters.len(),
+                &mut variable_arguments,
+                &mut can_return,
+                &mut stack_adjust,
+                reg_stack_adjust_regs,
+                reg_stack_adjust_values,
+                0,
+                BNNameType::NoNameType,
+                &mut pure,
             ))
+        };
+
+        for raw_param in raw_parameters {
+            FunctionParameter::free_raw(raw_param);
         }
+
+        result
     }
 
-    pub fn const_pointer<'a, A: Architecture, T: Into<Conf<&'a Type>>>(arch: &A, ty: T) -> Self {
-        let mut is_const = Conf::new(true, MAX_CONFIDENCE).into();
-        let mut is_volatile = Conf::new(false, MIN_CONFIDENCE).into();
-        let owned_raw_ty = Conf::<&Type>::into_raw(ty.into());
-        unsafe {
-            Self::from_raw(BNCreatePointerTypeBuilder(
-                arch.as_ref().handle,
-                &owned_raw_ty,
-                &mut is_const,
-                &mut is_volatile,
-                ReferenceType::PointerReferenceType,
+    // TODO: Deprecate this for a FunctionBuilder (along with the Type variant?)
+    /// NOTE: This is likely to be deprecated and removed in favor of a function type builder, please
+    /// use [`Type::function_with_opts`] where possible.
+    pub fn function_with_opts<T: Into<ReturnValue>, C: Into<Conf<Ref<CoreCallingConvention>>>>(
+        return_value: T,
+        parameters: &[FunctionParameter],
+        variable_arguments: bool,
+        calling_convention: C,
+        stack_adjust: Conf<i64>,
+    ) -> Self {
+        let mut owned_raw_return_value = ReturnValue::into_rust_raw(&return_value.into());
+        let mut variable_arguments = Conf::new(variable_arguments, MAX_CONFIDENCE).into();
+        let mut can_return = Conf::new(true, MIN_CONFIDENCE).into();
+        let mut pure = Conf::new(false, MIN_CONFIDENCE).into();
+
+        let mut owned_raw_calling_convention =
+            Conf::<Ref<CoreCallingConvention>>::into_owned_raw(&calling_convention.into());
+
+        let mut stack_adjust = stack_adjust.into();
+        let mut raw_parameters = parameters
+            .iter()
+            .cloned()
+            .map(FunctionParameter::into_raw)
+            .collect::<Vec<_>>();
+
+        // TODO: Update type signature and include these (will be a breaking change)
+        let reg_stack_adjust_regs = std::ptr::null_mut();
+        let reg_stack_adjust_values = std::ptr::null_mut();
+
+        let result = unsafe {
+            Self::from_raw(BNCreateFunctionTypeBuilder(
+                &mut owned_raw_return_value,
+                &mut owned_raw_calling_convention,
+                raw_parameters.as_mut_ptr(),
+                raw_parameters.len(),
+                &mut variable_arguments,
+                &mut can_return,
+                &mut stack_adjust,
+                reg_stack_adjust_regs,
+                reg_stack_adjust_values,
+                0,
+                BNNameType::NoNameType,
+                &mut pure,
             ))
+        };
+
+        for raw_param in raw_parameters {
+            FunctionParameter::free_raw(raw_param);
         }
+
+        result
+    }
+
+    /// Create a pointer [`TypeBuilder`] with the given target type. Analogous to [`Type::pointer`].
+    pub fn pointer<'a, A: Architecture, T: Into<Conf<&'a Type>>>(arch: &A, ty: T) -> Self {
+        Self::pointer_with_options(arch, ty, false, false, None)
+    }
+
+    /// Create a const pointer [`TypeBuilder`] with the given target type. Analogous to [`Type::const_pointer`].
+    pub fn const_pointer<'a, A: Architecture, T: Into<Conf<&'a Type>>>(arch: &A, ty: T) -> Self {
+        Self::pointer_with_options(arch, ty, true, false, None)
+    }
+
+    pub fn pointer_with_options<'a, A: Architecture, T: Into<Conf<&'a Type>>>(
+        arch: &A,
+        ty: T,
+        is_const: bool,
+        is_volatile: bool,
+        ref_type: Option<ReferenceType>,
+    ) -> Self {
+        let arch_ptr_size = arch.address_size();
+        Self::pointer_of_width(ty, arch_ptr_size, is_const, is_volatile, ref_type)
     }
 
     pub fn pointer_of_width<'a, T: Into<Conf<&'a Type>>>(
@@ -421,27 +585,6 @@ impl TypeBuilder {
         unsafe {
             Self::from_raw(BNCreatePointerTypeBuilderOfWidth(
                 size,
-                &owned_raw_ty,
-                &mut is_const,
-                &mut is_volatile,
-                ref_type.unwrap_or(ReferenceType::PointerReferenceType),
-            ))
-        }
-    }
-
-    pub fn pointer_with_options<'a, A: Architecture, T: Into<Conf<&'a Type>>>(
-        arch: &A,
-        ty: T,
-        is_const: bool,
-        is_volatile: bool,
-        ref_type: Option<ReferenceType>,
-    ) -> Self {
-        let mut is_const = Conf::new(is_const, MAX_CONFIDENCE).into();
-        let mut is_volatile = Conf::new(is_volatile, MAX_CONFIDENCE).into();
-        let owned_raw_ty = Conf::<&Type>::into_raw(ty.into());
-        unsafe {
-            Self::from_raw(BNCreatePointerTypeBuilder(
-                arch.as_ref().handle,
                 &owned_raw_ty,
                 &mut is_const,
                 &mut is_volatile,
@@ -465,13 +608,33 @@ impl Drop for TypeBuilder {
     }
 }
 
-#[repr(transparent)]
-pub struct Type {
-    pub handle: *mut BNType,
-}
-
+/// The core model for types in Binary Ninja.
+///
+/// A [`Type`] is how we model the storage of a [`Variable`] or [`crate::variable::DataVariable`] as
+/// well as propagate information such as the constness of a variable. Types are also used to declare
+/// function signatures, such as the [`FunctionParameter`]'s and return type.
+///
+/// Types are immutable. To change a type, you must create a new one either using [`TypeBuilder`] or
+/// one of the helper functions:
+///
+/// - [`Type::void`]
+/// - [`Type::bool`]
+/// - [`Type::char`]
+/// - [`Type::wide_char`]
+/// - [`Type::int`], [`Type::named_int`]
+/// - [`Type::float`], [`Type::named_float`]
+/// - [`Type::array`]
+/// - [`Type::enumeration`]
+/// - [`Type::structure`]
+/// - [`Type::named_type`], [`Type::named_type_from_type`]
+/// - [`Type::function`], [`Type::function_with_opts`]
+/// - [`Type::pointer`], [`Type::const_pointer`], [`Type::pointer_of_width`], [`Type::pointer_with_options`]
+///
+/// # Example
+///
+/// As an example, defining a _named_ type within a [`BinaryView`]:
+///
 /// ```no_run
-/// # use crate::binaryninja::binary_view::BinaryViewExt;
 /// # use binaryninja::types::Type;
 /// let bv = binaryninja::load("example.bin").unwrap();
 /// let my_custom_type_1 = Type::named_int(5, false, "my_w");
@@ -479,6 +642,11 @@ pub struct Type {
 /// bv.define_user_type("int_1", &my_custom_type_1);
 /// bv.define_user_type("int_2", &my_custom_type_2);
 /// ```
+#[repr(transparent)]
+pub struct Type {
+    pub handle: *mut BNType,
+}
+
 impl Type {
     pub unsafe fn from_raw(handle: *mut BNType) -> Self {
         debug_assert!(!handle.is_null());
@@ -500,6 +668,7 @@ impl Type {
 
     // TODO: We need to decide on a public type to represent type width.
     // TODO: The api uses both `u64` and `usize`, pick one or a new type!
+    /// The size of the type in bytes.
     pub fn width(&self) -> u64 {
         unsafe { BNGetTypeWidth(self.handle) }
     }
@@ -510,6 +679,10 @@ impl Type {
 
     pub fn is_signed(&self) -> Conf<bool> {
         unsafe { BNIsTypeSigned(self.handle).into() }
+    }
+
+    pub fn integer_display_type(&self) -> IntegerDisplayType {
+        unsafe { BNGetIntegerTypeDisplayType(self.handle) }
     }
 
     pub fn is_const(&self) -> Conf<bool> {
@@ -753,12 +926,12 @@ impl Type {
     }
 
     // TODO: FunctionBuilder
-    pub fn function<'a, T: Into<Conf<&'a Type>>>(
-        return_type: T,
+    pub fn function<T: Into<ReturnValue>>(
+        return_value: T,
         parameters: Vec<FunctionParameter>,
         variable_arguments: bool,
     ) -> Ref<Self> {
-        let mut owned_raw_return_type = Conf::<&Type>::into_raw(return_type.into());
+        let mut owned_raw_return_value = ReturnValue::into_rust_raw(&return_value.into());
         let mut variable_arguments = Conf::new(variable_arguments, MAX_CONFIDENCE).into();
         let mut can_return = Conf::new(true, MIN_CONFIDENCE).into();
         let mut pure = Conf::new(false, MIN_CONFIDENCE).into();
@@ -777,15 +950,9 @@ impl Type {
         let reg_stack_adjust_regs = std::ptr::null_mut();
         let reg_stack_adjust_values = std::ptr::null_mut();
 
-        let mut return_regs: BNRegisterSetWithConfidence = BNRegisterSetWithConfidence {
-            regs: std::ptr::null_mut(),
-            count: 0,
-            confidence: 0,
-        };
-
         let result = unsafe {
             Self::ref_from_raw(BNCreateFunctionType(
-                &mut owned_raw_return_type,
+                &mut owned_raw_return_value,
                 &mut raw_calling_convention,
                 raw_parameters.as_mut_ptr(),
                 raw_parameters.len(),
@@ -795,12 +962,12 @@ impl Type {
                 reg_stack_adjust_regs,
                 reg_stack_adjust_values,
                 0,
-                &mut return_regs,
                 BNNameType::NoNameType,
                 &mut pure,
             ))
         };
 
+        ReturnValue::free_rust_raw(owned_raw_return_value);
         for raw_param in raw_parameters {
             FunctionParameter::free_raw(raw_param);
         }
@@ -809,18 +976,14 @@ impl Type {
     }
 
     // TODO: FunctionBuilder
-    pub fn function_with_opts<
-        'a,
-        T: Into<Conf<&'a Type>>,
-        C: Into<Conf<Ref<CoreCallingConvention>>>,
-    >(
-        return_type: T,
+    pub fn function_with_opts<T: Into<ReturnValue>, C: Into<Conf<Ref<CoreCallingConvention>>>>(
+        return_value: T,
         parameters: &[FunctionParameter],
         variable_arguments: bool,
         calling_convention: C,
         stack_adjust: Conf<i64>,
     ) -> Ref<Self> {
-        let mut owned_raw_return_type = Conf::<&Type>::into_raw(return_type.into());
+        let mut owned_raw_return_value = ReturnValue::into_rust_raw(&return_value.into());
         let mut variable_arguments = Conf::new(variable_arguments, MAX_CONFIDENCE).into();
         let mut can_return = Conf::new(true, MIN_CONFIDENCE).into();
         let mut pure = Conf::new(false, MIN_CONFIDENCE).into();
@@ -839,15 +1002,9 @@ impl Type {
         let reg_stack_adjust_regs = std::ptr::null_mut();
         let reg_stack_adjust_values = std::ptr::null_mut();
 
-        let mut return_regs: BNRegisterSetWithConfidence = BNRegisterSetWithConfidence {
-            regs: std::ptr::null_mut(),
-            count: 0,
-            confidence: 0,
-        };
-
         let result = unsafe {
             Self::ref_from_raw(BNCreateFunctionType(
-                &mut owned_raw_return_type,
+                &mut owned_raw_return_value,
                 &mut owned_raw_calling_convention,
                 raw_parameters.as_mut_ptr(),
                 raw_parameters.len(),
@@ -857,12 +1014,12 @@ impl Type {
                 reg_stack_adjust_regs,
                 reg_stack_adjust_values,
                 0,
-                &mut return_regs,
                 BNNameType::NoNameType,
                 &mut pure,
             ))
         };
 
+        ReturnValue::free_rust_raw(owned_raw_return_value);
         for raw_param in raw_parameters {
             FunctionParameter::free_raw(raw_param);
         }
@@ -871,36 +1028,25 @@ impl Type {
     }
 
     pub fn pointer<'a, A: Architecture, T: Into<Conf<&'a Type>>>(arch: &A, ty: T) -> Ref<Self> {
-        let mut is_const = Conf::new(false, MIN_CONFIDENCE).into();
-        let mut is_volatile = Conf::new(false, MIN_CONFIDENCE).into();
-        let owned_raw_ty = Conf::<&Type>::into_raw(ty.into());
-        unsafe {
-            Self::ref_from_raw(BNCreatePointerType(
-                arch.as_ref().handle,
-                &owned_raw_ty,
-                &mut is_const,
-                &mut is_volatile,
-                ReferenceType::PointerReferenceType,
-            ))
-        }
+        Self::pointer_with_options(arch, ty, false, false, None)
     }
 
     pub fn const_pointer<'a, A: Architecture, T: Into<Conf<&'a Type>>>(
         arch: &A,
         ty: T,
     ) -> Ref<Self> {
-        let mut is_const = Conf::new(true, MAX_CONFIDENCE).into();
-        let mut is_volatile = Conf::new(false, MIN_CONFIDENCE).into();
-        let owned_raw_ty = Conf::<&Type>::into_raw(ty.into());
-        unsafe {
-            Self::ref_from_raw(BNCreatePointerType(
-                arch.as_ref().handle,
-                &owned_raw_ty,
-                &mut is_const,
-                &mut is_volatile,
-                ReferenceType::PointerReferenceType,
-            ))
-        }
+        Self::pointer_with_options(arch, ty, true, false, None)
+    }
+
+    pub fn pointer_with_options<'a, A: Architecture, T: Into<Conf<&'a Type>>>(
+        arch: &A,
+        ty: T,
+        is_const: bool,
+        is_volatile: bool,
+        ref_type: Option<ReferenceType>,
+    ) -> Ref<Self> {
+        let arch_pointer_size = arch.address_size();
+        Self::pointer_of_width(ty, arch_pointer_size, is_const, is_volatile, ref_type)
     }
 
     pub fn pointer_of_width<'a, T: Into<Conf<&'a Type>>>(
@@ -924,33 +1070,29 @@ impl Type {
         }
     }
 
-    pub fn pointer_with_options<'a, A: Architecture, T: Into<Conf<&'a Type>>>(
-        arch: &A,
-        ty: T,
-        is_const: bool,
-        is_volatile: bool,
-        ref_type: Option<ReferenceType>,
-    ) -> Ref<Self> {
-        let mut is_const = Conf::new(is_const, MAX_CONFIDENCE).into();
-        let mut is_volatile = Conf::new(is_volatile, MAX_CONFIDENCE).into();
-        let owned_raw_ty = Conf::<&Type>::into_raw(ty.into());
-        unsafe {
-            Self::ref_from_raw(BNCreatePointerType(
-                arch.as_ref().handle,
-                &owned_raw_ty,
-                &mut is_const,
-                &mut is_volatile,
-                ref_type.unwrap_or(ReferenceType::PointerReferenceType),
-            ))
-        }
-    }
-
     pub fn generate_auto_demangled_type_id<T: Into<QualifiedName>>(name: T) -> String {
         let mut raw_name = QualifiedName::into_raw(name.into());
         let type_id =
             unsafe { BnString::into_string(BNGenerateAutoDemangledTypeId(&mut raw_name)) };
         QualifiedName::free_raw(raw_name);
         type_id
+    }
+
+    pub fn deref_named_type_reference(&self, view: &BinaryView) -> Ref<Type> {
+        unsafe { Self::ref_from_raw(BNDerefNamedTypeReference(view.handle, self.handle)) }
+    }
+
+    pub fn get_string_after_name(&self, platform: Option<&Platform>) -> String {
+        let platform = platform
+            .map(|platform| platform.handle)
+            .unwrap_or(std::ptr::null_mut());
+        unsafe {
+            BnString::into_string(BNGetTypeStringAfterName(
+                self.handle,
+                platform,
+                BNTokenEscapingType::NoTokenEscapingType,
+            ))
+        }
     }
 }
 
@@ -970,7 +1112,7 @@ impl Debug for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         // You might be tempted to rip this atrocity out and make this more "sensible". READ BELOW!
         // Type is a one-size fits all structure, these are actually its fields! If we wanted to
-        // omit some fields for different type classes what you really want to do is implement your
+        // omit some fields for different type classes, what you really want to do is implement your
         // own formatter. This is supposed to represent the structure entirely, it's not supposed to be pretty!
         f.debug_struct("Type")
             .field("type_class", &self.type_class())
@@ -1048,24 +1190,278 @@ unsafe impl CoreArrayProviderInner for Type {
     }
 }
 
-// TODO: Remove this struct, or make it not a ZST with a terrible array provider.
-/// ZST used only for `Array<ComponentReferencedType>`.
-pub struct ComponentReferencedType;
-
-impl CoreArrayProvider for ComponentReferencedType {
-    type Raw = *mut BNType;
-    type Context = ();
-    type Wrapped<'a> = &'a Type;
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct ValueLocationComponent {
+    pub variable: Variable,
+    pub offset: i64,
+    pub size: Option<u64>,
 }
 
-unsafe impl CoreArrayProviderInner for ComponentReferencedType {
-    unsafe fn free(raw: *mut Self::Raw, count: usize, _context: &Self::Context) {
-        BNComponentFreeReferencedTypes(raw, count)
+impl ValueLocationComponent {
+    pub(crate) fn from_raw(value: &BNValueLocationComponent) -> Self {
+        let variable = Variable::from(&value.variable);
+        let size = if value.sizeValid {
+            Some(value.size)
+        } else {
+            None
+        };
+        Self {
+            variable,
+            offset: value.offset,
+            size,
+        }
     }
 
-    unsafe fn wrap_raw<'a>(raw: &'a Self::Raw, _context: &'a Self::Context) -> Self::Wrapped<'a> {
-        // SAFETY: &*mut BNType == &Type (*mut BNType == Type)
-        std::mem::transmute(raw)
+    pub(crate) fn into_raw(value: &Self) -> BNValueLocationComponent {
+        BNValueLocationComponent {
+            variable: value.variable.into(),
+            offset: value.offset,
+            sizeValid: value.size.is_some(),
+            size: value.size.unwrap_or(0),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct ValueLocation {
+    pub components: Vec<ValueLocationComponent>,
+    pub indirect: bool,
+    pub returned_pointer: Option<Variable>,
+}
+
+impl ValueLocation {
+    pub fn from_variable(var: Variable) -> Self {
+        Self {
+            components: vec![ValueLocationComponent {
+                variable: var,
+                offset: 0,
+                size: None,
+            }],
+            indirect: false,
+            returned_pointer: None,
+        }
+    }
+
+    pub fn from_register(reg: impl Register) -> Self {
+        Self::from_variable(Variable::from_register(reg))
+    }
+
+    pub fn from_register_id(reg: RegisterId) -> Self {
+        Self::from_variable(Variable::from_register_id(reg))
+    }
+
+    pub fn from_stack_offset(offset: i64) -> Self {
+        Self::from_variable(Variable::from_stack_offset(offset))
+    }
+
+    pub fn is_valid(&self) -> bool {
+        !self.components.is_empty()
+    }
+
+    pub fn variable_for_return_value(&self) -> Option<Variable> {
+        let value_raw = Self::into_rust_raw(self);
+        let mut var_raw = BNVariable::default();
+        let valid = unsafe { BNGetValueLocationVariableForReturnValue(&value_raw, &mut var_raw) };
+        Self::free_rust_raw(value_raw);
+        if valid {
+            Some(var_raw.into())
+        } else {
+            None
+        }
+    }
+
+    pub fn variable_for_parameter(&self, idx: usize) -> Option<Variable> {
+        let value_raw = Self::into_rust_raw(self);
+        let mut var_raw = BNVariable::default();
+        let valid =
+            unsafe { BNGetValueLocationVariableForParameter(&value_raw, &mut var_raw, idx) };
+        Self::free_rust_raw(value_raw);
+        if valid {
+            Some(var_raw.into())
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn from_raw(loc: &BNValueLocation) -> Self {
+        let components_raw: &[BNValueLocationComponent] =
+            unsafe { crate::ffi::slice_from_raw_parts(loc.components, loc.count) };
+        Self {
+            components: components_raw
+                .iter()
+                .map(ValueLocationComponent::from_raw)
+                .collect(),
+            indirect: loc.indirect,
+            returned_pointer: if loc.returnedPointerValid {
+                Some(Variable::from(&loc.returnedPointer))
+            } else {
+                None
+            },
+        }
+    }
+
+    pub fn into_rust_raw(value: &Self) -> BNValueLocation {
+        let components: Box<[BNValueLocationComponent]> = value
+            .components
+            .iter()
+            .map(ValueLocationComponent::into_raw)
+            .collect();
+        BNValueLocation {
+            count: components.len(),
+            components: Box::leak(components).as_mut_ptr(),
+            indirect: value.indirect,
+            returnedPointerValid: value.returned_pointer.is_some(),
+            returnedPointer: if let Some(ptr) = value.returned_pointer {
+                ptr.into()
+            } else {
+                Variable::new(VariableSourceType::RegisterVariableSourceType, 0, 0).into()
+            },
+        }
+    }
+
+    /// Free a RUST ALLOCATED possible value set. Do not use this with CORE ALLOCATED values.
+    pub fn free_rust_raw(value: BNValueLocation) {
+        let raw_components =
+            unsafe { std::slice::from_raw_parts_mut(value.components, value.count) };
+        let _ = unsafe { Box::from_raw(raw_components) };
+    }
+}
+
+impl From<Variable> for ValueLocation {
+    fn from(value: Variable) -> Self {
+        ValueLocation {
+            components: vec![ValueLocationComponent {
+                variable: value,
+                offset: 0,
+                size: None,
+            }],
+            indirect: false,
+            returned_pointer: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct ReturnValue {
+    pub ty: Conf<Ref<Type>>,
+    pub location: Option<Conf<ValueLocation>>,
+}
+
+impl ReturnValue {
+    pub(crate) fn from_raw(value: &BNReturnValue) -> Self {
+        Self {
+            ty: Conf::new(
+                unsafe { Type::from_raw(value.type_).to_owned() },
+                value.typeConfidence,
+            ),
+            location: match value.defaultLocation {
+                false => Some(Conf::new(
+                    ValueLocation::from_raw(&value.location),
+                    value.locationConfidence,
+                )),
+                true => None,
+            },
+        }
+    }
+
+    /// Take ownership over an "owned" **core allocated** value. Do not call this for a rust allocated value.
+    pub(crate) fn from_owned_core_raw(mut value: BNReturnValue) -> Self {
+        let owned = Self::from_raw(&value);
+        Self::free_core_raw(&mut value);
+        owned
+    }
+
+    pub(crate) fn into_rust_raw(value: &Self) -> BNReturnValue {
+        BNReturnValue {
+            type_: unsafe { Ref::into_raw(value.ty.contents.clone()) }.handle,
+            typeConfidence: value.ty.confidence,
+            defaultLocation: value.location.is_none(),
+            location: ValueLocation::into_rust_raw(
+                value
+                    .location
+                    .as_ref()
+                    .map(|v| &v.contents)
+                    .unwrap_or(&ValueLocation {
+                        components: Vec::new(),
+                        indirect: false,
+                        returned_pointer: None,
+                    }),
+            ),
+            locationConfidence: value.location.as_ref().map(|v| v.confidence).unwrap_or(0),
+        }
+    }
+
+    /// Free a CORE ALLOCATED possible value set. Do not use this with [Self::into_rust_raw] values.
+    pub(crate) fn free_core_raw(value: &mut BNReturnValue) {
+        unsafe { BNFreeReturnValue(value) }
+    }
+
+    /// Free a RUST ALLOCATED possible value set. Do not use this with CORE ALLOCATED values.
+    pub(crate) fn free_rust_raw(value: BNReturnValue) {
+        let _ = unsafe { Type::ref_from_raw(value.type_) };
+        ValueLocation::free_rust_raw(value.location);
+    }
+}
+
+impl From<Ref<Type>> for ReturnValue {
+    fn from(value: Ref<Type>) -> ReturnValue {
+        ReturnValue {
+            ty: value.into(),
+            location: None,
+        }
+    }
+}
+
+impl From<&Ref<Type>> for ReturnValue {
+    fn from(value: &Ref<Type>) -> ReturnValue {
+        ReturnValue {
+            ty: value.clone().into(),
+            location: None,
+        }
+    }
+}
+
+impl From<&Type> for ReturnValue {
+    fn from(value: &Type) -> ReturnValue {
+        ReturnValue {
+            ty: value.to_owned().into(),
+            location: None,
+        }
+    }
+}
+
+impl From<Conf<Ref<Type>>> for ReturnValue {
+    fn from(value: Conf<Ref<Type>>) -> ReturnValue {
+        ReturnValue {
+            ty: value,
+            location: None,
+        }
+    }
+}
+
+impl From<&Conf<Ref<Type>>> for ReturnValue {
+    fn from(value: &Conf<Ref<Type>>) -> ReturnValue {
+        ReturnValue {
+            ty: value.clone(),
+            location: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum ValueLocationSource {
+    Default,
+    PassByValue,
+    PassByReference,
+    Custom(ValueLocation),
+}
+
+impl From<Option<ValueLocation>> for ValueLocationSource {
+    fn from(loc: Option<ValueLocation>) -> Self {
+        match loc {
+            Some(loc) => ValueLocationSource::Custom(loc),
+            None => ValueLocationSource::Default,
+        }
     }
 }
 
@@ -1073,7 +1469,7 @@ unsafe impl CoreArrayProviderInner for ComponentReferencedType {
 pub struct FunctionParameter {
     pub ty: Conf<Ref<Type>>,
     pub name: String,
-    pub location: Option<Variable>,
+    pub location: ValueLocationSource,
 }
 
 impl FunctionParameter {
@@ -1081,13 +1477,7 @@ impl FunctionParameter {
         // TODO: I copied this from the original `from_raw` function.
         // TODO: So this actually needs to be audited later.
         let name = if value.name.is_null() {
-            if value.location.type_ == VariableSourceType::RegisterVariableSourceType {
-                format!("reg_{}", value.location.storage)
-            } else if value.location.type_ == VariableSourceType::StackVariableSourceType {
-                format!("arg_{}", value.location.storage)
-            } else {
-                String::new()
-            }
+            String::new()
         } else {
             raw_to_string(value.name as *const _).unwrap()
         };
@@ -1098,13 +1488,22 @@ impl FunctionParameter {
                 value.typeConfidence,
             ),
             name,
-            location: match value.defaultLocation {
-                false => Some(Variable::from(value.location)),
-                true => None,
+            location: match value.locationSource {
+                BNValueLocationSource::DefaultLocationSource => ValueLocationSource::Default,
+                BNValueLocationSource::PassByValueLocationSource => {
+                    ValueLocationSource::PassByValue
+                }
+                BNValueLocationSource::PassByReferenceLocationSource => {
+                    ValueLocationSource::PassByReference
+                }
+                BNValueLocationSource::CustomLocationSource => {
+                    ValueLocationSource::Custom(ValueLocation::from_raw(&value.location))
+                }
             },
         }
     }
 
+    #[allow(unused)]
     pub(crate) fn from_owned_raw(value: BNFunctionParameter) -> Self {
         let owned = Self::from_raw(&value);
         Self::free_raw(value);
@@ -1117,891 +1516,43 @@ impl FunctionParameter {
             name: BnString::into_raw(bn_name),
             type_: unsafe { Ref::into_raw(value.ty.contents) }.handle,
             typeConfidence: value.ty.confidence,
-            defaultLocation: value.location.is_none(),
-            location: value.location.map(Into::into).unwrap_or_default(),
+            locationSource: match value.location {
+                ValueLocationSource::Default => BNValueLocationSource::DefaultLocationSource,
+                ValueLocationSource::PassByValue => {
+                    BNValueLocationSource::PassByValueLocationSource
+                }
+                ValueLocationSource::PassByReference => {
+                    BNValueLocationSource::PassByReferenceLocationSource
+                }
+                ValueLocationSource::Custom(_) => BNValueLocationSource::CustomLocationSource,
+            },
+            location: match &value.location {
+                ValueLocationSource::Custom(loc) => ValueLocation::into_rust_raw(loc),
+                _ => ValueLocation::into_rust_raw(&ValueLocation {
+                    components: Vec::new(),
+                    indirect: false,
+                    returned_pointer: None,
+                }),
+            },
         }
     }
 
     pub(crate) fn free_raw(value: BNFunctionParameter) {
         unsafe { BnString::free_raw(value.name) };
         let _ = unsafe { Type::ref_from_raw(value.type_) };
+        ValueLocation::free_rust_raw(value.location);
     }
 
-    pub fn new<T: Into<Conf<Ref<Type>>>>(ty: T, name: String, location: Option<Variable>) -> Self {
+    pub fn new<T: Into<Conf<Ref<Type>>>>(
+        ty: T,
+        name: String,
+        location: impl Into<ValueLocationSource>,
+    ) -> Self {
         Self {
             ty: ty.into(),
             name,
-            location,
+            location: location.into(),
         }
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct EnumerationMember {
-    pub name: String,
-    /// The associated constant value for the member.
-    pub value: u64,
-    /// Whether this is the default member for the associated [`Enumeration`].
-    pub default: bool,
-}
-
-impl EnumerationMember {
-    pub(crate) fn from_raw(value: &BNEnumerationMember) -> Self {
-        Self {
-            name: raw_to_string(value.name).unwrap(),
-            value: value.value,
-            default: value.isDefault,
-        }
-    }
-
-    pub(crate) fn from_owned_raw(value: BNEnumerationMember) -> Self {
-        let owned = Self::from_raw(&value);
-        Self::free_raw(value);
-        owned
-    }
-
-    pub(crate) fn into_raw(value: Self) -> BNEnumerationMember {
-        let bn_name = BnString::new(value.name);
-        BNEnumerationMember {
-            name: BnString::into_raw(bn_name),
-            value: value.value,
-            isDefault: value.default,
-        }
-    }
-
-    pub(crate) fn free_raw(value: BNEnumerationMember) {
-        unsafe { BnString::free_raw(value.name) };
-    }
-
-    pub fn new(name: String, value: u64, default: bool) -> Self {
-        Self {
-            name,
-            value,
-            default,
-        }
-    }
-}
-
-#[derive(PartialEq, Eq, Hash)]
-pub struct EnumerationBuilder {
-    pub(crate) handle: *mut BNEnumerationBuilder,
-}
-
-impl EnumerationBuilder {
-    pub fn new() -> Self {
-        Self {
-            handle: unsafe { BNCreateEnumerationBuilder() },
-        }
-    }
-
-    pub(crate) unsafe fn from_raw(handle: *mut BNEnumerationBuilder) -> Self {
-        Self { handle }
-    }
-
-    pub fn finalize(&self) -> Ref<Enumeration> {
-        unsafe { Enumeration::ref_from_raw(BNFinalizeEnumerationBuilder(self.handle)) }
-    }
-
-    pub fn append(&mut self, name: &str) -> &mut Self {
-        let name = name.to_cstr();
-        unsafe {
-            BNAddEnumerationBuilderMember(self.handle, name.as_ref().as_ptr() as _);
-        }
-        self
-    }
-
-    pub fn insert(&mut self, name: &str, value: u64) -> &mut Self {
-        let name = name.to_cstr();
-        unsafe {
-            BNAddEnumerationBuilderMemberWithValue(self.handle, name.as_ref().as_ptr() as _, value);
-        }
-        self
-    }
-
-    pub fn replace(&mut self, id: usize, name: &str, value: u64) -> &mut Self {
-        let name = name.to_cstr();
-        unsafe {
-            BNReplaceEnumerationBuilderMember(self.handle, id, name.as_ref().as_ptr() as _, value);
-        }
-        self
-    }
-
-    pub fn remove(&mut self, id: usize) -> &mut Self {
-        unsafe {
-            BNRemoveEnumerationBuilderMember(self.handle, id);
-        }
-
-        self
-    }
-
-    pub fn members(&self) -> Vec<EnumerationMember> {
-        unsafe {
-            let mut count = 0;
-            let members_raw_ptr = BNGetEnumerationBuilderMembers(self.handle, &mut count);
-            let members_raw: &[BNEnumerationMember] =
-                std::slice::from_raw_parts(members_raw_ptr, count);
-            let members = members_raw
-                .iter()
-                .map(EnumerationMember::from_raw)
-                .collect();
-            BNFreeEnumerationMemberList(members_raw_ptr, count);
-            members
-        }
-    }
-}
-
-impl Default for EnumerationBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl From<&Enumeration> for EnumerationBuilder {
-    fn from(enumeration: &Enumeration) -> Self {
-        unsafe {
-            Self::from_raw(BNCreateEnumerationBuilderFromEnumeration(
-                enumeration.handle,
-            ))
-        }
-    }
-}
-
-impl Drop for EnumerationBuilder {
-    fn drop(&mut self) {
-        unsafe { BNFreeEnumerationBuilder(self.handle) };
-    }
-}
-
-#[derive(PartialEq, Eq, Hash)]
-pub struct Enumeration {
-    pub(crate) handle: *mut BNEnumeration,
-}
-
-impl Enumeration {
-    pub(crate) unsafe fn ref_from_raw(handle: *mut BNEnumeration) -> Ref<Self> {
-        debug_assert!(!handle.is_null());
-        Ref::new(Self { handle })
-    }
-
-    pub fn builder() -> EnumerationBuilder {
-        EnumerationBuilder::new()
-    }
-
-    pub fn members(&self) -> Vec<EnumerationMember> {
-        unsafe {
-            let mut count = 0;
-            let members_raw_ptr = BNGetEnumerationMembers(self.handle, &mut count);
-            debug_assert!(!members_raw_ptr.is_null());
-            let members_raw: &[BNEnumerationMember] =
-                std::slice::from_raw_parts(members_raw_ptr, count);
-            let members = members_raw
-                .iter()
-                .map(EnumerationMember::from_raw)
-                .collect();
-            BNFreeEnumerationMemberList(members_raw_ptr, count);
-            members
-        }
-    }
-}
-
-impl Debug for Enumeration {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Enumeration")
-            .field("members", &self.members())
-            .finish()
-    }
-}
-
-unsafe impl RefCountable for Enumeration {
-    unsafe fn inc_ref(handle: &Self) -> Ref<Self> {
-        Self::ref_from_raw(BNNewEnumerationReference(handle.handle))
-    }
-
-    unsafe fn dec_ref(handle: &Self) {
-        BNFreeEnumeration(handle.handle);
-    }
-}
-
-impl ToOwned for Enumeration {
-    type Owned = Ref<Self>;
-
-    fn to_owned(&self) -> Self::Owned {
-        unsafe { RefCountable::inc_ref(self) }
-    }
-}
-
-#[derive(PartialEq, Eq, Hash)]
-pub struct StructureBuilder {
-    pub(crate) handle: *mut BNStructureBuilder,
-}
-
-/// ```no_run
-/// // Includes
-/// # use binaryninja::binary_view::BinaryViewExt;
-/// use binaryninja::types::{MemberAccess, MemberScope, Structure, StructureBuilder, Type};
-///
-/// // Types to use in the members
-/// let field_1_ty = Type::named_int(5, false, "my_weird_int_type");
-/// let field_2_ty = Type::int(4, false);
-/// let field_3_ty = Type::int(8, false);
-///
-/// // Assign those fields
-/// let mut my_custom_struct = StructureBuilder::new();
-/// my_custom_struct
-///     .insert(
-///         &field_1_ty,
-///         "field_1",
-///         0,
-///         false,
-///         MemberAccess::PublicAccess,
-///         MemberScope::NoScope,
-///     )
-///     .insert(
-///         &field_2_ty,
-///         "field_2",
-///         5,
-///         false,
-///         MemberAccess::PublicAccess,
-///         MemberScope::NoScope,
-///     )
-///     .insert(
-///         &field_3_ty,
-///         "field_3",
-///         9,
-///         false,
-///         MemberAccess::PublicAccess,
-///         MemberScope::NoScope,
-///     )
-///     .append(
-///         &field_1_ty,
-///         "field_4",
-///         MemberAccess::PublicAccess,
-///         MemberScope::NoScope,
-///     );
-///
-/// // Convert structure to type
-/// let my_custom_structure_type = Type::structure(&my_custom_struct.finalize());
-///
-/// // Add the struct to the binary view to use in analysis
-/// let bv = binaryninja::load("example").unwrap();
-/// bv.define_user_type("my_custom_struct", &my_custom_structure_type);
-/// ```
-impl StructureBuilder {
-    pub fn new() -> Self {
-        Self {
-            handle: unsafe { BNCreateStructureBuilder() },
-        }
-    }
-
-    pub(crate) unsafe fn from_raw(handle: *mut BNStructureBuilder) -> Self {
-        debug_assert!(!handle.is_null());
-        Self { handle }
-    }
-
-    // TODO: Document the width adjustment with alignment.
-    pub fn finalize(&self) -> Ref<Structure> {
-        let raw_struct_ptr = unsafe { BNFinalizeStructureBuilder(self.handle) };
-        unsafe { Structure::ref_from_raw(raw_struct_ptr) }
-    }
-
-    /// Sets the width of the [`StructureBuilder`] to the new width.
-    ///
-    /// This will remove all previously inserted members outside the new width. This is done by computing
-    /// the member access range (member offset + member width) and if it is larger than the new width
-    /// it will be removed.
-    pub fn width(&mut self, width: u64) -> &mut Self {
-        unsafe {
-            BNSetStructureBuilderWidth(self.handle, width);
-        }
-        self
-    }
-
-    pub fn alignment(&mut self, alignment: usize) -> &mut Self {
-        unsafe {
-            BNSetStructureBuilderAlignment(self.handle, alignment);
-        }
-        self
-    }
-
-    /// Sets whether the [`StructureBuilder`] is packed.
-    ///
-    /// If set the alignment of the structure will be `1`. You do not need to set the alignment to `1`.
-    pub fn packed(&mut self, packed: bool) -> &mut Self {
-        unsafe {
-            BNSetStructureBuilderPacked(self.handle, packed);
-        }
-        self
-    }
-
-    pub fn structure_type(&mut self, t: StructureType) -> &mut Self {
-        unsafe { BNSetStructureBuilderType(self.handle, t) };
-        self
-    }
-
-    pub fn pointer_offset(&mut self, offset: i64) -> &mut Self {
-        unsafe { BNSetStructureBuilderPointerOffset(self.handle, offset) };
-        self
-    }
-
-    pub fn propagates_data_var_refs(&mut self, propagates: bool) -> &mut Self {
-        unsafe { BNSetStructureBuilderPropagatesDataVariableReferences(self.handle, propagates) };
-        self
-    }
-
-    pub fn base_structures(&mut self, bases: &[BaseStructure]) -> &mut Self {
-        let raw_base_structs: Vec<BNBaseStructure> =
-            bases.iter().map(BaseStructure::into_owned_raw).collect();
-        unsafe {
-            BNSetBaseStructuresForStructureBuilder(
-                self.handle,
-                raw_base_structs.as_ptr() as *mut _,
-                raw_base_structs.len(),
-            )
-        };
-        self
-    }
-
-    /// Append a member at the next available byte offset.
-    ///
-    /// Otherwise, consider using:
-    ///
-    /// - [`StructureBuilder::insert_member`]
-    /// - [`StructureBuilder::insert`]
-    /// - [`StructureBuilder::insert_bitwise`]
-    pub fn append<'a, T: Into<Conf<&'a Type>>>(
-        &mut self,
-        ty: T,
-        name: &str,
-        access: MemberAccess,
-        scope: MemberScope,
-    ) -> &mut Self {
-        let name = name.to_cstr();
-        let owned_raw_ty = Conf::<&Type>::into_raw(ty.into());
-        unsafe {
-            BNAddStructureBuilderMember(
-                self.handle,
-                &owned_raw_ty,
-                name.as_ref().as_ptr() as _,
-                access,
-                scope,
-            );
-        }
-        self
-    }
-
-    /// Insert an already constructed [`StructureMember`].
-    ///
-    /// Otherwise, consider using:
-    ///
-    /// - [`StructureBuilder::append`]
-    /// - [`StructureBuilder::insert`]
-    /// - [`StructureBuilder::insert_bitwise`]
-    pub fn insert_member(
-        &mut self,
-        member: StructureMember,
-        overwrite_existing: bool,
-    ) -> &mut Self {
-        self.insert_bitwise(
-            &member.ty,
-            &member.name,
-            member.bit_offset(),
-            member.bit_width,
-            overwrite_existing,
-            member.access,
-            member.scope,
-        );
-        self
-    }
-
-    /// Inserts a member at the `offset` (in bytes).
-    ///
-    /// If you need to insert a member at a specific bit within a given byte (like a bitfield), you
-    /// can use [`StructureBuilder::insert_bitwise`].
-    pub fn insert<'a, T: Into<Conf<&'a Type>>>(
-        &mut self,
-        ty: T,
-        name: &str,
-        offset: u64,
-        overwrite_existing: bool,
-        access: MemberAccess,
-        scope: MemberScope,
-    ) -> &mut Self {
-        self.insert_bitwise(
-            ty,
-            name,
-            offset * 8,
-            None,
-            overwrite_existing,
-            access,
-            scope,
-        )
-    }
-
-    /// Inserts a member at `bit_offset` with an optional `bit_width`.
-    ///
-    /// NOTE: The `bit_offset` is relative to the start of the structure, for example, passing `8` will place
-    /// the field at the start of the byte `0x1`.
-    pub fn insert_bitwise<'a, T: Into<Conf<&'a Type>>>(
-        &mut self,
-        ty: T,
-        name: &str,
-        bit_offset: u64,
-        bit_width: Option<u8>,
-        overwrite_existing: bool,
-        access: MemberAccess,
-        scope: MemberScope,
-    ) -> &mut Self {
-        let name = name.to_cstr();
-        let owned_raw_ty = Conf::<&Type>::into_raw(ty.into());
-        let byte_offset = bit_offset / 8;
-        let bit_position = bit_offset % 8;
-        unsafe {
-            BNAddStructureBuilderMemberAtOffset(
-                self.handle,
-                &owned_raw_ty,
-                name.as_ref().as_ptr() as _,
-                byte_offset,
-                overwrite_existing,
-                access,
-                scope,
-                bit_position as u8,
-                bit_width.unwrap_or(0),
-            );
-        }
-        self
-    }
-
-    pub fn replace<'a, T: Into<Conf<&'a Type>>>(
-        &mut self,
-        index: usize,
-        ty: T,
-        name: &str,
-        overwrite_existing: bool,
-    ) -> &mut Self {
-        let name = name.to_cstr();
-        let owned_raw_ty = Conf::<&Type>::into_raw(ty.into());
-        unsafe {
-            BNReplaceStructureBuilderMember(
-                self.handle,
-                index,
-                &owned_raw_ty,
-                name.as_ref().as_ptr() as _,
-                overwrite_existing,
-            )
-        }
-        self
-    }
-
-    /// Removes the member at a given index.
-    pub fn remove(&mut self, index: usize) -> &mut Self {
-        unsafe { BNRemoveStructureBuilderMember(self.handle, index) };
-        self
-    }
-
-    // TODO: We should add BNGetStructureBuilderAlignedWidth
-    /// Gets the current **unaligned** width of the structure.
-    ///
-    /// This cannot be used to accurately get the width of a non-packed structure.
-    pub fn current_width(&self) -> u64 {
-        unsafe { BNGetStructureBuilderWidth(self.handle) }
-    }
-}
-
-impl From<&Structure> for StructureBuilder {
-    fn from(structure: &Structure) -> StructureBuilder {
-        unsafe { Self::from_raw(BNCreateStructureBuilderFromStructure(structure.handle)) }
-    }
-}
-
-impl From<Vec<StructureMember>> for StructureBuilder {
-    fn from(members: Vec<StructureMember>) -> StructureBuilder {
-        let mut builder = StructureBuilder::new();
-        for member in members {
-            builder.insert_member(member, false);
-        }
-        builder
-    }
-}
-
-impl Drop for StructureBuilder {
-    fn drop(&mut self) {
-        unsafe { BNFreeStructureBuilder(self.handle) };
-    }
-}
-
-impl Default for StructureBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(PartialEq, Eq, Hash)]
-pub struct Structure {
-    pub(crate) handle: *mut BNStructure,
-}
-
-impl Structure {
-    pub(crate) unsafe fn ref_from_raw(handle: *mut BNStructure) -> Ref<Self> {
-        debug_assert!(!handle.is_null());
-        Ref::new(Self { handle })
-    }
-
-    pub fn builder() -> StructureBuilder {
-        StructureBuilder::new()
-    }
-
-    pub fn width(&self) -> u64 {
-        unsafe { BNGetStructureWidth(self.handle) }
-    }
-
-    pub fn structure_type(&self) -> StructureType {
-        unsafe { BNGetStructureType(self.handle) }
-    }
-
-    /// Retrieve the members that are accessible at a given offset.
-    ///
-    /// The reason for this being plural is that members may overlap and the offset is in bytes
-    /// where a bitfield may contain multiple members at the given byte.
-    ///
-    /// Unions are also represented as structures and will cause this function to return
-    /// **all** members that can reach that offset.
-    ///
-    /// We must pass a [`TypeContainer`] here so that we can resolve base structure members, as they
-    /// are treated as members through this function. Typically, you get the [`TypeContainer`]
-    /// through the binary view with [`BinaryViewExt::get_type_container`].
-    pub fn members_at_offset(
-        &self,
-        container: &TypeContainer,
-        offset: u64,
-    ) -> Vec<StructureMember> {
-        self.members_including_inherited(container)
-            .into_iter()
-            .filter(|m| m.member.is_offset_valid(offset))
-            .map(|m| m.member)
-            .collect()
-    }
-
-    /// Return the list of non-inherited structure members.
-    ///
-    /// If you want to get all members, including ones inherited from base structures,
-    /// use [`Structure::members_including_inherited`] instead.
-    pub fn members(&self) -> Vec<StructureMember> {
-        unsafe {
-            let mut count = 0;
-            let members_raw_ptr: *mut BNStructureMember =
-                BNGetStructureMembers(self.handle, &mut count);
-            debug_assert!(!members_raw_ptr.is_null());
-            let members_raw = std::slice::from_raw_parts(members_raw_ptr, count);
-            let members = members_raw.iter().map(StructureMember::from_raw).collect();
-            BNFreeStructureMemberList(members_raw_ptr, count);
-            members
-        }
-    }
-
-    /// Returns the list of all structure members, including inherited ones.
-    ///
-    /// Because we must traverse through base structures, we have to provide the [`TypeContainer`];
-    /// in most cases it is ok to provide the binary views container via [`BinaryViewExt::type_container`].
-    pub fn members_including_inherited(
-        &self,
-        container: &TypeContainer,
-    ) -> Vec<InheritedStructureMember> {
-        unsafe {
-            let mut count = 0;
-            let members_raw_ptr: *mut BNInheritedStructureMember =
-                BNGetStructureMembersIncludingInherited(
-                    self.handle,
-                    container.handle.as_ptr(),
-                    &mut count,
-                );
-            debug_assert!(!members_raw_ptr.is_null());
-            let members_raw = std::slice::from_raw_parts(members_raw_ptr, count);
-            let members = members_raw
-                .iter()
-                .map(InheritedStructureMember::from_raw)
-                .collect();
-            BNFreeInheritedStructureMemberList(members_raw_ptr, count);
-            members
-        }
-    }
-
-    /// Retrieve the list of base structures for the structure. These base structures are what give
-    /// a structure inherited members.
-    pub fn base_structures(&self) -> Vec<BaseStructure> {
-        let mut count = 0;
-        let bases_raw_ptr = unsafe { BNGetBaseStructuresForStructure(self.handle, &mut count) };
-        debug_assert!(!bases_raw_ptr.is_null());
-        let bases_raw = unsafe { std::slice::from_raw_parts(bases_raw_ptr, count) };
-        let bases = bases_raw.iter().map(BaseStructure::from_raw).collect();
-        unsafe { BNFreeBaseStructureList(bases_raw_ptr, count) };
-        bases
-    }
-
-    /// Whether the structure is packed or not.
-    pub fn is_packed(&self) -> bool {
-        unsafe { BNIsStructurePacked(self.handle) }
-    }
-
-    pub fn alignment(&self) -> usize {
-        unsafe { BNGetStructureAlignment(self.handle) }
-    }
-}
-
-impl Debug for Structure {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Structure")
-            .field("width", &self.width())
-            .field("alignment", &self.alignment())
-            .field("packed", &self.is_packed())
-            .field("structure_type", &self.structure_type())
-            .field("base_structures", &self.base_structures())
-            .field("members", &self.members())
-            .finish()
-    }
-}
-
-unsafe impl RefCountable for Structure {
-    unsafe fn inc_ref(handle: &Self) -> Ref<Self> {
-        Self::ref_from_raw(BNNewStructureReference(handle.handle))
-    }
-
-    unsafe fn dec_ref(handle: &Self) {
-        BNFreeStructure(handle.handle);
-    }
-}
-
-impl ToOwned for Structure {
-    type Owned = Ref<Self>;
-
-    fn to_owned(&self) -> Self::Owned {
-        unsafe { RefCountable::inc_ref(self) }
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct StructureMember {
-    pub ty: Conf<Ref<Type>>,
-    // TODO: Shouldnt this be a QualifiedName? The ffi says no...
-    pub name: String,
-    /// The byte offset of the member.
-    pub offset: u64,
-    pub access: MemberAccess,
-    pub scope: MemberScope,
-    /// The bit position relative to the byte offset.
-    pub bit_position: Option<u8>,
-    pub bit_width: Option<u8>,
-}
-
-impl StructureMember {
-    pub(crate) fn from_raw(value: &BNStructureMember) -> Self {
-        Self {
-            ty: Conf::new(
-                unsafe { Type::from_raw(value.type_) }.to_owned(),
-                value.typeConfidence,
-            ),
-            // TODO: I dislike using this function here.
-            name: raw_to_string(value.name as *mut _).unwrap(),
-            offset: value.offset,
-            access: value.access,
-            scope: value.scope,
-            bit_position: match value.bitPosition {
-                0 => None,
-                _ => Some(value.bitPosition),
-            },
-            bit_width: match value.bitWidth {
-                0 => None,
-                _ => Some(value.bitWidth),
-            },
-        }
-    }
-
-    pub(crate) fn from_owned_raw(value: BNStructureMember) -> Self {
-        let owned = Self::from_raw(&value);
-        Self::free_raw(value);
-        owned
-    }
-
-    pub(crate) fn into_raw(value: Self) -> BNStructureMember {
-        let bn_name = BnString::new(value.name);
-        BNStructureMember {
-            type_: unsafe { Ref::into_raw(value.ty.contents) }.handle,
-            name: BnString::into_raw(bn_name),
-            offset: value.offset,
-            typeConfidence: value.ty.confidence,
-            access: value.access,
-            scope: value.scope,
-            bitPosition: value.bit_position.unwrap_or(0),
-            bitWidth: value.bit_width.unwrap_or(0),
-        }
-    }
-
-    pub(crate) fn free_raw(value: BNStructureMember) {
-        let _ = unsafe { Type::ref_from_raw(value.type_) };
-        unsafe { BnString::free_raw(value.name) };
-    }
-
-    pub fn new(
-        ty: Conf<Ref<Type>>,
-        name: String,
-        offset: u64,
-        access: MemberAccess,
-        scope: MemberScope,
-    ) -> Self {
-        Self {
-            ty,
-            name,
-            offset,
-            access,
-            scope,
-            bit_position: None,
-            bit_width: None,
-        }
-    }
-
-    pub fn new_bitfield(
-        ty: Conf<Ref<Type>>,
-        name: String,
-        bit_offset: u64,
-        bit_width: u8,
-        access: MemberAccess,
-        scope: MemberScope,
-    ) -> Self {
-        Self {
-            ty,
-            name,
-            offset: bit_offset / 8,
-            access,
-            scope,
-            bit_position: Some((bit_offset % 8) as u8),
-            bit_width: Some(bit_width),
-        }
-    }
-
-    // TODO: Do we count bitwidth here?
-    /// Whether the offset within the accessible range of the member.
-    pub fn is_offset_valid(&self, offset: u64) -> bool {
-        self.offset <= offset && offset < self.offset + self.ty.contents.width()
-    }
-
-    /// Member offset in bits.
-    pub fn bit_offset(&self) -> u64 {
-        (self.offset * 8) + self.bit_position.unwrap_or(0) as u64
-    }
-}
-
-impl CoreArrayProvider for StructureMember {
-    type Raw = BNStructureMember;
-    type Context = ();
-    type Wrapped<'a> = Self;
-}
-
-unsafe impl CoreArrayProviderInner for StructureMember {
-    unsafe fn free(raw: *mut Self::Raw, count: usize, _context: &Self::Context) {
-        BNFreeStructureMemberList(raw, count)
-    }
-
-    unsafe fn wrap_raw<'a>(raw: &'a Self::Raw, _context: &'a Self::Context) -> Self::Wrapped<'a> {
-        Self::from_raw(raw)
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct InheritedStructureMember {
-    pub base: Ref<NamedTypeReference>,
-    pub base_offset: u64,
-    pub member: StructureMember,
-    pub member_index: usize,
-}
-
-impl InheritedStructureMember {
-    pub(crate) fn from_raw(value: &BNInheritedStructureMember) -> Self {
-        Self {
-            base: unsafe { NamedTypeReference::from_raw(value.base) }.to_owned(),
-            base_offset: value.baseOffset,
-            member: StructureMember::from_raw(&value.member),
-            member_index: value.memberIndex,
-        }
-    }
-
-    pub(crate) fn from_owned_raw(value: BNInheritedStructureMember) -> Self {
-        let owned = Self::from_raw(&value);
-        Self::free_raw(value);
-        owned
-    }
-
-    pub(crate) fn into_raw(value: Self) -> BNInheritedStructureMember {
-        BNInheritedStructureMember {
-            base: unsafe { Ref::into_raw(value.base) }.handle,
-            baseOffset: value.base_offset,
-            member: StructureMember::into_raw(value.member),
-            memberIndex: value.member_index,
-        }
-    }
-
-    pub(crate) fn free_raw(value: BNInheritedStructureMember) {
-        let _ = unsafe { NamedTypeReference::ref_from_raw(value.base) };
-        StructureMember::free_raw(value.member);
-    }
-
-    pub fn new(
-        base: Ref<NamedTypeReference>,
-        base_offset: u64,
-        member: StructureMember,
-        member_index: usize,
-    ) -> Self {
-        Self {
-            base,
-            base_offset,
-            member,
-            member_index,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct BaseStructure {
-    pub ty: Ref<NamedTypeReference>,
-    pub offset: u64,
-    pub width: u64,
-}
-
-impl BaseStructure {
-    pub(crate) fn from_raw(value: &BNBaseStructure) -> Self {
-        Self {
-            ty: unsafe { NamedTypeReference::from_raw(value.type_) }.to_owned(),
-            offset: value.offset,
-            width: value.width,
-        }
-    }
-
-    pub(crate) fn from_owned_raw(value: BNBaseStructure) -> Self {
-        let owned = Self::from_raw(&value);
-        Self::free_raw(value);
-        owned
-    }
-
-    pub(crate) fn into_raw(value: Self) -> BNBaseStructure {
-        BNBaseStructure {
-            type_: unsafe { Ref::into_raw(value.ty) }.handle,
-            offset: value.offset,
-            width: value.width,
-        }
-    }
-
-    pub(crate) fn into_owned_raw(value: &Self) -> BNBaseStructure {
-        BNBaseStructure {
-            type_: value.ty.handle,
-            offset: value.offset,
-            width: value.width,
-        }
-    }
-
-    pub(crate) fn free_raw(value: BNBaseStructure) {
-        let _ = unsafe { NamedTypeReference::ref_from_raw(value.type_) };
-    }
-
-    pub fn new(ty: Ref<NamedTypeReference>, offset: u64, width: u64) -> Self {
-        Self { ty, offset, width }
     }
 }
 
@@ -2080,13 +1631,13 @@ impl NamedTypeReference {
         match ty.type_class() {
             TypeClass::NamedTypeReferenceClass => {
                 // Recurse into the NTR type until we get the target type.
-                let ntr = ty.get_named_type_reference().unwrap();
+                let ntr = ty
+                    .get_named_type_reference()
+                    .expect("NTR type class should always have a valid NTR");
                 match visited.insert(ntr.id()) {
                     true => ntr.target_helper(bv, visited),
-                    false => {
-                        log::error!("Can't get target for recursively defined type!");
-                        None
-                    }
+                    // Cyclic reference, return None.
+                    false => None,
                 }
             }
             // Found target type
@@ -2095,6 +1646,8 @@ impl NamedTypeReference {
     }
 
     /// Type referenced by this [`NamedTypeReference`].
+    ///
+    /// Will return `None` if the reference is cyclic, or the target type does not exist.
     pub fn target(&self, bv: &BinaryView) -> Option<Ref<Type>> {
         self.target_helper(bv, &mut HashSet::new())
     }
@@ -2121,221 +1674,6 @@ unsafe impl RefCountable for NamedTypeReference {
 impl Debug for NamedTypeReference {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} (id: {})", self.name(), self.id())
-    }
-}
-
-// TODO: Document usage, specifically how to make a qualified name and why it exists.
-#[derive(Default, Debug, Clone, Hash, PartialEq, Eq, Ord, PartialOrd)]
-pub struct QualifiedName {
-    // TODO: Make this Option<String> where default is "::".
-    pub separator: String,
-    pub items: Vec<String>,
-}
-
-impl QualifiedName {
-    pub(crate) fn from_raw(value: &BNQualifiedName) -> Self {
-        // TODO: This could be improved...
-        let raw_names = unsafe { std::slice::from_raw_parts(value.name, value.nameCount) };
-        let items = raw_names
-            .iter()
-            .filter_map(|&raw_name| raw_to_string(raw_name as *const _))
-            .collect();
-        let separator = raw_to_string(value.join).unwrap();
-        Self { items, separator }
-    }
-
-    pub(crate) fn from_owned_raw(value: BNQualifiedName) -> Self {
-        let result = Self::from_raw(&value);
-        Self::free_raw(value);
-        result
-    }
-
-    pub fn into_raw(value: Self) -> BNQualifiedName {
-        let bn_join = BnString::new(&value.separator);
-        BNQualifiedName {
-            // NOTE: Leaking string list must be freed by core or us!
-            name: strings_to_string_list(&value.items),
-            // NOTE: Leaking string must be freed by core or us!
-            join: BnString::into_raw(bn_join),
-            nameCount: value.items.len(),
-        }
-    }
-
-    pub(crate) fn free_raw(value: BNQualifiedName) {
-        unsafe { BnString::free_raw(value.join) };
-        unsafe { BNFreeStringList(value.name, value.nameCount) };
-    }
-
-    pub fn new(items: Vec<String>) -> Self {
-        Self::new_with_separator(items, "::".to_string())
-    }
-
-    pub fn new_with_separator(items: Vec<String>, separator: String) -> Self {
-        Self { items, separator }
-    }
-
-    pub fn with_item(&self, item: impl Into<String>) -> Self {
-        let mut items = self.items.clone();
-        items.push(item.into());
-        Self::new_with_separator(items, self.separator.clone())
-    }
-
-    pub fn push(&mut self, item: String) {
-        self.items.push(item);
-    }
-
-    pub fn pop(&mut self) -> Option<String> {
-        self.items.pop()
-    }
-
-    pub fn insert(&mut self, index: usize, item: String) {
-        if index <= self.items.len() {
-            self.items.insert(index, item);
-        }
-    }
-
-    pub fn split_last(&self) -> Option<(String, QualifiedName)> {
-        self.items.split_last().map(|(a, b)| {
-            (
-                a.to_owned(),
-                QualifiedName::new_with_separator(b.to_vec(), self.separator.clone()),
-            )
-        })
-    }
-
-    /// Replaces all occurrences of a substring with another string in all items of the `QualifiedName`
-    /// and returns an owned version of the modified `QualifiedName`.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use binaryninja::types::QualifiedName;
-    ///
-    /// let qualified_name =
-    ///     QualifiedName::new(vec!["my::namespace".to_string(), "mytype".to_string()]);
-    /// let replaced = qualified_name.replace("my", "your");
-    /// assert_eq!(
-    ///     replaced.items,
-    ///     vec!["your::namespace".to_string(), "yourtype".to_string()]
-    /// );
-    /// ```
-    pub fn replace(&self, from: &str, to: &str) -> Self {
-        Self {
-            items: self
-                .items
-                .iter()
-                .map(|item| item.replace(from, to))
-                .collect(),
-            separator: self.separator.clone(),
-        }
-    }
-
-    /// Returns the last item, or `None` if it is empty.
-    pub fn last(&self) -> Option<&String> {
-        self.items.last()
-    }
-
-    /// Returns a mutable reference to the last item, or `None` if it is empty.
-    pub fn last_mut(&mut self) -> Option<&mut String> {
-        self.items.last_mut()
-    }
-
-    pub fn len(&self) -> usize {
-        self.items.len()
-    }
-
-    /// A [`QualifiedName`] is empty if it has no items.
-    ///
-    /// If you want to know if the unqualified name is empty (i.e. no characters)
-    /// you must first convert the qualified name to unqualified via the `to_string` method.
-    pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
-    }
-}
-
-impl From<String> for QualifiedName {
-    fn from(value: String) -> Self {
-        Self {
-            items: vec![value],
-            // TODO: See comment in struct def.
-            separator: String::from("::"),
-        }
-    }
-}
-
-impl From<&str> for QualifiedName {
-    fn from(value: &str) -> Self {
-        Self::from(value.to_string())
-    }
-}
-
-impl From<&String> for QualifiedName {
-    fn from(value: &String) -> Self {
-        Self::from(value.to_owned())
-    }
-}
-
-impl From<Cow<'_, str>> for QualifiedName {
-    fn from(value: Cow<'_, str>) -> Self {
-        Self::from(value.to_string())
-    }
-}
-
-impl From<Vec<String>> for QualifiedName {
-    fn from(value: Vec<String>) -> Self {
-        Self::new(value)
-    }
-}
-
-impl From<Vec<&str>> for QualifiedName {
-    fn from(value: Vec<&str>) -> Self {
-        value
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .into()
-    }
-}
-
-impl From<QualifiedName> for String {
-    fn from(value: QualifiedName) -> Self {
-        value.to_string()
-    }
-}
-
-impl Index<usize> for QualifiedName {
-    type Output = String;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.items[index]
-    }
-}
-
-impl IndexMut<usize> for QualifiedName {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.items[index]
-    }
-}
-
-impl Display for QualifiedName {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.items.join(&self.separator))
-    }
-}
-
-impl CoreArrayProvider for QualifiedName {
-    type Raw = BNQualifiedName;
-    type Context = ();
-    type Wrapped<'a> = Self;
-}
-
-unsafe impl CoreArrayProviderInner for QualifiedName {
-    unsafe fn free(raw: *mut Self::Raw, count: usize, _context: &Self::Context) {
-        BNFreeTypeNameList(raw, count);
-    }
-
-    unsafe fn wrap_raw<'a>(raw: &'a Self::Raw, _context: &'a Self::Context) -> Self::Wrapped<'a> {
-        QualifiedName::from_raw(raw)
     }
 }
 
@@ -2433,6 +1771,7 @@ impl QualifiedNameTypeAndId {
         }
     }
 
+    #[allow(unused)]
     pub(crate) fn from_owned_raw(value: BNQualifiedNameTypeAndId) -> Self {
         let owned = Self::from_raw(&value);
         Self::free_raw(value);
@@ -2493,6 +1832,7 @@ impl NameAndType {
         }
     }
 
+    #[allow(unused)]
     pub(crate) fn from_owned_raw(value: BNNameAndType) -> Self {
         let owned = Self::from_raw(&value);
         Self::free_raw(value);

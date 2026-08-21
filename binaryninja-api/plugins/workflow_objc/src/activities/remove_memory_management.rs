@@ -1,6 +1,6 @@
 use binaryninja::{
     architecture::{Architecture as _, CoreRegister, Register as _, RegisterInfo as _},
-    binary_view::{BinaryView, BinaryViewExt as _},
+    binary_view::BinaryView,
     low_level_il::{
         expression::{ExpressionHandler, LowLevelILExpressionKind},
         function::{LowLevelILFunction, Mutable, NonSSA},
@@ -11,6 +11,7 @@ use binaryninja::{
         lifting::LowLevelILLabel,
         LowLevelILRegisterKind,
     },
+    variable::PossibleValueSet,
     workflow::AnalysisContext,
 };
 
@@ -36,10 +37,12 @@ fn is_call_to_ignorable_memory_management_function<'func>(
 ) -> bool {
     let target = match instr.kind() {
         LowLevelILInstructionKind::Call(call) | LowLevelILInstructionKind::TailCall(call) => {
-            let LowLevelILExpressionKind::ConstPtr(address) = call.target().kind() else {
-                return false;
-            };
-            address.value()
+            match call.target().possible_values() {
+                PossibleValueSet::ConstantValue { value }
+                | PossibleValueSet::ConstantPointerValue { value }
+                | PossibleValueSet::ImportedAddressValue { value } => value as u64,
+                _ => return false,
+            }
         }
         LowLevelILInstructionKind::Goto(target) => target.address(),
         _ => return false,
@@ -173,7 +176,7 @@ pub fn process(ac: &AnalysisContext) -> Result<(), Error> {
                 Ok(true) => function_changed = true,
                 Ok(_) => {}
                 Err(err) => {
-                    log::error!(
+                    tracing::error!(
                         "Error processing instruction at {:#x}: {}",
                         insn.address(),
                         err

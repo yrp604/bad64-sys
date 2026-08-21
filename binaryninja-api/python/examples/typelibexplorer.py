@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -51,11 +51,12 @@ class TypelibTypeTableWidget(QTableWidget, FilterTarget):
 	def scrollToCurrentItem(self):
 		self.scrollTo(self.currentIndex())
 
-	def selectFirstItem(self):
-		self.setCurrentIndex(self.model().index(0, 0, QModelIndex()))
+	def ensureSelection(self):
+		if not self.currentIndex().isValid():
+			self.setCurrentIndex(self.model().index(0, 0, QModelIndex()))
 
-	def activateFirstItem(self):
-		self.setCurrentIndex(self.model().index(0, 0, QModelIndex()))
+	def activateSelection(self):
+		self.ensureSelection()
 
 	def closeFilter(self):
 		self.setFocus(Qt.OtherFocusReason)
@@ -109,11 +110,12 @@ class TypelibObjectTableWidget(QTableWidget, FilterTarget):
 	def scrollToCurrentItem(self):
 		self.scrollTo(self.currentIndex())
 
-	def selectFirstItem(self):
-		self.setCurrentIndex(self.model().index(0, 0, QModelIndex()))
+	def ensureSelection(self):
+		if not self.currentIndex().isValid():
+			self.setCurrentIndex(self.model().index(0, 0, QModelIndex()))
 
-	def activateFirstItem(self):
-		self.setCurrentIndex(self.model().index(0, 0, QModelIndex()))
+	def activateSelection(self):
+		self.ensureSelection()
 
 	def closeFilter(self):
 		self.setFocus(Qt.OtherFocusReason)
@@ -335,17 +337,17 @@ class TypelibExplorerWidget(SidebarWidget, FilterTarget):
 		else:
 			self.type_table.scrollToCurrentItem()
 
-	def selectFirstItem(self):
+	def ensureSelection(self):
 		if self.horizontal_tabs.currentIndex() == 0:
-			self.object_table.selectFirstItem()
+			self.object_table.ensureSelection()
 		else:
-			self.type_table.selectFirstItem()
+			self.type_table.ensureSelection()
 
-	def activateFirstItem(self):
+	def activateSelection(self):
 		if self.horizontal_tabs.currentIndex() == 0:
-			self.object_table.activateFirstItem()
+			self.object_table.activateSelection()
 		else:
-			self.type_table.activateFirstItem()
+			self.type_table.activateSelection()
 
 	def closeFilter(self):
 		if self.horizontal_tabs.currentIndex() == 0:

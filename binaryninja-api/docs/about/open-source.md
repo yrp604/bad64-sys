@@ -4,33 +4,38 @@
 
 Vector 35 is grateful for the following open source packages that are used in Binary Ninja directly or indirectly:
 
-* Documentation
-    - [breathe-rtd-theme] ([breathe-rtd-theme license] - MIT)
+* Documentation tooling
+    - [sphinx-rtd-theme] ([sphinx-rtd-theme license] - MIT)
     - [breathe] ([breathe license] - BSD)
     - [doxygen] ([doxygen license] - GPLv2)
-    - [mkdocs-material] ([mkdocs-material License] - BSD)
-    - [mkdocs] ([mkdocs license] - BSD)
     - [sphinx] ([sphinx license] - BSD and others)
+    - [zensical] ([zensical license] - MIT)
 
-The previous tools are used in the generation of our documentation, but are not distributed themselves and are merely listed here in acknowledgement for the value they provide.
+The previous tools are used to generate our documentation but are not distributed with Binary Ninja.
+
+* Fonts
+    - [Bebas Neue] ([Bebas Neue license] - SIL Open Font License 1.1)
+    - [DejaVu Sans Code] ([DejaVu Sans Code license] - multiple open-source licenses)
+    - [Font Awesome] ([Font Awesome license] - SIL Open Font License 1.1 / MIT)
+    - [Inter] ([Inter license] - SIL Open Font License 1.1)
+    - [Noto Color Emoji] ([Noto Color Emoji license] - SIL Open Font License 1.1)
+    - [Open Sans] ([Open Sans license] - Apache 2.0)
+    - [Roboto Mono] ([Roboto Mono license] - Apache 2.0)
+    - [Source Code Pro] ([Source Code Pro license] - SIL Open Font License 1.1)
 
 * UI
-    - [dejavusanscode] ([dejavusanscode license] - multiple open licenses)
-    - [opensans] ([opensans license] - Apache 2.0)
     - [qt] ([qt license] - LGPLv3 / note, please see our [qt build instructions below](open-source.md#building-qt))
     - [libxcb] ([libxcb license] - MIT)
-    - [sourcecodepro] ([sourcecodepro license] - SIL open font license)
     - [rlcompleter] ([python license] - Python Software Foundation License 2)
     - [QCheckboxCombo] ([QCheckboxCombo License] - MIT)
-    - [NotoColorEmoji] ([NotoColorEmoji License] - SIL open font license)
 
 * Core
     - [abseil-cpp] ([abseil-cpp license] - Apache 2.0)
     - [BinExport] ([binexport license] - Apache 2.0) - Google project, [Vector 35 fork]
-    - [jsoncpp] ([jsoncpp] - Public Domain / MIT)
+    - [jsoncpp] ([jsoncpp license] - Public Domain / MIT)
     - [llvm] ([llvm license] - BSD-style)
     - [lzf] ([lzf license] - BSD)
-    - [python] ([python license] - Python Software Foundation License 2 -- a Python 3.10 built without GPL components is currently shipped with Windows builds only, other platforms leverage existing Python installs)
+    - [python] ([python license] - Python Software Foundation License 2 -- a Python 3.13.14 built without GPL components is shipped on Windows, macOS, and Linux, see [Bundled Python Packages](open-source.md#bundled-python-packages))
     - [sqlite] ([sqlite license] - public domain)
     - [zlib] ([zlib license] - zlib license)
     - [rapidjson] ([rapidjson license] - MIT)
@@ -39,10 +44,15 @@ The previous tools are used in the generation of our documentation, but are not 
     - [xxHash] ([xxHash License] - 2-clause BSD)
     - [botan] ([botan license] - 2-clause BSD)
     - [fmt] ([fmt license] - MIT)
+    - [ConvertUTF] ([ConvertUTF license] - Unicode License) - UTF conversion routines from Unicode, Inc. (LLVM's maintained copy)
     - [dtl] ([dtl license] - BSD)
     - [JSON for Modern C++] ([JSON for Modern C++ license] - MIT)
     - [zstd] ([zstd license] - BSD)
     - [openssl] ([openssl license] - Apache 2.0)
+    - [sentry-native] ([sentry-native license] - MIT)
+    - [xz] ([xz license] - 0BSD) liblzma, linked into the bundled Python
+    - [llhttp] ([llhttp license] - MIT) HTTP parser used by the MCP server's HTTP transport
+    - [cppmcp] ([cppmcp license] - MIT) the MCP protocol dispatcher and transport shape are adapted from it
 
 * Other
     - [yasm] ([yasm license] - 2-clause BSD) used for assembling x86 and x64
@@ -50,20 +60,57 @@ The previous tools are used in the generation of our documentation, but are not 
     - [capstone] ([capstone license] - 3-clause BSD) used in the [PPC architecture module] as an example of how to wrap an external disassembler
     - [flatbuffer] ([flatbuffer license] - Apache License 2.0) used in the binary format for the function fingerprint libraries
     - [deprecation] ([deprecation license] - Apache License 2.0) used in the Python API for marking deprecated functions/properties/classes
+    - [GraalVM CE] ([GraalVM CE license] - GPLv2 with the "Classpath" Exception) used in building the Ghidra DB FFI for the Ghidra plugin
+    - [zstd-rs] ([zstd-rs license] - MIT) used by the IDB import plugin
+    - [pygments] ([pygments license] - 2-clause BSD) used for syntax highlighting in the Snippets plugin
+    - [QCodeEditor] ([QCodeEditor license] - MIT) line number rendering in the Snippets plugin editor
+
+## Bundled Python Packages
+
+The Python shipped with Binary Ninja includes the following packages in its `site-packages`
+directory:
+
+* Installed directly
+    - [requests] ([requests license] - Apache 2.0)
+    - [certifi] ([certifi license] - MPLv2)
+    - [chardet] ([chardet license] - LGPLv2.1)
+    - [idna] ([idna license] - 3-clause BSD)
+    - [urllib3] ([urllib3 license] - MIT)
+    - [flatbuffers python] ([flatbuffer license] - Apache 2.0)
+    - [pip] ([pip license] - MIT)
+    - [wheel] ([wheel license] - MIT)
+    - [setuptools] ([setuptools license] - MIT)
+    - [packaging] ([packaging license] - Apache 2.0 / 2-clause BSD)
+
+* Pulled in as dependencies of the above
+    - [autocommand] ([autocommand license] - LGPLv3)
+    - [backports.tarfile] ([backports.tarfile license] - MIT)
+    - [charset-normalizer] ([charset-normalizer license] - MIT)
+    - [jaraco.context] ([jaraco.context license] - MIT)
+    - [jaraco.functools] ([jaraco.functools license] - MIT)
+    - [jaraco.text] ([jaraco.text license] - MIT)
+    - [more-itertools] ([more-itertools license] - MIT)
+    - [platformdirs] ([platformdirs license] - MIT)
+    - [tomli] ([tomli license] - MIT)
 
 ## Rust Licenses
 
-Due to its different document generation system, all our rust dependencies and their licenses are collected in: 
+Due to its different document generation system, all our rust dependencies and their licenses are collected in:
 
 * [Binary Ninja Core Rust Licenses](./rust-binaryninjacore.html)
 * [Binary Ninja API Rust Licenses](./rust-binaryninja-api.html)
 * [Tricore Rust Licenses](./rust-tricore.html)
 * [C-SKY Rust Licenses](./rust-csky.html)
+* [Ghidra Import Rust Licenses](./rust-ghidra-import.html)
+* [Hexagon Rust Licenses](./rust-hexagon.html)
+* [NDS32 Rust Licenses](./rust-nds32.html)
+* [TMS320C6x Rust Licenses](./rust-tms320c6x.html)
+* [TI COFF Rust Licenses](./rust-ticoff.html)
 
 ## First Party Open Source
 
 * Several components of Binary Ninja developed by Vector 35 directly are released under open source licenses, noted as below:
-    - [API / Documentation] ([api license] - MIT) APIs (Python, C, C++) and Documentation (User, API, etc)</li>
+    - [API / Documentation] ([api license] - MIT) APIs (Python, C, C++) and Documentation (User, API, etc)
     - [Rust API] ([rust api license] - Apache License 2.0)
     - LIB Files ([api license] - MIT) .lib files included with the native windows builds of Binary Ninja are released under the same MIT license as the API itself, distinct from the standard EULA
     - [Views] ([views license] - Apache License 2.0) Binary views included with the product
@@ -72,17 +119,18 @@ Due to its different document generation system, all our rust dependencies and t
     - [DWARF Export] - ([dwarf export license] - MIT)
     - [IDB Import] - ([idb import license] - MIT)
     - [SCC] - ([scc license] - MIT)
+    - [Ghidra DB FFI] - ([Ghidra DB FFI license] - Apache License 2.0)
 
 ## Building Qt
 
-Binary Ninja uses [Qt 6.8] under an LGPLv3 license which requires that we host the original sources used to build Qt for
+Binary Ninja uses [Qt 6.11] under an LGPLv3 license which requires that we host the original sources used to build Qt for
 our application along with instructions on how that source may be re-built and can replace the version of Qt shipped
 with Binary Ninja.
 
 Please note that we offer no support for running Binary Ninja with modified Qt libraries.
 
 1. Follow the installation requirements on the [Building Qt 6 from Git] page.
-2. Download the Qt 6.8.2 [tarball] from binary.ninja. The Qt code has a [patch] applied but is ABI compatible with the
+2. Download the Qt 6.11.1 [tarball] from binary.ninja. The Qt code has a [patch] applied but is ABI compatible with the
    official Qt release.
 3. Next, build Qt with the [qt-build] repository. Alternatively, build Qt using the aforementioned instructions.
 4. On macOS, you will need to disable the code-signing signature since it would otherwise prevent changes to binaries or shared libraries.
@@ -92,36 +140,40 @@ Please note that we offer no support for running Binary Ninja with modified Qt l
      - On Linux, replace the `libQt6Core.so.6`, `libQt6DBus.so.6`, `libQt6Gui.so.6`, `libQt6Network.so.6`, `libQt6Widgets.so.6`, `libQt6XcbQpa.so.6` files wherever Binary Ninja was extracted.
 
 [Building Qt 6 from Git]: https://wiki.qt.io/Building_Qt_6_from_Git
-[Qt 6.8]: https://www.qt.io/licensing/open-source-lgpl-obligations
+[Qt 6.11]: https://www.qt.io/licensing/open-source-lgpl-obligations
 [abseil-cpp]: https://github.com/abseil/abseil-cpp
 [abseil-cpp license]: https://github.com/abseil/abseil-cpp/blob/master/LICENSE
+[Bebas Neue]: https://github.com/dharmatype/Bebas-Neue
+[Bebas Neue license]: ../fonts/BebasNeue-LICENSE.txt
 [BinExport]: https://github.com/google/binexport
 [binexport license]: https://github.com/google/binexport/blob/main/LICENSE
 [Vector 35 fork]: https://github.com/Vector35/binexport
 [capstone]: https://github.com/aquynh/capstone
 [capstone license]: https://github.com/aquynh/capstone/blob/master/LICENSE.TXT
 [breathe license]: https://github.com/michaeljones/breathe/blob/master/LICENSE
-[breathe-rtd-theme license]: https://github.com/snide/sphinx_rtd_theme/blob/master/LICENSE
-[breathe-rtd-theme]: https://github.com/snide/sphinx_rtd_theme/
+[sphinx-rtd-theme license]: https://github.com/Vector35/sphinx_rtd_theme/blob/master/LICENSE
+[sphinx-rtd-theme]: https://github.com/Vector35/sphinx_rtd_theme
 [breathe]: https://github.com/michaeljones/breathe
-[dejavusanscode license]: https://github.com/SSNikolaevich/DejaVuSansCode/blob/master/LICENSE
-[dejavusanscode]: https://github.com/SSNikolaevich/DejaVuSansCode
+[DejaVu Sans Code license]: https://github.com/SSNikolaevich/DejaVuSansCode/blob/master/LICENSE
+[DejaVu Sans Code]: https://github.com/SSNikolaevich/DejaVuSansCode
 [doxygen license]: https://github.com/doxygen/doxygen/blob/master/LICENSE
 [doxygen]: https://www.doxygen.nl
 [flatbuffer]: https://github.com/google/flatbuffers
 [flatbuffer license]: https://github.com/google/flatbuffers/blob/master/LICENSE
+[Font Awesome]: https://github.com/FortAwesome/Font-Awesome/tree/v4.7.0
+[Font Awesome license]: https://github.com/FortAwesome/Font-Awesome/blob/v4.7.0/README.md#license
+[Inter]: https://github.com/rsms/inter
+[Inter license]: https://github.com/rsms/inter/blob/master/LICENSE.txt
+[fmt]: https://github.com/fmtlib/fmt/tree/11.2.0
+[fmt license]: https://github.com/fmtlib/fmt/blob/11.2.0/LICENSE
 [jsoncpp]: https://github.com/open-source-parsers/jsoncpp
 [jsoncpp license]: https://github.com/open-source-parsers/jsoncpp/blob/master/LICENSE
-[llvm]: http://llvm.org/releases/3.8.1/
-[llvm license]: http://llvm.org/releases/3.8.1/LICENSE.TXT
+[llvm]: https://github.com/llvm/llvm-project/tree/llvmorg-22.1.8
+[llvm license]: https://github.com/llvm/llvm-project/blob/llvmorg-22.1.8/LICENSE.TXT
 [lzf license]: http://oldhome.schmorp.de/marc/liblzf.html
 [lzf]: http://oldhome.schmorp.de/marc/liblzf.html
-[mkdocs license]: https://github.com/mkdocs/mkdocs/blob/master/LICENSE
-[mkdocs-material license]: https://github.com/squidfunk/mkdocs-material/blob/master/LICENSE
-[mkdocs-material]: https://github.com/squidfunk/mkdocs-material
-[mkdocs]: http://www.mkdocs.org/
-[opensans license]: https://fonts.google.com/specimen/Open+Sans/license
-[opensans]: https://fonts.google.com/specimen/Open+Sans
+[Open Sans license]: ../fonts/OpenSans-LICENSE.txt
+[Open Sans]: https://fonts.google.com/specimen/Open+Sans
 [PPC architecture module]: https://github.com/Vector35/ppc-capstone
 [python]: https://github.com/python/cpython
 [python license]: https://github.com/python/cpython/blob/master/LICENSE
@@ -130,16 +182,20 @@ Please note that we offer no support for running Binary Ninja with modified Qt l
 [rapidjson]: http://rapidjson.org/
 [rapidjson license]: https://github.com/Tencent/rapidjson/blob/master/license.txt
 [rlcompleter]: https://github.com/python/cpython/blob/master/Lib/rlcompleter.py
-[sourcecodepro license]:  https://github.com/adobe-fonts/source-code-pro/blob/master/LICENSE.md
-[sourcecodepro]: https://github.com/adobe-fonts/source-code-pro
-[NotoColorEmoji license]:  https://github.com/googlefonts/noto-emoji/blob/main/fonts/LICENSE
-[NotoColorEmoji]: https://github.com/googlefonts/noto-emoji
+[Roboto Mono]: https://fonts.google.com/specimen/Roboto+Mono
+[Roboto Mono license]: ../fonts/RobotoMono-LICENSE.txt
+[Source Code Pro license]: https://github.com/adobe-fonts/source-code-pro/blob/master/LICENSE.md
+[Source Code Pro]: https://github.com/adobe-fonts/source-code-pro
+[Noto Color Emoji license]: https://github.com/googlefonts/noto-emoji/blob/main/fonts/LICENSE
+[Noto Color Emoji]: https://github.com/googlefonts/noto-emoji
 [sphinx license]: https://github.com/sphinx-doc/sphinx/blob/master/LICENSE.rst
+[zensical]: https://zensical.org/
+[zensical license]: https://github.com/zensical/zensical/blob/main/LICENSE
 [sphinx]: https://www.sphinx-doc.org/en/master/
 [sqlite license]: https://www.sqlite.org/copyright.html
 [sqlite]: https://www.sqlite.org/index.html
-[tarball]: https://binary.ninja/qt6.8.2.tar.xz
-[patch]: https://binary.ninja/qt6.8.2.patch
+[tarball]: https://binary.ninja/qt6.11.1.tar.xz
+[patch]: https://binary.ninja/qt6.11.1.patch
 [qt-build]: https://github.com/Vector35/qt-build
 [yasm license]: https://github.com/yasm/yasm/blob/master/BSD.txt
 [yasm]: https://github.com/yasm/yasm
@@ -165,6 +221,8 @@ Please note that we offer no support for running Binary Ninja with modified Qt l
 [JSON for Modern C++ license]: https://github.com/nlohmann/json/blob/develop/LICENSE.MIT
 [zstd]: https://github.com/facebook/zstd/
 [zstd license]: https://github.com/facebook/zstd/blob/dev/LICENSE
+[ConvertUTF]: https://github.com/llvm/llvm-project/blob/main/llvm/lib/Support/ConvertUTF.cpp
+[ConvertUTF license]: https://www.unicode.org/license.txt
 [zstd-rs]: https://github.com/gyscos/zstd-rs
 [zstd-rs license]: https://github.com/gyscos/zstd-rs/blob/main/LICENSE
 [deprecation]: https://github.com/briancurtin/deprecation
@@ -187,3 +245,56 @@ Please note that we offer no support for running Binary Ninja with modified Qt l
 [scc license]: https://github.com/Vector35/scc/blob/master/LICENSE.txt
 [openssl]: https://github.com/openssl/openssl
 [openssl license]: https://github.com/openssl/openssl/blob/master/LICENSE.txt
+[Ghidra DB FFI]: https://github.com/Vector35/ghidra-db-ffi
+[Ghidra DB FFI license]: https://github.com/Vector35/ghidra-db-ffi/blob/main/LICENSE
+[GraalVM CE]: https://github.com/oracle/graal/
+[GraalVM CE license]: https://github.com/oracle/graal/blob/master/LICENSE
+[sentry-native]: https://github.com/getsentry/sentry-native
+[sentry-native license]: https://github.com/getsentry/sentry-native/blob/master/LICENSE
+[xz]: https://github.com/tukaani-project/xz
+[xz license]: https://github.com/tukaani-project/xz/blob/v5.6.3/COPYING.0BSD
+[llhttp]: https://github.com/nodejs/llhttp
+[llhttp license]: https://github.com/nodejs/llhttp/blob/main/LICENSE
+[cppmcp]: https://github.com/LostSyscall/cppmcp
+[cppmcp license]: https://github.com/LostSyscall/cppmcp/blob/main/LICENSE
+[pygments]: https://github.com/pygments/pygments
+[pygments license]: https://github.com/pygments/pygments/blob/master/LICENSE
+[QCodeEditor]: https://github.com/luchko/QCodeEditor
+[QCodeEditor license]: https://github.com/luchko/QCodeEditor/blob/master/LICENSE.txt
+[requests]: https://github.com/psf/requests
+[requests license]: https://github.com/psf/requests/blob/main/LICENSE
+[certifi]: https://github.com/certifi/python-certifi
+[certifi license]: https://github.com/certifi/python-certifi/blob/master/LICENSE
+[chardet]: https://github.com/chardet/chardet
+[chardet license]: https://github.com/chardet/chardet/blob/main/LICENSE
+[idna]: https://github.com/kjd/idna
+[idna license]: https://github.com/kjd/idna/blob/master/LICENSE.md
+[urllib3]: https://github.com/urllib3/urllib3
+[urllib3 license]: https://github.com/urllib3/urllib3/blob/main/LICENSE.txt
+[flatbuffers python]: https://github.com/google/flatbuffers/tree/master/python
+[pip]: https://github.com/pypa/pip
+[pip license]: https://github.com/pypa/pip/blob/main/LICENSE.txt
+[wheel]: https://github.com/pypa/wheel
+[wheel license]: https://github.com/pypa/wheel/blob/main/LICENSE.txt
+[setuptools]: https://github.com/pypa/setuptools
+[setuptools license]: https://github.com/pypa/setuptools/blob/main/LICENSE
+[packaging]: https://github.com/pypa/packaging
+[packaging license]: https://github.com/pypa/packaging/blob/main/LICENSE
+[autocommand]: https://github.com/Lucretiel/autocommand
+[autocommand license]: https://github.com/Lucretiel/autocommand/blob/master/LICENSE
+[backports.tarfile]: https://github.com/jaraco/backports.tarfile
+[backports.tarfile license]: https://github.com/jaraco/backports.tarfile/blob/main/pyproject.toml
+[charset-normalizer]: https://github.com/jawah/charset_normalizer
+[charset-normalizer license]: https://github.com/jawah/charset_normalizer/blob/master/LICENSE
+[jaraco.context]: https://github.com/jaraco/jaraco.context
+[jaraco.context license]: https://github.com/jaraco/jaraco.context/blob/main/pyproject.toml
+[jaraco.functools]: https://github.com/jaraco/jaraco.functools
+[jaraco.functools license]: https://github.com/jaraco/jaraco.functools/blob/main/pyproject.toml
+[jaraco.text]: https://github.com/jaraco/jaraco.text
+[jaraco.text license]: https://github.com/jaraco/jaraco.text/blob/main/pyproject.toml
+[more-itertools]: https://github.com/more-itertools/more-itertools
+[more-itertools license]: https://github.com/more-itertools/more-itertools/blob/master/LICENSE
+[platformdirs]: https://github.com/tox-dev/platformdirs
+[platformdirs license]: https://github.com/tox-dev/platformdirs/blob/main/LICENSE
+[tomli]: https://github.com/hukkin/tomli
+[tomli license]: https://github.com/hukkin/tomli/blob/master/LICENSE

@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -50,7 +50,7 @@ class NavigationHandler:
 	def _get_current_view(self, ctxt: Any):
 		try:
 			view = self.get_current_view()
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in NavigationHandler._get_current_view")
 			view = ""
 		return core.BNAllocString(view)
@@ -58,25 +58,25 @@ class NavigationHandler:
 	def _get_current_offset(self, ctxt: Any) -> int:
 		try:
 			return self.get_current_offset()
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in NavigationHandler._get_current_offset")
 			return 0
 
 	def _navigate(self, ctxt: Any, view: ViewName, offset: int) -> bool:
 		try:
 			return self.navigate(view, offset)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in NavigationHandler._navigate")
 			return False
 
 	def get_current_view(self) -> str:
-		return NotImplemented
+		raise NotImplementedError
 
 	def get_current_offset(self) -> int:
-		return NotImplemented
+		raise NotImplementedError
 
 	def navigate(self, view: ViewName, offset: int) -> bool:
-		return NotImplemented
+		raise NotImplementedError
 
 
 class SaveSettings:
@@ -210,12 +210,54 @@ class FileMetadata:
 
 	@property
 	def virtual_path(self) -> str:
-		"""The virtual path of the file including container and internal path (e.g., 'archive.zip:folder/file.bin') (read/write)"""
+		"""
+		``virtual_path`` is a logical (non-filesystem) path describing how this file was derived from the
+		container transform system in the current session. There are three meaningful states:
+
+		* Empty - not yet processed by the transform system.
+		* Equal to ``filename`` - processed, no transform chain applied (plain file, database, or container
+		  system disabled via ``files.container.mode``).
+		* Non-empty and different from ``filename`` - derived container entry.
+
+		Session-scoped: save-as does not persist the chain. Reopening the saved artifact yields whatever chain
+		that session's access path produces.
+
+		Use this for cache keys or identity-sensitive operations. Use ``filename`` for the physical path and ``display_name`` for UI display.
+		"""
 		return core.BNGetVirtualPath(self.handle)
 
 	@virtual_path.setter
 	def virtual_path(self, value: str) -> None:
 		core.BNSetVirtualPath(self.handle, str(value))
+
+	@property
+	def is_container_entry(self) -> bool:
+		"""
+		``True`` if this file was produced by the container transform system (e.g. an entry extracted from a Zip
+		archive). ``False`` for plain files, databases, and FileMetadata that has not yet been processed by the
+		transform system.
+		"""
+		virtual = self.virtual_path
+		return bool(virtual) and virtual != self.filename
+
+	@property
+	def display_name(self) -> str:
+		"""
+		``display_name`` is a leaf-shaped human-readable name for UI presentation. It never contains a directory
+		path. Resolution order:
+
+		* An explicitly set display name (project-assigned, transform-synthesized for container entries, or set
+		  by a plugin or user).
+		* Otherwise the leaf of ``filename``.
+
+		Use this for tab titles, save-dialog default leaf names, logs, and any UI surface where you'd refer to
+		the file by name. Use ``filename`` for the physical path that can be reopened.
+		"""
+		return core.BNGetDisplayName(self.handle)
+
+	@display_name.setter
+	def display_name(self, value: str) -> None:
+		core.BNSetDisplayName(self.handle, str(value))
 
 	@property
 	def modified(self) -> bool:
@@ -365,7 +407,7 @@ class FileMetadata:
 		try:
 			yield state
 			self.commit_undo_actions(state)
-		except:
+		except Exception:
 			self.revert_undo_actions(state)
 			raise
 
@@ -373,9 +415,9 @@ class FileMetadata:
 		"""
 		``begin_undo_actions`` starts recording actions taken so they can be undone at some point.
 
-		:param bool anonymous_allowed: Legacy interop: prevent empty calls to :py:func:`commit_undo_actions`` from
-		                               affecting this undo state. Specifically for :py:func:`undoable_transaction``
-		:return: Id of undo state, for passing to :py:func:`commit_undo_actions`` or :py:func:`revert_undo_actions`.
+		:param bool anonymous_allowed: Legacy interop: prevent empty calls to :py:func:`commit_undo_actions` from
+		                               affecting this undo state. Specifically for :py:func:`undoable_transaction`
+		:return: Id of undo state, for passing to :py:func:`commit_undo_actions` or :py:func:`revert_undo_actions`.
 		:rtype: str
 		:Example:
 
@@ -613,6 +655,16 @@ class FileMetadata:
 			)
 
 	# TODO : When this is removed, you can probably remove `BNOpenExistingDatabase` and `BNOpenExistingDatabaseWithProgress` too
+
+	def reopen_moved_database(self, filename: str) -> bool:
+		"""
+		``reopen_moved_database`` reopens the database backing this file metadata from a new path.
+
+		:param str filename: path and filename to the moved bndb.
+		:return: true on success, false on failure
+		:rtype: bool
+		"""
+		return core.BNReopenMovedDatabase(self.handle, str(filename))
 
 	def save_auto_snapshot(self, progress_func: Optional[ProgressFuncType] = None, settings: Optional[SaveSettings] = None) -> bool:
 		_settings = None

@@ -1,60 +1,135 @@
-#include <progresstask.h>
 #include "symboltable.h"
 
-#include <QHeaderView>
+#include "addresstext.h"
+#include "theme.h"
 
-#include "ui/fontsettings.h"
+#include <algorithm>
+#include <memory>
 
-#include "binaryninjaapi.h"
-
-using namespace BinaryNinja;
 using namespace SharedCacheAPI;
 
+namespace {
 
-SymbolTableModel::SymbolTableModel(SymbolTableView* parent) :
-	QAbstractTableModel(parent), m_parent(parent), m_displaySymbols(&m_symbols)
+enum SymbolsTableColumn
 {
-	// TODO: Need to implement updating this font if it is changed by the user
-	m_font = getMonospaceFont(parent);
+	SymbolsTableAddressColumn,
+	SymbolsTableTypeColumn,
+	SymbolsTableImageColumn,
+	SymbolsTableNameColumn,
+	SymbolsTableColumnCount,
+};
+
+QString SymbolTypeAsString(BNSymbolType type)
+{
+	const std::string name = GetSymbolTypeAsString(type);
+	return QString::fromUtf8(name.c_str(), name.size());
 }
 
 
-int SymbolTableModel::rowCount(const QModelIndex& parent) const {
+const SymbolTableModel::AddressRange* RangeContaining(
+	const std::vector<SymbolTableModel::AddressRange>& ranges, uint64_t address)
+{
+	auto it = std::upper_bound(ranges.begin(), ranges.end(), address,
+		[](uint64_t address, const SymbolTableModel::AddressRange& range) {
+			return address < range.start;
+		});
+	if (it == ranges.begin())
+		return nullptr;
+	--it;
+	if (address >= it->end)
+		return nullptr;
+	return &*it;
+}
+
+
+// The image lookup key for a row, or nullopt when the symbol is outside any image.
+std::optional<uint64_t> ImageKey(const SymbolRow& row)
+{
+	if (row.imageStart == 0)
+		return std::nullopt;
+	return row.imageStart;
+}
+
+QString ImageNameForSymbol(const ImageNameLookup::State& names, const SymbolRow& row)
+{
+	return ImageNameLookup::displayName(names, ImageKey(row), row.regionStart);
+}
+
+}  // namespace
+
+
+SymbolTableModel::SymbolTableModel(QWidget* parent) : TriageTableRowsModel(parent)
+{
+	m_finalComparator = [](const SymbolRow& a, const SymbolRow& b) { return a.symbol.address < b.symbol.address; };
+}
+
+
+int SymbolTableModel::columnCount(const QModelIndex& parent) const
+{
 	Q_UNUSED(parent);
-	return static_cast<int>(m_displaySymbols->size());
+	return SymbolsTableColumnCount;
 }
 
 
-int SymbolTableModel::columnCount(const QModelIndex& parent) const {
-	Q_UNUSED(parent);
-	// We have 3 columns: Address, Type, Name
-	return 3;
-}
-
-
-QVariant SymbolTableModel::data(const QModelIndex& index, int role) const {
-	if (!index.isValid() || (role != Qt::DisplayRole && role != Qt::FontRole)) {
+QVariant SymbolTableModel::data(const QModelIndex& index, int role) const
+{
+	if (!index.isValid())
 		return QVariant();
-	}
+
+	const size_t row = static_cast<size_t>(index.row());
+	BN_ASSERT(row < m_rows.displayCount());
+	if (row >= m_rows.displayCount())
+		return QVariant();
 
 	switch (role)
 	{
 	case Qt::DisplayRole:
 	{
-		auto symbol = symbolAt(index.row());
-		auto symbolType = GetSymbolTypeAsString(symbol.type);
+		const auto& symbolRow = rowAt(index.row());
+		const auto& symbol = symbolRow.symbol;
 
 		switch (index.column())
 		{
-		case 0: // Address column
-			return QString("0x%1").arg(symbol.address, 0, 16); // Display address as hexadecimal
-		case 1: // Type column
-			return QString::fromUtf8(symbolType.c_str(), symbolType.size());
-		case 2: // Name column
+		case SymbolsTableAddressColumn:
+			return QString::fromStdString(AddressText(symbol.address, m_addressWidth));
+		case SymbolsTableTypeColumn:
+			return SymbolTypeAsString(symbol.type);
+		case SymbolsTableImageColumn:
+			return ImageNameForSymbol(*m_names.snapshot(), symbolRow);
+		case SymbolsTableNameColumn:
 			return QString::fromUtf8(symbol.name.c_str(), symbol.name.size());
 		default:
 			return QVariant();
 		}
+	}
+	case Qt::ForegroundRole:
+		switch (index.column())
+		{
+		case SymbolsTableAddressColumn:
+			return getThemeColor(AddressColor);
+		case SymbolsTableTypeColumn:
+			return getThemeColor(TypeNameColor);
+		case SymbolsTableNameColumn:
+			switch (symbolAt(index.row()).type)
+			{
+			case FunctionSymbol:
+				return getThemeColor(CodeSymbolColor);
+			case DataSymbol:
+				return getThemeColor(DataSymbolColor);
+			default:
+				return QVariant();
+			}
+		default:
+			return QVariant();
+		}
+	case Qt::ToolTipRole:
+	{
+		if (index.column() != SymbolsTableImageColumn)
+			return QVariant();
+		const auto& symbolRow = rowAt(index.row());
+		if (QString tooltip = m_names.tooltip(ImageKey(symbolRow), symbolRow.regionStart); !tooltip.isEmpty())
+			return tooltip;
+		return QVariant();
 	}
 	case Qt::FontRole:
 		return m_font;
@@ -64,17 +139,20 @@ QVariant SymbolTableModel::data(const QModelIndex& index, int role) const {
 }
 
 
-QVariant SymbolTableModel::headerData(int section, Qt::Orientation orientation, int role) const {
-	if (role != Qt::DisplayRole || orientation != Qt::Horizontal) {
+QVariant SymbolTableModel::headerData(int section, Qt::Orientation orientation, int role) const
+{
+	if (role != Qt::DisplayRole || orientation != Qt::Horizontal)
 		return QVariant();
-	}
 
-	switch (section) {
-	case 0:
+	switch (section)
+	{
+	case SymbolsTableAddressColumn:
 		return QString("Address");
-	case 1:
+	case SymbolsTableTypeColumn:
 		return QString("Type");
-	case 2:
+	case SymbolsTableImageColumn:
+		return QString("Image");
+	case SymbolsTableNameColumn:
 		return QString("Name");
 	default:
 		return QVariant();
@@ -82,147 +160,101 @@ QVariant SymbolTableModel::headerData(int section, Qt::Orientation orientation, 
 }
 
 
-void SymbolTableModel::sort(int column, Qt::SortOrder order)
+SymbolTableModel::KeyOrdering SymbolTableModel::orderingForColumn(int column) const
 {
-	beginResetModel();
-
-	std::function<bool(const CacheSymbol&, const CacheSymbol&)> comparator;
-
 	switch (column)
 	{
-	case 0: // Address column
-		comparator = [](const CacheSymbol& a, const CacheSymbol& b) {
-			return a.address < b.address;
-		};
-		break;
-	case 1: // Type column
-		comparator = [](const CacheSymbol& a, const CacheSymbol& b) {
-			return GetSymbolTypeAsString(a.type) < GetSymbolTypeAsString(b.type);
-		};
-		break;
-	case 2: // Name column
-		comparator = [](const CacheSymbol& a, const CacheSymbol& b) {
-			return a.name < b.name;
-		};
-		break;
+	case SymbolsTableAddressColumn:
+		return [](const SymbolRow& a, const SymbolRow& b) { return a.symbol.address <=> b.symbol.address; };
+	case SymbolsTableTypeColumn:
+		return [](const SymbolRow& a, const SymbolRow& b) { return a.symbol.type <=> b.symbol.type; };
+	case SymbolsTableNameColumn:
+		return [](const SymbolRow& a, const SymbolRow& b) { return a.symbol.name <=> b.symbol.name; };
+	case SymbolsTableImageColumn:
+		return ImageColumnOrdering<SymbolRow>(*m_names.snapshot());
 	default:
-		endResetModel();
+		return nullptr;
+	}
+}
+
+
+void SymbolTableModel::setNameSources(const SharedCacheController& controller)
+{
+	m_names.build(controller);
+	m_addressWidth = BNGetAddressRenderedWidth(m_names.maxAddress());
+
+	auto ranges = std::make_shared<std::vector<AddressRange>>();
+	for (const auto& region : controller.GetRegions())
+		ranges->push_back({region.start, region.start + region.size, region.imageStart});
+	std::sort(ranges->begin(), ranges->end(),
+		[](const AddressRange& a, const AddressRange& b) { return a.start < b.start; });
+	m_ranges = std::move(ranges);
+}
+
+
+void SymbolTableModel::appendSymbols(std::vector<CacheSymbol> symbols)
+{
+	std::vector<SymbolRow> rows;
+	rows.reserve(symbols.size());
+	for (auto& symbol : symbols)
+	{
+		const auto* range = RangeContaining(*m_ranges, symbol.address);
+		rows.push_back({std::move(symbol), range ? range->imageStart.value_or(0) : 0,
+			range ? range->start : 0});
+	}
+	appendRows(std::move(rows));
+}
+
+
+bool SymbolTableModel::rowsEquivalent(const SymbolRow& a, const SymbolRow& b) const
+{
+	return a.symbol.address == b.symbol.address && a.symbol.name == b.symbol.name;
+}
+
+
+void SymbolTableModel::applyFilter()
+{
+	if (m_filterText.empty())
+	{
+		m_rows.setFilter(nullptr);
 		return;
 	}
 
-	if (order == Qt::DescendingOrder)
-	{
-		std::sort(m_displaySymbols->begin(), m_displaySymbols->end(),
-			[&comparator](const CacheSymbol& a, const CacheSymbol& b) { return comparator(b, a); });
-	}
-	else
-	{
-		std::sort(m_displaySymbols->begin(), m_displaySymbols->end(), comparator);
-	}
+	const auto snapshot = filterSnapshot();
+	const uint32_t addressWidth = m_addressWidth;
+	const auto names = m_names.snapshot();
 
-	endResetModel();
+	m_rows.setFilterFactory([snapshot, addressWidth, names]() -> Predicate {
+		FilterParams params = MakeFilterParams(snapshot);
+		return [params = std::move(params), addressWidth, names](const SymbolRow& row) {
+			QString imageName;
+			if (params.matchImageNames)
+				imageName = ImageNameForSymbol(*names, row);
+			return MatchesText(params, row.symbol.name, row.symbol.address, addressWidth, imageName);
+		};
+	});
 }
 
 
-void SymbolTableModel::updateSymbols(std::vector<CacheSymbol> symbols)
+SymbolTableView::SymbolTableView(QWidget* parent) : TriageTableView(parent)
 {
-	m_symbols = std::move(symbols);
-	setFilter(m_filter);
+	m_model = new SymbolTableModel(this);
+	setTriageModel(m_model, SymbolsTableAddressColumn);
+	applyDefaultColumnWidths();
 }
 
 
-const CacheSymbol& SymbolTableModel::symbolAt(int row) const
+void SymbolTableView::setNameSources(const SharedCacheController& controller)
 {
-	return m_displaySymbols->at(row);
+	m_model->setNameSources(controller);
+	applyDefaultColumnWidths();
 }
 
 
-void SymbolTableModel::setFilter(std::string text)
+void SymbolTableView::applyDefaultColumnWidths()
 {
-	beginResetModel();
-
-	m_filter = std::move(text);
-
-	// Skip filtering if no filter applied.
-	if (m_filter.empty())
-	{
-		m_filteredSymbols = {};
-		m_displaySymbols = &m_symbols;
-	}
-	else
-	{
-		// Clear the filtered symbols while preserving the capacity
-		m_filteredSymbols.clear();
-
-		for (const auto& symbol : m_symbols)
-		{
-			if (symbol.name.find(m_filter) != std::string::npos)
-				m_filteredSymbols.push_back(symbol);
-		}
-
-		// If the filtered vector is using less than 25% of its capacity,
-		// shrink it to reduce memory usage.
-		if (m_filteredSymbols.size() < m_filteredSymbols.capacity() / 4)
-			m_filteredSymbols.shrink_to_fit();
-
-		m_displaySymbols = &m_filteredSymbols;
-	}
-
-	endResetModel();
-}
-
-
-SymbolTableView::SymbolTableView(QWidget* parent) :
-	QTableView(parent), m_model(new SymbolTableModel(this))
-{
-	// Set up the filter model
-	setModel(m_model);
-
-	// Configure view settings
-	horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
-	horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
-	horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
-	setEditTriggers(QAbstractItemView::NoEditTriggers);
-	setSelectionBehavior(QAbstractItemView::SelectRows);
-	setSelectionMode(QAbstractItemView::SingleSelection);
-	verticalHeader()->setVisible(false);
-
-	sortByColumn(0, Qt::AscendingOrder);
-	setSortingEnabled(true);
-}
-
-SymbolTableView::~SymbolTableView() = default;
-
-void SymbolTableView::populateSymbols(BinaryView &view)
-{
-	if (auto controller = SharedCacheController::GetController(view)) {
-		typedef std::vector<CacheSymbol> SymbolList;
-		// Retrieve the symbols from the controller in a future than pass that to the model.
-		QPointer<QFutureWatcher<SymbolList>> watcher = new QFutureWatcher<SymbolList>(this);
-		connect(watcher, &QFutureWatcher<SymbolList>::finished, this, [watcher, this]() {
-			if (watcher)
-			{
-				auto symbols = watcher->result();
-				m_model->updateSymbols(std::move(symbols));
-
-				// Reapply the current sort after repopulating the model
-				// TODO: The model should use `QSortFilterProxyModel`, but that's a bigger change.
-				setSortingEnabled(true);
-			}
-		});
-		QFuture<SymbolList> future = QtConcurrent::run([controller]() {
-			return controller->GetSymbols();
-		});
-		watcher->setFuture(future);
-		connect(this, &QObject::destroyed, this, [watcher]() {
-			if (watcher && watcher->isRunning()) {
-				watcher->cancel();
-				watcher->waitForFinished();
-			}
-		});
-	}
-}
-
-void SymbolTableView::setFilter(const std::string& filter) {
-	m_model->setFilter(filter);
+	fitColumn(SymbolsTableAddressColumn, {QString(m_model->addressWidth(), QChar('0'))});
+	fitColumn(SymbolsTableTypeColumn,
+		{SymbolTypeAsString(FunctionSymbol), SymbolTypeAsString(DataSymbol), QStringLiteral("Unknown")});
+	fitColumn(SymbolsTableImageColumn, {m_model->names().widestImageColumnText()});
 }

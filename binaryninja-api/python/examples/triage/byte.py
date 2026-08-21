@@ -9,7 +9,7 @@ from binaryninjaui import View, ViewType, RenderContext, UIContext, UIAction
 from binaryninja.enums import LinearDisassemblyLineType, ThemeColor
 try:
     from binaryninja.binaryview import AddressRange
-except:
+except Exception:
     from binaryninja.function import AddressRange
 
 

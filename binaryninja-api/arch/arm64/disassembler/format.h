@@ -40,9 +40,9 @@ int get_register_full(enum Register, const InstructionOperand *, char *result);
 const char *get_register_arrspec(enum Register, const InstructionOperand *);
 
 // miscellany to string
-const char *get_operation(const Instruction *instruction);
-const char *get_shift(ShiftType shift);
-const char *get_condition(Condition cond);
+const char *aarch64_get_operation(const Instruction *instruction);
+const char *aarch64_get_shift(ShiftType shift);
+const char *aarch64_get_condition(Condition cond);
 uint32_t get_implementation_specific(
 		const InstructionOperand *operand,
 		char *outBuffer,

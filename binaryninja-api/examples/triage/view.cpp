@@ -6,6 +6,7 @@
 #include "entry.h"
 #include "imports.h"
 #include "exports.h"
+#include "resources.h"
 #include "sections.h"
 #include "fileinfo.h"
 #include "librariesinfo.h"
@@ -27,13 +28,14 @@ TriageView::TriageView(QWidget* parent, BinaryViewRef data) : QScrollArea(parent
 
 	QGroupBox* entropyGroup = new QGroupBox("Entropy", container);
 	QVBoxLayout* entropyLayout = new QVBoxLayout();
-	entropyLayout->addWidget(new EntropyWidget(entropyGroup, this, m_data));
+	m_entropyWidget = new EntropyWidget(entropyGroup, this, m_data);
+	entropyLayout->addWidget(m_entropyWidget);
 	entropyGroup->setLayout(entropyLayout);
 	layout->addWidget(entropyGroup);
 
 	QGroupBox* fileInfoGroup = new QGroupBox("File Info", container);
 	QVBoxLayout* fileInfoLayout = new QVBoxLayout();
-	fileInfoLayout->addWidget(new FileInfoWidget(fileInfoGroup, m_data));
+	fileInfoLayout->addWidget(new FileInfoWidget(fileInfoGroup, m_data, m_entropyWidget));
 	fileInfoGroup->setLayout(fileInfoLayout);
 	layout->addWidget(fileInfoGroup);
 
@@ -47,8 +49,8 @@ TriageView::TriageView(QWidget* parent, BinaryViewRef data) : QScrollArea(parent
 	{
 		QGroupBox* headerGroup = new QGroupBox("Headers", container);
 		QVBoxLayout* headerLayout = new QVBoxLayout();
-		HeaderWidget* headerWidget = new HeaderWidget(headerGroup, *hdr);
-		headerLayout->addWidget(headerWidget);
+		m_headerWidget = new HeaderWidget(headerGroup, *hdr);
+		headerLayout->addWidget(m_headerWidget);
 		headerGroup->setLayout(headerLayout);
 		layout->addWidget(headerGroup);
 		delete hdr;
@@ -64,21 +66,21 @@ TriageView::TriageView(QWidget* parent, BinaryViewRef data) : QScrollArea(parent
 		layout->addWidget(baseDetectionGroup);
 	}
 
-	QGroupBox* librariesGroup = new QGroupBox("Libraries", container);
-	QVBoxLayout* librariesLayout = new QVBoxLayout();
-	librariesLayout->addWidget(new LibrariesWidget(this, data));
-	librariesGroup->setLayout(librariesLayout);
-	layout->addWidget(librariesGroup);
-
 	if (m_data->IsExecutable())
 	{
-		QSplitter* importExportSplitter = new QSplitter(Qt::Horizontal);
+		QGroupBox* librariesGroup = new QGroupBox("Libraries", container);
+		QVBoxLayout* librariesLayout = new QVBoxLayout();
+		librariesLayout->addWidget(new LibrariesWidget(this, data));
+		librariesGroup->setLayout(librariesLayout);
+		layout->addWidget(librariesGroup);
+
+		m_importExportSplitter = new QSplitter(Qt::Horizontal);
 
 		QGroupBox* importGroup = new QGroupBox("Imports", container);
 		QVBoxLayout* importLayout = new QVBoxLayout();
 		importLayout->addWidget(new ImportsWidget(importGroup, this, m_data));
 		importGroup->setLayout(importLayout);
-		importExportSplitter->addWidget(importGroup);
+		m_importExportSplitter->addWidget(importGroup);
 
 		QSplitter* exportEntrySplitter = new QSplitter(Qt::Vertical);
 
@@ -94,8 +96,8 @@ TriageView::TriageView(QWidget* parent, BinaryViewRef data) : QScrollArea(parent
 		entryGroup->setLayout(entryLayout);
 		exportEntrySplitter->addWidget(entryGroup);
 
-		importExportSplitter->addWidget(exportEntrySplitter);
-		layout->addWidget(importExportSplitter);
+		m_importExportSplitter->addWidget(exportEntrySplitter);
+		layout->addWidget(m_importExportSplitter);
 
 		if (m_data->GetTypeName() != "PE")
 		{
@@ -117,6 +119,19 @@ TriageView::TriageView(QWidget* parent, BinaryViewRef data) : QScrollArea(parent
 		layout->addWidget(sectionsGroup);
 		if (sectionsWidget->GetSections().size() == 0)
 			sectionsGroup->hide();
+
+		if (m_data->GetTypeName() == "PE")
+		{
+			auto resourcesMd = m_data->QueryMetadata("PEResources");
+			if (resourcesMd && resourcesMd->IsArray() && !resourcesMd->GetArray().empty())
+			{
+				QGroupBox* resourcesGroup = new QGroupBox("Resources", container);
+				QVBoxLayout* resourcesLayout = new QVBoxLayout();
+				resourcesLayout->addWidget(new ResourcesWidget(resourcesGroup, this, m_data));
+				resourcesGroup->setLayout(resourcesLayout);
+				layout->addWidget(resourcesGroup);
+			}
+		}
 
 		QGroupBox* analysisInfoGroup = new QGroupBox("Analysis Info", container);
 		QVBoxLayout* analysisInfoLayout = new QVBoxLayout();
@@ -145,13 +160,16 @@ TriageView::TriageView(QWidget* parent, BinaryViewRef data) : QScrollArea(parent
 		layout->addWidget(m_byteView, 1);
 	}
 
-	setBinaryDataNavigable(m_byteView ? true : false);
+	setBinaryDataNavigable(true);
 	container->setLayout(layout);
 	setWidgetResizable(true);
 	setWidget(container);
 
 	if (m_fullAnalysisButton && (BinaryNinja::Settings::Instance()->Get<std::string>("analysis.mode", data) == "full"))
 		m_fullAnalysisButton->hide();
+
+	// Bind the "Go to Address..." action
+	actionHandler()->bindAction("Go to Address...", UIAction([this]() { goToAddress(); }));
 }
 
 
@@ -201,6 +219,8 @@ bool TriageView::navigate(uint64_t addr)
 {
 	if (m_byteView)
 		return m_byteView->navigate(addr);
+
+	setCurrentOffset(addr);
 	return false;
 }
 
@@ -218,6 +238,22 @@ void TriageView::startFullAnalysis()
 }
 
 
+void TriageView::goToAddress()
+{
+	uint64_t addr;
+	if (!ViewFrame::getAddressFromInput(this, m_data, addr, getCurrentOffset()))
+		return;
+
+	ViewFrame* frame = ViewFrame::viewFrameForWidget(this);
+	if (!frame)
+		return;
+
+	QString viewType = BinaryNinja::Settings::Instance()->Get<bool>("ui.view.graph.preferred") ? "Graph" : "Linear";
+	QString dataType = QString::fromStdString(m_data->GetTypeName());
+	frame->navigate(viewType + ":" + dataType, addr);
+}
+
+
 void TriageView::navigateToFileOffset(uint64_t offset)
 {
 	if (!m_byteView)
@@ -229,15 +265,11 @@ void TriageView::navigateToFileOffset(uint64_t offset)
 			return;
 		if (!hasAddr)
 			frame->navigate("Hex:Raw", offset);
-		else if (BinaryNinja::Settings::Instance()->Get<bool>("ui.view.graph.preferred") &&
-			frame->getCurrentBinaryView() &&
-			frame->getCurrentBinaryView()->GetAnalysisFunctionsForAddress(offset).size() > 0)
-		{
-			frame->navigate("Graph:" + frame->getCurrentDataType(), offset);
-		}
 		else
 		{
-			frame->navigate("Linear:" + frame->getCurrentDataType(), offset);
+			QString viewType = BinaryNinja::Settings::Instance()->Get<bool>("ui.view.graph.preferred") ? "Graph" : "Linear";
+			QString dataType = QString::fromStdString(m_data->GetTypeName());
+			frame->navigate(viewType + ":" + dataType, addr);
 		}
 	}
 	else
@@ -272,6 +304,37 @@ void TriageView::focusInEvent(QFocusEvent*)
 {
 	if (m_byteView)
 		m_byteView->setFocus(Qt::OtherFocusReason);
+}
+
+
+void TriageView::resizeEvent(QResizeEvent* event)
+{
+	QScrollArea::resizeEvent(event);
+	updateImportExportLayout();
+}
+
+
+void TriageView::updateImportExportLayout()
+{
+	if (!m_importExportSplitter)
+		return;
+
+	int width = viewport()->width();
+	Qt::Orientation currentOrientation = m_importExportSplitter->orientation();
+	Qt::Orientation desiredOrientation;
+
+	// Add hysteresis: use different thresholds for shrinking vs growing
+	if (currentOrientation == Qt::Horizontal)
+	{
+		desiredOrientation = (width < TriageBreakpoints::NARROW - 20) ? Qt::Vertical : Qt::Horizontal;
+	}
+	else
+	{
+		desiredOrientation = (width >= TriageBreakpoints::NARROW + 20) ? Qt::Horizontal : Qt::Vertical;
+	}
+
+	if (currentOrientation != desiredOrientation)
+		m_importExportSplitter->setOrientation(desiredOrientation);
 }
 
 

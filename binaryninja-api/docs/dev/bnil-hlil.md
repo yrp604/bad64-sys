@@ -1,4 +1,3 @@
-# Binary Ninja Intermediate Language Series, Part 3: High Level IL
 # Binary Ninja Intermediate Language: High Level IL
 
 The High Level Intermediate Language (HLIL) is Binary Ninja's decompiler output. Much like [LLIL](./bnil-llil.md) and [MLIL](./bnil-mlil.md), this representation is tree based and has many of the same instructions. This representation is distinct in a few key ways.
@@ -14,6 +13,49 @@ The High Level Intermediate Language (HLIL) is Binary Ninja's decompiler output.
 * Small discrete operations
 * Enables source-level forms of queries and analysis
 
+## AST and Non-AST Forms
+
+HLIL exists in two forms, depending on how the instruction is retrieved:
+
+* The **AST form** is what linear view shows. The whole function is one tree of statements rooted at [`HighLevelILFunction.root`](https://api.binary.ninja/binaryninja.highlevelil-module.html#binaryninja.highlevelil.HighLevelILFunction.root); the body of an `if`, `while`, `for`, or `switch` is a child of that statement, so it renders as indented, multi-line decompiler output.
+* The **non-AST form** is what graph view shows. Each basic block holds a flat list of statements and the nesting is expressed by the control flow graph instead, so a statement renders as a single unindented line. This is what [`HighLevelILFunction.instructions`](https://api.binary.ninja/binaryninja.highlevelil-module.html#binaryninja.highlevelil.HighLevelILFunction.instructions), indexing a function (`hlil[0]`), and iterating basic blocks return.
+
+Both describe the same function. Use the non-AST form to walk every statement without regard to nesting, the AST form when structure or rendered output matters.
+
+Iterating the root walks a function in AST form:
+
+```pycon
+>>> for insn in current_function.hlil.root:
+...  print(insn)
+...
+int64_t x8 = *___stack_chk_guard
+_strlen(*arg2)
+void var_20
+void* __s = &var_20 - ((___chkstk_darwin() + 0xf) & 0xfffffffffffffff0)
+__builtin_strcpy(__s, "Hello, world!\n")
+uint64_t result = _strlen(__s)
+if (*___stack_chk_guard == x8)
+    return result
+___stack_chk_fail()
+noreturn
+```
+
+Iterating `current_function.hlil.instructions` walks the same function in non-AST form, where the `if` body is not nested under it.
+
+Individual instructions convert between the two with the [`ast`](https://api.binary.ninja/binaryninja.highlevelil-module.html#binaryninja.highlevelil.HighLevelILInstruction.ast) and [`non_ast`](https://api.binary.ninja/binaryninja.highlevelil-module.html#binaryninja.highlevelil.HighLevelILInstruction.non_ast) properties; [`HighLevelILFunction.get_expr`](https://api.binary.ninja/binaryninja.highlevelil-module.html#binaryninja.highlevelil.HighLevelILFunction.get_expr) also accepts an `as_ast` parameter:
+
+```pycon
+>>> insn = current_function.hlil[6]
+>>> insn.as_ast
+False
+>>> insn.ast.as_ast
+True
+```
+
+[`HighLevelILInstruction.get_lines`](https://api.binary.ninja/binaryninja.highlevelil-module.html#binaryninja.highlevelil.HighLevelILInstruction.get_lines) renders an instruction in whichever form it's in: an AST `if` produces its condition plus an indented body, the non-AST form produces the condition alone. [`DisassemblyOption`](https://api.binary.ninja/binaryninja.enums-module.html#binaryninja.enums.DisassemblyOption) settings acting on nested bodies, such as `ShowCollapseIndicators`, therefore do nothing on a non-AST instruction — render the AST form if they appear to be ignored.
+
+`IndentHLILBody` and `ShowAddress` are applied by linear view when it assembles lines instead of `get_lines`. 
+
 ## Debug Report
 
 To observe the transformations that occur from MLIL to HLIL, you can use the built-in [`debug report`](https://api.binary.ninja/binaryninja.function-module.html#binaryninja.function.Function.request_debug_report) API:
@@ -28,7 +70,7 @@ To observe the transformations that occur from MLIL to HLIL, you can use the bui
 
 The instruction set is made up of [`HighLevelILInstruction`](https://api.binary.ninja/binaryninja.highlevelil-module.html#binaryninja.highlevelil.HighLevelILInstruction) objects. Let's start exploring by using the python console to poke around at some instructions. Open up a binary in Binary Ninja and retrieve an HLIL instruction:+
 
-```
+```pycon
 >>> current_il_instruction
 <HighLevelILVarInit: uint64_t rax_2 = zx.q(rax_1 - 0x6c)>
 >>> type(current_il_instruction)
@@ -49,7 +91,6 @@ There are a number of properties that can be queried on the [`HighLevelILInstruc
 * `HLIL_IF` - Branch to the `true`/`false` HLIL instruction identifier depending on the result of the `condition` expression
 * `HLIL_GOTO` - Branch to the `dest` expression id
 * `HLIL_TAILCALL` - This instruction calls the expression `dest` using `params` as input and `output` for return values
-not exist
 * `HLIL_SYSCALL` - Make a system/service call with parameters `params` and output `output`
 * `HLIL_WHILE` -
 * `HLIL_DO_WHILE` -
@@ -81,6 +122,8 @@ not exist
 * `HLIL_SPLIT` - A split pair of variables `high`:`low` which can be used a single expression
 * `HLIL_DEREF` - Dereferences `src`
 * `HLIL_DEREF_FIELD` -
+* `HLIL_PASS_BY_REF` - Wraps `src` to indicate that the calling convention is passing a parameter by reference. The inner expression has the reference taken and has a pointer type. Only appears as a parameter expression on a call instruction.
+* `HLIL_RETURN_BY_REF` - Wraps `src` to indicate that the value is being returned indirectly through a caller-supplied pointer. The inner expression is the destination of the return value, not a pointer to it. Only appears on the left side of an assignment for the result of a call instruction.
 
 ### Arithmetic Operations
 
@@ -111,6 +154,17 @@ not exist
 * `HLIL_MODS_DP` - Signed double-precision modulus of `left` expression by the `right` expression
 * `HLIL_NEG` - Sign inversion of `src` expression
 * `HLIL_NOT` - Bitwise inversion of `src` expression
+* `HLIL_BSWAP` - Reverse the byte order of `src` expression
+* `HLIL_POPCNT` - Population count (number of set bits) of `src` expression
+* `HLIL_CLZ` - Count leading zero bits of `src` expression; the result is `8 * size` when `src` is zero
+* `HLIL_CTZ` - Count trailing zero bits of `src` expression; the result is `8 * size` when `src` is zero
+* `HLIL_RBIT` - Reverse the bit order of `src` expression
+* `HLIL_CLS` - Count leading sign bits of `src` expression (the number of bits below the sign bit that match it)
+* `HLIL_MINS` - Signed minimum of `left` expression and `right` expression
+* `HLIL_MAXS` - Signed maximum of `left` expression and `right` expression
+* `HLIL_MINU` - Unsigned minimum of `left` expression and `right` expression
+* `HLIL_MAXU` - Unsigned maximum of `left` expression and `right` expression
+* `HLIL_ABS` - Signed absolute value of `src` expression
 * `HLIL_FADD` - IEEE754 floating point addition of `left` expression with `right` expression
 * `HLIL_FSUB` - IEEE754 floating point subtraction of `left` expression with `right` expression
 * `HLIL_FMUL` - IEEE754 floating point multiplication of `left` expression with `right` expression

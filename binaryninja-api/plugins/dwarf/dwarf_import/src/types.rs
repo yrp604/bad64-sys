@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -25,8 +25,6 @@ use binaryninja::{
 };
 
 use gimli::{constants, AttributeValue, DebuggingInformationEntry, DwAt, Dwarf, Operation, Unit};
-
-use log::{debug, error, warn};
 
 pub(crate) fn parse_variable<R: ReaderType>(
     dwarf: &Dwarf<R>,
@@ -79,16 +77,29 @@ pub(crate) fn parse_variable<R: ReaderType>(
                 if let Ok(address) = dwarf.address(unit, index) {
                     debug_info_builder.add_data_variable(address, full_name, uid)
                 } else {
-                    warn!("Invalid index into IAT: {}", index.0);
+                    tracing::warn!("Invalid index into IAT: {}", index.0);
                 }
             }
         }
-        Ok(op) => {
-            debug!("Unhandled operation type for variable: {:?}", op);
+        Ok(Operation::ImplicitValue { data }) => {
+            tracing::debug!(
+                "Unhandled operation type ImplicitValue with data length {} for variable",
+                data.len()
+            );
         }
-        Err(e) => error!(
+        Ok(Operation::EntryValue { expression }) => {
+            tracing::debug!(
+                "Unhandled operation type EntryValue with expression length {} for variable",
+                expression.len()
+            );
+        }
+        Ok(op) => {
+            tracing::debug!("Unhandled operation type for variable: {:?}", op);
+        }
+        Err(e) => tracing::error!(
             "Error parsing operation type for variable {:?}: {}",
-            full_name, e
+            full_name,
+            e
         ),
     }
 }
@@ -179,14 +190,14 @@ fn do_structure_parse<R: ReaderType>(
     let mut tree = match unit.entries_tree(Some(entry.offset())) {
         Ok(x) => x,
         Err(e) => {
-            log::error!("Failed to get structure entry tree: {}", e);
+            tracing::error!("Failed to get structure entry tree: {}", e);
             return None;
         }
     };
     let tree_root = match tree.root() {
         Ok(x) => x,
         Err(e) => {
-            log::error!("Failed to get structure entry tree root: {}", e);
+            tracing::error!("Failed to get structure entry tree root: {}", e);
             return None;
         }
     };
@@ -226,7 +237,7 @@ fn do_structure_parse<R: ReaderType>(
                     let Some(struct_offset_bytes) = get_attr_as_u64(&raw_struct_offset)
                         .or_else(|| get_expr_value(unit, raw_struct_offset))
                     else {
-                        log::warn!(
+                        tracing::warn!(
                             "Failed to get DW_AT_data_member_location for offset {:#x} in unit {:?}",
                             child_entry.offset().0,
                             unit.header.offset()
@@ -311,7 +322,7 @@ fn do_structure_parse<R: ReaderType>(
                     debug_info_builder_context,
                     debug_info_builder,
                 ) else {
-                    warn!("Failed to get base type for inheritance");
+                    tracing::warn!("Failed to get base type for inheritance");
                     continue;
                 };
                 let Some(base_dbg_ty) = debug_info_builder.get_type(base_type_id) else {
@@ -322,7 +333,7 @@ fn do_structure_parse<R: ReaderType>(
                 let Ok(Some(raw_data_member_location)) =
                     child_entry.attr(constants::DW_AT_data_member_location)
                 else {
-                    warn!("Failed to get DW_AT_data_member_location for inheritance");
+                    tracing::warn!("Failed to get DW_AT_data_member_location for inheritance");
                     continue;
                 };
 
@@ -393,7 +404,7 @@ pub(crate) fn get_type<R: ReaderType>(
                 let resolved_entry = match entry_unit.entry(entry_offset) {
                     Ok(x) => x,
                     Err(e) => {
-                        log::error!(
+                        tracing::error!(
                             "Failed to resolve entry in unit {:?} at offset {:#x}: {}",
                             entry_unit.header.offset(),
                             entry_offset.0,
@@ -411,7 +422,7 @@ pub(crate) fn get_type<R: ReaderType>(
                 )
             }
             DieReference::Err => {
-                warn!("Failed to fetch DIE when getting type through DW_AT_type. Debug information may be incomplete.");
+                tracing::warn!("Failed to fetch DIE when getting type through DW_AT_type. Debug information may be incomplete.");
                 None
             }
         }
@@ -428,7 +439,7 @@ pub(crate) fn get_type<R: ReaderType>(
                 let resolved_entry = match entry_unit.entry(entry_offset) {
                     Ok(x) => x,
                     Err(e) => {
-                        log::error!(
+                        tracing::error!(
                             "Failed to resolve entry in unit {:?} at offset {:#x}: {}",
                             entry_unit.header.offset(),
                             entry_offset.0,
@@ -446,7 +457,7 @@ pub(crate) fn get_type<R: ReaderType>(
                 )
             }
             DieReference::Err => {
-                warn!("Failed to fetch DIE when getting type through DW_AT_abstract_origin. Debug information may be incomplete.");
+                tracing::warn!("Failed to fetch DIE when getting type through DW_AT_abstract_origin. Debug information may be incomplete.");
                 None
             }
         }
@@ -460,7 +471,7 @@ pub(crate) fn get_type<R: ReaderType>(
                 let resolved_entry = match entry_unit.entry(entry_offset) {
                     Ok(x) => x,
                     Err(e) => {
-                        log::error!(
+                        tracing::error!(
                             "Failed to resolve entry in unit {:?} at offset {:#x}: {}",
                             entry_unit.header.offset(),
                             entry_offset.0,
@@ -479,7 +490,7 @@ pub(crate) fn get_type<R: ReaderType>(
             }
             DieReference::UnitAndOffset(_) => None,
             DieReference::Err => {
-                warn!(
+                tracing::warn!(
                     "Failed to fetch DIE when getting type. Debug information may be incomplete."
                 );
                 None

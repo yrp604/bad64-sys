@@ -1,5 +1,6 @@
 #pragma once
 
+#include <shared_mutex>
 #include <vector>
 #include <Dyld.h>
 
@@ -10,12 +11,13 @@
 struct CacheSymbol
 {
 	BNSymbolType type;
+	BNSymbolBinding binding = NoBinding;
 	uint64_t address;
 	std::string name;
 
 	CacheSymbol() = default;
-	CacheSymbol(BNSymbolType type, uint64_t address, std::string name) :
-		type(type), address(address), name(std::move(name))
+	CacheSymbol(BNSymbolType type, BNSymbolBinding binding, uint64_t address, std::string name) :
+		type(type), binding(binding), address(address), name(std::move(name))
 	{}
 	~CacheSymbol() = default;
 
@@ -25,10 +27,9 @@ struct CacheSymbol
 	CacheSymbol(CacheSymbol&& other) noexcept = default;
 	CacheSymbol& operator=(CacheSymbol&& other) noexcept = default;
 
-	std::pair<std::string, BinaryNinja::Ref<BinaryNinja::Type>> DemangledName(BinaryNinja::BinaryView& view) const;
-
 	// NOTE: you should really only call this when adding the symbol to the view.
-	std::pair<BinaryNinja::Ref<BinaryNinja::Symbol>, BinaryNinja::Ref<BinaryNinja::Type>> GetBNSymbolAndType(BinaryNinja::BinaryView& view) const;
+	std::pair<BinaryNinja::Ref<BinaryNinja::Symbol>, BinaryNinja::Ref<BinaryNinja::Type>>
+		GetBNSymbolAndType(const BinaryNinja::DemanglerConfig& config) const;
 };
 
 enum class CacheRegionType
@@ -126,10 +127,12 @@ class CacheEntry
 	// Mapping of image path to image info, used within ProcessImagesAndRegions to add them to the cache.
 	// Also used to retrieve the image dependencies.
 	std::vector<std::pair<std::string, dyld_cache_image_info>> m_images {};
+	std::shared_ptr<MappedFileRegion> m_file;
 
 public:
 	CacheEntry(std::string filePath, std::string fileName, CacheEntryType type, dyld_cache_header header,
-		std::vector<dyld_cache_mapping_info>&& mappings, std::vector<std::pair<std::string, dyld_cache_image_info>>&& images);
+		std::vector<dyld_cache_mapping_info> mappings, std::vector<std::pair<std::string, dyld_cache_image_info>> images,
+		std::shared_ptr<MappedFileRegion> file);
 
 	CacheEntry() = default;
 	CacheEntry(const CacheEntry&) = default;
@@ -140,7 +143,7 @@ public:
 	// Construct a cache entry from the file on disk.
 	static CacheEntry FromFile(const std::string& filePath, const std::string& fileName, CacheEntryType type);
 
-	WeakFileAccessor GetAccessor() const;
+	const std::shared_ptr<MappedFileRegion>& GetFile() const { return m_file; }
 
 	// Get the headers virtual address.
 	// This is useful if you need to read relative to the start of the entry file.

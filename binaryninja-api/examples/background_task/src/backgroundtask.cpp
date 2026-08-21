@@ -33,7 +33,7 @@ uint64_t InspireWriteCallback(uint8_t *data, uint64_t len, void *ctxt)
 				std::this_thread::sleep_for(std::chrono::seconds(3));
 			}
 		}
-	} catch (Json::Exception e)
+	} catch (const Json::Exception& e)
 	{
 		LogError("JSON exception! %s", e.m_message.c_str());
 		inspireBackgroundTask->Cancel();

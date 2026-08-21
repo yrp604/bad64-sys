@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -56,27 +56,27 @@ def main():
 			project_dir = Path(file.default_path).parent
 
 			print(f'Snapshots: {[snapshot.id for snapshot in file.snapshots]}')
-			bv = binaryninja.load(file.default_path)
-			view_type = bv.view_type
-			assert collaboration.RemoteFile.get_for_bv(bv) == file
+			with binaryninja.load(file.default_path) as bv:
+				assert collaboration.RemoteFile.get_for_bv(bv) == file
+				assert bv.entry_function is not None, "Failed to get binary entry function"
 
-			print(f'Setting entry function at 0x{bv.entry_function.start:08x} name to \'entry_function\'')
-			bv.entry_function.name = 'entry_function'
-			bv.file.save_auto_snapshot()
+				print(f'Setting entry function at 0x{bv.entry_function.start:08x} name to \'entry_function\'')
+				bv.entry_function.name = 'entry_function'
+				bv.file.save_auto_snapshot()
 
-			file.sync(bv, lambda conflicts: False)
-			print(f'Snapshots: {[snapshot.id for snapshot in file.snapshots]}')
+				file.sync(bv, lambda conflicts: False)
+				print(f'Snapshots: {[snapshot.id for snapshot in file.snapshots]}')
 
-			# Try deleting the bndb, redownload and see if the function name is preserved
-			bv.file.close()
+			# Delete the bndb, redownload and see if the function name is preserved
 			Path(file.default_path).unlink()
 
 			print(f'Redownloading {project.name}/{file.name}...')
-			metadata = file.download_to_bndb()
-			bv = metadata.get_view_of_type(view_type)
-			print(f'Entry function name: {bv.entry_function.name}')
-			assert bv.entry_function.name == 'entry_function'
-			bv.file.close()
+			file.download()
+			with binaryninja.load(file.core_file) as bv:
+				assert bv.entry_function is not None, "Failed to get binary entry function after redownload"
+
+				print(f'Entry function name: {bv.entry_function.name}')
+				assert bv.entry_function.name == 'entry_function'
 
 		finally:
 			# Clean up

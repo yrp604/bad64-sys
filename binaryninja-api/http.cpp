@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -411,15 +411,23 @@ namespace BinaryNinja::Http
 				LogDebug("* Error: %s", instance->GetError().c_str());
 			}
 
-			// Request failed, grab its error and try again
+			// Request failed, grab its error and try again unless we're shutting down
 			response.error = instance->GetError();
-			if (retry == HTTP_MAX_RETRIES || context.cancelled)
+			if (retry == HTTP_MAX_RETRIES || context.cancelled || BNIsShutdownRequested())
 				break;
 			size_t backoff = 1000 * HTTP_BACKOFF_FACTOR * (2 * pow(2, retry - 1));
 			retry += 1;
 			LogWarn("Attempt %d to %s %s failed, trying again in %zums\n", retry, request.m_method.data(),
 			    request.m_url.data(), backoff);
-			std::this_thread::sleep_for(std::chrono::milliseconds(backoff));
+
+			// Wait in blocks of 100ms so we can check for shutdown
+			for (size_t currentWait = 0; currentWait < backoff; currentWait += 100)
+			{
+				// If we're shutting down, return the error result instead of waiting to retry
+				if (BNIsShutdownRequested())
+					return result;
+				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			}
 		}
 
 		if (getenv("BN_DEBUG_HTTP"))

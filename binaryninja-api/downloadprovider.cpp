@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -230,6 +230,7 @@ vector<Ref<DownloadProvider>> DownloadProvider::GetList()
 	size_t count;
 	BNDownloadProvider** list = BNGetDownloadProviderList(&count);
 	vector<Ref<DownloadProvider>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(new CoreDownloadProvider(list[i]));
 	BNFreeDownloadProviderList(list);

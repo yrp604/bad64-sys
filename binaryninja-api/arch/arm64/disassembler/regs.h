@@ -1341,8 +1341,8 @@ enum Register
 extern "C"
 {
 #endif
-	const char* get_register_name(enum Register);
-	size_t get_register_size(enum Register);
+	const char* aarch64_get_register_name(enum Register);
+	size_t aarch64_get_register_size(enum Register);
 #ifdef __cplusplus
 }
 #endif

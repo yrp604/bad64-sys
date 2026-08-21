@@ -20,6 +20,9 @@ using namespace std;
 #endif
 
 #define E_MIPS_MACH_5900 0x00920000
+#define EF_MIPS_ABI2 0x00000020
+#define EF_MIPS_ARCH 0xf0000000
+#define EF_MIPS_ARCH_3 0x20000000
 
 uint32_t bswap32(uint32_t x)
 {
@@ -332,10 +335,12 @@ protected:
 			result.AddBranch(CallDestination, instr.operands[0].immediate, nullptr, hasBranchDelay);
 			break;
 
-		//Jmp to register register value is unknown
 		case MIPS_JALR:
 		case MIPS_JALR_HB:
-			result.delaySlots = 1;
+			if (instr.operands[0].reg == REG_ZERO && instr.operands[1].reg == REG_RA)
+				result.AddBranch(FunctionReturn, 0, nullptr, hasBranchDelay);
+			else
+				result.delaySlots = 1;
 			break;
 
 		case MIPS_BGEZAL:
@@ -809,6 +814,7 @@ public:
 		if (operation_name == NULL)
 			return false;
 		strncpy(operation, operation_name, sizeof(operation));
+		operation[sizeof(operation) - 1] = '\0';
 
 		if (instr.operands[0].operandClass == V_DEST)
 		{
@@ -2859,12 +2865,50 @@ public:
 		}
 		return result;
 	}
+
+	virtual ValueLocation GetReturnValueLocation(BinaryView* view, const ReturnValue& returnValue) override
+	{
+		Ref<Type> type = returnValue.type.GetValue();
+		if (!type || type->IsVoid())
+			return ValueLocation();
+
+		if (type->GetClass() == NamedTypeReferenceClass && type->GetWidth() == 0)
+			return GetDefaultReturnValueLocation(view, returnValue);
+
+		const size_t width = type->GetWidth();
+
+		// PS2 scalar float returns only use the FP return register for 32-bit float.
+		// 64-bit double returns are handled below as a v0/v1 integer-register pair.
+		if (type->IsFloat() && (width == 4) && GetFloatReturnValueRegister() != BN_INVALID_REGISTER)
+		{
+			ValueLocation result;
+			result.components.emplace_back(Variable::Register(GetFloatReturnValueRegister()), 0, 4);
+			return result;
+		}
+
+		if (width <= 4)
+		{
+			ValueLocation result;
+			result.components.emplace_back(Variable::Register(REG_V0), 0, 4);
+			return result;
+		}
+
+		if (width <= 8 && GetHighIntegerReturnValueRegister() != BN_INVALID_REGISTER)
+		{
+			ValueLocation result;
+			result.components.emplace_back(Variable::Register(REG_V0), 0, 4);
+			result.components.emplace_back(Variable::Register(REG_V1), 4, 4);
+			return result;
+		}
+
+		return ValueLocation({GetIndirectReturnValueLocation()}, true, GetReturnedIndirectReturnValuePointer());
+	}
 };
 
 class MipsN64CallingConvention: public CallingConvention
 {
 public:
-	MipsN64CallingConvention(Architecture* arch): CallingConvention(arch, "n64")
+	MipsN64CallingConvention(Architecture* arch, const std::string& name = "n64"): CallingConvention(arch, name)
 	{
 	}
 
@@ -2998,6 +3042,7 @@ public:
 	}
 };
 
+
 class MipsImportedFunctionRecognizer: public FunctionRecognizer
 {
 private:
@@ -3018,9 +3063,15 @@ private:
 		if (lui.operation != LLIL_SET_REG)
 			return false;
 		LowLevelILInstruction luiOperand = lui.GetSourceExpr<LLIL_SET_REG>();
+		if (luiOperand.operation == LLIL_SX)
+			luiOperand = luiOperand.GetSourceExpr<LLIL_SX>();
+		if (luiOperand.operation == LLIL_ZX)
+			luiOperand = luiOperand.GetSourceExpr<LLIL_ZX>();
+
 		if (!LowLevelILFunction::IsConstantType(luiOperand.operation))
 			return false;
-		if (luiOperand.size != func->GetArchitecture()->GetAddressSize())
+		// mips64 is going to load this in two 32-bit halves, so it shouldn't be address size
+		if (luiOperand.size < 4)
 			return false;
 		uint64_t pltHi = luiOperand.GetConstant();
 		uint32_t pltReg = lui.GetDestRegister<LLIL_SET_REG>();
@@ -3053,7 +3104,7 @@ private:
 				ldAddrRightOperandValue = -ldAddrRightOperandValue;
 			entry = pltHi + ldAddrRightOperandValue;
 		}
-		else if (ldAddrOperand.operation != LLIL_REG) //If theres no constant
+		else if (ldAddrOperand.operation != LLIL_REG) // If there's no constant
 			return false;
 
 		Ref<Symbol> sym = data->GetSymbolByAddress(entry);
@@ -3066,6 +3117,11 @@ private:
 		if (add.operation != LLIL_SET_REG)
 			return false;
 		LowLevelILInstruction addOperand = add.GetSourceExpr<LLIL_SET_REG>();
+
+		if (addOperand.operation == LLIL_SX)
+			addOperand = addOperand.GetSourceExpr<LLIL_SX>();
+		if (addOperand.operation == LLIL_ZX)
+			addOperand = addOperand.GetSourceExpr<LLIL_ZX>();
 
 		if (addOperand.operation == LLIL_ADD)
 		{
@@ -3080,7 +3136,7 @@ private:
 			if (addRightOperand.GetConstant() != (ldAddrRightOperandValue & 0xffffffff))
 				return false;
 		}
-		else if ((addOperand.operation != LLIL_REG) || (addOperand.GetSourceRegister<LLIL_REG>() != pltReg)) //Simple assignment
+		else if ((addOperand.operation != LLIL_REG) || (addOperand.GetSourceRegister<LLIL_REG>() != pltReg)) // Simple assignment
 			return false;
 
 		LowLevelILInstruction jump = il->GetInstruction(3);
@@ -3091,9 +3147,14 @@ private:
 			if (jump.GetDestRegister<LLIL_SET_REG>() != pltReg)
 				return false;
 			LowLevelILInstruction luiOperand = jump.GetSourceExpr<LLIL_SET_REG>();
+			if (luiOperand.operation == LLIL_SX)
+				luiOperand = luiOperand.GetSourceExpr<LLIL_SX>();
+			if (luiOperand.operation == LLIL_ZX)
+				luiOperand = luiOperand.GetSourceExpr<LLIL_ZX>();
+
 			if (!LowLevelILFunction::IsConstantType(luiOperand.operation))
 				return false;
-			if (luiOperand.size != func->GetArchitecture()->GetAddressSize())
+			if (luiOperand.size < 4)
 				return false;
 			if (((uint64_t) luiOperand.GetConstant()) != pltHi)
 				return false;
@@ -3216,9 +3277,15 @@ private:
 		if (lui.operation != LLIL_SET_REG)
 			return false;
 		LowLevelILInstruction luiOperand = lui.GetSourceExpr<LLIL_SET_REG>();
+		if (luiOperand.operation == LLIL_SX)
+			luiOperand = luiOperand.GetSourceExpr<LLIL_SX>();
+		if (luiOperand.operation == LLIL_ZX)
+			luiOperand = luiOperand.GetSourceExpr<LLIL_ZX>();
+
 		if (!LowLevelILFunction::IsConstantType(luiOperand.operation))
 			return false;
-		if (luiOperand.size != func->GetArchitecture()->GetAddressSize())
+		/* mips64 is going to load this in two 32 bit halves so it shouldn't be address size */
+		if (luiOperand.size < 4)
 			return false;
 		uint64_t addrPastGot = luiOperand.GetConstant();
 		uint32_t pltReg = lui.GetDestRegister<LLIL_SET_REG>();
@@ -3251,7 +3318,7 @@ private:
 				ldAddrRightOperandValue = -ldAddrRightOperandValue;
 			entry = addrPastGot + ldAddrRightOperandValue;
 		}
-		else if (ldAddrOperand.operation != LLIL_REG) //If theres no constant
+		else if (ldAddrOperand.operation != LLIL_REG) // If there's no constant
 			return false;
 
 		Ref<Symbol> sym = data->GetSymbolByAddress(entry);
@@ -3264,6 +3331,12 @@ private:
 		if (add.operation != LLIL_SET_REG)
 			return false;
 		LowLevelILInstruction addOperand = add.GetSourceExpr<LLIL_SET_REG>();
+		if(addOperand.operation == LLIL_SX) {
+			addOperand = addOperand.GetSourceExpr<LLIL_SX>();
+		}
+		if(addOperand.operation == LLIL_ZX) {
+			addOperand = addOperand.GetSourceExpr<LLIL_ZX>();
+		}
 
 		if (addOperand.operation == LLIL_ADD)
 		{
@@ -3278,7 +3351,7 @@ private:
 			if (addRightOperand.GetConstant() != ldAddrRightOperandValue)
 				return false;
 		}
-		else if ((addOperand.operation != LLIL_REG) || (addOperand.GetSourceRegister<LLIL_REG>() != pltReg)) //Simple assignment
+		else if ((addOperand.operation != LLIL_REG) || (addOperand.GetSourceRegister<LLIL_REG>() != pltReg)) // Simple assignment
 			return false;
 
 		LowLevelILInstruction jump = il->GetInstruction(3);
@@ -3289,9 +3362,14 @@ private:
 			if (jump.GetDestRegister<LLIL_SET_REG>() != pltReg)
 				return false;
 			LowLevelILInstruction luiOperand = jump.GetSourceExpr<LLIL_SET_REG>();
+			if(luiOperand.operation == LLIL_SX)
+				luiOperand = luiOperand.GetSourceExpr<LLIL_SX>();
+			if(luiOperand.operation == LLIL_ZX)
+				luiOperand = luiOperand.GetSourceExpr<LLIL_ZX>();
+
 			if (!LowLevelILFunction::IsConstantType(luiOperand.operation))
 				return false;
-			if (luiOperand.size != func->GetArchitecture()->GetAddressSize())
+			if (luiOperand.size < 4)
 				return false;
 			if (((uint64_t) luiOperand.GetConstant()) != addrPastGot)
 				return false;
@@ -3572,7 +3650,7 @@ public:
 				break;
 			default:
 				result[i].type = UnhandledRelocation;
-				LogWarn("Unsupported relocation type: %llu (%s) @0x%llX", result[i].nativeType,
+				LogWarn("Unsupported relocation type: %" PRIu64 " (%s) @0x%" PRIx64, result[i].nativeType,
 					GetRelocationString((ElfMipsRelocationType)result[i].nativeType), result[i].address);
 			}
 		}
@@ -3637,7 +3715,25 @@ static Ref<Platform> ElfFlagsRecognize(BinaryView* view, Metadata* metadata)
 	if (!flagsMetadata || !flagsMetadata->IsUnsignedInteger())
 		return nullptr;
 
+	Ref<Metadata> endiannessMetadata = metadata->Get("EI_DATA");
+	if (!endiannessMetadata || !endiannessMetadata->IsUnsignedInteger())
+		return nullptr;
+
+	uint64_t endiannessValue = endiannessMetadata->GetUnsignedInteger();
+	BNEndianness endianness;
+	if (endiannessValue == 1)
+		endianness = LittleEndian;
+	else if (endiannessValue == 2)
+		endianness = BigEndian;
+	else {
+		LogError("ELF endianness value 0x%" PRIx64 " doesn't map to valid value", endiannessValue);
+		return nullptr;
+	}
+
 	uint64_t flagsValue = flagsMetadata->GetUnsignedInteger();
+	if (flagsValue & EF_MIPS_ABI2)
+		return Platform::GetByName(endianness == BigEndian ? "linux-mipsn32" : "linux-mipsn32el");
+
 	uint8_t machineVariant = (flagsValue >> 16) & 0xff;
 
 	switch (machineVariant)
@@ -3646,13 +3742,19 @@ static Ref<Platform> ElfFlagsRecognize(BinaryView* view, Metadata* metadata)
 		case 0x8d:	// EF_MIPS_MACH_OCTEON2
 		case 0x8e:	// EF_MIPS_MACH_OCTEON3
 			LogInfo("ELF flags 0x%08" PRIx64 " machine variant 0x%02x: using cavium architecture", flagsValue, machineVariant);
-			return Platform::GetByName("linux-cnmips64");
+			return Platform::GetByName(endianness == BigEndian ? "linux-cnmips64" : "linux-cnmipsel64");
 		case 0x92:  // E_MIPS_MACH_5900
 			LogInfo("ELF flags 0x%08" PRIx64 " machine variant 0x%02x: using R5900 architecture", flagsValue, machineVariant);
 			return Platform::GetByName("r5900l");
 		default:
-			return nullptr;
+			break;
 	}
+
+    // This needs to be after the R5900 check above or all R5900 binaries will load as MIPS III
+	if ((flagsValue & EF_MIPS_ARCH) == EF_MIPS_ARCH_3)
+		return Platform::GetByName(endianness == BigEndian ? "linux-mips3" : "linux-mipsel3");
+
+	return nullptr;
 }
 
 extern "C"
@@ -3678,6 +3780,7 @@ extern "C"
 		Architecture* mips64el = new MipsArchitecture("mipsel64", MIPS_64, LittleEndian, 64);
 		Architecture* mips64eb = new MipsArchitecture("mips64", MIPS_64, BigEndian, 64);
 		Architecture* cnmips64eb = new MipsArchitecture("cavium-mips64", MIPS_64, BigEndian, 64, DECOMPOSE_FLAGS_CAVIUM);
+		Architecture* cnmips64el = new MipsArchitecture("cavium-mipsel64", MIPS_64, LittleEndian, 64, DECOMPOSE_FLAGS_CAVIUM);
 		Architecture* r5900l = new MipsArchitecture("r5900l", MIPS_R5900, LittleEndian, 32);
 		// R5900 should only be Little-Endian, so until someone complains, I'm leaving the Big-Endian variant disabled.
 		// Architecture* r5900b = new MipsArchitecture("r5900b", MIPS_R5900, BigEndian, 32);
@@ -3691,13 +3794,17 @@ extern "C"
 		Architecture::Register(mips64el);
 		Architecture::Register(mips64eb);
 		Architecture::Register(cnmips64eb);
+		Architecture::Register(cnmips64el);
 
 		/* calling conventions */
 		MipsO32CallingConvention* o32LE = new MipsO32CallingConvention(mipsel);
 		MipsO32CallingConvention* o32BE = new MipsO32CallingConvention(mipseb);
+		MipsN64CallingConvention* n32LE = new MipsN64CallingConvention(mips64el, "n32");
+		MipsN64CallingConvention* n32BE = new MipsN64CallingConvention(mips64eb, "n32");
 		MipsN64CallingConvention* n64LE = new MipsN64CallingConvention(mips64el);
 		MipsN64CallingConvention* n64BE = new MipsN64CallingConvention(mips64eb);
 		MipsN64CallingConvention* n64BEc = new MipsN64CallingConvention(cnmips64eb);
+		MipsN64CallingConvention* n64LEc = new MipsN64CallingConvention(cnmips64el);
 		MipsPS2CallingConvention* ps2LE = new MipsPS2CallingConvention(r5900l);
 		// MipsPS2CallingConvention* ps2BE = new MipsPS2CallingConvention(r5900b);
 
@@ -3709,12 +3816,16 @@ extern "C"
 		mips3->SetDefaultCallingConvention(o32BE);
 		mips3el->RegisterCallingConvention(o32LE);
 		mips3el->SetDefaultCallingConvention(o32LE);
+		mips64el->RegisterCallingConvention(n32LE);
+		mips64eb->RegisterCallingConvention(n32BE);
 		mips64el->RegisterCallingConvention(n64LE);
 		mips64el->SetDefaultCallingConvention(n64LE);
 		mips64eb->RegisterCallingConvention(n64BE);
 		mips64eb->SetDefaultCallingConvention(n64BE);
 		cnmips64eb->RegisterCallingConvention(n64BEc);
 		cnmips64eb->SetDefaultCallingConvention(n64BEc);
+		cnmips64el->RegisterCallingConvention(n64LEc);
+		cnmips64el->SetDefaultCallingConvention(n64LEc);
 		r5900l->RegisterCallingConvention(ps2LE);
 		r5900l->SetDefaultCallingConvention(ps2LE);
 		// r5900b->RegisterCallingConvention(ps2BE);
@@ -3742,12 +3853,17 @@ extern "C"
 		mips64el->RegisterCallingConvention(new MipsLinuxRtlResolveCallingConvention(mips64el));
 		mips64eb->RegisterCallingConvention(new MipsLinuxRtlResolveCallingConvention(mips64eb));
 		cnmips64eb->RegisterCallingConvention(new MipsLinuxRtlResolveCallingConvention(cnmips64eb));
+		cnmips64el->RegisterCallingConvention(new MipsLinuxRtlResolveCallingConvention(cnmips64el));
 
 		/* function recognizers */
 		mipsel->RegisterFunctionRecognizer(new MipsImportedFunctionRecognizer());
 		mipseb->RegisterFunctionRecognizer(new MipsImportedFunctionRecognizer());
 		mips3->RegisterFunctionRecognizer(new MipsImportedFunctionRecognizer());
 		mips3el->RegisterFunctionRecognizer(new MipsImportedFunctionRecognizer());
+		mips64el->RegisterFunctionRecognizer(new MipsImportedFunctionRecognizer());
+		mips64eb->RegisterFunctionRecognizer(new MipsImportedFunctionRecognizer());
+		cnmips64eb->RegisterFunctionRecognizer(new MipsImportedFunctionRecognizer());
+		cnmips64el->RegisterFunctionRecognizer(new MipsImportedFunctionRecognizer());
 
 		mipseb->RegisterRelocationHandler("ELF", new MipsElfRelocationHandler());
 		mipsel->RegisterRelocationHandler("ELF", new MipsElfRelocationHandler());
@@ -3758,6 +3874,7 @@ extern "C"
 		r5900l->RegisterRelocationHandler("ELF", new MipsElfRelocationHandler());
 		// r5900b->RegisterRelocationHandler("ELF", new MipsElfRelocationHandler());
 		cnmips64eb->RegisterRelocationHandler("ELF", new MipsElfRelocationHandler());
+		cnmips64el->RegisterRelocationHandler("ELF", new MipsElfRelocationHandler());
 
 		// Register the architectures with the binary format parsers so that they know when to use
 		// these architectures for disassembling an executable file
@@ -3779,7 +3896,8 @@ extern "C"
 		{
 			elf->RegisterPlatformRecognizer(ARCH_ID_MIPS64, LittleEndian, ElfFlagsRecognize);
 			elf->RegisterPlatformRecognizer(ARCH_ID_MIPS64, BigEndian, ElfFlagsRecognize);
-			elf->RegisterPlatformRecognizer(ARCH_ID_MIPS32, LittleEndian, ElfFlagsRecognize); // R5900
+			elf->RegisterPlatformRecognizer(ARCH_ID_MIPS32, LittleEndian, ElfFlagsRecognize); // n32, R5900
+			elf->RegisterPlatformRecognizer(ARCH_ID_MIPS32, BigEndian, ElfFlagsRecognize); // n32
 		}
 
 		BinaryViewType::RegisterArchitecture("PE", 0x166, LittleEndian, mipsel);

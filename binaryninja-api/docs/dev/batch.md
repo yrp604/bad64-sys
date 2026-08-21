@@ -8,19 +8,19 @@ This document describes some general tips and tricks for effective batch process
 
 While MacOS, Linux, and Windows all ship with python interpreters, those are only tested and intended for use within the scripting console. For headless automation, first install a dedicated python and using the steps in the next section to add the Binary Ninja libraries to the paths of that environment.
 
-???+ Danger "Warning"
+!!! Warning "Warning"
     Do NOT use the Python available in the Windows App Store as its sandbox protections prevent it from working with other libraries.
 
 ## Install the API
 
 First, make sure to run the [install_api.py](https://github.com/Vector35/binaryninja-api/tree/dev/scripts) script. Note that the script is shipped with Binary Ninja already, just look in your [binary path](../guide/index.md#binary-path) inside of the `scripts` subfolder. Run it like:
 
-```
+```bash
 python3 ~/binaryninja/scripts/install_api.py
 ```
 
 Note
-???+ Info "Tip"
+!!! Tip "Tip"
     If you have multiple python copies installed, you'll want to make sure to specify the full path to the correct python when running as shown above.
 
 This script adds appropriate `.pth` files so that your Python can find the Binary Ninja libraries.
@@ -38,7 +38,7 @@ with binaryninja.load("/bin/ls") as bv:
 
 If we run it, we'll see:
 
-```
+```bash
 $ ./first.py
 Opening /bin/ls which has 128 functions
 ```
@@ -47,6 +47,15 @@ Note that we used the `load` method which lets you temporarily create a `bv` wit
 
 ```python
 bv.file.close() #close the file handle or else leak memory
+```
+
+### Triggering Actions
+
+While you might associate actions with UI based actions in the product, many actions can be triggered headlessly. For example:
+
+```python
+cxt = PluginCommandContext(bv)
+PluginCommand.get_valid_list(cxt)['BinExport'].execute(cxt)
 ```
 
 ### Multiple files
@@ -64,7 +73,7 @@ for bin in glob("/bin/*"):
 
 Now let's run it and notice it's fast enough to parse all of `/bin/*` in just a few seconds:
 
-```
+```bash
  $ ./glob.py
 Opening /bin/cat which has 11 functions
 Opening /bin/echo which has 2 functions
@@ -121,7 +130,7 @@ If using a floating license, you can use the [example code](https://api.binary.n
 
 ### In-Memory License
 
-For many applications it might be helpful to avoid having a license file on disk. Whether because the environment will be used to analyze malware, or because a docker image might be saved somewhere that the license file needs to be kept secret. (Note: this does not obfuscate the serial number as it can be extracted from memory or even via the API -- an informed attacker can still leak it and network isolation is recommended for analzying malicious applications)
+For many applications it might be helpful to avoid having a license file on disk. Whether because the environment will be used to analyze malware, or because a docker image might be saved somewhere that the license file needs to be kept secret. (Note: this does not obfuscate the serial number as it can be extracted from memory or even via the API -- an informed attacker can still leak it and network isolation is recommended for analyzing malicious applications)
 
 To use this API, copy the contents of your license file into a string and pass it as an argument to [`core_set_license`](https://api.binary.ninja/#binaryninja.core_set_license)
 
@@ -180,4 +189,3 @@ import binaryninja
 ```
 
 Other alternative solutions include setting the environment variable before running your script, or manually moving your settings file from your [user folder](../guide/index.md#user-folder) before running your automation.
-

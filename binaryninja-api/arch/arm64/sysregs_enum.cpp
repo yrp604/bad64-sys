@@ -10,68 +10,60 @@ Ref<Enumeration> get_system_register_enum()
 	static EnumerationBuilder builder;
 	static std::once_flag once;
 	std::call_once(once, []() {
-		builder.AddMemberWithValue(get_system_register_name(REG_EDSCR), REG_EDSCR);
-		builder.AddMemberWithValue(get_system_register_name(REG_EDPRCR), REG_EDPRCR);
-		builder.AddMemberWithValue(get_system_register_name(REG_UAOIMM), REG_UAOIMM);
-		builder.AddMemberWithValue(get_system_register_name(REG_PANIMM), REG_PANIMM);
-		builder.AddMemberWithValue(get_system_register_name(REG_SPSELIMM), REG_SPSELIMM);
-		builder.AddMemberWithValue(get_system_register_name(REG_DITIMM), REG_DITIMM);
-		builder.AddMemberWithValue(get_system_register_name(REG_SVCRIMM), REG_SVCRIMM);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICIALLUIS), REG_ICIALLUIS);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICIALLU), REG_ICIALLU);
-		builder.AddMemberWithValue(get_system_register_name(REG_DCIVAC), REG_DCIVAC);
-		builder.AddMemberWithValue(get_system_register_name(REG_DCISW), REG_DCISW);
-		builder.AddMemberWithValue(get_system_register_name(REG_ATS1E1R), REG_ATS1E1R);
-		builder.AddMemberWithValue(get_system_register_name(REG_ATS1E1W), REG_ATS1E1W);
-		builder.AddMemberWithValue(get_system_register_name(REG_ATS1E0R), REG_ATS1E0R);
-		builder.AddMemberWithValue(get_system_register_name(REG_ATS1E0W), REG_ATS1E0W);
-		builder.AddMemberWithValue(get_system_register_name(REG_DCCSW), REG_DCCSW);
-		builder.AddMemberWithValue(get_system_register_name(REG_DCCISW), REG_DCCISW);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVMALLE1IS), REG_TLBIVMALLE1IS);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVAE1IS), REG_TLBIVAE1IS);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIASIDE1IS), REG_TLBIASIDE1IS);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVAAE1IS), REG_TLBIVAAE1IS);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVALE1IS), REG_TLBIVALE1IS);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVAALE1IS), REG_TLBIVAALE1IS);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVMALLE1), REG_TLBIVMALLE1);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVAE1), REG_TLBIVAE1);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIASIDE1), REG_TLBIASIDE1);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVAAE1), REG_TLBIVAAE1);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVALE1), REG_TLBIVALE1);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVAALE1), REG_TLBIVAALE1);
-		builder.AddMemberWithValue(get_system_register_name(REG_DCZVA), REG_DCZVA);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICIVAU), REG_ICIVAU);
-		builder.AddMemberWithValue(get_system_register_name(REG_DCCVAC), REG_DCCVAC);
-		builder.AddMemberWithValue(get_system_register_name(REG_DCCVAU), REG_DCCVAU);
-		builder.AddMemberWithValue(get_system_register_name(REG_DCCIVAC), REG_DCCIVAC);
-		builder.AddMemberWithValue(get_system_register_name(REG_ATS1E2R), REG_ATS1E2R);
-		builder.AddMemberWithValue(get_system_register_name(REG_ATS1E2W), REG_ATS1E2W);
-		builder.AddMemberWithValue(get_system_register_name(REG_ATS12E1R), REG_ATS12E1R);
-		builder.AddMemberWithValue(get_system_register_name(REG_ATS12E1W), REG_ATS12E1W);
-		builder.AddMemberWithValue(get_system_register_name(REG_ATS12E0R), REG_ATS12E0R);
-		builder.AddMemberWithValue(get_system_register_name(REG_ATS12E0W), REG_ATS12E0W);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIIPAS2E1IS), REG_TLBIIPAS2E1IS);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIIPAS2LE1IS), REG_TLBIIPAS2LE1IS);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIALLE2IS), REG_TLBIALLE2IS);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVAE2IS), REG_TLBIVAE2IS);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIALLE1IS), REG_TLBIALLE1IS);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVALE2IS), REG_TLBIVALE2IS);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVMALLS12E1IS), REG_TLBIVMALLS12E1IS);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIIPAS2E1), REG_TLBIIPAS2E1);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIIPAS2LE1), REG_TLBIIPAS2LE1);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIALLE2), REG_TLBIALLE2);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVAE2), REG_TLBIVAE2);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIALLE1), REG_TLBIALLE1);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVALE2), REG_TLBIVALE2);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVMALLS12E1), REG_TLBIVMALLS12E1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ATS1E3R), REG_ATS1E3R);
-		builder.AddMemberWithValue(get_system_register_name(REG_ATS1E3W), REG_ATS1E3W);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIALLE3IS), REG_TLBIALLE3IS);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVAE3IS), REG_TLBIVAE3IS);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVALE3IS), REG_TLBIVALE3IS);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIALLE3), REG_TLBIALLE3);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVAE3), REG_TLBIVAE3);
-		builder.AddMemberWithValue(get_system_register_name(REG_TLBIVALE3), REG_TLBIVALE3);
+		builder.AddMemberWithValue(get_system_register_name(REG_PSTATE_SPSEL), REG_PSTATE_SPSEL);
+		builder.AddMemberWithValue(get_system_register_name(REG_DAIFSET), REG_DAIFSET);
+		builder.AddMemberWithValue(get_system_register_name(REG_DAIFCLR), REG_DAIFCLR);
+		builder.AddMemberWithValue(get_system_register_name(REG_IC_IALLUIS), REG_IC_IALLUIS);
+		builder.AddMemberWithValue(get_system_register_name(REG_IC_IALLU), REG_IC_IALLU);
+		builder.AddMemberWithValue(get_system_register_name(REG_GCSPUSHX), REG_GCSPUSHX);
+		builder.AddMemberWithValue(get_system_register_name(REG_GCSPOPCX), REG_GCSPOPCX);
+		builder.AddMemberWithValue(get_system_register_name(REG_GCSPOPX), REG_GCSPOPX);
+		builder.AddMemberWithValue(get_system_register_name(REG_GSB_SYS), REG_GSB_SYS);
+		builder.AddMemberWithValue(get_system_register_name(REG_GSB_ACK), REG_GSB_ACK);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_CDDIS), REG_GIC_CDDIS);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_CDEN), REG_GIC_CDEN);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_CDPRI), REG_GIC_CDPRI);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_CDAFF), REG_GIC_CDAFF);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_CDPEND), REG_GIC_CDPEND);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_CDRCFG), REG_GIC_CDRCFG);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_CDEOI), REG_GIC_CDEOI);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_CDDI), REG_GIC_CDDI);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_CDHM), REG_GIC_CDHM);
+		builder.AddMemberWithValue(get_system_register_name(REG_GICR_CDIA), REG_GICR_CDIA);
+		builder.AddMemberWithValue(get_system_register_name(REG_GICR_CDNMIA), REG_GICR_CDNMIA);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRB_IALL), REG_BRB_IALL);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRB_INJ), REG_BRB_INJ);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCIT), REG_TRCIT);
+		builder.AddMemberWithValue(get_system_register_name(REG_CFP_RCTX), REG_CFP_RCTX);
+		builder.AddMemberWithValue(get_system_register_name(REG_DVP_RCTX), REG_DVP_RCTX);
+		builder.AddMemberWithValue(get_system_register_name(REG_COSP_RCTX), REG_COSP_RCTX);
+		builder.AddMemberWithValue(get_system_register_name(REG_CPP_RCTX), REG_CPP_RCTX);
+		builder.AddMemberWithValue(get_system_register_name(REG_IC_IVAU), REG_IC_IVAU);
+		builder.AddMemberWithValue(get_system_register_name(REG_GCSPUSHM), REG_GCSPUSHM);
+		builder.AddMemberWithValue(get_system_register_name(REG_GCSPOPM), REG_GCSPOPM);
+		builder.AddMemberWithValue(get_system_register_name(REG_GCSSS1), REG_GCSSS1);
+		builder.AddMemberWithValue(get_system_register_name(REG_GCSSS2), REG_GCSSS2);
+		builder.AddMemberWithValue(get_system_register_name(REG_MLBI_ALLE1), REG_MLBI_ALLE1);
+		builder.AddMemberWithValue(get_system_register_name(REG_MLBI_VMALLE1), REG_MLBI_VMALLE1);
+		builder.AddMemberWithValue(get_system_register_name(REG_MLBI_VPIDE1), REG_MLBI_VPIDE1);
+		builder.AddMemberWithValue(get_system_register_name(REG_MLBI_VPMGE1), REG_MLBI_VPMGE1);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_VDDIS), REG_GIC_VDDIS);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_VDEN), REG_GIC_VDEN);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_VDPRI), REG_GIC_VDPRI);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_VDAFF), REG_GIC_VDAFF);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_VDPEND), REG_GIC_VDPEND);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_VDRCFG), REG_GIC_VDRCFG);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_VDDI), REG_GIC_VDDI);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_VDHM), REG_GIC_VDHM);
+		builder.AddMemberWithValue(get_system_register_name(REG_APAS), REG_APAS);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_LDDIS), REG_GIC_LDDIS);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_LDEN), REG_GIC_LDEN);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_LDPRI), REG_GIC_LDPRI);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_LDAFF), REG_GIC_LDAFF);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_LDPEND), REG_GIC_LDPEND);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_LDRCFG), REG_GIC_LDRCFG);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_LDDI), REG_GIC_LDDI);
+		builder.AddMemberWithValue(get_system_register_name(REG_GIC_LDHM), REG_GIC_LDHM);
 		builder.AddMemberWithValue(get_system_register_name(REG_OSDTRRX_EL1), REG_OSDTRRX_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_DBGBVR0_EL1), REG_DBGBVR0_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_DBGBCR0_EL1), REG_DBGBCR0_EL1);
@@ -92,10 +84,12 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_DBGBCR3_EL1), REG_DBGBCR3_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_DBGWVR3_EL1), REG_DBGWVR3_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_DBGWCR3_EL1), REG_DBGWCR3_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_MDSELR_EL1), REG_MDSELR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_DBGBVR4_EL1), REG_DBGBVR4_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_DBGBCR4_EL1), REG_DBGBCR4_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_DBGWVR4_EL1), REG_DBGWVR4_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_DBGWCR4_EL1), REG_DBGWCR4_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_MDSTEPOP_EL1), REG_MDSTEPOP_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_DBGBVR5_EL1), REG_DBGBVR5_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_DBGBCR5_EL1), REG_DBGBCR5_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_DBGWVR5_EL1), REG_DBGWVR5_EL1);
@@ -149,30 +143,79 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_DBGPRCR_EL1), REG_DBGPRCR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_DBGCLAIMSET_EL1), REG_DBGCLAIMSET_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_DBGCLAIMCLR_EL1), REG_DBGCLAIMCLR_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_DBGAUTHSTAT_EL1), REG_DBGAUTHSTAT_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_DBGAUTHSTATUS_EL1), REG_DBGAUTHSTATUS_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMCGCR0_EL1), REG_SPMCGCR0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMCGCR1_EL1), REG_SPMCGCR1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMACCESSR_EL1), REG_SPMACCESSR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMIIDR_EL1), REG_SPMIIDR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMDEVARCH_EL1), REG_SPMDEVARCH_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMDEVAFF_EL1), REG_SPMDEVAFF_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMCFGR_EL1), REG_SPMCFGR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMINTENSET_EL1), REG_SPMINTENSET_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMINTENCLR_EL1), REG_SPMINTENCLR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR0_EL1), REG_PMEVCNTSVR0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR1_EL1), REG_PMEVCNTSVR1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR2_EL1), REG_PMEVCNTSVR2_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR3_EL1), REG_PMEVCNTSVR3_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR4_EL1), REG_PMEVCNTSVR4_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR5_EL1), REG_PMEVCNTSVR5_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR6_EL1), REG_PMEVCNTSVR6_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR7_EL1), REG_PMEVCNTSVR7_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR8_EL1), REG_PMEVCNTSVR8_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR9_EL1), REG_PMEVCNTSVR9_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR10_EL1), REG_PMEVCNTSVR10_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR11_EL1), REG_PMEVCNTSVR11_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR12_EL1), REG_PMEVCNTSVR12_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR13_EL1), REG_PMEVCNTSVR13_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR14_EL1), REG_PMEVCNTSVR14_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR15_EL1), REG_PMEVCNTSVR15_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR16_EL1), REG_PMEVCNTSVR16_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR17_EL1), REG_PMEVCNTSVR17_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR18_EL1), REG_PMEVCNTSVR18_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR19_EL1), REG_PMEVCNTSVR19_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR20_EL1), REG_PMEVCNTSVR20_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR21_EL1), REG_PMEVCNTSVR21_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR22_EL1), REG_PMEVCNTSVR22_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR23_EL1), REG_PMEVCNTSVR23_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR24_EL1), REG_PMEVCNTSVR24_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR25_EL1), REG_PMEVCNTSVR25_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR26_EL1), REG_PMEVCNTSVR26_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR27_EL1), REG_PMEVCNTSVR27_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR28_EL1), REG_PMEVCNTSVR28_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR29_EL1), REG_PMEVCNTSVR29_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTSVR30_EL1), REG_PMEVCNTSVR30_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMCCNTSVR_EL1), REG_PMCCNTSVR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMICNTSVR_EL1), REG_PMICNTSVR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCTRACEIDR), REG_TRCTRACEIDR);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCVICTLR), REG_TRCVICTLR);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCSEQEVR0), REG_TRCSEQEVR0);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCCNTRLDVR0), REG_TRCCNTRLDVR0);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCIDR8), REG_TRCIDR8);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCIMSPEC0), REG_TRCIMSPEC0);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCPRGCTLR), REG_TRCPRGCTLR);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCQCTLR), REG_TRCQCTLR);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCVIIECTLR), REG_TRCVIIECTLR);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCSEQEVR1), REG_TRCSEQEVR1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCCNTRLDVR1), REG_TRCCNTRLDVR1);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCIDR9), REG_TRCIDR9);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCIMSPEC1), REG_TRCIMSPEC1);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCPROCSELR), REG_TRCPROCSELR);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCITEEDCR), REG_TRCITEEDCR);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCVISSCTLR), REG_TRCVISSCTLR);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCSEQEVR2), REG_TRCSEQEVR2);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCCNTRLDVR2), REG_TRCCNTRLDVR2);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCIDR10), REG_TRCIDR10);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCIMSPEC2), REG_TRCIMSPEC2);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCSTATR), REG_TRCSTATR);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCVIPCSSCTLR), REG_TRCVIPCSSCTLR);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCCNTRLDVR3), REG_TRCCNTRLDVR3);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCIDR11), REG_TRCIDR11);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCIMSPEC3), REG_TRCIMSPEC3);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCCONFIGR), REG_TRCCONFIGR);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCCNTCTLR0), REG_TRCCNTCTLR0);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCIDR12), REG_TRCIDR12);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCIMSPEC4), REG_TRCIMSPEC4);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCCNTCTLR1), REG_TRCCNTCTLR1);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCIDR13), REG_TRCIDR13);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCIMSPEC5), REG_TRCIMSPEC5);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCAUXCTLR), REG_TRCAUXCTLR);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCSEQRSTEVR), REG_TRCSEQRSTEVR);
@@ -182,31 +225,38 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCCNTCTLR3), REG_TRCCNTCTLR3);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCIMSPEC7), REG_TRCIMSPEC7);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCEVENTCTL0R), REG_TRCEVENTCTL0R);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCVDCTLR), REG_TRCVDCTLR);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCEXTINSELR), REG_TRCEXTINSELR);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCEXTINSELR0), REG_TRCEXTINSELR0);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCCNTVR0), REG_TRCCNTVR0);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCIDR0), REG_TRCIDR0);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCEVENTCTL1R), REG_TRCEVENTCTL1R);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCVDSACCTLR), REG_TRCVDSACCTLR);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCEXTINSELR1), REG_TRCEXTINSELR1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCCNTVR1), REG_TRCCNTVR1);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCIDR1), REG_TRCIDR1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCRSR), REG_TRCRSR);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCVDARCCTLR), REG_TRCVDARCCTLR);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCEXTINSELR2), REG_TRCEXTINSELR2);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCCNTVR2), REG_TRCCNTVR2);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCIDR2), REG_TRCIDR2);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCSTALLCTLR), REG_TRCSTALLCTLR);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCEXTINSELR3), REG_TRCEXTINSELR3);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCCNTVR3), REG_TRCCNTVR3);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCIDR3), REG_TRCIDR3);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCTSCTLR), REG_TRCTSCTLR);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCIDR4), REG_TRCIDR4);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCSYNCPR), REG_TRCSYNCPR);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCIDR5), REG_TRCIDR5);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCCCCTLR), REG_TRCCCCTLR);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCIDR6), REG_TRCIDR6);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCBBCTLR), REG_TRCBBCTLR);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCIDR7), REG_TRCIDR7);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCRSCTLR0), REG_TRCRSCTLR0);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCRSCTLR16), REG_TRCRSCTLR16);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCSSCCR0), REG_TRCSSCCR0);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCSSPCICR0), REG_TRCSSPCICR0);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCOSLAR), REG_TRCOSLAR);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCRSCTLR1), REG_TRCRSCTLR1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCRSCTLR17), REG_TRCRSCTLR17);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCSSCCR1), REG_TRCSSCCR1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCSSPCICR1), REG_TRCSSPCICR1);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCOSLSR), REG_TRCOSLSR);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCRSCTLR2), REG_TRCRSCTLR2);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCRSCTLR18), REG_TRCRSCTLR18);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCSSCCR2), REG_TRCSSCCR2);
@@ -219,7 +269,6 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCRSCTLR20), REG_TRCRSCTLR20);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCSSCCR4), REG_TRCSSCCR4);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCSSPCICR4), REG_TRCSSPCICR4);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCPDCR), REG_TRCPDCR);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCRSCTLR5), REG_TRCRSCTLR5);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCRSCTLR21), REG_TRCRSCTLR21);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCSSCCR5), REG_TRCSSCCR5);
@@ -260,10 +309,6 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACVR8), REG_TRCACVR8);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACATR0), REG_TRCACATR0);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACATR8), REG_TRCACATR8);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCDVCVR0), REG_TRCDVCVR0);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCDVCVR4), REG_TRCDVCVR4);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCDVCMR0), REG_TRCDVCMR0);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCDVCMR4), REG_TRCDVCMR4);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACVR1), REG_TRCACVR1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACVR9), REG_TRCACVR9);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACATR1), REG_TRCACATR1);
@@ -272,10 +317,6 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACVR10), REG_TRCACVR10);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACATR2), REG_TRCACATR2);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACATR10), REG_TRCACATR10);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCDVCVR1), REG_TRCDVCVR1);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCDVCVR5), REG_TRCDVCVR5);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCDVCMR1), REG_TRCDVCMR1);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCDVCMR5), REG_TRCDVCMR5);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACVR3), REG_TRCACVR3);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACVR11), REG_TRCACVR11);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACATR3), REG_TRCACATR3);
@@ -284,10 +325,6 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACVR12), REG_TRCACVR12);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACATR4), REG_TRCACATR4);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACATR12), REG_TRCACATR12);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCDVCVR2), REG_TRCDVCVR2);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCDVCVR6), REG_TRCDVCVR6);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCDVCMR2), REG_TRCDVCMR2);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCDVCMR6), REG_TRCDVCMR6);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACVR5), REG_TRCACVR5);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACVR13), REG_TRCACVR13);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACATR5), REG_TRCACATR5);
@@ -296,10 +333,6 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACVR14), REG_TRCACVR14);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACATR6), REG_TRCACATR6);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACATR14), REG_TRCACATR14);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCDVCVR3), REG_TRCDVCVR3);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCDVCVR7), REG_TRCDVCVR7);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCDVCMR3), REG_TRCDVCMR3);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCDVCMR7), REG_TRCDVCMR7);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACVR7), REG_TRCACVR7);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACVR15), REG_TRCACVR15);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCACATR7), REG_TRCACATR7);
@@ -324,16 +357,198 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCVMIDCVR6), REG_TRCVMIDCVR6);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCCIDCVR7), REG_TRCCIDCVR7);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCVMIDCVR7), REG_TRCVMIDCVR7);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCITCTRL), REG_TRCITCTRL);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCDEVID), REG_TRCDEVID);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCCLAIMSET), REG_TRCCLAIMSET);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRCCLAIMCLR), REG_TRCCLAIMCLR);
-		builder.AddMemberWithValue(get_system_register_name(REG_TRCLAR), REG_TRCLAR);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCAUTHSTATUS), REG_TRCAUTHSTATUS);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCDEVARCH), REG_TRCDEVARCH);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF0_EL1), REG_BRBINF0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC0_EL1), REG_BRBSRC0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT0_EL1), REG_BRBTGT0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF16_EL1), REG_BRBINF16_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC16_EL1), REG_BRBSRC16_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT16_EL1), REG_BRBTGT16_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF1_EL1), REG_BRBINF1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC1_EL1), REG_BRBSRC1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT1_EL1), REG_BRBTGT1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF17_EL1), REG_BRBINF17_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC17_EL1), REG_BRBSRC17_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT17_EL1), REG_BRBTGT17_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF2_EL1), REG_BRBINF2_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC2_EL1), REG_BRBSRC2_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT2_EL1), REG_BRBTGT2_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF18_EL1), REG_BRBINF18_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC18_EL1), REG_BRBSRC18_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT18_EL1), REG_BRBTGT18_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF3_EL1), REG_BRBINF3_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC3_EL1), REG_BRBSRC3_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT3_EL1), REG_BRBTGT3_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF19_EL1), REG_BRBINF19_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC19_EL1), REG_BRBSRC19_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT19_EL1), REG_BRBTGT19_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF4_EL1), REG_BRBINF4_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC4_EL1), REG_BRBSRC4_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT4_EL1), REG_BRBTGT4_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF20_EL1), REG_BRBINF20_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC20_EL1), REG_BRBSRC20_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT20_EL1), REG_BRBTGT20_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF5_EL1), REG_BRBINF5_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC5_EL1), REG_BRBSRC5_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT5_EL1), REG_BRBTGT5_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF21_EL1), REG_BRBINF21_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC21_EL1), REG_BRBSRC21_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT21_EL1), REG_BRBTGT21_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF6_EL1), REG_BRBINF6_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC6_EL1), REG_BRBSRC6_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT6_EL1), REG_BRBTGT6_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF22_EL1), REG_BRBINF22_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC22_EL1), REG_BRBSRC22_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT22_EL1), REG_BRBTGT22_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF7_EL1), REG_BRBINF7_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC7_EL1), REG_BRBSRC7_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT7_EL1), REG_BRBTGT7_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF23_EL1), REG_BRBINF23_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC23_EL1), REG_BRBSRC23_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT23_EL1), REG_BRBTGT23_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF8_EL1), REG_BRBINF8_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC8_EL1), REG_BRBSRC8_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT8_EL1), REG_BRBTGT8_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF24_EL1), REG_BRBINF24_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC24_EL1), REG_BRBSRC24_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT24_EL1), REG_BRBTGT24_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF9_EL1), REG_BRBINF9_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC9_EL1), REG_BRBSRC9_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT9_EL1), REG_BRBTGT9_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF25_EL1), REG_BRBINF25_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC25_EL1), REG_BRBSRC25_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT25_EL1), REG_BRBTGT25_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF10_EL1), REG_BRBINF10_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC10_EL1), REG_BRBSRC10_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT10_EL1), REG_BRBTGT10_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF26_EL1), REG_BRBINF26_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC26_EL1), REG_BRBSRC26_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT26_EL1), REG_BRBTGT26_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF11_EL1), REG_BRBINF11_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC11_EL1), REG_BRBSRC11_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT11_EL1), REG_BRBTGT11_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF27_EL1), REG_BRBINF27_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC27_EL1), REG_BRBSRC27_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT27_EL1), REG_BRBTGT27_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF12_EL1), REG_BRBINF12_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC12_EL1), REG_BRBSRC12_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT12_EL1), REG_BRBTGT12_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF28_EL1), REG_BRBINF28_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC28_EL1), REG_BRBSRC28_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT28_EL1), REG_BRBTGT28_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF13_EL1), REG_BRBINF13_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC13_EL1), REG_BRBSRC13_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT13_EL1), REG_BRBTGT13_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF29_EL1), REG_BRBINF29_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC29_EL1), REG_BRBSRC29_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT29_EL1), REG_BRBTGT29_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF14_EL1), REG_BRBINF14_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC14_EL1), REG_BRBSRC14_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT14_EL1), REG_BRBTGT14_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF30_EL1), REG_BRBINF30_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC30_EL1), REG_BRBSRC30_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT30_EL1), REG_BRBTGT30_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF15_EL1), REG_BRBINF15_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC15_EL1), REG_BRBSRC15_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT15_EL1), REG_BRBTGT15_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINF31_EL1), REG_BRBINF31_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRC31_EL1), REG_BRBSRC31_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGT31_EL1), REG_BRBTGT31_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBCR_EL1), REG_BRBCR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBFCR_EL1), REG_BRBFCR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTS_EL1), REG_BRBTS_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBINFINJ_EL1), REG_BRBINFINJ_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBSRCINJ_EL1), REG_BRBSRCINJ_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBTGTINJ_EL1), REG_BRBTGTINJ_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBIDR0_EL1), REG_BRBIDR0_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TEECR32_EL1), REG_TEECR32_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TEEHBR32_EL1), REG_TEEHBR32_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_MDCCSR_EL0), REG_MDCCSR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_DBGDTR_EL0), REG_DBGDTR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_DBGDTRRX_EL0), REG_DBGDTRRX_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMCR_EL0), REG_SPMCR_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMCNTENSET_EL0), REG_SPMCNTENSET_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMCNTENCLR_EL0), REG_SPMCNTENCLR_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMOVSCLR_EL0), REG_SPMOVSCLR_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMZR_EL0), REG_SPMZR_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMSELR_EL0), REG_SPMSELR_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMOVSSET_EL0), REG_SPMOVSSET_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVCNTR0_EL0), REG_SPMEVCNTR0_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVCNTR1_EL0), REG_SPMEVCNTR1_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVCNTR2_EL0), REG_SPMEVCNTR2_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVCNTR3_EL0), REG_SPMEVCNTR3_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVCNTR4_EL0), REG_SPMEVCNTR4_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVCNTR5_EL0), REG_SPMEVCNTR5_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVCNTR6_EL0), REG_SPMEVCNTR6_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVCNTR7_EL0), REG_SPMEVCNTR7_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVCNTR8_EL0), REG_SPMEVCNTR8_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVCNTR9_EL0), REG_SPMEVCNTR9_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVCNTR10_EL0), REG_SPMEVCNTR10_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVCNTR11_EL0), REG_SPMEVCNTR11_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVCNTR12_EL0), REG_SPMEVCNTR12_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVCNTR13_EL0), REG_SPMEVCNTR13_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVCNTR14_EL0), REG_SPMEVCNTR14_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVCNTR15_EL0), REG_SPMEVCNTR15_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVTYPER0_EL0), REG_SPMEVTYPER0_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVTYPER1_EL0), REG_SPMEVTYPER1_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVTYPER2_EL0), REG_SPMEVTYPER2_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVTYPER3_EL0), REG_SPMEVTYPER3_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVTYPER4_EL0), REG_SPMEVTYPER4_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVTYPER5_EL0), REG_SPMEVTYPER5_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVTYPER6_EL0), REG_SPMEVTYPER6_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVTYPER7_EL0), REG_SPMEVTYPER7_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVTYPER8_EL0), REG_SPMEVTYPER8_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVTYPER9_EL0), REG_SPMEVTYPER9_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVTYPER10_EL0), REG_SPMEVTYPER10_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVTYPER11_EL0), REG_SPMEVTYPER11_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVTYPER12_EL0), REG_SPMEVTYPER12_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVTYPER13_EL0), REG_SPMEVTYPER13_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVTYPER14_EL0), REG_SPMEVTYPER14_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVTYPER15_EL0), REG_SPMEVTYPER15_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILTR0_EL0), REG_SPMEVFILTR0_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILTR1_EL0), REG_SPMEVFILTR1_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILTR2_EL0), REG_SPMEVFILTR2_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILTR3_EL0), REG_SPMEVFILTR3_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILTR4_EL0), REG_SPMEVFILTR4_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILTR5_EL0), REG_SPMEVFILTR5_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILTR6_EL0), REG_SPMEVFILTR6_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILTR7_EL0), REG_SPMEVFILTR7_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILTR8_EL0), REG_SPMEVFILTR8_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILTR9_EL0), REG_SPMEVFILTR9_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILTR10_EL0), REG_SPMEVFILTR10_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILTR11_EL0), REG_SPMEVFILTR11_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILTR12_EL0), REG_SPMEVFILTR12_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILTR13_EL0), REG_SPMEVFILTR13_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILTR14_EL0), REG_SPMEVFILTR14_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILTR15_EL0), REG_SPMEVFILTR15_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILT2R0_EL0), REG_SPMEVFILT2R0_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILT2R1_EL0), REG_SPMEVFILT2R1_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILT2R2_EL0), REG_SPMEVFILT2R2_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILT2R3_EL0), REG_SPMEVFILT2R3_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILT2R4_EL0), REG_SPMEVFILT2R4_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILT2R5_EL0), REG_SPMEVFILT2R5_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILT2R6_EL0), REG_SPMEVFILT2R6_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILT2R7_EL0), REG_SPMEVFILT2R7_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILT2R8_EL0), REG_SPMEVFILT2R8_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILT2R9_EL0), REG_SPMEVFILT2R9_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILT2R10_EL0), REG_SPMEVFILT2R10_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILT2R11_EL0), REG_SPMEVFILT2R11_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILT2R12_EL0), REG_SPMEVFILT2R12_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILT2R13_EL0), REG_SPMEVFILT2R13_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILT2R14_EL0), REG_SPMEVFILT2R14_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMEVFILT2R15_EL0), REG_SPMEVFILT2R15_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_DBGVCR32_EL2), REG_DBGVCR32_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBCR_EL2), REG_BRBCR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMACCESSR_EL2), REG_SPMACCESSR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_BRBCR_EL12), REG_BRBCR_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMACCESSR_EL12), REG_SPMACCESSR_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMACCESSR_EL3), REG_SPMACCESSR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMROOTCR_EL3), REG_SPMROOTCR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPMSCR_EL1), REG_SPMSCR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_MIDR_EL1), REG_MIDR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_MPIDR_EL1), REG_MPIDR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_REVIDR_EL1), REG_REVIDR_EL1);
@@ -358,8 +573,8 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_MVFR2_EL1), REG_MVFR2_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ID_AA32RES3_EL1), REG_ID_AA32RES3_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ID_PFR2_EL1), REG_ID_PFR2_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ID_AA32RES5_EL1), REG_ID_AA32RES5_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ID_AA32RES6_EL1), REG_ID_AA32RES6_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ID_DFR1_EL1), REG_ID_DFR1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ID_MMFR5_EL1), REG_ID_MMFR5_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ID_AA32RES7_EL1), REG_ID_AA32RES7_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ID_AA64PFR0_EL1), REG_ID_AA64PFR0_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ID_AA64PFR1_EL1), REG_ID_AA64PFR1_EL1);
@@ -368,7 +583,7 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_ID_AA64ZFR0_EL1), REG_ID_AA64ZFR0_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ID_AA64SMFR0_EL1), REG_ID_AA64SMFR0_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ID_AA64ZFR2_EL1), REG_ID_AA64ZFR2_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ID_AA64ZFR3_EL1), REG_ID_AA64ZFR3_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ID_AA64FPFR0_EL1), REG_ID_AA64FPFR0_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ID_AA64DFR0_EL1), REG_ID_AA64DFR0_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ID_AA64DFR1_EL1), REG_ID_AA64DFR1_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ID_AA64DFR2_EL1), REG_ID_AA64DFR2_EL1);
@@ -396,14 +611,26 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_SCTLR_EL1), REG_SCTLR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ACTLR_EL1), REG_ACTLR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_CPACR_EL1), REG_CPACR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SCTLR2_EL1), REG_SCTLR2_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_RGSR_EL1), REG_RGSR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_GCR_EL1), REG_GCR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ZCR_EL1), REG_ZCR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRFCR_EL1), REG_TRFCR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCITECR_EL1), REG_TRCITECR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_SMPRI_EL1), REG_SMPRI_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_SMCR_EL1), REG_SMCR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SCTLRMASK_EL1), REG_SCTLRMASK_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ACTLRMASK_EL1), REG_ACTLRMASK_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_CPACRMASK_EL1), REG_CPACRMASK_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SCTLR2MASK_EL1), REG_SCTLR2MASK_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_CPACRALIAS_EL1), REG_CPACRALIAS_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ACTLRALIAS_EL1), REG_ACTLRALIAS_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SCTLRALIAS_EL1), REG_SCTLRALIAS_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SCTLR2ALIAS_EL1), REG_SCTLR2ALIAS_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TTBR0_EL1), REG_TTBR0_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TTBR1_EL1), REG_TTBR1_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TCR_EL1), REG_TCR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_TCR2_EL1), REG_TCR2_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_APIAKEYLO_EL1), REG_APIAKEYLO_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_APIAKEYHI_EL1), REG_APIAKEYHI_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_APIBKEYLO_EL1), REG_APIBKEYLO_EL1);
@@ -414,6 +641,13 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_APDBKEYHI_EL1), REG_APDBKEYHI_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_APGAKEYLO_EL1), REG_APGAKEYLO_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_APGAKEYHI_EL1), REG_APGAKEYHI_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_GCSCR_EL1), REG_GCSCR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_GCSPR_EL1), REG_GCSPR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_GCSCRE0_EL1), REG_GCSCRE0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_TCRMASK_EL1), REG_TCRMASK_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_TCR2MASK_EL1), REG_TCR2MASK_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_TCRALIAS_EL1), REG_TCRALIAS_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_TCR2ALIAS_EL1), REG_TCR2ALIAS_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_SPSR_EL1), REG_SPSR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ELR_EL1), REG_ELR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_SP_EL0), REG_SP_EL0);
@@ -421,27 +655,33 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_CURRENTEL), REG_CURRENTEL);
 		builder.AddMemberWithValue(get_system_register_name(REG_PAN), REG_PAN);
 		builder.AddMemberWithValue(get_system_register_name(REG_UAO), REG_UAO);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICV_PMR_EL1), REG_ICV_PMR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ALLINT), REG_ALLINT);
+		builder.AddMemberWithValue(get_system_register_name(REG_PM), REG_PM);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PMR_EL1), REG_ICC_PMR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AFSR0_EL1), REG_AFSR0_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AFSR1_EL1), REG_AFSR1_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ESR_EL1), REG_ESR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ERRIDR_EL1), REG_ERRIDR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ERRSELR_EL1), REG_ERRSELR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ERXGSR_EL1), REG_ERXGSR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ERXFR_EL1), REG_ERXFR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ERXCTLR_EL1), REG_ERXCTLR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ERXSTATUS_EL1), REG_ERXSTATUS_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ERXADDR_EL1), REG_ERXADDR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ERXPFGF_EL1), REG_ERXPFGF_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ERXPFGCTL_EL1), REG_ERXPFGCTL_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ERXPFGCDN_EL1), REG_ERXPFGCDN_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ERXMISC0_EL1), REG_ERXMISC0_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ERXMISC1_EL1), REG_ERXMISC1_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ERXMISC2_EL1), REG_ERXMISC2_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ERXMISC3_EL1), REG_ERXMISC3_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ERXTS_EL1), REG_ERXTS_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TFSR_EL1), REG_TFSR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TFSRE0_EL1), REG_TFSRE0_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_FAR_EL1), REG_FAR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PFAR_EL1), REG_PFAR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PAR_EL1), REG_PAR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMSCR_EL1), REG_PMSCR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMSNEVFR_EL1), REG_PMSNEVFR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMSICR_EL1), REG_PMSICR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMSIRR_EL1), REG_PMSIRR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMSFCR_EL1), REG_PMSFCR_EL1);
@@ -451,25 +691,47 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_PMBLIMITR_EL1), REG_PMBLIMITR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMBPTR_EL1), REG_PMBPTR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMBSR_EL1), REG_PMBSR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMSDSFR_EL1), REG_PMSDSFR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMBMAR_EL1), REG_PMBMAR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMBIDR_EL1), REG_PMBIDR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRBLIMITR_EL1), REG_TRBLIMITR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRBPTR_EL1), REG_TRBPTR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRBBASER_EL1), REG_TRBBASER_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRBSR_EL1), REG_TRBSR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRBMAR_EL1), REG_TRBMAR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRBMPAM_EL1), REG_TRBMPAM_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRBTRG_EL1), REG_TRBTRG_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRBIDR_EL1), REG_TRBIDR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMSSCR_EL1), REG_PMSSCR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMINTENSET_EL1), REG_PMINTENSET_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMINTENCLR_EL1), REG_PMINTENCLR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMUACR_EL1), REG_PMUACR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMECR_EL1), REG_PMECR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMMIR_EL1), REG_PMMIR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMIAR_EL1), REG_PMIAR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_MAIR_EL1), REG_MAIR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_MAIR2_EL1), REG_MAIR2_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PIRE0_EL1), REG_PIRE0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_PIR_EL1), REG_PIR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_POR_EL1), REG_POR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_S2POR_EL1), REG_S2POR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMAIR_EL1), REG_AMAIR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMAIR2_EL1), REG_AMAIR2_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_LORSA_EL1), REG_LORSA_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_LOREA_EL1), REG_LOREA_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_LORN_EL1), REG_LORN_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_LORC_EL1), REG_LORC_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_MPAMIDR_EL1), REG_MPAMIDR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_MPAMBWIDR_EL1), REG_MPAMBWIDR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_TLBIDIDR_EL1), REG_TLBIDIDR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_LORID_EL1), REG_LORID_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_MPAM1_EL1), REG_MPAM1_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_MPAM0_EL1), REG_MPAM0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_MPAMCTL_EL1), REG_MPAMCTL_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_MPAMSM_EL1), REG_MPAMSM_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_MPAMBW1_EL1), REG_MPAMBW1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_MPAMBW0_EL1), REG_MPAMBW0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_MPAMBWSM_EL1), REG_MPAMBWSM_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_CTRR_C_LWR_EL1), REG_CTRR_C_LWR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_CTRR_C_UPR_EL1), REG_CTRR_C_UPR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_CTRR_D_LWR_EL1), REG_CTRR_D_LWR_EL1);
@@ -547,10 +809,10 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_RMR_EL1), REG_RMR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ISR_EL1), REG_ISR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_DISR_EL1), REG_DISR_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICV_IAR0_EL1), REG_ICV_IAR0_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICV_EOIR0_EL1), REG_ICV_EOIR0_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICV_HPPIR0_EL1), REG_ICV_HPPIR0_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICV_BPR0_EL1), REG_ICV_BPR0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_IAR0_EL1), REG_ICC_IAR0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_EOIR0_EL1), REG_ICC_EOIR0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_HPPIR0_EL1), REG_ICC_HPPIR0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_BPR0_EL1), REG_ICC_BPR0_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICC_AP0R0_EL1), REG_ICC_AP0R0_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICC_AP0R1_EL1), REG_ICC_AP0R1_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICC_AP0R2_EL1), REG_ICC_AP0R2_EL1);
@@ -559,24 +821,59 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_ICC_AP1R1_EL1), REG_ICC_AP1R1_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICC_AP1R2_EL1), REG_ICC_AP1R2_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICC_AP1R3_EL1), REG_ICC_AP1R3_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICV_DIR_EL1), REG_ICV_DIR_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICV_RPR_EL1), REG_ICV_RPR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_NMIAR1_EL1), REG_ICC_NMIAR1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_HMR0_EL1), REG_ICC_PPI_HMR0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_HMR1_EL1), REG_ICC_PPI_HMR1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_IDR0_EL1), REG_ICC_IDR0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_HPPIR_EL1), REG_ICC_HPPIR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_ICSR_EL1), REG_ICC_ICSR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_IAFFIDR_EL1), REG_ICC_IAFFIDR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_ENABLER0_EL1), REG_ICC_PPI_ENABLER0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_ENABLER1_EL1), REG_ICC_PPI_ENABLER1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_DIR_EL1), REG_ICC_DIR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_RPR_EL1), REG_ICC_RPR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICC_SGI1R_EL1), REG_ICC_SGI1R_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICC_ASGI1R_EL1), REG_ICC_ASGI1R_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICC_SGI0R_EL1), REG_ICC_SGI0R_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICV_IAR1_EL1), REG_ICV_IAR1_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICV_EOIR1_EL1), REG_ICV_EOIR1_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICV_HPPIR1_EL1), REG_ICV_HPPIR1_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICV_BPR1CBPR_EL1), REG_ICV_BPR1CBPR_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICV_CTLR_EL1), REG_ICV_CTLR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_IAR1_EL1), REG_ICC_IAR1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_EOIR1_EL1), REG_ICC_EOIR1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_HPPIR1_EL1), REG_ICC_HPPIR1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_BPR1_EL1), REG_ICC_BPR1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_CTLR_EL1), REG_ICC_CTLR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICC_SRE_EL1), REG_ICC_SRE_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICV_IGRPEN0_EL1), REG_ICV_IGRPEN0_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICV_IGRPEN1_EL1), REG_ICV_IGRPEN1_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICC_SEIEN_EL1), REG_ICC_SEIEN_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_IGRPEN0_EL1), REG_ICC_IGRPEN0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_IGRPEN1_EL1), REG_ICC_IGRPEN1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_CACTIVER0_EL1), REG_ICC_PPI_CACTIVER0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_CACTIVER1_EL1), REG_ICC_PPI_CACTIVER1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_SACTIVER0_EL1), REG_ICC_PPI_SACTIVER0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_SACTIVER1_EL1), REG_ICC_PPI_SACTIVER1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_CPENDR0_EL1), REG_ICC_PPI_CPENDR0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_CPENDR1_EL1), REG_ICC_PPI_CPENDR1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_SPENDR0_EL1), REG_ICC_PPI_SPENDR0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_SPENDR1_EL1), REG_ICC_PPI_SPENDR1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_PRIORITYR0_EL1), REG_ICC_PPI_PRIORITYR0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_PRIORITYR1_EL1), REG_ICC_PPI_PRIORITYR1_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_PRIORITYR2_EL1), REG_ICC_PPI_PRIORITYR2_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_PRIORITYR3_EL1), REG_ICC_PPI_PRIORITYR3_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_PRIORITYR4_EL1), REG_ICC_PPI_PRIORITYR4_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_PRIORITYR5_EL1), REG_ICC_PPI_PRIORITYR5_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_PRIORITYR6_EL1), REG_ICC_PPI_PRIORITYR6_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_PRIORITYR7_EL1), REG_ICC_PPI_PRIORITYR7_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_PRIORITYR8_EL1), REG_ICC_PPI_PRIORITYR8_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_PRIORITYR9_EL1), REG_ICC_PPI_PRIORITYR9_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_PRIORITYR10_EL1), REG_ICC_PPI_PRIORITYR10_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_PRIORITYR11_EL1), REG_ICC_PPI_PRIORITYR11_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_PRIORITYR12_EL1), REG_ICC_PPI_PRIORITYR12_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_PRIORITYR13_EL1), REG_ICC_PPI_PRIORITYR13_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_PRIORITYR14_EL1), REG_ICC_PPI_PRIORITYR14_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_PRIORITYR15_EL1), REG_ICC_PPI_PRIORITYR15_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_CONTEXTIDR_EL1), REG_CONTEXTIDR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_RCWSMASK_EL1), REG_RCWSMASK_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_TPIDR_EL1), REG_TPIDR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ACCDATA_EL1), REG_ACCDATA_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_RCWMASK_EL1), REG_RCWMASK_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_SCXTNUM_EL1), REG_SCXTNUM_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_CNTHCTL_EL21), REG_CNTHCTL_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_CNTKCTL_EL1), REG_CNTKCTL_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_HID0), REG_HID0);
 		builder.AddMemberWithValue(get_system_register_name(REG_HID25), REG_HID25);
 		builder.AddMemberWithValue(get_system_register_name(REG_HID26), REG_HID26);
@@ -624,77 +921,83 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_HID35), REG_HID35);
 		builder.AddMemberWithValue(get_system_register_name(REG_CCSIDR_EL1), REG_CCSIDR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_CLIDR_EL1), REG_CLIDR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_CCSIDR2_EL1), REG_CCSIDR2_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_GMID_EL1), REG_GMID_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_SMIDR_EL1), REG_SMIDR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AIDR_EL1), REG_AIDR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_APR_EL1), REG_ICC_APR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_CR0_EL1), REG_ICC_CR0_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PCR_EL1), REG_ICC_PCR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_HAPR_EL1), REG_ICC_HAPR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMCR0_EL1), REG_PMCR0_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_APPL_CONTEXTPTR), REG_APPL_CONTEXTPTR);
 		builder.AddMemberWithValue(get_system_register_name(REG_LD_LATPROF_CTL_EL1), REG_LD_LATPROF_CTL_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AON_CPU_MSTALL_CTL01_EL1), REG_AON_CPU_MSTALL_CTL01_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PM_MEMFLT_CTL23_EL1), REG_PM_MEMFLT_CTL23_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHV_CTL_EL21), REG_AGTCNTHV_CTL_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTV_CTL_EL0), REG_AGTCNTV_CTL_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTVCTSS_NOREDIR_EL0), REG_AGTCNTVCTSS_NOREDIR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMCR1_EL1), REG_PMCR1_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_LD_LATPROF_CTR_EL1), REG_LD_LATPROF_CTR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AON_CPU_MSTALL_CTL23_EL1), REG_AON_CPU_MSTALL_CTL23_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PM_MEMFLT_CTL45_EL1), REG_PM_MEMFLT_CTL45_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTRDIR_EL1), REG_AGTCNTRDIR_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHCTL_NOREDIR_EL21), REG_AGTCNTHCTL_NOREDIR_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTKCTL_NOREDIR_EL1), REG_AGTCNTKCTL_NOREDIR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMCR2_EL1), REG_PMCR2_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_LD_LATPROF_STS_EL1), REG_LD_LATPROF_STS_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AON_CPU_MSTALL_CTL45_EL1), REG_AON_CPU_MSTALL_CTL45_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHP_CVAL_EL2), REG_AGTCNTHP_CVAL_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_CNTVCT_NOREDIR_EL0), REG_CNTVCT_NOREDIR_EL0);
-		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHP_CVAL_NOREDIR_EL21), REG_AGTCNTHP_CVAL_NOREDIR_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTP_CVAL_NOREDIR_EL0), REG_AGTCNTP_CVAL_NOREDIR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMCR3_EL1), REG_PMCR3_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_LD_LATPROF_INF_EL1), REG_LD_LATPROF_INF_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AON_CPU_MSTALL_CTL67_EL1), REG_AON_CPU_MSTALL_CTL67_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHP_TVAL_EL2), REG_AGTCNTHP_TVAL_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_CNTPCTSS_NOREDIR_EL0), REG_CNTPCTSS_NOREDIR_EL0);
-		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHP_TVAL_NOREDIR_EL21), REG_AGTCNTHP_TVAL_NOREDIR_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTP_TVAL_NOREDIR_EL0), REG_AGTCNTP_TVAL_NOREDIR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMCR4_EL1), REG_PMCR4_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_LD_LATPROF_CTL_EL2), REG_LD_LATPROF_CTL_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_AON_CPU_MEMFLT_CTL01_EL1), REG_AON_CPU_MEMFLT_CTL01_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHP_CTL_EL2), REG_AGTCNTHP_CTL_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_CNTVCTSS_NOREDIR_EL0), REG_CNTVCTSS_NOREDIR_EL0);
-		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHP_CTL_NOREDIR_EL21), REG_AGTCNTHP_CTL_NOREDIR_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTP_CTL_NOREDIR_EL0), REG_AGTCNTP_CTL_NOREDIR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMESR0_EL1), REG_PMESR0_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_LD_LATPROF_CMD_EL1), REG_LD_LATPROF_CMD_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AON_CPU_MEMFLT_CTL23_EL1), REG_AON_CPU_MEMFLT_CTL23_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHV_CVAL_EL2), REG_AGTCNTHV_CVAL_EL2);
-		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHV_CVAL_NOREDIR_EL21), REG_AGTCNTHV_CVAL_NOREDIR_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTV_CVAL_NOREDIR_EL0), REG_AGTCNTV_CVAL_NOREDIR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMESR1_EL1), REG_PMESR1_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMCR1_EL2), REG_PMCR1_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_AON_CPU_MEMFLT_CTL45_EL1), REG_AON_CPU_MEMFLT_CTL45_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHV_TVAL_EL2), REG_AGTCNTHV_TVAL_EL2);
-		builder.AddMemberWithValue(get_system_register_name(REG_CNTHCTL_NOREDIR_EL21), REG_CNTHCTL_NOREDIR_EL21);
-		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHV_TVAL_NOREDIR_EL21), REG_AGTCNTHV_TVAL_NOREDIR_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_CNTKCTL_NOREDIR_EL1), REG_CNTKCTL_NOREDIR_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTV_TVAL_NOREDIR_EL0), REG_AGTCNTV_TVAL_NOREDIR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_OPMAT0_EL1), REG_OPMAT0_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMCR1_EL12), REG_PMCR1_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_AON_CPU_MEMFLT_CTL67_EL1), REG_AON_CPU_MEMFLT_CTL67_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHV_CTL_EL2), REG_AGTCNTHV_CTL_EL2);
-		builder.AddMemberWithValue(get_system_register_name(REG_CNTHP_CVAL_NOREDIR_EL21), REG_CNTHP_CVAL_NOREDIR_EL21);
-		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHV_CTL_NOREDIR_EL21), REG_AGTCNTHV_CTL_NOREDIR_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_CNTP_CVAL_NOREDIR_EL0), REG_CNTP_CVAL_NOREDIR_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTV_CTL_NOREDIR_EL0), REG_AGTCNTV_CTL_NOREDIR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_OPMAT1_EL1), REG_OPMAT1_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMCR1_GL12), REG_PMCR1_GL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_AON_CPU_MSTALL_CTR0_EL1), REG_AON_CPU_MSTALL_CTR0_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTFRQ_EL0), REG_AGTCNTFRQ_EL0);
-		builder.AddMemberWithValue(get_system_register_name(REG_CNTHP_TVAL_NOREDIR_EL21), REG_CNTHP_TVAL_NOREDIR_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_CNTP_TVAL_NOREDIR_EL0), REG_CNTP_TVAL_NOREDIR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_CNTPCT_NOREDIR_EL0), REG_CNTPCT_NOREDIR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_OPMSK0_EL1), REG_OPMSK0_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_LD_LATPROF_CTL_EL12), REG_LD_LATPROF_CTL_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_AON_CPU_MSTALL_CTR1_EL1), REG_AON_CPU_MSTALL_CTR1_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTVOFF_EL2), REG_AGTCNTVOFF_EL2);
-		builder.AddMemberWithValue(get_system_register_name(REG_CNTHP_CTL_NOREDIR_EL21), REG_CNTHP_CTL_NOREDIR_EL21);
-		builder.AddMemberWithValue(get_system_register_name(REG_CNTHV_CTL_NOREDIR_EL21), REG_CNTHV_CTL_NOREDIR_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_CNTP_CTL_NOREDIR_EL0), REG_CNTP_CTL_NOREDIR_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_CNTV_CTL_NOREDIR_EL0), REG_CNTV_CTL_NOREDIR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_OPMSK1_EL1), REG_OPMSK1_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_LD_LATPROF_INF_EL2), REG_LD_LATPROF_INF_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_AON_CPU_MSTALL_CTR2_EL1), REG_AON_CPU_MSTALL_CTR2_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHP_CVAL_EL21), REG_AGTCNTHP_CVAL_EL21);
-		builder.AddMemberWithValue(get_system_register_name(REG_CNTHV_CVAL_NOREDIR_EL21), REG_CNTHV_CVAL_NOREDIR_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTP_CVAL_EL0), REG_AGTCNTP_CVAL_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_CNTV_CVAL_NOREDIR_EL0), REG_CNTV_CVAL_NOREDIR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTPCT_NOREDIR_EL0), REG_AGTCNTPCT_NOREDIR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_AON_CPU_MSTALL_CTR3_EL1), REG_AON_CPU_MSTALL_CTR3_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHP_TVAL_EL21), REG_AGTCNTHP_TVAL_EL21);
-		builder.AddMemberWithValue(get_system_register_name(REG_CNTHV_TVAL_NOREDIR_EL21), REG_CNTHV_TVAL_NOREDIR_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTP_TVAL_EL0), REG_AGTCNTP_TVAL_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_CNTV_TVAL_NOREDIR_EL0), REG_CNTV_TVAL_NOREDIR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_VMSA_HV_LOCK_EL2), REG_VMSA_HV_LOCK_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMSWCTRL_EL1), REG_PMSWCTRL_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMCR5_EL0), REG_PMCR5_EL0);
@@ -704,18 +1007,18 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_VMSA_NV_LOCK_EL2), REG_VMSA_NV_LOCK_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMSR_EL1), REG_PMSR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AON_CPU_MSTALL_CTR5_EL1), REG_AON_CPU_MSTALL_CTR5_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHP_CTL_EL21), REG_AGTCNTHP_CTL_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTP_CTL_EL0), REG_AGTCNTP_CTL_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMCOMPARE5_EL1), REG_PMCOMPARE5_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMCOMPARE6_EL1), REG_PMCOMPARE6_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMCOMPARE7_EL1), REG_PMCOMPARE7_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMCR_BVRNG4_EL1), REG_PMCR_BVRNG4_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PM_PMI_PC), REG_PM_PMI_PC);
 		builder.AddMemberWithValue(get_system_register_name(REG_AON_CPU_MSTALL_CTR6_EL1), REG_AON_CPU_MSTALL_CTR6_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHV_CVAL_EL21), REG_AGTCNTHV_CVAL_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTV_CVAL_EL0), REG_AGTCNTV_CVAL_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTVCT_NOREDIR_EL0), REG_AGTCNTVCT_NOREDIR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMCR_BVRNG5_EL1), REG_PMCR_BVRNG5_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AON_CPU_MSTALL_CTR7_EL1), REG_AON_CPU_MSTALL_CTR7_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHV_TVAL_EL21), REG_AGTCNTHV_TVAL_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTV_TVAL_EL0), REG_AGTCNTV_TVAL_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTPCTSS_NOREDIR_EL0), REG_AGTCNTPCTSS_NOREDIR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_CSSELR_EL1), REG_CSSELR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMC0), REG_PMC0);
@@ -742,6 +1045,9 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_PMMMAP_EL1), REG_PMMMAP_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_CTR_EL0), REG_CTR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_DCZID_EL0), REG_DCZID_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_RNDR), REG_RNDR);
+		builder.AddMemberWithValue(get_system_register_name(REG_RNDRRS), REG_RNDRRS);
+		builder.AddMemberWithValue(get_system_register_name(REG_GCSPR_EL0), REG_GCSPR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_NZCV), REG_NZCV);
 		builder.AddMemberWithValue(get_system_register_name(REG_DAIF), REG_DAIF);
 		builder.AddMemberWithValue(get_system_register_name(REG_SVCR), REG_SVCR);
@@ -750,34 +1056,47 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_TCO), REG_TCO);
 		builder.AddMemberWithValue(get_system_register_name(REG_FPCR), REG_FPCR);
 		builder.AddMemberWithValue(get_system_register_name(REG_FPSR), REG_FPSR);
-		builder.AddMemberWithValue(get_system_register_name(REG_DSPSR), REG_DSPSR);
-		builder.AddMemberWithValue(get_system_register_name(REG_DLR), REG_DLR);
+		builder.AddMemberWithValue(get_system_register_name(REG_FPMR), REG_FPMR);
+		builder.AddMemberWithValue(get_system_register_name(REG_DSPSR_EL0), REG_DSPSR_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_DLR_EL0), REG_DLR_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMICNTR_EL0), REG_PMICNTR_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMICFILTR_EL0), REG_PMICFILTR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMCR_EL0), REG_PMCR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMCNTENSET_EL0), REG_PMCNTENSET_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMCNTENCLR_EL0), REG_PMCNTENCLR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMOVSCLR_EL0), REG_PMOVSCLR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMSWINC_EL0), REG_PMSWINC_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMSELR_EL0), REG_PMSELR_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMCEID0_EL0), REG_PMCEID0_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMCEID1_EL0), REG_PMCEID1_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMCCNTR_EL0), REG_PMCCNTR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMXEVTYPER_EL0), REG_PMXEVTYPER_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMXEVCNTR_EL0), REG_PMXEVCNTR_EL0);
-		builder.AddMemberWithValue(get_system_register_name(REG_DAIFCLR), REG_DAIFCLR);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMZR_EL0), REG_PMZR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMUSERENR_EL0), REG_PMUSERENR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMOVSSET_EL0), REG_PMOVSSET_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_POR_EL0), REG_POR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_TPIDR_EL0), REG_TPIDR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_TPIDRRO_EL0), REG_TPIDRRO_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_TPIDR2_EL0), REG_TPIDR2_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_SCXTNUM_EL0), REG_SCXTNUM_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMCR_EL0), REG_AMCR_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMCFGR_EL0), REG_AMCFGR_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMCGCR_EL0), REG_AMCGCR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMUSERENR_EL0), REG_AMUSERENR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMCNTENCLR0_EL0), REG_AMCNTENCLR0_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMCNTENSET0_EL0), REG_AMCNTENSET0_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMCG1IDR_EL0), REG_AMCG1IDR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMCNTENCLR1_EL0), REG_AMCNTENCLR1_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMCNTENSET1_EL0), REG_AMCNTENSET1_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTR00_EL0), REG_AMEVCNTR00_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTR01_EL0), REG_AMEVCNTR01_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTR02_EL0), REG_AMEVCNTR02_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTR03_EL0), REG_AMEVCNTR03_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVTYPER00_EL0), REG_AMEVTYPER00_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVTYPER01_EL0), REG_AMEVTYPER01_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVTYPER02_EL0), REG_AMEVTYPER02_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVTYPER03_EL0), REG_AMEVTYPER03_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTR10_EL0), REG_AMEVCNTR10_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTR11_EL0), REG_AMEVCNTR11_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTR12_EL0), REG_AMEVCNTR12_EL0);
@@ -815,12 +1134,12 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_CNTVCT_EL0), REG_CNTVCT_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_CNTPCTSS_EL0), REG_CNTPCTSS_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_CNTVCTSS_EL0), REG_CNTVCTSS_EL0);
-		builder.AddMemberWithValue(get_system_register_name(REG_CNTHP_TVAL_EL21), REG_CNTHP_TVAL_EL21);
-		builder.AddMemberWithValue(get_system_register_name(REG_CNTHP_CTL_EL21), REG_CNTHP_CTL_EL21);
-		builder.AddMemberWithValue(get_system_register_name(REG_CNTHP_CVAL_EL21), REG_CNTHP_CVAL_EL21);
-		builder.AddMemberWithValue(get_system_register_name(REG_CNTHV_TVAL_EL21), REG_CNTHV_TVAL_EL21);
-		builder.AddMemberWithValue(get_system_register_name(REG_CNTHV_CTL_EL21), REG_CNTHV_CTL_EL21);
-		builder.AddMemberWithValue(get_system_register_name(REG_CNTHV_CVAL_EL21), REG_CNTHV_CVAL_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_CNTP_TVAL_EL0), REG_CNTP_TVAL_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_CNTP_CTL_EL0), REG_CNTP_CTL_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_CNTP_CVAL_EL0), REG_CNTP_CVAL_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_CNTV_TVAL_EL0), REG_CNTV_TVAL_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_CNTV_CTL_EL0), REG_CNTV_CTL_EL0);
+		builder.AddMemberWithValue(get_system_register_name(REG_CNTV_CVAL_EL0), REG_CNTV_CVAL_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTR0_EL0), REG_PMEVCNTR0_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTR1_EL0), REG_PMEVCNTR1_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMEVCNTR2_EL0), REG_PMEVCNTR2_EL0);
@@ -944,6 +1263,7 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_VMPIDR_EL2), REG_VMPIDR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_SCTLR_EL2), REG_SCTLR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ACTLR_EL2), REG_ACTLR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_SCTLR2_EL2), REG_SCTLR2_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_HCR_EL2), REG_HCR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_MDCR_EL2), REG_MDCR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_CPTR_EL2), REG_CPTR_EL2);
@@ -952,22 +1272,57 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_HFGWTR_EL2), REG_HFGWTR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_HFGITR_EL2), REG_HFGITR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_HACR_EL2), REG_HACR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ZCR_EL2), REG_ZCR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRFCR_EL2), REG_TRFCR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_HCRX_EL2), REG_HCRX_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCITECR_EL2), REG_TRCITECR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_SMPRIMAP_EL2), REG_SMPRIMAP_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_SMCR_EL2), REG_SMCR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_SDER32_EL2), REG_SDER32_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_SCTLRMASK_EL2), REG_SCTLRMASK_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ACTLRMASK_EL2), REG_ACTLRMASK_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_CPTRMASK_EL2), REG_CPTRMASK_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_SCTLR2MASK_EL2), REG_SCTLR2MASK_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_NVHCR_EL2), REG_NVHCR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_NVHCRX_EL2), REG_NVHCRX_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_NVHCRMASK_EL2), REG_NVHCRMASK_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_NVHCRXMASK_EL2), REG_NVHCRXMASK_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_HCRMASK_EL2), REG_HCRMASK_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_HCRXMASK_EL2), REG_HCRXMASK_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_TTBR0_EL2), REG_TTBR0_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_TTBR1_EL2), REG_TTBR1_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_TCR_EL2), REG_TCR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_TCR2_EL2), REG_TCR2_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_VTTBR_EL2), REG_VTTBR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_VTCR_EL2), REG_VTCR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_VNCR_EL2), REG_VNCR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_HDBSSBR_EL2), REG_HDBSSBR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_HDBSSPROD_EL2), REG_HDBSSPROD_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_HACDBSBR_EL2), REG_HACDBSBR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_HACDBSCONS_EL2), REG_HACDBSCONS_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_GCSCR_EL2), REG_GCSCR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_GCSPR_EL2), REG_GCSPR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_VSTTBR_EL2), REG_VSTTBR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_VSTCR_EL2), REG_VSTCR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_TCRMASK_EL2), REG_TCRMASK_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_TCR2MASK_EL2), REG_TCR2MASK_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_VTLBID0_EL2), REG_VTLBID0_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_VTLBID1_EL2), REG_VTLBID1_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_VTLBID2_EL2), REG_VTLBID2_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_VTLBID3_EL2), REG_VTLBID3_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_VTLBIDOS0_EL2), REG_VTLBIDOS0_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_VTLBIDOS1_EL2), REG_VTLBIDOS1_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_VTLBIDOS2_EL2), REG_VTLBIDOS2_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_VTLBIDOS3_EL2), REG_VTLBIDOS3_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_DACR32_EL2), REG_DACR32_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_HDFGRTR2_EL2), REG_HDFGRTR2_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_HDFGWTR2_EL2), REG_HDFGWTR2_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_HFGRTR2_EL2), REG_HFGRTR2_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_HFGWTR2_EL2), REG_HFGWTR2_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_HDFGRTR_EL2), REG_HDFGRTR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_HDFGWTR_EL2), REG_HDFGWTR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_HAFGRTR_EL2), REG_HAFGRTR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_HFGITR2_EL2), REG_HFGITR2_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_SPSR_EL2), REG_SPSR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ELR_EL2), REG_ELR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_SP_EL1), REG_SP_EL1);
@@ -984,12 +1339,24 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_TFSR_EL2), REG_TFSR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_FAR_EL2), REG_FAR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_HPFAR_EL2), REG_HPFAR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_PFAR_EL2), REG_PFAR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMSCR_EL2), REG_PMSCR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMBSR_EL2), REG_PMBSR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRBSR_EL2), REG_TRBSR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_MAIR2_EL2), REG_MAIR2_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_MAIR_EL2), REG_MAIR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_PIRE0_EL2), REG_PIRE0_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_PIR_EL2), REG_PIR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_POR_EL2), REG_POR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_S2PIR_EL2), REG_S2PIR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMAIR_EL2), REG_AMAIR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMAIR2_EL2), REG_AMAIR2_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_MPAMHCR_EL2), REG_MPAMHCR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_MPAMVPMV_EL2), REG_MPAMVPMV_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_MPAM2_EL2), REG_MPAM2_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_MPAMCTL_EL2), REG_MPAMCTL_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_MPAMBW2_EL2), REG_MPAMBW2_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_MPAMBWCAP_EL2), REG_MPAMBWCAP_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_MPAMVPM0_EL2), REG_MPAMVPM0_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_MPAMVPM1_EL2), REG_MPAMVPM1_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_MPAMVPM2_EL2), REG_MPAMVPM2_EL2);
@@ -998,6 +1365,15 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_MPAMVPM5_EL2), REG_MPAMVPM5_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_MPAMVPM6_EL2), REG_MPAMVPM6_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_MPAMVPM7_EL2), REG_MPAMVPM7_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_MPAMVIDCR_EL2), REG_MPAMVIDCR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_MPAMVIDSR_EL2), REG_MPAMVIDSR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_MECID_P0_EL2), REG_MECID_P0_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_MECID_A0_EL2), REG_MECID_A0_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_MECID_P1_EL2), REG_MECID_P1_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_MECID_A1_EL2), REG_MECID_A1_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_MECIDR_EL2), REG_MECIDR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_VMECID_P_EL2), REG_VMECID_P_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_VMECID_A_EL2), REG_VMECID_A_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_VBAR_EL2), REG_VBAR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_RVBAR_EL2), REG_RVBAR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_RMR_EL2), REG_RMR_EL2);
@@ -1006,17 +1382,31 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_ICH_AP0R1_EL2), REG_ICH_AP0R1_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICH_AP0R2_EL2), REG_ICH_AP0R2_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICH_AP0R3_EL2), REG_ICH_AP0R3_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_APR_EL2), REG_ICH_APR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_HPPIR_EL2), REG_ICH_HPPIR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICH_AP1R0_EL2), REG_ICH_AP1R0_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICH_AP1R1_EL2), REG_ICH_AP1R1_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICH_AP1R2_EL2), REG_ICH_AP1R2_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICH_AP1R3_EL2), REG_ICH_AP1R3_EL2);
-		builder.AddMemberWithValue(get_system_register_name(REG_ICH_VSEIR_EL2), REG_ICH_VSEIR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_HFGRTR_EL2), REG_ICH_HFGRTR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICC_SRE_EL2), REG_ICC_SRE_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_HFGWTR_EL2), REG_ICH_HFGWTR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_HFGITR_EL2), REG_ICH_HFGITR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_DVIR0_EL2), REG_ICH_PPI_DVIR0_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_DVIR1_EL2), REG_ICH_PPI_DVIR1_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_ENABLER0_EL2), REG_ICH_PPI_ENABLER0_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_ENABLER1_EL2), REG_ICH_PPI_ENABLER1_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_PENDR0_EL2), REG_ICH_PPI_PENDR0_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_PENDR1_EL2), REG_ICH_PPI_PENDR1_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_ACTIVER0_EL2), REG_ICH_PPI_ACTIVER0_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_ACTIVER1_EL2), REG_ICH_PPI_ACTIVER1_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICH_HCR_EL2), REG_ICH_HCR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICH_VTR_EL2), REG_ICH_VTR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICH_MISR_EL2), REG_ICH_MISR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICH_EISR_EL2), REG_ICH_EISR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_VCTLR_EL2), REG_ICH_VCTLR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICH_ELRSR_EL2), REG_ICH_ELRSR_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_CONTEXTR_EL2), REG_ICH_CONTEXTR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICH_VMCR_EL2), REG_ICH_VMCR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICH_LR0_EL2), REG_ICH_LR0_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICH_LR1_EL2), REG_ICH_LR1_EL2);
@@ -1034,10 +1424,59 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_ICH_LR13_EL2), REG_ICH_LR13_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICH_LR14_EL2), REG_ICH_LR14_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICH_LR15_EL2), REG_ICH_LR15_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_PRIORITYR0_EL2), REG_ICH_PPI_PRIORITYR0_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_PRIORITYR1_EL2), REG_ICH_PPI_PRIORITYR1_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_PRIORITYR2_EL2), REG_ICH_PPI_PRIORITYR2_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_PRIORITYR3_EL2), REG_ICH_PPI_PRIORITYR3_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_PRIORITYR4_EL2), REG_ICH_PPI_PRIORITYR4_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_PRIORITYR5_EL2), REG_ICH_PPI_PRIORITYR5_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_PRIORITYR6_EL2), REG_ICH_PPI_PRIORITYR6_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_PRIORITYR7_EL2), REG_ICH_PPI_PRIORITYR7_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_PRIORITYR8_EL2), REG_ICH_PPI_PRIORITYR8_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_PRIORITYR9_EL2), REG_ICH_PPI_PRIORITYR9_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_PRIORITYR10_EL2), REG_ICH_PPI_PRIORITYR10_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_PRIORITYR11_EL2), REG_ICH_PPI_PRIORITYR11_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_PRIORITYR12_EL2), REG_ICH_PPI_PRIORITYR12_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_PRIORITYR13_EL2), REG_ICH_PPI_PRIORITYR13_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_PRIORITYR14_EL2), REG_ICH_PPI_PRIORITYR14_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICH_PPI_PRIORITYR15_EL2), REG_ICH_PPI_PRIORITYR15_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_CONTEXTIDR_EL2), REG_CONTEXTIDR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_TPIDR_EL2), REG_TPIDR_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_SCXTNUM_EL2), REG_SCXTNUM_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF00_EL2), REG_AMEVCNTVOFF00_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF01_EL2), REG_AMEVCNTVOFF01_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF02_EL2), REG_AMEVCNTVOFF02_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF03_EL2), REG_AMEVCNTVOFF03_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF04_EL2), REG_AMEVCNTVOFF04_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF05_EL2), REG_AMEVCNTVOFF05_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF06_EL2), REG_AMEVCNTVOFF06_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF07_EL2), REG_AMEVCNTVOFF07_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF08_EL2), REG_AMEVCNTVOFF08_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF09_EL2), REG_AMEVCNTVOFF09_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF010_EL2), REG_AMEVCNTVOFF010_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF011_EL2), REG_AMEVCNTVOFF011_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF012_EL2), REG_AMEVCNTVOFF012_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF013_EL2), REG_AMEVCNTVOFF013_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF014_EL2), REG_AMEVCNTVOFF014_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF015_EL2), REG_AMEVCNTVOFF015_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF10_EL2), REG_AMEVCNTVOFF10_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF11_EL2), REG_AMEVCNTVOFF11_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF12_EL2), REG_AMEVCNTVOFF12_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF13_EL2), REG_AMEVCNTVOFF13_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF14_EL2), REG_AMEVCNTVOFF14_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF15_EL2), REG_AMEVCNTVOFF15_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF16_EL2), REG_AMEVCNTVOFF16_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF17_EL2), REG_AMEVCNTVOFF17_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF18_EL2), REG_AMEVCNTVOFF18_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF19_EL2), REG_AMEVCNTVOFF19_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF110_EL2), REG_AMEVCNTVOFF110_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF111_EL2), REG_AMEVCNTVOFF111_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF112_EL2), REG_AMEVCNTVOFF112_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF113_EL2), REG_AMEVCNTVOFF113_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF114_EL2), REG_AMEVCNTVOFF114_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMEVCNTVOFF115_EL2), REG_AMEVCNTVOFF115_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_CNTVOFF_EL2), REG_CNTVOFF_EL2);
+		builder.AddMemberWithValue(get_system_register_name(REG_CNTPOFF_EL2), REG_CNTPOFF_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_CNTHCTL_EL2), REG_CNTHCTL_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_CNTHP_TVAL_EL2), REG_CNTHP_TVAL_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_CNTHP_CTL_EL2), REG_CNTHP_CTL_EL2);
@@ -1056,7 +1495,7 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_APCTL_EL1), REG_APCTL_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_KERNKEYLO_EL1), REG_KERNKEYLO_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_KERNKEYHI_EL1), REG_KERNKEYHI_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_VMSALOCK_EL21), REG_VMSALOCK_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_VMSA_LOCK_EL1), REG_VMSA_LOCK_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMX_STATE_T_EL1), REG_AMX_STATE_T_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMX_CONFIG_EL1), REG_AMX_CONFIG_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_VMSA_LOCK_EL2), REG_VMSA_LOCK_EL2);
@@ -1109,7 +1548,7 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_CTRR_B_UPR_EL12), REG_CTRR_B_UPR_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_CTRR_A_CTL_EL12), REG_CTRR_A_CTL_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_CTRR_B_CTL_EL12), REG_CTRR_B_CTL_EL12);
-		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTHCTL_EL21), REG_AGTCNTHCTL_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTKCTL_EL1), REG_AGTCNTKCTL_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_AGTCNTKCTL_EL12), REG_AGTCNTKCTL_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_PREDAKEYLO_EL1), REG_PREDAKEYLO_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_PREDAKEYHI_EL1), REG_PREDAKEYHI_EL1);
@@ -1157,11 +1596,23 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_SCTLR_EL12), REG_SCTLR_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_ACTLR_EL12), REG_ACTLR_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_CPACR_EL12), REG_CPACR_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_SCTLR2_EL12), REG_SCTLR2_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_ZCR_EL12), REG_ZCR_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_TRFCR_EL12), REG_TRFCR_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRCITECR_EL12), REG_TRCITECR_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_SMCR_EL12), REG_SMCR_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_SCTLRMASK_EL12), REG_SCTLRMASK_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_ACTLRMASK_EL12), REG_ACTLRMASK_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_CPACRMASK_EL12), REG_CPACRMASK_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_SCTLR2MASK_EL12), REG_SCTLR2MASK_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_TTBR0_EL12), REG_TTBR0_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_TTBR1_EL12), REG_TTBR1_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_TCR_EL12), REG_TCR_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_TCR2_EL12), REG_TCR2_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_GCSCR_EL12), REG_GCSCR_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_GCSPR_EL12), REG_GCSPR_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_TCRMASK_EL12), REG_TCRMASK_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_TCR2MASK_EL12), REG_TCR2MASK_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_SPSR_EL12), REG_SPSR_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_ELR_EL12), REG_ELR_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_AFSR0_EL12), REG_AFSR0_EL12);
@@ -1169,10 +1620,20 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_ESR_EL12), REG_ESR_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_TFSR_EL12), REG_TFSR_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_FAR_EL12), REG_FAR_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_PFAR_EL12), REG_PFAR_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_PMSCR_EL12), REG_PMSCR_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMBSR_EL12), REG_PMBSR_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRBSR_EL12), REG_TRBSR_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_MAIR_EL12), REG_MAIR_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_MAIR2_EL12), REG_MAIR2_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_PIRE0_EL12), REG_PIRE0_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_PIR_EL12), REG_PIR_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_POR_EL12), REG_POR_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMAIR_EL12), REG_AMAIR_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMAIR2_EL12), REG_AMAIR2_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_MPAM1_EL12), REG_MPAM1_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_MPAMCTL_EL12), REG_MPAMCTL_EL12);
+		builder.AddMemberWithValue(get_system_register_name(REG_MPAMBW1_EL12), REG_MPAMBW1_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_VBAR_EL12), REG_VBAR_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_CONTEXTIDR_EL12), REG_CONTEXTIDR_EL12);
 		builder.AddMemberWithValue(get_system_register_name(REG_SCXTNUM_EL12), REG_SCXTNUM_EL12);
@@ -1262,26 +1723,57 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_LLC_DATA1), REG_LLC_DATA1);
 		builder.AddMemberWithValue(get_system_register_name(REG_SCTLR_EL3), REG_SCTLR_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_ACTLR_EL3), REG_ACTLR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_SCTLR2_EL3), REG_SCTLR2_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_SCR_EL3), REG_SCR_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_SDER32_EL3), REG_SDER32_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_CPTR_EL3), REG_CPTR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_FGWTE3_EL3), REG_FGWTE3_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_ZCR_EL3), REG_ZCR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_SCR2_EL3), REG_SCR2_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_SMCR_EL3), REG_SMCR_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_MDCR_EL3), REG_MDCR_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_TTBR0_EL3), REG_TTBR0_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_TCR_EL3), REG_TCR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_GPTBR_EL3), REG_GPTBR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_GPCBW_EL3), REG_GPCBW_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_GPCCR_EL3), REG_GPCCR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_GCSCR_EL3), REG_GCSCR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_GCSPR_EL3), REG_GCSPR_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_SPSR_EL3), REG_SPSR_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_ELR_EL3), REG_ELR_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_SP_EL2), REG_SP_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_AFSR0_EL3), REG_AFSR0_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_AFSR1_EL3), REG_AFSR1_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_ESR_EL3), REG_ESR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_VSESR_EL3), REG_VSESR_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_TFSR_EL3), REG_TFSR_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_FAR_EL3), REG_FAR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_MFAR_EL3), REG_MFAR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_PMBSR_EL3), REG_PMBSR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_TRBSR_EL3), REG_TRBSR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_MAIR2_EL3), REG_MAIR2_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_MAIR_EL3), REG_MAIR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_PIR_EL3), REG_PIR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_POR_EL3), REG_POR_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMAIR_EL3), REG_AMAIR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_AMAIR2_EL3), REG_AMAIR2_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_MPAM3_EL3), REG_MPAM3_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_MPAMCTL_EL3), REG_MPAMCTL_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_MPAMBW3_EL3), REG_MPAMBW3_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_MECID_RL_A_EL3), REG_MECID_RL_A_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_VBAR_EL3), REG_VBAR_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_RVBAR_EL3), REG_RVBAR_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_RMR_EL3), REG_RMR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_VDISR_EL3), REG_VDISR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_APR_EL3), REG_ICC_APR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PCR_EL3), REG_ICC_PCR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_DOMHPPIR_EL3), REG_ICC_DOMHPPIR_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_DOMAINR0_EL3), REG_ICC_PPI_DOMAINR0_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_DOMAINR1_EL3), REG_ICC_PPI_DOMAINR1_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_DOMAINR2_EL3), REG_ICC_PPI_DOMAINR2_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_PPI_DOMAINR3_EL3), REG_ICC_PPI_DOMAINR3_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_CR0_EL3), REG_ICC_CR0_EL3);
+		builder.AddMemberWithValue(get_system_register_name(REG_ICC_HPPIR_EL3), REG_ICC_HPPIR_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICC_CTLR_EL3), REG_ICC_CTLR_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICC_SRE_EL3), REG_ICC_SRE_EL3);
 		builder.AddMemberWithValue(get_system_register_name(REG_ICC_IGRPEN1_EL3), REG_ICC_IGRPEN1_EL3);
@@ -1298,7 +1790,7 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_CONFIG_EL1), REG_SPRR_CONFIG_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_HPFAR_GL2), REG_HPFAR_GL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_GXF_CONFIG_EL1), REG_GXF_CONFIG_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_AMRANGE_EL21), REG_AMRANGE_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_AMRANGE_EL1), REG_SPRR_AMRANGE_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_GXF_CONFIG_EL2), REG_GXF_CONFIG_EL2);
 		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_UPERM_EL0), REG_SPRR_UPERM_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_PPERM_EL1), REG_SPRR_PPERM_EL1);
@@ -1310,16 +1802,16 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_AFPCR_EL0), REG_AFPCR_EL0);
 		builder.AddMemberWithValue(get_system_register_name(REG_SP_GL22), REG_SP_GL22);
 		builder.AddMemberWithValue(get_system_register_name(REG_AMXIDR_EL1), REG_AMXIDR_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_HUMPRR_EL21), REG_SPRR_HUMPRR_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_UMPRR_EL1), REG_SPRR_UMPRR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_PMPRR_EL1), REG_SPRR_PMPRR_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_PMPRR_EL2), REG_SPRR_PMPRR_EL2);
-		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_HUPERM_SH01_EL21), REG_SPRR_HUPERM_SH01_EL21);
-		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_HUPERM_SH02_EL21), REG_SPRR_HUPERM_SH02_EL21);
-		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_HUPERM_SH03_EL21), REG_SPRR_HUPERM_SH03_EL21);
-		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_HUPERM_SH04_EL21), REG_SPRR_HUPERM_SH04_EL21);
-		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_HUPERM_SH05_EL21), REG_SPRR_HUPERM_SH05_EL21);
-		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_HUPERM_SH06_EL21), REG_SPRR_HUPERM_SH06_EL21);
-		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_HUPERM_SH07_EL21), REG_SPRR_HUPERM_SH07_EL21);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_UPERM_SH01_EL1), REG_SPRR_UPERM_SH01_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_UPERM_SH02_EL1), REG_SPRR_UPERM_SH02_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_UPERM_SH03_EL1), REG_SPRR_UPERM_SH03_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_UPERM_SH04_EL1), REG_SPRR_UPERM_SH04_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_UPERM_SH05_EL1), REG_SPRR_UPERM_SH05_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_UPERM_SH06_EL1), REG_SPRR_UPERM_SH06_EL1);
+		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_UPERM_SH07_EL1), REG_SPRR_UPERM_SH07_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_PPERM_SH01_EL1), REG_SPRR_PPERM_SH01_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_PPERM_SH02_EL1), REG_SPRR_PPERM_SH02_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_SPRR_PPERM_SH03_EL1), REG_SPRR_PPERM_SH03_EL1);
@@ -1415,7 +1907,6 @@ Ref<Enumeration> get_system_register_enum()
 		builder.AddMemberWithValue(get_system_register_name(REG_CNTPS_TVAL_EL1), REG_CNTPS_TVAL_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_CNTPS_CTL_EL1), REG_CNTPS_CTL_EL1);
 		builder.AddMemberWithValue(get_system_register_name(REG_CNTPS_CVAL_EL1), REG_CNTPS_CVAL_EL1);
-		builder.AddMemberWithValue(get_system_register_name(REG_PSTATE_SPSEL), REG_PSTATE_SPSEL);
 		builder.AddMemberWithValue(get_system_register_name(REG_PWRDNSAVE0), REG_PWRDNSAVE0);
 		builder.AddMemberWithValue(get_system_register_name(REG_NRG_ACC_CTL), REG_NRG_ACC_CTL);
 		builder.AddMemberWithValue(get_system_register_name(REG_AON_CNT0), REG_AON_CNT0);
@@ -1517,68 +2008,60 @@ QualifiedName get_system_register_enum_type_name(Ref<BinaryView> view)
 const vector<uint32_t>& get_system_registers()
 {
 	static vector<uint32_t> system_regs {
-		REG_EDSCR,
-		REG_EDPRCR,
-		REG_UAOIMM,
-		REG_PANIMM,
-		REG_SPSELIMM,
-		REG_DITIMM,
-		REG_SVCRIMM,
-		REG_ICIALLUIS,
-		REG_ICIALLU,
-		REG_DCIVAC,
-		REG_DCISW,
-		REG_ATS1E1R,
-		REG_ATS1E1W,
-		REG_ATS1E0R,
-		REG_ATS1E0W,
-		REG_DCCSW,
-		REG_DCCISW,
-		REG_TLBIVMALLE1IS,
-		REG_TLBIVAE1IS,
-		REG_TLBIASIDE1IS,
-		REG_TLBIVAAE1IS,
-		REG_TLBIVALE1IS,
-		REG_TLBIVAALE1IS,
-		REG_TLBIVMALLE1,
-		REG_TLBIVAE1,
-		REG_TLBIASIDE1,
-		REG_TLBIVAAE1,
-		REG_TLBIVALE1,
-		REG_TLBIVAALE1,
-		REG_DCZVA,
-		REG_ICIVAU,
-		REG_DCCVAC,
-		REG_DCCVAU,
-		REG_DCCIVAC,
-		REG_ATS1E2R,
-		REG_ATS1E2W,
-		REG_ATS12E1R,
-		REG_ATS12E1W,
-		REG_ATS12E0R,
-		REG_ATS12E0W,
-		REG_TLBIIPAS2E1IS,
-		REG_TLBIIPAS2LE1IS,
-		REG_TLBIALLE2IS,
-		REG_TLBIVAE2IS,
-		REG_TLBIALLE1IS,
-		REG_TLBIVALE2IS,
-		REG_TLBIVMALLS12E1IS,
-		REG_TLBIIPAS2E1,
-		REG_TLBIIPAS2LE1,
-		REG_TLBIALLE2,
-		REG_TLBIVAE2,
-		REG_TLBIALLE1,
-		REG_TLBIVALE2,
-		REG_TLBIVMALLS12E1,
-		REG_ATS1E3R,
-		REG_ATS1E3W,
-		REG_TLBIALLE3IS,
-		REG_TLBIVAE3IS,
-		REG_TLBIVALE3IS,
-		REG_TLBIALLE3,
-		REG_TLBIVAE3,
-		REG_TLBIVALE3,
+		REG_PSTATE_SPSEL,
+		REG_DAIFSET,
+		REG_DAIFCLR,
+		REG_IC_IALLUIS,
+		REG_IC_IALLU,
+		REG_GCSPUSHX,
+		REG_GCSPOPCX,
+		REG_GCSPOPX,
+		REG_GSB_SYS,
+		REG_GSB_ACK,
+		REG_GIC_CDDIS,
+		REG_GIC_CDEN,
+		REG_GIC_CDPRI,
+		REG_GIC_CDAFF,
+		REG_GIC_CDPEND,
+		REG_GIC_CDRCFG,
+		REG_GIC_CDEOI,
+		REG_GIC_CDDI,
+		REG_GIC_CDHM,
+		REG_GICR_CDIA,
+		REG_GICR_CDNMIA,
+		REG_BRB_IALL,
+		REG_BRB_INJ,
+		REG_TRCIT,
+		REG_CFP_RCTX,
+		REG_DVP_RCTX,
+		REG_COSP_RCTX,
+		REG_CPP_RCTX,
+		REG_IC_IVAU,
+		REG_GCSPUSHM,
+		REG_GCSPOPM,
+		REG_GCSSS1,
+		REG_GCSSS2,
+		REG_MLBI_ALLE1,
+		REG_MLBI_VMALLE1,
+		REG_MLBI_VPIDE1,
+		REG_MLBI_VPMGE1,
+		REG_GIC_VDDIS,
+		REG_GIC_VDEN,
+		REG_GIC_VDPRI,
+		REG_GIC_VDAFF,
+		REG_GIC_VDPEND,
+		REG_GIC_VDRCFG,
+		REG_GIC_VDDI,
+		REG_GIC_VDHM,
+		REG_APAS,
+		REG_GIC_LDDIS,
+		REG_GIC_LDEN,
+		REG_GIC_LDPRI,
+		REG_GIC_LDAFF,
+		REG_GIC_LDPEND,
+		REG_GIC_LDRCFG,
+		REG_GIC_LDDI,
+		REG_GIC_LDHM,
 		REG_OSDTRRX_EL1,
 		REG_DBGBVR0_EL1,
 		REG_DBGBCR0_EL1,
@@ -1599,10 +2082,12 @@ const vector<uint32_t>& get_system_registers()
 		REG_DBGBCR3_EL1,
 		REG_DBGWVR3_EL1,
 		REG_DBGWCR3_EL1,
+		REG_MDSELR_EL1,
 		REG_DBGBVR4_EL1,
 		REG_DBGBCR4_EL1,
 		REG_DBGWVR4_EL1,
 		REG_DBGWCR4_EL1,
+		REG_MDSTEPOP_EL1,
 		REG_DBGBVR5_EL1,
 		REG_DBGBCR5_EL1,
 		REG_DBGWVR5_EL1,
@@ -1656,30 +2141,79 @@ const vector<uint32_t>& get_system_registers()
 		REG_DBGPRCR_EL1,
 		REG_DBGCLAIMSET_EL1,
 		REG_DBGCLAIMCLR_EL1,
-		REG_DBGAUTHSTAT_EL1,
+		REG_DBGAUTHSTATUS_EL1,
+		REG_SPMCGCR0_EL1,
+		REG_SPMCGCR1_EL1,
+		REG_SPMACCESSR_EL1,
+		REG_SPMIIDR_EL1,
+		REG_SPMDEVARCH_EL1,
+		REG_SPMDEVAFF_EL1,
+		REG_SPMCFGR_EL1,
+		REG_SPMINTENSET_EL1,
+		REG_SPMINTENCLR_EL1,
+		REG_PMEVCNTSVR0_EL1,
+		REG_PMEVCNTSVR1_EL1,
+		REG_PMEVCNTSVR2_EL1,
+		REG_PMEVCNTSVR3_EL1,
+		REG_PMEVCNTSVR4_EL1,
+		REG_PMEVCNTSVR5_EL1,
+		REG_PMEVCNTSVR6_EL1,
+		REG_PMEVCNTSVR7_EL1,
+		REG_PMEVCNTSVR8_EL1,
+		REG_PMEVCNTSVR9_EL1,
+		REG_PMEVCNTSVR10_EL1,
+		REG_PMEVCNTSVR11_EL1,
+		REG_PMEVCNTSVR12_EL1,
+		REG_PMEVCNTSVR13_EL1,
+		REG_PMEVCNTSVR14_EL1,
+		REG_PMEVCNTSVR15_EL1,
+		REG_PMEVCNTSVR16_EL1,
+		REG_PMEVCNTSVR17_EL1,
+		REG_PMEVCNTSVR18_EL1,
+		REG_PMEVCNTSVR19_EL1,
+		REG_PMEVCNTSVR20_EL1,
+		REG_PMEVCNTSVR21_EL1,
+		REG_PMEVCNTSVR22_EL1,
+		REG_PMEVCNTSVR23_EL1,
+		REG_PMEVCNTSVR24_EL1,
+		REG_PMEVCNTSVR25_EL1,
+		REG_PMEVCNTSVR26_EL1,
+		REG_PMEVCNTSVR27_EL1,
+		REG_PMEVCNTSVR28_EL1,
+		REG_PMEVCNTSVR29_EL1,
+		REG_PMEVCNTSVR30_EL1,
+		REG_PMCCNTSVR_EL1,
+		REG_PMICNTSVR_EL1,
 		REG_TRCTRACEIDR,
 		REG_TRCVICTLR,
 		REG_TRCSEQEVR0,
 		REG_TRCCNTRLDVR0,
+		REG_TRCIDR8,
 		REG_TRCIMSPEC0,
 		REG_TRCPRGCTLR,
 		REG_TRCQCTLR,
 		REG_TRCVIIECTLR,
 		REG_TRCSEQEVR1,
 		REG_TRCCNTRLDVR1,
+		REG_TRCIDR9,
 		REG_TRCIMSPEC1,
-		REG_TRCPROCSELR,
+		REG_TRCITEEDCR,
 		REG_TRCVISSCTLR,
 		REG_TRCSEQEVR2,
 		REG_TRCCNTRLDVR2,
+		REG_TRCIDR10,
 		REG_TRCIMSPEC2,
+		REG_TRCSTATR,
 		REG_TRCVIPCSSCTLR,
 		REG_TRCCNTRLDVR3,
+		REG_TRCIDR11,
 		REG_TRCIMSPEC3,
 		REG_TRCCONFIGR,
 		REG_TRCCNTCTLR0,
+		REG_TRCIDR12,
 		REG_TRCIMSPEC4,
 		REG_TRCCNTCTLR1,
+		REG_TRCIDR13,
 		REG_TRCIMSPEC5,
 		REG_TRCAUXCTLR,
 		REG_TRCSEQRSTEVR,
@@ -1689,31 +2223,38 @@ const vector<uint32_t>& get_system_registers()
 		REG_TRCCNTCTLR3,
 		REG_TRCIMSPEC7,
 		REG_TRCEVENTCTL0R,
-		REG_TRCVDCTLR,
-		REG_TRCEXTINSELR,
+		REG_TRCEXTINSELR0,
 		REG_TRCCNTVR0,
+		REG_TRCIDR0,
 		REG_TRCEVENTCTL1R,
-		REG_TRCVDSACCTLR,
 		REG_TRCEXTINSELR1,
 		REG_TRCCNTVR1,
+		REG_TRCIDR1,
 		REG_TRCRSR,
-		REG_TRCVDARCCTLR,
 		REG_TRCEXTINSELR2,
 		REG_TRCCNTVR2,
+		REG_TRCIDR2,
 		REG_TRCSTALLCTLR,
 		REG_TRCEXTINSELR3,
 		REG_TRCCNTVR3,
+		REG_TRCIDR3,
 		REG_TRCTSCTLR,
+		REG_TRCIDR4,
 		REG_TRCSYNCPR,
+		REG_TRCIDR5,
 		REG_TRCCCCTLR,
+		REG_TRCIDR6,
 		REG_TRCBBCTLR,
+		REG_TRCIDR7,
+		REG_TRCRSCTLR0,
 		REG_TRCRSCTLR16,
 		REG_TRCSSCCR0,
 		REG_TRCSSPCICR0,
-		REG_TRCOSLAR,
+		REG_TRCRSCTLR1,
 		REG_TRCRSCTLR17,
 		REG_TRCSSCCR1,
 		REG_TRCSSPCICR1,
+		REG_TRCOSLSR,
 		REG_TRCRSCTLR2,
 		REG_TRCRSCTLR18,
 		REG_TRCSSCCR2,
@@ -1726,7 +2267,6 @@ const vector<uint32_t>& get_system_registers()
 		REG_TRCRSCTLR20,
 		REG_TRCSSCCR4,
 		REG_TRCSSPCICR4,
-		REG_TRCPDCR,
 		REG_TRCRSCTLR5,
 		REG_TRCRSCTLR21,
 		REG_TRCSSCCR5,
@@ -1767,10 +2307,6 @@ const vector<uint32_t>& get_system_registers()
 		REG_TRCACVR8,
 		REG_TRCACATR0,
 		REG_TRCACATR8,
-		REG_TRCDVCVR0,
-		REG_TRCDVCVR4,
-		REG_TRCDVCMR0,
-		REG_TRCDVCMR4,
 		REG_TRCACVR1,
 		REG_TRCACVR9,
 		REG_TRCACATR1,
@@ -1779,10 +2315,6 @@ const vector<uint32_t>& get_system_registers()
 		REG_TRCACVR10,
 		REG_TRCACATR2,
 		REG_TRCACATR10,
-		REG_TRCDVCVR1,
-		REG_TRCDVCVR5,
-		REG_TRCDVCMR1,
-		REG_TRCDVCMR5,
 		REG_TRCACVR3,
 		REG_TRCACVR11,
 		REG_TRCACATR3,
@@ -1791,10 +2323,6 @@ const vector<uint32_t>& get_system_registers()
 		REG_TRCACVR12,
 		REG_TRCACATR4,
 		REG_TRCACATR12,
-		REG_TRCDVCVR2,
-		REG_TRCDVCVR6,
-		REG_TRCDVCMR2,
-		REG_TRCDVCMR6,
 		REG_TRCACVR5,
 		REG_TRCACVR13,
 		REG_TRCACATR5,
@@ -1803,10 +2331,6 @@ const vector<uint32_t>& get_system_registers()
 		REG_TRCACVR14,
 		REG_TRCACATR6,
 		REG_TRCACATR14,
-		REG_TRCDVCVR3,
-		REG_TRCDVCVR7,
-		REG_TRCDVCMR3,
-		REG_TRCDVCMR7,
 		REG_TRCACVR7,
 		REG_TRCACVR15,
 		REG_TRCACATR7,
@@ -1831,16 +2355,198 @@ const vector<uint32_t>& get_system_registers()
 		REG_TRCVMIDCVR6,
 		REG_TRCCIDCVR7,
 		REG_TRCVMIDCVR7,
-		REG_TRCITCTRL,
+		REG_TRCDEVID,
 		REG_TRCCLAIMSET,
 		REG_TRCCLAIMCLR,
-		REG_TRCLAR,
+		REG_TRCAUTHSTATUS,
+		REG_TRCDEVARCH,
+		REG_BRBINF0_EL1,
+		REG_BRBSRC0_EL1,
+		REG_BRBTGT0_EL1,
+		REG_BRBINF16_EL1,
+		REG_BRBSRC16_EL1,
+		REG_BRBTGT16_EL1,
+		REG_BRBINF1_EL1,
+		REG_BRBSRC1_EL1,
+		REG_BRBTGT1_EL1,
+		REG_BRBINF17_EL1,
+		REG_BRBSRC17_EL1,
+		REG_BRBTGT17_EL1,
+		REG_BRBINF2_EL1,
+		REG_BRBSRC2_EL1,
+		REG_BRBTGT2_EL1,
+		REG_BRBINF18_EL1,
+		REG_BRBSRC18_EL1,
+		REG_BRBTGT18_EL1,
+		REG_BRBINF3_EL1,
+		REG_BRBSRC3_EL1,
+		REG_BRBTGT3_EL1,
+		REG_BRBINF19_EL1,
+		REG_BRBSRC19_EL1,
+		REG_BRBTGT19_EL1,
+		REG_BRBINF4_EL1,
+		REG_BRBSRC4_EL1,
+		REG_BRBTGT4_EL1,
+		REG_BRBINF20_EL1,
+		REG_BRBSRC20_EL1,
+		REG_BRBTGT20_EL1,
+		REG_BRBINF5_EL1,
+		REG_BRBSRC5_EL1,
+		REG_BRBTGT5_EL1,
+		REG_BRBINF21_EL1,
+		REG_BRBSRC21_EL1,
+		REG_BRBTGT21_EL1,
+		REG_BRBINF6_EL1,
+		REG_BRBSRC6_EL1,
+		REG_BRBTGT6_EL1,
+		REG_BRBINF22_EL1,
+		REG_BRBSRC22_EL1,
+		REG_BRBTGT22_EL1,
+		REG_BRBINF7_EL1,
+		REG_BRBSRC7_EL1,
+		REG_BRBTGT7_EL1,
+		REG_BRBINF23_EL1,
+		REG_BRBSRC23_EL1,
+		REG_BRBTGT23_EL1,
+		REG_BRBINF8_EL1,
+		REG_BRBSRC8_EL1,
+		REG_BRBTGT8_EL1,
+		REG_BRBINF24_EL1,
+		REG_BRBSRC24_EL1,
+		REG_BRBTGT24_EL1,
+		REG_BRBINF9_EL1,
+		REG_BRBSRC9_EL1,
+		REG_BRBTGT9_EL1,
+		REG_BRBINF25_EL1,
+		REG_BRBSRC25_EL1,
+		REG_BRBTGT25_EL1,
+		REG_BRBINF10_EL1,
+		REG_BRBSRC10_EL1,
+		REG_BRBTGT10_EL1,
+		REG_BRBINF26_EL1,
+		REG_BRBSRC26_EL1,
+		REG_BRBTGT26_EL1,
+		REG_BRBINF11_EL1,
+		REG_BRBSRC11_EL1,
+		REG_BRBTGT11_EL1,
+		REG_BRBINF27_EL1,
+		REG_BRBSRC27_EL1,
+		REG_BRBTGT27_EL1,
+		REG_BRBINF12_EL1,
+		REG_BRBSRC12_EL1,
+		REG_BRBTGT12_EL1,
+		REG_BRBINF28_EL1,
+		REG_BRBSRC28_EL1,
+		REG_BRBTGT28_EL1,
+		REG_BRBINF13_EL1,
+		REG_BRBSRC13_EL1,
+		REG_BRBTGT13_EL1,
+		REG_BRBINF29_EL1,
+		REG_BRBSRC29_EL1,
+		REG_BRBTGT29_EL1,
+		REG_BRBINF14_EL1,
+		REG_BRBSRC14_EL1,
+		REG_BRBTGT14_EL1,
+		REG_BRBINF30_EL1,
+		REG_BRBSRC30_EL1,
+		REG_BRBTGT30_EL1,
+		REG_BRBINF15_EL1,
+		REG_BRBSRC15_EL1,
+		REG_BRBTGT15_EL1,
+		REG_BRBINF31_EL1,
+		REG_BRBSRC31_EL1,
+		REG_BRBTGT31_EL1,
+		REG_BRBCR_EL1,
+		REG_BRBFCR_EL1,
+		REG_BRBTS_EL1,
+		REG_BRBINFINJ_EL1,
+		REG_BRBSRCINJ_EL1,
+		REG_BRBTGTINJ_EL1,
+		REG_BRBIDR0_EL1,
 		REG_TEECR32_EL1,
 		REG_TEEHBR32_EL1,
 		REG_MDCCSR_EL0,
 		REG_DBGDTR_EL0,
 		REG_DBGDTRRX_EL0,
+		REG_SPMCR_EL0,
+		REG_SPMCNTENSET_EL0,
+		REG_SPMCNTENCLR_EL0,
+		REG_SPMOVSCLR_EL0,
+		REG_SPMZR_EL0,
+		REG_SPMSELR_EL0,
+		REG_SPMOVSSET_EL0,
+		REG_SPMEVCNTR0_EL0,
+		REG_SPMEVCNTR1_EL0,
+		REG_SPMEVCNTR2_EL0,
+		REG_SPMEVCNTR3_EL0,
+		REG_SPMEVCNTR4_EL0,
+		REG_SPMEVCNTR5_EL0,
+		REG_SPMEVCNTR6_EL0,
+		REG_SPMEVCNTR7_EL0,
+		REG_SPMEVCNTR8_EL0,
+		REG_SPMEVCNTR9_EL0,
+		REG_SPMEVCNTR10_EL0,
+		REG_SPMEVCNTR11_EL0,
+		REG_SPMEVCNTR12_EL0,
+		REG_SPMEVCNTR13_EL0,
+		REG_SPMEVCNTR14_EL0,
+		REG_SPMEVCNTR15_EL0,
+		REG_SPMEVTYPER0_EL0,
+		REG_SPMEVTYPER1_EL0,
+		REG_SPMEVTYPER2_EL0,
+		REG_SPMEVTYPER3_EL0,
+		REG_SPMEVTYPER4_EL0,
+		REG_SPMEVTYPER5_EL0,
+		REG_SPMEVTYPER6_EL0,
+		REG_SPMEVTYPER7_EL0,
+		REG_SPMEVTYPER8_EL0,
+		REG_SPMEVTYPER9_EL0,
+		REG_SPMEVTYPER10_EL0,
+		REG_SPMEVTYPER11_EL0,
+		REG_SPMEVTYPER12_EL0,
+		REG_SPMEVTYPER13_EL0,
+		REG_SPMEVTYPER14_EL0,
+		REG_SPMEVTYPER15_EL0,
+		REG_SPMEVFILTR0_EL0,
+		REG_SPMEVFILTR1_EL0,
+		REG_SPMEVFILTR2_EL0,
+		REG_SPMEVFILTR3_EL0,
+		REG_SPMEVFILTR4_EL0,
+		REG_SPMEVFILTR5_EL0,
+		REG_SPMEVFILTR6_EL0,
+		REG_SPMEVFILTR7_EL0,
+		REG_SPMEVFILTR8_EL0,
+		REG_SPMEVFILTR9_EL0,
+		REG_SPMEVFILTR10_EL0,
+		REG_SPMEVFILTR11_EL0,
+		REG_SPMEVFILTR12_EL0,
+		REG_SPMEVFILTR13_EL0,
+		REG_SPMEVFILTR14_EL0,
+		REG_SPMEVFILTR15_EL0,
+		REG_SPMEVFILT2R0_EL0,
+		REG_SPMEVFILT2R1_EL0,
+		REG_SPMEVFILT2R2_EL0,
+		REG_SPMEVFILT2R3_EL0,
+		REG_SPMEVFILT2R4_EL0,
+		REG_SPMEVFILT2R5_EL0,
+		REG_SPMEVFILT2R6_EL0,
+		REG_SPMEVFILT2R7_EL0,
+		REG_SPMEVFILT2R8_EL0,
+		REG_SPMEVFILT2R9_EL0,
+		REG_SPMEVFILT2R10_EL0,
+		REG_SPMEVFILT2R11_EL0,
+		REG_SPMEVFILT2R12_EL0,
+		REG_SPMEVFILT2R13_EL0,
+		REG_SPMEVFILT2R14_EL0,
+		REG_SPMEVFILT2R15_EL0,
 		REG_DBGVCR32_EL2,
+		REG_BRBCR_EL2,
+		REG_SPMACCESSR_EL2,
+		REG_BRBCR_EL12,
+		REG_SPMACCESSR_EL12,
+		REG_SPMACCESSR_EL3,
+		REG_SPMROOTCR_EL3,
+		REG_SPMSCR_EL1,
 		REG_MIDR_EL1,
 		REG_MPIDR_EL1,
 		REG_REVIDR_EL1,
@@ -1865,8 +2571,8 @@ const vector<uint32_t>& get_system_registers()
 		REG_MVFR2_EL1,
 		REG_ID_AA32RES3_EL1,
 		REG_ID_PFR2_EL1,
-		REG_ID_AA32RES5_EL1,
-		REG_ID_AA32RES6_EL1,
+		REG_ID_DFR1_EL1,
+		REG_ID_MMFR5_EL1,
 		REG_ID_AA32RES7_EL1,
 		REG_ID_AA64PFR0_EL1,
 		REG_ID_AA64PFR1_EL1,
@@ -1875,7 +2581,7 @@ const vector<uint32_t>& get_system_registers()
 		REG_ID_AA64ZFR0_EL1,
 		REG_ID_AA64SMFR0_EL1,
 		REG_ID_AA64ZFR2_EL1,
-		REG_ID_AA64ZFR3_EL1,
+		REG_ID_AA64FPFR0_EL1,
 		REG_ID_AA64DFR0_EL1,
 		REG_ID_AA64DFR1_EL1,
 		REG_ID_AA64DFR2_EL1,
@@ -1903,14 +2609,26 @@ const vector<uint32_t>& get_system_registers()
 		REG_SCTLR_EL1,
 		REG_ACTLR_EL1,
 		REG_CPACR_EL1,
+		REG_SCTLR2_EL1,
 		REG_RGSR_EL1,
 		REG_GCR_EL1,
+		REG_ZCR_EL1,
 		REG_TRFCR_EL1,
+		REG_TRCITECR_EL1,
 		REG_SMPRI_EL1,
 		REG_SMCR_EL1,
+		REG_SCTLRMASK_EL1,
+		REG_ACTLRMASK_EL1,
+		REG_CPACRMASK_EL1,
+		REG_SCTLR2MASK_EL1,
+		REG_CPACRALIAS_EL1,
+		REG_ACTLRALIAS_EL1,
+		REG_SCTLRALIAS_EL1,
+		REG_SCTLR2ALIAS_EL1,
 		REG_TTBR0_EL1,
 		REG_TTBR1_EL1,
 		REG_TCR_EL1,
+		REG_TCR2_EL1,
 		REG_APIAKEYLO_EL1,
 		REG_APIAKEYHI_EL1,
 		REG_APIBKEYLO_EL1,
@@ -1921,6 +2639,13 @@ const vector<uint32_t>& get_system_registers()
 		REG_APDBKEYHI_EL1,
 		REG_APGAKEYLO_EL1,
 		REG_APGAKEYHI_EL1,
+		REG_GCSCR_EL1,
+		REG_GCSPR_EL1,
+		REG_GCSCRE0_EL1,
+		REG_TCRMASK_EL1,
+		REG_TCR2MASK_EL1,
+		REG_TCRALIAS_EL1,
+		REG_TCR2ALIAS_EL1,
 		REG_SPSR_EL1,
 		REG_ELR_EL1,
 		REG_SP_EL0,
@@ -1928,27 +2653,33 @@ const vector<uint32_t>& get_system_registers()
 		REG_CURRENTEL,
 		REG_PAN,
 		REG_UAO,
-		REG_ICV_PMR_EL1,
+		REG_ALLINT,
+		REG_PM,
+		REG_ICC_PMR_EL1,
 		REG_AFSR0_EL1,
 		REG_AFSR1_EL1,
 		REG_ESR_EL1,
 		REG_ERRIDR_EL1,
 		REG_ERRSELR_EL1,
+		REG_ERXGSR_EL1,
+		REG_ERXFR_EL1,
 		REG_ERXCTLR_EL1,
 		REG_ERXSTATUS_EL1,
 		REG_ERXADDR_EL1,
+		REG_ERXPFGF_EL1,
 		REG_ERXPFGCTL_EL1,
 		REG_ERXPFGCDN_EL1,
 		REG_ERXMISC0_EL1,
 		REG_ERXMISC1_EL1,
 		REG_ERXMISC2_EL1,
 		REG_ERXMISC3_EL1,
-		REG_ERXTS_EL1,
 		REG_TFSR_EL1,
 		REG_TFSRE0_EL1,
 		REG_FAR_EL1,
+		REG_PFAR_EL1,
 		REG_PAR_EL1,
 		REG_PMSCR_EL1,
+		REG_PMSNEVFR_EL1,
 		REG_PMSICR_EL1,
 		REG_PMSIRR_EL1,
 		REG_PMSFCR_EL1,
@@ -1958,25 +2689,47 @@ const vector<uint32_t>& get_system_registers()
 		REG_PMBLIMITR_EL1,
 		REG_PMBPTR_EL1,
 		REG_PMBSR_EL1,
+		REG_PMSDSFR_EL1,
+		REG_PMBMAR_EL1,
 		REG_PMBIDR_EL1,
 		REG_TRBLIMITR_EL1,
 		REG_TRBPTR_EL1,
 		REG_TRBBASER_EL1,
 		REG_TRBSR_EL1,
 		REG_TRBMAR_EL1,
+		REG_TRBMPAM_EL1,
 		REG_TRBTRG_EL1,
+		REG_TRBIDR_EL1,
+		REG_PMSSCR_EL1,
 		REG_PMINTENSET_EL1,
 		REG_PMINTENCLR_EL1,
+		REG_PMUACR_EL1,
+		REG_PMECR_EL1,
 		REG_PMMIR_EL1,
+		REG_PMIAR_EL1,
 		REG_MAIR_EL1,
+		REG_MAIR2_EL1,
+		REG_PIRE0_EL1,
+		REG_PIR_EL1,
+		REG_POR_EL1,
+		REG_S2POR_EL1,
 		REG_AMAIR_EL1,
+		REG_AMAIR2_EL1,
 		REG_LORSA_EL1,
 		REG_LOREA_EL1,
 		REG_LORN_EL1,
 		REG_LORC_EL1,
+		REG_MPAMIDR_EL1,
+		REG_MPAMBWIDR_EL1,
+		REG_TLBIDIDR_EL1,
 		REG_LORID_EL1,
 		REG_MPAM1_EL1,
 		REG_MPAM0_EL1,
+		REG_MPAMCTL_EL1,
+		REG_MPAMSM_EL1,
+		REG_MPAMBW1_EL1,
+		REG_MPAMBW0_EL1,
+		REG_MPAMBWSM_EL1,
 		REG_CTRR_C_LWR_EL1,
 		REG_CTRR_C_UPR_EL1,
 		REG_CTRR_D_LWR_EL1,
@@ -2054,10 +2807,10 @@ const vector<uint32_t>& get_system_registers()
 		REG_RMR_EL1,
 		REG_ISR_EL1,
 		REG_DISR_EL1,
-		REG_ICV_IAR0_EL1,
-		REG_ICV_EOIR0_EL1,
-		REG_ICV_HPPIR0_EL1,
-		REG_ICV_BPR0_EL1,
+		REG_ICC_IAR0_EL1,
+		REG_ICC_EOIR0_EL1,
+		REG_ICC_HPPIR0_EL1,
+		REG_ICC_BPR0_EL1,
 		REG_ICC_AP0R0_EL1,
 		REG_ICC_AP0R1_EL1,
 		REG_ICC_AP0R2_EL1,
@@ -2066,24 +2819,59 @@ const vector<uint32_t>& get_system_registers()
 		REG_ICC_AP1R1_EL1,
 		REG_ICC_AP1R2_EL1,
 		REG_ICC_AP1R3_EL1,
-		REG_ICV_DIR_EL1,
-		REG_ICV_RPR_EL1,
+		REG_ICC_NMIAR1_EL1,
+		REG_ICC_PPI_HMR0_EL1,
+		REG_ICC_PPI_HMR1_EL1,
+		REG_ICC_IDR0_EL1,
+		REG_ICC_HPPIR_EL1,
+		REG_ICC_ICSR_EL1,
+		REG_ICC_IAFFIDR_EL1,
+		REG_ICC_PPI_ENABLER0_EL1,
+		REG_ICC_PPI_ENABLER1_EL1,
+		REG_ICC_DIR_EL1,
+		REG_ICC_RPR_EL1,
 		REG_ICC_SGI1R_EL1,
 		REG_ICC_ASGI1R_EL1,
 		REG_ICC_SGI0R_EL1,
-		REG_ICV_IAR1_EL1,
-		REG_ICV_EOIR1_EL1,
-		REG_ICV_HPPIR1_EL1,
-		REG_ICV_BPR1CBPR_EL1,
-		REG_ICV_CTLR_EL1,
+		REG_ICC_IAR1_EL1,
+		REG_ICC_EOIR1_EL1,
+		REG_ICC_HPPIR1_EL1,
+		REG_ICC_BPR1_EL1,
+		REG_ICC_CTLR_EL1,
 		REG_ICC_SRE_EL1,
-		REG_ICV_IGRPEN0_EL1,
-		REG_ICV_IGRPEN1_EL1,
-		REG_ICC_SEIEN_EL1,
+		REG_ICC_IGRPEN0_EL1,
+		REG_ICC_IGRPEN1_EL1,
+		REG_ICC_PPI_CACTIVER0_EL1,
+		REG_ICC_PPI_CACTIVER1_EL1,
+		REG_ICC_PPI_SACTIVER0_EL1,
+		REG_ICC_PPI_SACTIVER1_EL1,
+		REG_ICC_PPI_CPENDR0_EL1,
+		REG_ICC_PPI_CPENDR1_EL1,
+		REG_ICC_PPI_SPENDR0_EL1,
+		REG_ICC_PPI_SPENDR1_EL1,
+		REG_ICC_PPI_PRIORITYR0_EL1,
+		REG_ICC_PPI_PRIORITYR1_EL1,
+		REG_ICC_PPI_PRIORITYR2_EL1,
+		REG_ICC_PPI_PRIORITYR3_EL1,
+		REG_ICC_PPI_PRIORITYR4_EL1,
+		REG_ICC_PPI_PRIORITYR5_EL1,
+		REG_ICC_PPI_PRIORITYR6_EL1,
+		REG_ICC_PPI_PRIORITYR7_EL1,
+		REG_ICC_PPI_PRIORITYR8_EL1,
+		REG_ICC_PPI_PRIORITYR9_EL1,
+		REG_ICC_PPI_PRIORITYR10_EL1,
+		REG_ICC_PPI_PRIORITYR11_EL1,
+		REG_ICC_PPI_PRIORITYR12_EL1,
+		REG_ICC_PPI_PRIORITYR13_EL1,
+		REG_ICC_PPI_PRIORITYR14_EL1,
+		REG_ICC_PPI_PRIORITYR15_EL1,
 		REG_CONTEXTIDR_EL1,
+		REG_RCWSMASK_EL1,
 		REG_TPIDR_EL1,
+		REG_ACCDATA_EL1,
+		REG_RCWMASK_EL1,
 		REG_SCXTNUM_EL1,
-		REG_CNTHCTL_EL21,
+		REG_CNTKCTL_EL1,
 		REG_HID0,
 		REG_HID25,
 		REG_HID26,
@@ -2131,77 +2919,83 @@ const vector<uint32_t>& get_system_registers()
 		REG_HID35,
 		REG_CCSIDR_EL1,
 		REG_CLIDR_EL1,
+		REG_CCSIDR2_EL1,
+		REG_GMID_EL1,
 		REG_SMIDR_EL1,
 		REG_AIDR_EL1,
+		REG_ICC_APR_EL1,
+		REG_ICC_CR0_EL1,
+		REG_ICC_PCR_EL1,
+		REG_ICC_HAPR_EL1,
 		REG_PMCR0_EL1,
 		REG_APPL_CONTEXTPTR,
 		REG_LD_LATPROF_CTL_EL1,
 		REG_AON_CPU_MSTALL_CTL01_EL1,
 		REG_PM_MEMFLT_CTL23_EL1,
-		REG_AGTCNTHV_CTL_EL21,
+		REG_AGTCNTV_CTL_EL0,
 		REG_AGTCNTVCTSS_NOREDIR_EL0,
 		REG_PMCR1_EL1,
 		REG_LD_LATPROF_CTR_EL1,
 		REG_AON_CPU_MSTALL_CTL23_EL1,
 		REG_PM_MEMFLT_CTL45_EL1,
 		REG_AGTCNTRDIR_EL1,
-		REG_AGTCNTHCTL_NOREDIR_EL21,
+		REG_AGTCNTKCTL_NOREDIR_EL1,
 		REG_PMCR2_EL1,
 		REG_LD_LATPROF_STS_EL1,
 		REG_AON_CPU_MSTALL_CTL45_EL1,
 		REG_AGTCNTHP_CVAL_EL2,
 		REG_CNTVCT_NOREDIR_EL0,
-		REG_AGTCNTHP_CVAL_NOREDIR_EL21,
+		REG_AGTCNTP_CVAL_NOREDIR_EL0,
 		REG_PMCR3_EL1,
 		REG_LD_LATPROF_INF_EL1,
 		REG_AON_CPU_MSTALL_CTL67_EL1,
 		REG_AGTCNTHP_TVAL_EL2,
 		REG_CNTPCTSS_NOREDIR_EL0,
-		REG_AGTCNTHP_TVAL_NOREDIR_EL21,
+		REG_AGTCNTP_TVAL_NOREDIR_EL0,
 		REG_PMCR4_EL1,
 		REG_LD_LATPROF_CTL_EL2,
 		REG_AON_CPU_MEMFLT_CTL01_EL1,
 		REG_AGTCNTHP_CTL_EL2,
 		REG_CNTVCTSS_NOREDIR_EL0,
-		REG_AGTCNTHP_CTL_NOREDIR_EL21,
+		REG_AGTCNTP_CTL_NOREDIR_EL0,
 		REG_PMESR0_EL1,
 		REG_LD_LATPROF_CMD_EL1,
 		REG_AON_CPU_MEMFLT_CTL23_EL1,
 		REG_AGTCNTHV_CVAL_EL2,
-		REG_AGTCNTHV_CVAL_NOREDIR_EL21,
+		REG_AGTCNTV_CVAL_NOREDIR_EL0,
 		REG_PMESR1_EL1,
 		REG_PMCR1_EL2,
 		REG_AON_CPU_MEMFLT_CTL45_EL1,
 		REG_AGTCNTHV_TVAL_EL2,
-		REG_CNTHCTL_NOREDIR_EL21,
-		REG_AGTCNTHV_TVAL_NOREDIR_EL21,
+		REG_CNTKCTL_NOREDIR_EL1,
+		REG_AGTCNTV_TVAL_NOREDIR_EL0,
 		REG_OPMAT0_EL1,
 		REG_PMCR1_EL12,
 		REG_AON_CPU_MEMFLT_CTL67_EL1,
 		REG_AGTCNTHV_CTL_EL2,
-		REG_CNTHP_CVAL_NOREDIR_EL21,
-		REG_AGTCNTHV_CTL_NOREDIR_EL21,
+		REG_CNTP_CVAL_NOREDIR_EL0,
+		REG_AGTCNTV_CTL_NOREDIR_EL0,
 		REG_OPMAT1_EL1,
 		REG_PMCR1_GL12,
 		REG_AON_CPU_MSTALL_CTR0_EL1,
 		REG_AGTCNTFRQ_EL0,
-		REG_CNTHP_TVAL_NOREDIR_EL21,
+		REG_CNTP_TVAL_NOREDIR_EL0,
 		REG_CNTPCT_NOREDIR_EL0,
 		REG_OPMSK0_EL1,
 		REG_LD_LATPROF_CTL_EL12,
 		REG_AON_CPU_MSTALL_CTR1_EL1,
 		REG_AGTCNTVOFF_EL2,
-		REG_CNTHP_CTL_NOREDIR_EL21,
-		REG_CNTHV_CTL_NOREDIR_EL21,
+		REG_CNTP_CTL_NOREDIR_EL0,
+		REG_CNTV_CTL_NOREDIR_EL0,
 		REG_OPMSK1_EL1,
 		REG_LD_LATPROF_INF_EL2,
 		REG_AON_CPU_MSTALL_CTR2_EL1,
-		REG_AGTCNTHP_CVAL_EL21,
-		REG_CNTHV_CVAL_NOREDIR_EL21,
+		REG_AGTCNTP_CVAL_EL0,
+		REG_CNTV_CVAL_NOREDIR_EL0,
 		REG_AGTCNTPCT_NOREDIR_EL0,
 		REG_AON_CPU_MSTALL_CTR3_EL1,
-		REG_AGTCNTHP_TVAL_EL21,
-		REG_CNTHV_TVAL_NOREDIR_EL21,
+		REG_AGTCNTP_TVAL_EL0,
+		REG_CNTV_TVAL_NOREDIR_EL0,
 		REG_VMSA_HV_LOCK_EL2,
 		REG_PMSWCTRL_EL1,
 		REG_PMCR5_EL0,
@@ -2211,18 +3005,18 @@ const vector<uint32_t>& get_system_registers()
 		REG_VMSA_NV_LOCK_EL2,
 		REG_PMSR_EL1,
 		REG_AON_CPU_MSTALL_CTR5_EL1,
-		REG_AGTCNTHP_CTL_EL21,
+		REG_AGTCNTP_CTL_EL0,
 		REG_PMCOMPARE5_EL1,
 		REG_PMCOMPARE6_EL1,
 		REG_PMCOMPARE7_EL1,
 		REG_PMCR_BVRNG4_EL1,
 		REG_PM_PMI_PC,
 		REG_AON_CPU_MSTALL_CTR6_EL1,
-		REG_AGTCNTHV_CVAL_EL21,
+		REG_AGTCNTV_CVAL_EL0,
 		REG_AGTCNTVCT_NOREDIR_EL0,
 		REG_PMCR_BVRNG5_EL1,
 		REG_AON_CPU_MSTALL_CTR7_EL1,
-		REG_AGTCNTHV_TVAL_EL21,
+		REG_AGTCNTV_TVAL_EL0,
 		REG_AGTCNTPCTSS_NOREDIR_EL0,
 		REG_CSSELR_EL1,
 		REG_PMC0,
@@ -2249,6 +3043,9 @@ const vector<uint32_t>& get_system_registers()
 		REG_PMMMAP_EL1,
 		REG_CTR_EL0,
 		REG_DCZID_EL0,
+		REG_RNDR,
+		REG_RNDRRS,
+		REG_GCSPR_EL0,
 		REG_NZCV,
 		REG_DAIF,
 		REG_SVCR,
@@ -2257,34 +3054,47 @@ const vector<uint32_t>& get_system_registers()
 		REG_TCO,
 		REG_FPCR,
 		REG_FPSR,
-		REG_DSPSR,
-		REG_DLR,
+		REG_FPMR,
+		REG_DSPSR_EL0,
+		REG_DLR_EL0,
+		REG_PMICNTR_EL0,
+		REG_PMICFILTR_EL0,
 		REG_PMCR_EL0,
 		REG_PMCNTENSET_EL0,
 		REG_PMCNTENCLR_EL0,
 		REG_PMOVSCLR_EL0,
 		REG_PMSWINC_EL0,
 		REG_PMSELR_EL0,
+		REG_PMCEID0_EL0,
+		REG_PMCEID1_EL0,
 		REG_PMCCNTR_EL0,
 		REG_PMXEVTYPER_EL0,
 		REG_PMXEVCNTR_EL0,
-		REG_DAIFCLR,
+		REG_PMZR_EL0,
 		REG_PMUSERENR_EL0,
 		REG_PMOVSSET_EL0,
+		REG_POR_EL0,
 		REG_TPIDR_EL0,
 		REG_TPIDRRO_EL0,
 		REG_TPIDR2_EL0,
 		REG_SCXTNUM_EL0,
 		REG_AMCR_EL0,
+		REG_AMCFGR_EL0,
+		REG_AMCGCR_EL0,
 		REG_AMUSERENR_EL0,
 		REG_AMCNTENCLR0_EL0,
 		REG_AMCNTENSET0_EL0,
+		REG_AMCG1IDR_EL0,
 		REG_AMCNTENCLR1_EL0,
 		REG_AMCNTENSET1_EL0,
 		REG_AMEVCNTR00_EL0,
 		REG_AMEVCNTR01_EL0,
 		REG_AMEVCNTR02_EL0,
 		REG_AMEVCNTR03_EL0,
+		REG_AMEVTYPER00_EL0,
+		REG_AMEVTYPER01_EL0,
+		REG_AMEVTYPER02_EL0,
+		REG_AMEVTYPER03_EL0,
 		REG_AMEVCNTR10_EL0,
 		REG_AMEVCNTR11_EL0,
 		REG_AMEVCNTR12_EL0,
@@ -2322,12 +3132,12 @@ const vector<uint32_t>& get_system_registers()
 		REG_CNTVCT_EL0,
 		REG_CNTPCTSS_EL0,
 		REG_CNTVCTSS_EL0,
-		REG_CNTHP_TVAL_EL21,
-		REG_CNTHP_CTL_EL21,
-		REG_CNTHP_CVAL_EL21,
-		REG_CNTHV_TVAL_EL21,
-		REG_CNTHV_CTL_EL21,
-		REG_CNTHV_CVAL_EL21,
+		REG_CNTP_TVAL_EL0,
+		REG_CNTP_CTL_EL0,
+		REG_CNTP_CVAL_EL0,
+		REG_CNTV_TVAL_EL0,
+		REG_CNTV_CTL_EL0,
+		REG_CNTV_CVAL_EL0,
 		REG_PMEVCNTR0_EL0,
 		REG_PMEVCNTR1_EL0,
 		REG_PMEVCNTR2_EL0,
@@ -2451,6 +3261,7 @@ const vector<uint32_t>& get_system_registers()
 		REG_VMPIDR_EL2,
 		REG_SCTLR_EL2,
 		REG_ACTLR_EL2,
+		REG_SCTLR2_EL2,
 		REG_HCR_EL2,
 		REG_MDCR_EL2,
 		REG_CPTR_EL2,
@@ -2459,22 +3270,57 @@ const vector<uint32_t>& get_system_registers()
 		REG_HFGWTR_EL2,
 		REG_HFGITR_EL2,
 		REG_HACR_EL2,
+		REG_ZCR_EL2,
 		REG_TRFCR_EL2,
 		REG_HCRX_EL2,
+		REG_TRCITECR_EL2,
 		REG_SMPRIMAP_EL2,
 		REG_SMCR_EL2,
 		REG_SDER32_EL2,
+		REG_SCTLRMASK_EL2,
+		REG_ACTLRMASK_EL2,
+		REG_CPTRMASK_EL2,
+		REG_SCTLR2MASK_EL2,
+		REG_NVHCR_EL2,
+		REG_NVHCRX_EL2,
+		REG_NVHCRMASK_EL2,
+		REG_NVHCRXMASK_EL2,
+		REG_HCRMASK_EL2,
+		REG_HCRXMASK_EL2,
 		REG_TTBR0_EL2,
 		REG_TTBR1_EL2,
 		REG_TCR_EL2,
+		REG_TCR2_EL2,
 		REG_VTTBR_EL2,
 		REG_VTCR_EL2,
 		REG_VNCR_EL2,
+		REG_HDBSSBR_EL2,
+		REG_HDBSSPROD_EL2,
+		REG_HACDBSBR_EL2,
+		REG_HACDBSCONS_EL2,
+		REG_GCSCR_EL2,
+		REG_GCSPR_EL2,
 		REG_VSTTBR_EL2,
 		REG_VSTCR_EL2,
+		REG_TCRMASK_EL2,
+		REG_TCR2MASK_EL2,
+		REG_VTLBID0_EL2,
+		REG_VTLBID1_EL2,
+		REG_VTLBID2_EL2,
+		REG_VTLBID3_EL2,
+		REG_VTLBIDOS0_EL2,
+		REG_VTLBIDOS1_EL2,
+		REG_VTLBIDOS2_EL2,
+		REG_VTLBIDOS3_EL2,
 		REG_DACR32_EL2,
+		REG_HDFGRTR2_EL2,
+		REG_HDFGWTR2_EL2,
+		REG_HFGRTR2_EL2,
+		REG_HFGWTR2_EL2,
 		REG_HDFGRTR_EL2,
 		REG_HDFGWTR_EL2,
+		REG_HAFGRTR_EL2,
+		REG_HFGITR2_EL2,
 		REG_SPSR_EL2,
 		REG_ELR_EL2,
 		REG_SP_EL1,
@@ -2491,12 +3337,24 @@ const vector<uint32_t>& get_system_registers()
 		REG_TFSR_EL2,
 		REG_FAR_EL2,
 		REG_HPFAR_EL2,
+		REG_PFAR_EL2,
 		REG_PMSCR_EL2,
+		REG_PMBSR_EL2,
+		REG_TRBSR_EL2,
+		REG_MAIR2_EL2,
 		REG_MAIR_EL2,
+		REG_PIRE0_EL2,
+		REG_PIR_EL2,
+		REG_POR_EL2,
+		REG_S2PIR_EL2,
 		REG_AMAIR_EL2,
+		REG_AMAIR2_EL2,
 		REG_MPAMHCR_EL2,
 		REG_MPAMVPMV_EL2,
 		REG_MPAM2_EL2,
+		REG_MPAMCTL_EL2,
+		REG_MPAMBW2_EL2,
+		REG_MPAMBWCAP_EL2,
 		REG_MPAMVPM0_EL2,
 		REG_MPAMVPM1_EL2,
 		REG_MPAMVPM2_EL2,
@@ -2505,6 +3363,15 @@ const vector<uint32_t>& get_system_registers()
 		REG_MPAMVPM5_EL2,
 		REG_MPAMVPM6_EL2,
 		REG_MPAMVPM7_EL2,
+		REG_MPAMVIDCR_EL2,
+		REG_MPAMVIDSR_EL2,
+		REG_MECID_P0_EL2,
+		REG_MECID_A0_EL2,
+		REG_MECID_P1_EL2,
+		REG_MECID_A1_EL2,
+		REG_MECIDR_EL2,
+		REG_VMECID_P_EL2,
+		REG_VMECID_A_EL2,
 		REG_VBAR_EL2,
 		REG_RVBAR_EL2,
 		REG_RMR_EL2,
@@ -2513,17 +3380,31 @@ const vector<uint32_t>& get_system_registers()
 		REG_ICH_AP0R1_EL2,
 		REG_ICH_AP0R2_EL2,
 		REG_ICH_AP0R3_EL2,
+		REG_ICH_APR_EL2,
+		REG_ICH_HPPIR_EL2,
 		REG_ICH_AP1R0_EL2,
 		REG_ICH_AP1R1_EL2,
 		REG_ICH_AP1R2_EL2,
 		REG_ICH_AP1R3_EL2,
-		REG_ICH_VSEIR_EL2,
+		REG_ICH_HFGRTR_EL2,
 		REG_ICC_SRE_EL2,
+		REG_ICH_HFGWTR_EL2,
+		REG_ICH_HFGITR_EL2,
+		REG_ICH_PPI_DVIR0_EL2,
+		REG_ICH_PPI_DVIR1_EL2,
+		REG_ICH_PPI_ENABLER0_EL2,
+		REG_ICH_PPI_ENABLER1_EL2,
+		REG_ICH_PPI_PENDR0_EL2,
+		REG_ICH_PPI_PENDR1_EL2,
+		REG_ICH_PPI_ACTIVER0_EL2,
+		REG_ICH_PPI_ACTIVER1_EL2,
 		REG_ICH_HCR_EL2,
 		REG_ICH_VTR_EL2,
 		REG_ICH_MISR_EL2,
 		REG_ICH_EISR_EL2,
+		REG_ICH_VCTLR_EL2,
 		REG_ICH_ELRSR_EL2,
+		REG_ICH_CONTEXTR_EL2,
 		REG_ICH_VMCR_EL2,
 		REG_ICH_LR0_EL2,
 		REG_ICH_LR1_EL2,
@@ -2541,10 +3422,59 @@ const vector<uint32_t>& get_system_registers()
 		REG_ICH_LR13_EL2,
 		REG_ICH_LR14_EL2,
 		REG_ICH_LR15_EL2,
+		REG_ICH_PPI_PRIORITYR0_EL2,
+		REG_ICH_PPI_PRIORITYR1_EL2,
+		REG_ICH_PPI_PRIORITYR2_EL2,
+		REG_ICH_PPI_PRIORITYR3_EL2,
+		REG_ICH_PPI_PRIORITYR4_EL2,
+		REG_ICH_PPI_PRIORITYR5_EL2,
+		REG_ICH_PPI_PRIORITYR6_EL2,
+		REG_ICH_PPI_PRIORITYR7_EL2,
+		REG_ICH_PPI_PRIORITYR8_EL2,
+		REG_ICH_PPI_PRIORITYR9_EL2,
+		REG_ICH_PPI_PRIORITYR10_EL2,
+		REG_ICH_PPI_PRIORITYR11_EL2,
+		REG_ICH_PPI_PRIORITYR12_EL2,
+		REG_ICH_PPI_PRIORITYR13_EL2,
+		REG_ICH_PPI_PRIORITYR14_EL2,
+		REG_ICH_PPI_PRIORITYR15_EL2,
 		REG_CONTEXTIDR_EL2,
 		REG_TPIDR_EL2,
 		REG_SCXTNUM_EL2,
+		REG_AMEVCNTVOFF00_EL2,
+		REG_AMEVCNTVOFF01_EL2,
+		REG_AMEVCNTVOFF02_EL2,
+		REG_AMEVCNTVOFF03_EL2,
+		REG_AMEVCNTVOFF04_EL2,
+		REG_AMEVCNTVOFF05_EL2,
+		REG_AMEVCNTVOFF06_EL2,
+		REG_AMEVCNTVOFF07_EL2,
+		REG_AMEVCNTVOFF08_EL2,
+		REG_AMEVCNTVOFF09_EL2,
+		REG_AMEVCNTVOFF010_EL2,
+		REG_AMEVCNTVOFF011_EL2,
+		REG_AMEVCNTVOFF012_EL2,
+		REG_AMEVCNTVOFF013_EL2,
+		REG_AMEVCNTVOFF014_EL2,
+		REG_AMEVCNTVOFF015_EL2,
+		REG_AMEVCNTVOFF10_EL2,
+		REG_AMEVCNTVOFF11_EL2,
+		REG_AMEVCNTVOFF12_EL2,
+		REG_AMEVCNTVOFF13_EL2,
+		REG_AMEVCNTVOFF14_EL2,
+		REG_AMEVCNTVOFF15_EL2,
+		REG_AMEVCNTVOFF16_EL2,
+		REG_AMEVCNTVOFF17_EL2,
+		REG_AMEVCNTVOFF18_EL2,
+		REG_AMEVCNTVOFF19_EL2,
+		REG_AMEVCNTVOFF110_EL2,
+		REG_AMEVCNTVOFF111_EL2,
+		REG_AMEVCNTVOFF112_EL2,
+		REG_AMEVCNTVOFF113_EL2,
+		REG_AMEVCNTVOFF114_EL2,
+		REG_AMEVCNTVOFF115_EL2,
 		REG_CNTVOFF_EL2,
+		REG_CNTPOFF_EL2,
 		REG_CNTHCTL_EL2,
 		REG_CNTHP_TVAL_EL2,
 		REG_CNTHP_CTL_EL2,
@@ -2563,7 +3493,7 @@ const vector<uint32_t>& get_system_registers()
 		REG_APCTL_EL1,
 		REG_KERNKEYLO_EL1,
 		REG_KERNKEYHI_EL1,
-		REG_VMSALOCK_EL21,
+		REG_VMSA_LOCK_EL1,
 		REG_AMX_STATE_T_EL1,
 		REG_AMX_CONFIG_EL1,
 		REG_VMSA_LOCK_EL2,
@@ -2616,7 +3546,7 @@ const vector<uint32_t>& get_system_registers()
 		REG_CTRR_B_UPR_EL12,
 		REG_CTRR_A_CTL_EL12,
 		REG_CTRR_B_CTL_EL12,
-		REG_AGTCNTHCTL_EL21,
+		REG_AGTCNTKCTL_EL1,
 		REG_AGTCNTKCTL_EL12,
 		REG_PREDAKEYLO_EL1,
 		REG_PREDAKEYHI_EL1,
@@ -2664,11 +3594,23 @@ const vector<uint32_t>& get_system_registers()
 		REG_SCTLR_EL12,
 		REG_ACTLR_EL12,
 		REG_CPACR_EL12,
+		REG_SCTLR2_EL12,
+		REG_ZCR_EL12,
 		REG_TRFCR_EL12,
+		REG_TRCITECR_EL12,
 		REG_SMCR_EL12,
+		REG_SCTLRMASK_EL12,
+		REG_ACTLRMASK_EL12,
+		REG_CPACRMASK_EL12,
+		REG_SCTLR2MASK_EL12,
 		REG_TTBR0_EL12,
 		REG_TTBR1_EL12,
 		REG_TCR_EL12,
+		REG_TCR2_EL12,
+		REG_GCSCR_EL12,
+		REG_GCSPR_EL12,
+		REG_TCRMASK_EL12,
+		REG_TCR2MASK_EL12,
 		REG_SPSR_EL12,
 		REG_ELR_EL12,
 		REG_AFSR0_EL12,
@@ -2676,10 +3618,20 @@ const vector<uint32_t>& get_system_registers()
 		REG_ESR_EL12,
 		REG_TFSR_EL12,
 		REG_FAR_EL12,
+		REG_PFAR_EL12,
 		REG_PMSCR_EL12,
+		REG_PMBSR_EL12,
+		REG_TRBSR_EL12,
 		REG_MAIR_EL12,
+		REG_MAIR2_EL12,
+		REG_PIRE0_EL12,
+		REG_PIR_EL12,
+		REG_POR_EL12,
 		REG_AMAIR_EL12,
+		REG_AMAIR2_EL12,
 		REG_MPAM1_EL12,
+		REG_MPAMCTL_EL12,
+		REG_MPAMBW1_EL12,
 		REG_VBAR_EL12,
 		REG_CONTEXTIDR_EL12,
 		REG_SCXTNUM_EL12,
@@ -2769,26 +3721,57 @@ const vector<uint32_t>& get_system_registers()
 		REG_LLC_DATA1,
 		REG_SCTLR_EL3,
 		REG_ACTLR_EL3,
+		REG_SCTLR2_EL3,
 		REG_SCR_EL3,
 		REG_SDER32_EL3,
 		REG_CPTR_EL3,
+		REG_FGWTE3_EL3,
+		REG_ZCR_EL3,
+		REG_SCR2_EL3,
+		REG_SMCR_EL3,
 		REG_MDCR_EL3,
 		REG_TTBR0_EL3,
 		REG_TCR_EL3,
+		REG_GPTBR_EL3,
+		REG_GPCBW_EL3,
+		REG_GPCCR_EL3,
+		REG_GCSCR_EL3,
+		REG_GCSPR_EL3,
 		REG_SPSR_EL3,
 		REG_ELR_EL3,
 		REG_SP_EL2,
 		REG_AFSR0_EL3,
 		REG_AFSR1_EL3,
 		REG_ESR_EL3,
+		REG_VSESR_EL3,
 		REG_TFSR_EL3,
 		REG_FAR_EL3,
+		REG_MFAR_EL3,
+		REG_PMBSR_EL3,
+		REG_TRBSR_EL3,
+		REG_MAIR2_EL3,
 		REG_MAIR_EL3,
+		REG_PIR_EL3,
+		REG_POR_EL3,
 		REG_AMAIR_EL3,
+		REG_AMAIR2_EL3,
 		REG_MPAM3_EL3,
+		REG_MPAMCTL_EL3,
+		REG_MPAMBW3_EL3,
+		REG_MECID_RL_A_EL3,
 		REG_VBAR_EL3,
 		REG_RVBAR_EL3,
 		REG_RMR_EL3,
+		REG_VDISR_EL3,
+		REG_ICC_APR_EL3,
+		REG_ICC_PCR_EL3,
+		REG_ICC_DOMHPPIR_EL3,
+		REG_ICC_PPI_DOMAINR0_EL3,
+		REG_ICC_PPI_DOMAINR1_EL3,
+		REG_ICC_PPI_DOMAINR2_EL3,
+		REG_ICC_PPI_DOMAINR3_EL3,
+		REG_ICC_CR0_EL3,
+		REG_ICC_HPPIR_EL3,
 		REG_ICC_CTLR_EL3,
 		REG_ICC_SRE_EL3,
 		REG_ICC_IGRPEN1_EL3,
@@ -2805,7 +3788,7 @@ const vector<uint32_t>& get_system_registers()
 		REG_SPRR_CONFIG_EL1,
 		REG_HPFAR_GL2,
 		REG_GXF_CONFIG_EL1,
-		REG_AMRANGE_EL21,
+		REG_SPRR_AMRANGE_EL1,
 		REG_GXF_CONFIG_EL2,
 		REG_SPRR_UPERM_EL0,
 		REG_SPRR_PPERM_EL1,
@@ -2817,16 +3800,16 @@ const vector<uint32_t>& get_system_registers()
 		REG_AFPCR_EL0,
 		REG_SP_GL22,
 		REG_AMXIDR_EL1,
-		REG_SPRR_HUMPRR_EL21,
+		REG_SPRR_UMPRR_EL1,
 		REG_SPRR_PMPRR_EL1,
 		REG_SPRR_PMPRR_EL2,
-		REG_SPRR_HUPERM_SH01_EL21,
-		REG_SPRR_HUPERM_SH02_EL21,
-		REG_SPRR_HUPERM_SH03_EL21,
-		REG_SPRR_HUPERM_SH04_EL21,
-		REG_SPRR_HUPERM_SH05_EL21,
-		REG_SPRR_HUPERM_SH06_EL21,
-		REG_SPRR_HUPERM_SH07_EL21,
+		REG_SPRR_UPERM_SH01_EL1,
+		REG_SPRR_UPERM_SH02_EL1,
+		REG_SPRR_UPERM_SH03_EL1,
+		REG_SPRR_UPERM_SH04_EL1,
+		REG_SPRR_UPERM_SH05_EL1,
+		REG_SPRR_UPERM_SH06_EL1,
+		REG_SPRR_UPERM_SH07_EL1,
 		REG_SPRR_PPERM_SH01_EL1,
 		REG_SPRR_PPERM_SH02_EL1,
 		REG_SPRR_PPERM_SH03_EL1,
@@ -2922,7 +3905,6 @@ const vector<uint32_t>& get_system_registers()
 		REG_CNTPS_TVAL_EL1,
 		REG_CNTPS_CTL_EL1,
 		REG_CNTPS_CVAL_EL1,
-		REG_PSTATE_SPSEL,
 		REG_PWRDNSAVE0,
 		REG_NRG_ACC_CTL,
 		REG_AON_CNT0,

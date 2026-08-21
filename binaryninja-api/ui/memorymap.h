@@ -67,6 +67,7 @@ class BINARYNINJAUIAPI MemoryRegionDialog : public QDialog
 	BinaryViewRef m_data;
 	SegmentRef m_segment;
 	std::optional<std::string> m_filePath;
+	bool m_nameManuallyEdited = false;
 
 	void SelectFile();
 	void Submit();
@@ -186,6 +187,7 @@ class BINARYNINJAUIAPI SegmentWidget : public QWidget
 	void addSegment();
 	void editSegment(SegmentRef segment);
 	void disableSegment(SegmentRef segment);
+	void enableSegment(const std::string& regionName);
 	void removeSegment(SegmentRef segment);
 
 public:

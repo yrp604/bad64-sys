@@ -32,7 +32,7 @@ GenericExportsModel::GenericExportsModel(QWidget* parent, BinaryViewRef data): Q
 	connect(m_updateTimer, &QTimer::timeout, this, &GenericExportsModel::updateModel);
 	connect(this, &GenericExportsModel::updateTimerOnUIThread, this, [=, this]() {
 		updateTimer(m_needsUpdate);
-	});
+	}, Qt::QueuedConnection);
 
 	m_data->RegisterNotification(this);
 
@@ -67,7 +67,7 @@ void GenericExportsModel::updateModel()
 	}
 	endResetModel();
 
-	setFilter(m_filter);
+	setFilter(m_filter, m_filterOptions);
 }
 
 
@@ -225,21 +225,25 @@ void GenericExportsModel::sort(int col, Qt::SortOrder order)
 }
 
 
-void GenericExportsModel::setFilter(const std::string& filterText)
+void GenericExportsModel::setFilter(const std::string& filterText, FilterOptions options)
 {
 	m_filter = filterText;
+	m_filterOptions = options;
 	beginResetModel();
 	m_entries.clear();
+
+	bool caseSensitive = options.testFlag(FilterOption::CaseSensitiveOption);
 	for (auto& entry : m_allEntries)
 	{
-		if (FilteredView::match(entry->GetFullName(), filterText))
+		if (FilteredView::match(entry->GetFullName(), filterText, caseSensitive))
 			m_entries.push_back(entry);
-		else if (FilteredView::match(std::to_string(entry->GetOrdinal()), filterText))
+		else if (FilteredView::match(std::to_string(entry->GetOrdinal()), filterText, caseSensitive))
 			m_entries.push_back(entry);
 	}
 	performSort(m_sortCol, m_sortOrder);
 	endResetModel();
 }
+
 
 void GenericExportsModel::setNeedsUpdate(bool needed)
 {
@@ -248,6 +252,7 @@ void GenericExportsModel::setNeedsUpdate(bool needed)
 
 	updateTimer(needed);
 }
+
 
 void GenericExportsModel::updateTimer(bool needsUpdate)
 {
@@ -260,19 +265,26 @@ void GenericExportsModel::updateTimer(bool needsUpdate)
 void GenericExportsModel::pauseUpdates()
 {
 	m_updatesPaused = true;
+	m_dirtyWhilePaused = false;
 	setNeedsUpdate(false);
 }
 
 void GenericExportsModel::resumeUpdates()
 {
 	m_updatesPaused = false;
-	setNeedsUpdate(true);
+	// Only refresh if we got notifications while paused
+	if (m_dirtyWhilePaused.exchange(false))
+		setNeedsUpdate(true);
 }
 
 void GenericExportsModel::onBinaryViewNotification()
 {
 	if (m_updatesPaused)
+	{
+		// Track that updates occurred while hidden
+		m_dirtyWhilePaused = true;
 		return;
+	}
 
 	// This can be called from any thread so we cannot directly
 	// update the timer. Emitting a signal is relatively expensive
@@ -420,9 +432,9 @@ void ExportsTreeView::exportDoubleClicked(const QModelIndex& cur)
 }
 
 
-void ExportsTreeView::setFilter(const std::string& filterText)
+void ExportsTreeView::setFilter(const std::string& filterText, FilterOptions options)
 {
-	m_model->setFilter(filterText);
+	m_model->setFilter(filterText, options);
 }
 
 
@@ -438,15 +450,18 @@ void ExportsTreeView::scrollToCurrentItem()
 }
 
 
-void ExportsTreeView::selectFirstItem()
+void ExportsTreeView::ensureSelection()
 {
-	setCurrentIndex(m_model->index(0, 0, QModelIndex()));
+	if (auto current = currentIndex(); !current.isValid())
+		setCurrentIndex(m_model->index(0, 0, QModelIndex()));
 }
 
 
-void ExportsTreeView::activateFirstItem()
+void ExportsTreeView::activateSelection()
 {
-	exportDoubleClicked(m_model->index(0, 0, QModelIndex()));
+	ensureSelection();
+	if (auto current = currentIndex(); current.isValid())
+		exportDoubleClicked(current);
 }
 
 

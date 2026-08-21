@@ -24,7 +24,7 @@ class GenericEntryModel : public QAbstractItemModel
 	virtual QModelIndex index(int row, int col, const QModelIndex& parent) const override;
 	virtual QModelIndex parent(const QModelIndex& index) const override;
 	virtual void sort(int col, Qt::SortOrder order) override;
-	void setFilter(const std::string& filterText);
+	void setFilter(const std::string& filterText, FilterOptions options);
 
 	FunctionRef getEntry(const QModelIndex& index);
 };
@@ -46,11 +46,11 @@ class EntryTreeView : public QTreeView, public FilterTarget
 	void copySelection();
 	bool canCopySelection() const;
 
-	virtual void setFilter(const std::string& filterText) override;
+	virtual void setFilter(const std::string& filterText, FilterOptions options) override;
 	virtual void scrollToFirstItem() override;
 	virtual void scrollToCurrentItem() override;
-	virtual void selectFirstItem() override;
-	virtual void activateFirstItem() override;
+	virtual void ensureSelection() override;
+	virtual void activateSelection() override;
 	virtual void closeFilter() override;
 
   protected:

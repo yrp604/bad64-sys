@@ -3,22 +3,49 @@
 using namespace BinaryNinja;
 using namespace BinaryNinja::RTTI;
 
-
-std::optional<std::string> RTTI::DemangleNameMS(BinaryView* view, bool allowMangled, const std::string &mangledName)
+namespace
 {
-    QualifiedName demangledName = {};
-    Ref<Type> outType = {};
-    if (!DemangleMS(view->GetDefaultArchitecture(), mangledName, outType, demangledName, true))
+	std::string NormalizeRTTIClassName(std::string name)
+	{
+		size_t beginFind = name.find_first_of(' ');
+		if (beginFind != std::string::npos)
+			name.erase(0, beginFind + 1);
+		size_t endFind = name.find(" `RTTI Type Descriptor Name'");
+		if (endFind != std::string::npos)
+			name.erase(endFind, name.length());
+		return name;
+	}
+}
+
+
+Ref<Symbol> RTTI::GetRealSymbol(BinaryView *view, uint64_t relocAddr, uint64_t symAddr)
+{
+    if (view->IsOffsetExternSemantics(symAddr))
+    {
+        // Because bases in the extern section are not 8 byte width only they will
+        // overlap with other externs, until https://github.com/Vector35/binaryninja-api/issues/6387 is fixed.
+        // Check relocation at objectAddr for symbol
+        for (const auto& r : view->GetRelocationsAt(relocAddr))
+            if (auto relocSym = r->GetSymbol())
+                return relocSym;
+    }
+
+    return view->GetSymbolByAddress(symAddr);
+}
+
+
+std::optional<std::string> RTTI::DemangleNameMS(
+    BinaryView* view, bool allowMangled, const std::string &mangledName, bool simplifyTemplates)
+{
+    auto result = DemangleMS(view->GetDefaultPlatform(), mangledName, simplifyTemplates);
+    if (!result)
         return DemangleNameLLVM(allowMangled, mangledName);
-    return demangledName.GetString();
+    return NormalizeRTTIClassName(result->name.GetString());
 }
 
 
 std::optional<std::string> RTTI::DemangleNameGNU3(BinaryView* view, bool allowMangled, const std::string &mangledName)
 {
-    QualifiedName demangledName = {};
-    Ref<Type> outType = {};
-
     std::string adjustedMangledName = mangledName;
     // For some reason some of the names that start with ZN are not prefixed by `_`.
     if (adjustedMangledName.rfind("ZN", 0) == 0)
@@ -32,7 +59,8 @@ std::optional<std::string> RTTI::DemangleNameGNU3(BinaryView* view, bool allowMa
     if (adjustedMangledName.rfind("_Z", 0) != 0)
         adjustedMangledName = "_Z" + adjustedMangledName;
 
-    if (!DemangleGNU3(view->GetDefaultArchitecture(), adjustedMangledName, outType, demangledName, true))
+    auto result = DemangleGNU3(view->GetDefaultPlatform(), adjustedMangledName, true);
+    if (!result)
         return allowMangled ? std::optional(mangledName) : std::nullopt;
 
     // Because we might have a generic name such as "PackageListGui::PackageListGui" returned, we must attempt to
@@ -41,10 +69,10 @@ std::optional<std::string> RTTI::DemangleNameGNU3(BinaryView* view, bool allowMa
     // MANGLED: ZN14PackageListGuiC1EON10Filesystem4PathENS_14UnderSubheaderEbE3$_1
     // GENERIC DEMANGLED: PackageListGui::PackageListGui
     // UPDATED DEMANGLED: PackageListGui::PackageListGui(Filesystem::Path&&, PackageListGui::UnderSubheader, bool)
-    if (outType && outType->IsFunction())
-        demangledName.push_back(outType->GetStringAfterName(view->GetDefaultPlatform()));
+    if (result->type && result->type->IsFunction())
+        result->name.push_back(result->type->GetStringAfterName(view->GetDefaultPlatform()));
 
-    return demangledName.GetString();
+    return result->name.GetString();
 }
 
 
@@ -70,18 +98,10 @@ std::optional<std::string> RTTI::DemangleNameItanium(BinaryView* view, bool allo
 
 std::optional<std::string> RTTI::DemangleNameLLVM(bool allowMangled, const std::string &mangledName)
 {
-    QualifiedName demangledName = {};
-    Ref<Type> outType = {};
-    if (!DemangleLLVM(mangledName, demangledName, true))
+    auto result = DemangleLLVM(mangledName, true);
+    if (!result)
         return allowMangled ? std::optional(mangledName) : std::nullopt;
-    auto demangledNameStr = demangledName.GetString();
-    size_t beginFind = demangledNameStr.find_first_of(' ');
-    if (beginFind != std::string::npos)
-        demangledNameStr.erase(0, beginFind + 1);
-    size_t endFind = demangledNameStr.find(" `RTTI Type Descriptor Name'");
-    if (endFind != std::string::npos)
-        demangledNameStr.erase(endFind, demangledNameStr.length());
-    return demangledNameStr;
+    return NormalizeRTTIClassName(result->name.GetString());
 }
 
 
@@ -210,6 +230,59 @@ Ref<Metadata> RTTIProcessor::SerializedMetadata()
     std::map<std::string, Ref<Metadata>> itaniumMeta;
     itaniumMeta["classes"] = new Metadata(classesMeta);
     return new Metadata(itaniumMeta);
+}
+
+
+bool RTTIProcessor::IsLikelyFunction(uint64_t addr) const
+{
+    // Disassemble to just make a little extra certain this is a function.
+    auto vftPlatform = m_view->GetDefaultPlatform()->GetAssociatedPlatformByAddress(addr);
+    Ref<Architecture> arch = vftPlatform->GetArchitecture();
+    const size_t maxInstrLen = arch->GetMaxInstructionLength();
+    DataBuffer instrBuffer = m_view->ReadBuffer(addr, maxInstrLen);
+    InstructionInfo instrInfo;
+    const bool validInstr = arch->GetInstructionInfo(static_cast<uint8_t*>(instrBuffer.GetData()), addr, maxInstrLen, instrInfo);
+    return validInstr;
+}
+
+RTTIProcessor::FunctionDiscoverState RTTIProcessor::DiscoverVirtualFunction(uint64_t vftEntryAddr, uint64_t& vFuncAddr)
+{
+    if (!m_view->IsValidOffset(vftEntryAddr))
+        return FunctionDiscoverState::Failed;
+    BinaryReader reader = BinaryReader(m_view);
+    reader.Seek(vftEntryAddr);
+    vFuncAddr = reader.ReadPointer();
+    auto funcs = m_view->GetAnalysisFunctionsForAddress(vFuncAddr);
+    if (!funcs.empty())
+        return FunctionDiscoverState::AlreadyExists;
+
+    // Handle external virtual functions, we won't have a backing function for them.
+    if (!m_view->IsOffsetCodeSemantics(vFuncAddr))
+    {
+        // TODO: Sometimes vFunc idx will be zeroed iirc.
+        // We allow vfuncs to point to extern functions.
+        // TODO: Until https://github.com/Vector35/binaryninja-api/issues/5982 is fixed we need to check extern sym relocs instead of the symbol directly
+        auto vFuncSym = GetRealSymbol(m_view, reader.GetOffset(), vFuncAddr);
+        if (!vFuncSym)
+            return FunctionDiscoverState::Failed;
+        DataVariable dv;
+        bool foundDv = m_view->GetDataVariableAtAddress(vFuncAddr, dv);
+        // Last virtual function, or hit the next vtable.
+        if (!foundDv || !dv.type->m_object)
+            return FunctionDiscoverState::Failed;
+        // Void externs are very likely to be a func.
+        // TODO: Add some sanity checks for this!
+        if (!dv.type->IsFunction() && !(dv.type->IsVoid() && vFuncSym->GetType() == ExternalSymbol))
+            return FunctionDiscoverState::Failed;
+        return FunctionDiscoverState::Extern;
+    }
+
+    if (!IsLikelyFunction(vFuncAddr))
+        return FunctionDiscoverState::Failed;
+    m_logger->LogDebugF("Discovered function from virtual function table... {:#x}", vFuncAddr);
+    Ref<Platform> vftPlatform = m_view->GetDefaultPlatform()->GetAssociatedPlatformByAddress(vFuncAddr);
+    m_view->AddFunctionForAnalysis(vftPlatform, vFuncAddr, true);
+    return FunctionDiscoverState::Discovered;
 }
 
 

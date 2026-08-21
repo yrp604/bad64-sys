@@ -8,12 +8,14 @@
 #include <QLabel>
 #include <QDialogButtonBox>
 #include <QModelIndex>
+#include <QSplitter>
 
 #include "binaryninjaapi.h"
 #include "uitypes.h"
 
 #include <vector>
 
+class ContainerOpenRequest;
 
 class ContainerTreeModel : public QAbstractItemModel
 {
@@ -84,13 +86,19 @@ class BINARYNINJAUIAPI ContainerBrowser : public QDialog
 	QLineEdit* m_filter = nullptr;
 	QTreeView* m_tree = nullptr;
 	QPlainTextEdit* m_preview = nullptr;
+	QSplitter* m_splitter = nullptr;
 	QLabel* m_status = nullptr;
 	QLabel* m_extractionStatus = nullptr;
 	QDialogButtonBox* m_buttons = nullptr;
 	AllColumnsFilterProxyModel* m_proxy = nullptr;
 
+	QPushButton* m_openWithOptionsButton = nullptr;
+
 	QStringList m_pendingSelectionPath;
 	QStringList m_selectedPaths;
+	int m_lastPreviewSize = 0;
+	int m_dialogWidth = 0;
+	bool m_openWithOptionsRequested = false;
 
 	void connectSignals();
 	void updatePreviewForIndex(const QModelIndex& proxyIndex);
@@ -100,12 +108,22 @@ class BINARYNINJAUIAPI ContainerBrowser : public QDialog
 	void promptForPassword(TransformContextRef context, bool tryCachedPassword = false);
 	void showContextMenu(const QPoint& position);
 	static QString toHexDump(const QByteArray& data, int bytesPerLine = 16);
+	static QString formatMetadata(BinaryNinja::Ref<BinaryNinja::Metadata> metadata, int indent = 0);
 	QModelIndex findNodeByPath(const QStringList& path);
+	QModelIndex findFirstLeaf();
+	QModelIndex findLeafByName(const QString& name);
+	void selectNodeByPath(const QStringList& path);
+	void selectLeafByName(const QString& name);
 
 public:
 	ContainerBrowser(TransformSessionRef session, QWidget* parent = nullptr);
 
 	QStringList selectedPaths() const { return m_selectedPaths; }
+	bool openWithOptionsRequested() const { return m_openWithOptionsRequested; }
 
-	static std::vector<TransformContextRef> openContainerFile(const QString& path);
+	static std::vector<TransformContextRef> openContainerFile(const QString& path, bool forceShowDialog = false, bool* outOpenWithOptions = nullptr);
+
+	// Show the container browser dialog for the given open request.
+	// Returns the selected contexts, or empty if the user cancelled.
+	static std::vector<TransformContextRef> showBrowser(ContainerOpenRequest& request, bool* outOpenWithOptions = nullptr);
 };
