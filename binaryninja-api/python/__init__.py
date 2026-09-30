@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -21,9 +21,11 @@
 import atexit
 import sys
 import ctypes
+import inspect
+from dataclasses import dataclass
 from time import gmtime, struct_time
 import os
-from typing import Mapping, Optional
+from typing import List, Mapping, Optional
 import functools
 
 # Binary Ninja components
@@ -56,7 +58,7 @@ from .lineardisassembly import *
 from .highlight import *
 from .scriptingprovider import *
 from .downloadprovider import *
-from .pluginmanager import *
+from .extensionmanager import *
 from .settings import *
 from .metadata import *
 from .flowgraph import *
@@ -84,6 +86,8 @@ from .lineformatter import *
 from .renderlayer import *
 from .constantrenderer import *
 from .stringrecognizer import *
+from .unicode import *
+from .similarity import *
 # We import each of these by name to prevent conflicts between
 # log.py and the function 'log' which we don't import below
 from .log import (
@@ -101,6 +105,13 @@ warnings.filterwarnings('once', '', DeprecatedWarning)
 if core.BNGetProduct() == "Binary Ninja Enterprise Client" or core.BNGetProduct() == "Binary Ninja Ultimate":
 	from .enterprise import *
 	from .firmwareninja import *
+
+
+def _get_parameter_count(callback):
+	if sys.version_info >= (3, 14):
+		import annotationlib
+		return len(inspect.signature(callback, annotation_format=annotationlib.Format.STRING).parameters)
+	return len(inspect.signature(callback).parameters)
 
 
 def shutdown():
@@ -127,6 +138,19 @@ class CoreVersionInfo:
 	Structure representing the Binary Ninja Version.
 
 	Use :py:func:`core_version_info` to look up the current version of Binary Ninja loaded.
+
+	:Example:
+
+		>>> from binaryninja import core_version_info, CoreVersionInfo
+		>>> # Check if the current version meets minimum requirements for a plugin
+		>>> if core_version_info() >= CoreVersionInfo(5, 1, 8104):
+		...     print("Using new API available in 5.1.8104 and later")
+		>>> # Parse and compare against a version string
+		>>> if core_version_info() >= CoreVersionInfo("4.2.0"):
+		...     print("Version 4.2.0 or later detected")
+		>>> # Get individual version components
+		>>> version = core_version_info()
+		>>> print(f"Running Binary Ninja {version.major}.{version.minor}.{version.build}")
 	"""
 
 	major: int
@@ -250,7 +274,6 @@ def _init_plugins():
 		if _enable_default_log and is_headless_init_once and min_level in LogLevel.__members__ and not core_ui_enabled(
 		) and sys.stderr.isatty():
 			log_to_stderr(LogLevel[min_level])
-		core.BNInitRepoPlugins()
 	if core.BNIsLicenseValidated():
 		_plugin_init = True
 	else:
@@ -333,27 +356,67 @@ def core_serial() -> Optional[str]:
 		:return: current serial
 		:rtype: str, or None on failure
 	"""
+	_init_plugins()
 	return core.BNGetSerialNumber()
 
 
 def core_expires() -> struct_time:
 	'''License Expiration'''
+	_init_plugins()
 	return gmtime(core.BNGetLicenseExpirationTime())
 
 
 def core_product() -> Optional[str]:
 	'''Product string from the license file'''
+	_init_plugins()
 	return core.BNGetProduct()
 
 
 def core_product_type() -> Optional[str]:
 	'''Product type from the license file'''
+	_init_plugins()
 	return core.BNGetProductType()
 
 
 def core_license_count() -> int:
 	'''License count from the license file'''
+	_init_plugins()
 	return core.BNGetLicenseCount()
+
+
+@dataclass(frozen=True)
+class LicenseAddon:
+	'''A verified add-on attached to the active license.'''
+	id: str
+	license_serial: str
+	product: str
+	created: str
+	created_timestamp: int
+	expiration: str
+	expiration_timestamp: int
+	signature: str
+
+
+def core_license_addons() -> List[LicenseAddon]:
+	'''License addons from the license file'''
+	_init_plugins()
+	count = ctypes.c_ulonglong()
+	addons = core.BNGetLicenseAddons(ctypes.byref(count))
+	if not addons:
+		return []
+	try:
+		return [LicenseAddon(
+			id=addons[i].id,
+			license_serial=addons[i].licenseSerial,
+			product=addons[i].product,
+			created=addons[i].created,
+			created_timestamp=addons[i].createdTimestamp,
+			expiration=addons[i].expiration,
+			expiration_timestamp=addons[i].expirationTimestamp,
+			signature=addons[i].signature,
+		) for i in range(count.value)]
+	finally:
+		core.BNFreeLicenseAddons(addons, count.value)
 
 
 def core_ui_enabled() -> bool:
@@ -394,11 +457,35 @@ def get_memory_usage_info() -> Mapping[str, int]:
 	return result
 
 
+def get_stat_histograms() -> Mapping[str, dict]:
+	"""
+	Get per-tag bit-length histograms gathered by StatCollector instrumentation.
+
+	Each entry maps a tag name to ``{"total": int, "buckets": [int; 65]}`` where
+	``buckets[k]`` counts samples whose value has ``bit_width == k`` (k in 0..64) and
+	``total`` is the sum of the sampled values. Empty unless a ``StatCollector`` was
+	instantiated somewhere in the core during analysis.
+
+	:return: Dictionary of {tag name: {"total": int, "buckets": list[int]}}
+	"""
+	count = ctypes.c_ulonglong()
+	info = core.BNGetStatHistograms(count)
+	assert info is not None, "core.BNGetStatHistograms returned None"
+	result = {}
+	for i in range(0, count.value):
+		result[info[i].name] = {
+			"total": info[i].total,
+			"buckets": list(info[i].buckets),
+		}
+	core.BNFreeStatHistograms(info, count.value)
+	return result
+
+
 def load(*args, **kwargs) -> BinaryView:
 	"""
 	Opens a BinaryView object.
 
-	:param Union[str, bytes, bytearray, 'databuffer.DataBuffer', 'os.PathLike'] source: a file or byte stream to load into a virtual memory space
+	:param Union[str, bytes, bytearray, 'databuffer.DataBuffer', 'os.PathLike', 'project.ProjectFile'] source: a file or byte stream to load into a virtual memory space
 	:param bool update_analysis: whether or not to run :func:`update_analysis_and_wait` after opening a :py:class:`BinaryView`, defaults to ``True``
 	:param callback progress_func: optional function to be called with the current progress and total count for BNDB files only
 	:param dict options: a dictionary in the form {setting identifier string : object value}
@@ -495,6 +582,24 @@ def fuzzy_match_single(target, query) -> Optional[int]:
 	:return: Confidence of match, or None if the string doesn't match
 	"""
 	result = core.BNFuzzyMatchSingle(target, query)
+	if result == 0:
+		return None
+	return result
+
+
+def fuzzy_match_contextual(target, query) -> Optional[int]:
+	"""
+	Fuzzy match a string against a query string. Returns a score that is higher for
+	a more confident match, or None if the query does not match the target string.
+
+	Same algorithm as `fuzzy_match_single` but with extra heuristics based on
+	word boundaries and match offsets.
+
+	:param target: Target (larger) string
+	:param query: Query (smaller) string
+	:return: Confidence of match, or None if the string doesn't match
+	"""
+	result = core.BNFuzzyMatchContextual(target, query)
 	if result == 0:
 		return None
 	return result

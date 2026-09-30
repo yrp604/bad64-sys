@@ -22,6 +22,15 @@ std::string BINARYNINJAUIAPI getStringForRegisterValue(ArchitectureRef arch, Bin
 std::string BINARYNINJAUIAPI getPossibleValueSetStateName(BNRegisterValueType state);
 std::string BINARYNINJAUIAPI getStringForIntegerValue(int64_t value);
 std::string BINARYNINJAUIAPI getStringForUIntegerValue(uint64_t value);
+bool BINARYNINJAUIAPI canDisplayIntegerTokenAs(const HighlightTokenState& token, BNIntegerDisplayType displayType);
+BNIntegerDisplayType BINARYNINJAUIAPI getInvertedIntegerDisplayType(BNIntegerDisplayType displayType, const std::string& text);
+BNIntegerDisplayType BINARYNINJAUIAPI getToggledIntegerRadixDisplayType(BNIntegerDisplayType displayType, const std::string& text);
+BNIntegerDisplayType BINARYNINJAUIAPI getToggledIntegerComplementDisplayType(BNIntegerDisplayType displayType, const std::string& text);
+uint64_t BINARYNINJAUIAPI getIntegerConstantDisplayAddress(
+	View* view, const HighlightTokenState& token, uint64_t fallbackAddress);
+TypeRef BINARYNINJAUIAPI getIntegerTypePreservingDisplay(TypeRef type, size_t width, BinaryNinja::Confidence<bool> isSigned);
+TypeRef BINARYNINJAUIAPI getIntegerTypeWithWidthPreservingAttributes(TypeRef type, size_t width);
+TypeRef BINARYNINJAUIAPI getIntegerTypeWithSignPreservingAttributes(TypeRef type, BinaryNinja::Confidence<bool> isSigned);
 std::string BINARYNINJAUIAPI getStringForPossibleValueSet(ArchitectureRef arch, const BinaryNinja::PossibleValueSet& values, bool pretty = true);
 std::string BINARYNINJAUIAPI getStringForInstructionDataflowDetails(BinaryViewRef data, ArchitectureRef arch, FunctionRef func, uint64_t address);
 std::optional<BinaryNinja::PossibleValueSet> BINARYNINJAUIAPI getPossibleValueSetForToken(View* view, BinaryViewRef data, ArchitectureRef arch,
@@ -29,6 +38,19 @@ std::optional<BinaryNinja::PossibleValueSet> BINARYNINJAUIAPI getPossibleValueSe
 
 std::optional<BinaryNinja::PossibleValueSet> BINARYNINJAUIAPI getPossibleValueSetForILToken(View* view, HighlightTokenState token);
 std::optional<uint64_t> BINARYNINJAUIAPI getAddressOfILTokenExpr(View* view, HighlightTokenState token);
+void BINARYNINJAUIAPI setCallStackAdjustment(QWidget* parent, FunctionRef func, ArchitectureRef arch, uint64_t instrAddress);
+
+// Resolve the address of the call instruction that the user is currently on,
+// given the active function, architecture, IL view, highlight, and cursor
+// position. This is the address of the calling instruction itself, not the
+// call target.
+std::optional<uint64_t> BINARYNINJAUIAPI getCallInstructionAddress(
+    FunctionRef function,
+    ArchitectureRef arch,
+    BNFunctionGraphType viewType,
+    const HighlightTokenState& highlight,
+    uint64_t cursorAddress,
+    size_t cursorInstrIndex);
 
 template <typename T>
 std::optional<T> visitILInstructionForToken(View* view, const HighlightTokenState& token,
@@ -163,6 +185,14 @@ void BINARYNINJAUIAPI showHexPreview(QWidget* parent, ViewFrame* frame, const QP
 bool BINARYNINJAUIAPI showDisassemblyPreview(QWidget* parent, ViewFrame* frame, const QPoint& previewPos,BinaryViewRef data, FunctionRef func,
     const ViewLocation& location);
 void BINARYNINJAUIAPI showTextTooltip(QWidget* parent, const QPoint& previewPos, const QString& text);
+void BINARYNINJAUIAPI showTokenTooltip(QWidget* parent, const QPoint& previewPos,
+    const std::vector<std::vector<BinaryNinja::InstructionTextToken>>& lines);
+
+// Interpret the hovered token and, if applicable, displays a tooltip or preview. If no token-driven preview matches
+// and `dataflowFallbackAddress` is set, a dataflow-details tooltip is shown for that address.
+void BINARYNINJAUIAPI dispatchTokenHoverPreview(View* view, const QPoint& globalPos, const HighlightTokenState& token,
+    FunctionRef func, uint64_t lineAddr, size_t instrIndex, const std::vector<TagRef>& lineTags,
+    std::optional<uint64_t> dataflowFallbackAddress);
 
 bool BINARYNINJAUIAPI isBinaryNinjaDatabase(QFileInfo& info, QFileAccessor& accessor);
 

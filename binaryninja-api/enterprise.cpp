@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -36,6 +36,12 @@ bool BinaryNinja::Enterprise::Initialize()
 }
 
 
+bool BinaryNinja::Enterprise::AuthenticateWithToken(const std::string& token, bool remember)
+{
+	return BNAuthenticateEnterpriseServerWithToken(token.c_str(), remember);
+}
+
+
 bool BinaryNinja::Enterprise::AuthenticateWithCredentials(const std::string& username, const std::string& password, bool remember)
 {
 	return BNAuthenticateEnterpriseServerWithCredentials(username.c_str(), password.c_str(), remember);
@@ -55,6 +61,7 @@ std::vector<std::pair<std::string, std::string>> BinaryNinja::Enterprise::GetAut
 	size_t count = BNGetEnterpriseServerAuthenticationMethods(&methods, &names);
 
 	std::vector<std::pair<std::string, std::string>> results;
+	results.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		results.push_back({methods[i], names[i]});
@@ -281,10 +288,19 @@ BinaryNinja::Enterprise::LicenseCheckout::LicenseCheckout(int64_t duration): m_a
 		}
 		if (!gotAuth)
 		{
+			char* token = getenv("BN_ENTERPRISE_TOKEN");
+			if (token)
+			{
+				gotAuth = AuthenticateWithToken(token, true);
+			}
+		}
+		if (!gotAuth)
+		{
 			throw EnterpriseException(
 				"Could not checkout a license: Not authenticated. Try one of the following: \n"
 				" - Log in and check out a license for an extended time\n"
 				" - Set BN_ENTERPRISE_USERNAME and BN_ENTERPRISE_PASSWORD environment variables\n"
+				" - Set BN_ENTERPRISE_TOKEN environment variable\n"
 				" - Use BinaryNinja::Enterprise::AuthenticateWithCredentials or AuthenticateWithMethod in your code"
 			);
 		}

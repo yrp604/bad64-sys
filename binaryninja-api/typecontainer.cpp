@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -80,6 +80,10 @@ TypeContainer::TypeContainer(const TypeContainer& other)
 
 TypeContainer& TypeContainer::operator=(const TypeContainer& other)
 {
+	if (this == &other)
+		return *this;
+	if (m_object)
+		BNFreeTypeContainer(m_object);
 	m_object = BNDuplicateTypeContainer(other.m_object);
 	return *this;
 }
@@ -87,7 +91,11 @@ TypeContainer& TypeContainer::operator=(const TypeContainer& other)
 
 TypeContainer& TypeContainer::operator=(TypeContainer&& other)
 {
-	m_object = std::move(other.m_object);
+	if (this == &other)
+		return *this;
+	if (m_object)
+		BNFreeTypeContainer(m_object);
+	m_object = other.m_object;
 	other.m_object = nullptr;
 	return *this;
 }
@@ -162,7 +170,7 @@ std::optional<std::unordered_map<QualifiedName, std::string>> TypeContainer::Add
 	BNType** apiTypes = new BNType*[types.size()];
 	for (size_t i = 0; i < types.size(); i++)
 	{
-		apiTypeNames[i] = types[i].first.GetAPIObject();
+		apiTypeNames[i] = types[i].first.ToAPIStruct();
 		apiTypes[i] = types[i].second->GetObject();
 	}
 
@@ -179,7 +187,7 @@ std::optional<std::unordered_map<QualifiedName, std::string>> TypeContainer::Add
 
 	for (size_t i = 0; i < types.size(); i++)
 	{
-		QualifiedName::FreeAPIObject(&apiTypeNames[i]);
+		QualifiedName::FreeAPIStruct(&apiTypeNames[i]);
 	}
 	delete[] apiTypeNames;
 	delete[] apiTypes;
@@ -189,7 +197,7 @@ std::optional<std::unordered_map<QualifiedName, std::string>> TypeContainer::Add
 	std::unordered_map<QualifiedName, std::string> result;
 	for (size_t i = 0; i < resultCount; i++)
 	{
-		result[QualifiedName::FromAPIObject(&resultNames[i])] = resultIds[i];
+		result[QualifiedName::FromAPIStruct(&resultNames[i])] = resultIds[i];
 	}
 	BNFreeStringList(resultIds, resultCount);
 	BNFreeTypeNameList(resultNames, resultCount);
@@ -200,9 +208,9 @@ std::optional<std::unordered_map<QualifiedName, std::string>> TypeContainer::Add
 
 bool TypeContainer::RenameType(const std::string& typeId, const QualifiedName& newName)
 {
-	BNQualifiedName apiNewName = newName.GetAPIObject();
+	BNQualifiedName apiNewName = newName.ToAPIStruct();
 	bool success = BNTypeContainerRenameType(m_object, typeId.c_str(), &apiNewName);
-	QualifiedName::FreeAPIObject(&apiNewName);
+	QualifiedName::FreeAPIStruct(&apiNewName);
 	return success;
 }
 
@@ -215,10 +223,10 @@ bool TypeContainer::DeleteType(const std::string& typeId)
 
 std::optional<std::string> TypeContainer::GetTypeId(const QualifiedName& typeName) const
 {
-	BNQualifiedName apiTypeName = typeName.GetAPIObject();
+	BNQualifiedName apiTypeName = typeName.ToAPIStruct();
 	char* result;
 	bool success = BNTypeContainerGetTypeId(m_object, &apiTypeName, &result);
-	QualifiedName::FreeAPIObject(&apiTypeName);
+	QualifiedName::FreeAPIStruct(&apiTypeName);
 	if (!success)
 		return {};
 	return std::string(result);
@@ -230,7 +238,7 @@ std::optional<QualifiedName> TypeContainer::GetTypeName(const std::string& typeI
 	BNQualifiedName apiResult;
 	if (!BNTypeContainerGetTypeName(m_object, typeId.c_str(), &apiResult))
 		return {};
-	QualifiedName result = QualifiedName::FromAPIObject(&apiResult);
+	QualifiedName result = QualifiedName::FromAPIStruct(&apiResult);
 	BNFreeQualifiedName(&apiResult);
 	return result;
 }
@@ -257,7 +265,7 @@ std::optional<std::unordered_map<std::string, std::pair<QualifiedName, Ref<Type>
 	std::unordered_map<std::string, std::pair<QualifiedName, Ref<Type>>> result;
 	for (size_t i = 0; i < resultCount; i++)
 	{
-		result[resultIds[i]] = std::make_pair(QualifiedName::FromAPIObject(&resultNames[i]), new Type(
+		result[resultIds[i]] = std::make_pair(QualifiedName::FromAPIStruct(&resultNames[i]), new Type(
 			BNNewTypeReference(resultTypes[i])));
 	}
 	BNFreeStringList(resultIds, resultCount);
@@ -270,10 +278,10 @@ std::optional<std::unordered_map<std::string, std::pair<QualifiedName, Ref<Type>
 
 std::optional<Ref<Type>> TypeContainer::GetTypeByName(const QualifiedName& typeName) const
 {
-	BNQualifiedName apiTypeName = typeName.GetAPIObject();
+	BNQualifiedName apiTypeName = typeName.ToAPIStruct();
 	BNType* apiResult;
 	bool success = BNTypeContainerGetTypeByName(m_object, &apiTypeName, &apiResult);
-	QualifiedName::FreeAPIObject(&apiTypeName);
+	QualifiedName::FreeAPIStruct(&apiTypeName);
 	if (!success)
 		return {};
 	return new Type(apiResult);
@@ -308,7 +316,7 @@ std::optional<std::unordered_set<QualifiedName>> TypeContainer::GetTypeNames() c
 	std::unordered_set<QualifiedName> result;
 	for (size_t i = 0; i < resultCount; i++)
 	{
-		result.insert(QualifiedName::FromAPIObject(&resultNames[i]));
+		result.insert(QualifiedName::FromAPIStruct(&resultNames[i]));
 	}
 	BNFreeTypeNameList(resultNames, resultCount);
 
@@ -327,7 +335,7 @@ std::optional<std::unordered_map<std::string, QualifiedName>> TypeContainer::Get
 	std::unordered_map<std::string, QualifiedName> result;
 	for (size_t i = 0; i < resultCount; i++)
 	{
-		result[resultIds[i]] = QualifiedName::FromAPIObject(&resultNames[i]);
+		result[resultIds[i]] = QualifiedName::FromAPIStruct(&resultNames[i]);
 	}
 	BNFreeStringList(resultIds, resultCount);
 	BNFreeTypeNameList(resultNames, resultCount);
@@ -370,11 +378,12 @@ bool TypeContainer::ParseTypeString(
 
 	if (!success)
 	{
+		BNFreeQualifiedNameAndType(&apiResult);
 		return false;
 	}
 
 	result.type = new Type(BNNewTypeReference(apiResult.type));
-	result.name = QualifiedName::FromAPIObject(&apiResult.name);
+	result.name = QualifiedName::FromAPIStruct(&apiResult.name);
 
 	BNFreeQualifiedNameAndType(&apiResult);
 	return true;
@@ -445,7 +454,7 @@ bool TypeContainer::ParseTypesFromSource(
 	for (size_t j = 0; j < apiResult.typeCount; ++j)
 	{
 		result.types.push_back({
-			QualifiedName::FromAPIObject(&apiResult.types[j].name),
+			QualifiedName::FromAPIStruct(&apiResult.types[j].name),
 			new Type(BNNewTypeReference(apiResult.types[j].type)),
 			apiResult.types[j].isUser
 		});
@@ -455,7 +464,7 @@ bool TypeContainer::ParseTypesFromSource(
 	for (size_t j = 0; j < apiResult.variableCount; ++j)
 	{
 		result.variables.push_back({
-			QualifiedName::FromAPIObject(&apiResult.variables[j].name),
+			QualifiedName::FromAPIStruct(&apiResult.variables[j].name),
 			new Type(BNNewTypeReference(apiResult.variables[j].type)),
 			apiResult.variables[j].isUser
 		});
@@ -465,7 +474,7 @@ bool TypeContainer::ParseTypesFromSource(
 	for (size_t j = 0; j < apiResult.functionCount; ++j)
 	{
 		result.functions.push_back({
-			QualifiedName::FromAPIObject(&apiResult.functions[j].name),
+			QualifiedName::FromAPIStruct(&apiResult.functions[j].name),
 			new Type(BNNewTypeReference(apiResult.functions[j].type)),
 			apiResult.functions[j].isUser
 		});

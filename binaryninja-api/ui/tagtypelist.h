@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <QtCore/QAbstractItemModel>
 #include <QtCore/QItemSelectionModel>
 #include <QtWidgets/QTableView>
@@ -99,6 +100,7 @@ class BINARYNINJAUIAPI TagTypeList : public QTableView, public BinaryNinja::Bina
 	UIActionHandler* m_handler;
 	UIActionHandler m_actionHandler;
 	ContextMenuManager* m_contextMenuManager;
+	std::unique_ptr<Menu> m_ownedMenu;
 	Menu* m_menu;
 
 	QTimer* m_updateTimer;

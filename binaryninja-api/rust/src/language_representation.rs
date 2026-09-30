@@ -14,8 +14,7 @@ use crate::high_level_il::{HighLevelExpressionIndex, HighLevelILFunction};
 use crate::line_formatter::CoreLineFormatter;
 use crate::rc::{Array, CoreArrayProvider, CoreArrayProviderInner, Ref, RefCountable};
 use crate::string::{BnString, IntoCStr};
-use crate::type_parser::CoreTypeParser;
-use crate::type_printer::CoreTypePrinter;
+use crate::types::{CoreTypeParser, CoreTypePrinter};
 
 pub type InstructionTextTokenContext = BNInstructionTextTokenContext;
 pub type ScopeType = BNScopeType;
@@ -123,6 +122,9 @@ pub trait LanguageRepresentationFunctionType: Send + Sync {
 pub struct CoreLanguageRepresentationFunctionType {
     handle: NonNull<BNLanguageRepresentationFunctionType>,
 }
+
+unsafe impl Send for CoreLanguageRepresentationFunctionType {}
+unsafe impl Sync for CoreLanguageRepresentationFunctionType {}
 
 impl CoreLanguageRepresentationFunctionType {
     pub(crate) unsafe fn from_raw(handle: NonNull<BNLanguageRepresentationFunctionType>) -> Self {
@@ -507,7 +509,7 @@ unsafe extern "C" fn cb_free_lines(
     count: usize,
 ) {
     let lines: Box<[BNDisassemblyTextLine]> =
-        Box::from_raw(core::slice::from_raw_parts_mut(lines, count));
+        Box::from_raw(std::ptr::slice_from_raw_parts_mut(lines, count));
     for line in lines {
         DisassemblyTextLine::free_raw(line);
     }

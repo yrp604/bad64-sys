@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -35,13 +35,13 @@ class FileAccessor:
 		self._cb.write = self._cb.write.__class__(self._write)
 
 	def get_length(self):
-		return NotImplemented
+		raise NotImplementedError
 
 	def read(self, offset, length):
-		return NotImplemented
+		raise NotImplementedError
 
 	def write(self, offset: int, data: bytes):
-		return NotImplemented
+		raise NotImplementedError
 
 	def __len__(self):
 		return self.get_length()
@@ -49,7 +49,7 @@ class FileAccessor:
 	def _get_length(self, ctxt):
 		try:
 			return self.get_length()
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in FileAccessor._get_length")
 			return 0
 
@@ -62,7 +62,7 @@ class FileAccessor:
 				data = data[0:length]
 			ctypes.memmove(dest, data, len(data))
 			return len(data)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in FileAccessor._read")
 			return 0
 
@@ -71,7 +71,7 @@ class FileAccessor:
 			data = ctypes.create_string_buffer(length)
 			ctypes.memmove(data, src, length)
 			return self.write(offset, data.raw)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in FileAccessor._write")
 			return 0
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -156,7 +156,7 @@ void DisassemblySettings::SetBlockLabels(BNDisassemblyBlockLabels labels)
 }
 
 
-BNDisassemblyTextLineTypeInfo DisassemblyTextLineTypeInfo::GetAPIObject() const
+BNDisassemblyTextLineTypeInfo DisassemblyTextLineTypeInfo::ToAPIStruct() const
 {
 	BNDisassemblyTextLineTypeInfo result;
 	result.hasTypeInfo = this->hasTypeInfo;
@@ -167,13 +167,13 @@ BNDisassemblyTextLineTypeInfo DisassemblyTextLineTypeInfo::GetAPIObject() const
 }
 
 
-void DisassemblyTextLineTypeInfo::FreeAPIObject(BNDisassemblyTextLineTypeInfo *value)
+void DisassemblyTextLineTypeInfo::FreeAPIStruct(BNDisassemblyTextLineTypeInfo *value)
 {
 	BNFreeType(value->parentType);
 }
 
 
-DisassemblyTextLineTypeInfo DisassemblyTextLineTypeInfo::FromAPIObject(const BNDisassemblyTextLineTypeInfo *value)
+DisassemblyTextLineTypeInfo DisassemblyTextLineTypeInfo::FromAPIStruct(const BNDisassemblyTextLineTypeInfo *value)
 {
 	DisassemblyTextLineTypeInfo result;
 	result.hasTypeInfo = value->hasTypeInfo;
@@ -203,7 +203,7 @@ DisassemblyTextLine::DisassemblyTextLine()
 }
 
 
-BNDisassemblyTextLine DisassemblyTextLine::GetAPIObject() const
+BNDisassemblyTextLine DisassemblyTextLine::ToAPIStruct() const
 {
 	BNDisassemblyTextLine result;
 	result.addr = this->addr;
@@ -212,20 +212,20 @@ BNDisassemblyTextLine DisassemblyTextLine::GetAPIObject() const
 	result.tokens = InstructionTextToken::CreateInstructionTextTokenList(this->tokens);
 	result.count = this->tokens.size();
 	result.tags = Tag::CreateTagList(this->tags, &(result.tagCount));
-	result.typeInfo = this->typeInfo.GetAPIObject();
+	result.typeInfo = this->typeInfo.ToAPIStruct();
 	return result;
 }
 
 
-void DisassemblyTextLine::FreeAPIObject(BNDisassemblyTextLine *value)
+void DisassemblyTextLine::FreeAPIStruct(BNDisassemblyTextLine *value)
 {
 	InstructionTextToken::FreeInstructionTextTokenList(value->tokens, value->count);
 	Tag::FreeTagList(value->tags, value->tagCount);
-	DisassemblyTextLineTypeInfo::FreeAPIObject(&value->typeInfo);
+	DisassemblyTextLineTypeInfo::FreeAPIStruct(&value->typeInfo);
 }
 
 
-DisassemblyTextLine DisassemblyTextLine::FromAPIObject(const BNDisassemblyTextLine *value)
+DisassemblyTextLine DisassemblyTextLine::FromAPIStruct(const BNDisassemblyTextLine *value)
 {
 	DisassemblyTextLine result;
 	result.addr = value->addr;
@@ -233,7 +233,7 @@ DisassemblyTextLine DisassemblyTextLine::FromAPIObject(const BNDisassemblyTextLi
 	result.highlight = value->highlight;
 	result.tokens = InstructionTextToken::ConvertInstructionTextTokenList(value->tokens, value->count);
 	result.tags = Tag::ConvertTagList(value->tags, value->tagCount);
-	result.typeInfo = DisassemblyTextLineTypeInfo::FromAPIObject(&value->typeInfo);
+	result.typeInfo = DisassemblyTextLineTypeInfo::FromAPIStruct(&value->typeInfo);
 	return result;
 }
 
@@ -454,18 +454,6 @@ void BasicBlock::SetUndeterminedOutgoingEdges(bool value)
 }
 
 
-const uint8_t* BasicBlock::GetInstructionData(uint64_t addr, size_t* len) const
-{
-	return BNBasicBlockGetInstructionData(m_object, addr, len);
-}
-
-
-void BasicBlock::AddInstructionData(const void* data, size_t len)
-{
-	BNBasicBlockAddInstructionData(m_object, data, len);
-}
-
-
 void BasicBlock::SetFallThroughToFunction(bool value)
 {
 	BNBasicBlockSetFallThroughToFunction(m_object, value);
@@ -587,12 +575,18 @@ vector<vector<InstructionTextToken>> BasicBlock::GetAnnotations()
 }
 
 
+std::optional<int64_t> BasicBlock::GetSortHint()
+{
+	return GetFunction()->GetBlockSortHint(GetArchitecture(), GetStart());
+}
+
+
 vector<DisassemblyTextLine> BasicBlock::GetDisassemblyText(DisassemblySettings* settings)
 {
 	size_t count;
 	BNDisassemblyTextLine* lines = BNGetBasicBlockDisassemblyText(m_object, settings->GetObject(), &count);
 
-	vector<DisassemblyTextLine> result = ParseAPIObjectList<DisassemblyTextLine>(lines, count);;
+	vector<DisassemblyTextLine> result = ParseAPIStructList<DisassemblyTextLine>(lines, count);;
 	BNFreeDisassemblyTextLines(lines, count);
 	return result;
 }

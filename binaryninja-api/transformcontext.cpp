@@ -17,7 +17,10 @@ TransformContext::~TransformContext()
 
 Ref<BinaryView> TransformContext::GetInput() const
 {
-	return new BinaryView(BNTransformContextGetInput(m_object));
+	BNBinaryView* view = BNTransformContextGetInput(m_object);
+	if (!view)
+		return nullptr;
+	return new BinaryView(view);
 }
 
 
@@ -30,12 +33,33 @@ string TransformContext::GetFileName() const
 }
 
 
+vector<string> TransformContext::GetAvailableTransforms() const
+{
+	size_t count;
+	char** transforms = BNTransformContextGetAvailableTransforms(m_object, &count);
+
+	vector<string> result;
+	result.reserve(count);
+
+	for (size_t i = 0; i < count; i++)
+		result.push_back(transforms[i]);
+	BNFreeStringList(transforms, count);
+	return result;
+}
+
+
 string TransformContext::GetTransformName() const
 {
 	char* name = BNTransformContextGetTransformName(m_object);
 	string result = name;
 	BNFreeString(name);
 	return result;
+}
+
+
+void TransformContext::SetTransformName(const string& transformName)
+{
+	BNTransformContextSetTransformName(m_object, transformName.c_str());
 }
 
 
@@ -94,9 +118,18 @@ BNTransformResult TransformContext::GetTransformResult() const
 }
 
 
+void TransformContext::SetTransformResult(BNTransformResult result)
+{
+	BNTransformContextSetTransformResult(m_object, result);
+}
+
+
 Ref<Metadata> TransformContext::GetMetadata() const
 {
-	return new Metadata(BNTransformContextGetMetadata(m_object));
+	BNMetadata* metadata = BNTransformContextGetMetadata(m_object);
+	if (!metadata)
+		return nullptr;
+	return new Metadata(metadata);
 }
 
 
@@ -140,9 +173,9 @@ Ref<TransformContext> TransformContext::GetChild(const string& filename) const
 }
 
 
-Ref<TransformContext> TransformContext::SetChild(const DataBuffer& data, const string& filename, BNTransformResult result, const std::string& message)
+Ref<TransformContext> TransformContext::SetChild(const DataBuffer& data, const string& filename, BNTransformResult result, const std::string& message, bool filenameIsDescriptor)
 {
-	BNTransformContext* child = BNTransformContextSetChild(m_object, data.GetBufferObject(), filename.c_str(), result, message.c_str());
+	BNTransformContext* child = BNTransformContextSetChild(m_object, data.GetBufferObject(), filename.c_str(), result, message.c_str(), filenameIsDescriptor);
 	if (!child)
 		return nullptr;
 	return new TransformContext(child);
@@ -238,4 +271,19 @@ bool TransformContext::HasRequestedFiles() const
 bool TransformContext::IsDatabase() const
 {
 	return BNTransformContextIsDatabase(m_object);
+}
+
+
+bool TransformContext::IsInteractive() const
+{
+	return BNTransformContextIsInteractive(m_object);
+}
+
+
+Ref<Settings> TransformContext::GetSettings() const
+{
+	BNSettings* settings = BNTransformContextGetSettings(m_object);
+	if (!settings)
+		return nullptr;
+	return new Settings(settings);
 }

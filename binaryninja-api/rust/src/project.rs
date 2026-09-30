@@ -1,9 +1,9 @@
-pub mod file;
-pub mod folder;
+//! Represents a collection of files and folders within Binary Ninja.
 
 use std::ffi::c_void;
 use std::fmt::Debug;
-use std::path::Path;
+use std::hash::Hash;
+use std::path::{Path, PathBuf};
 use std::ptr::{null_mut, NonNull};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -15,6 +15,9 @@ use crate::project::file::ProjectFile;
 use crate::project::folder::ProjectFolder;
 use crate::rc::{Array, CoreArrayProvider, CoreArrayProviderInner, Guard, Ref, RefCountable};
 use crate::string::{BnString, IntoCStr};
+
+pub mod file;
+pub mod folder;
 
 pub struct Project {
     pub(crate) handle: NonNull<BNProject>,
@@ -29,6 +32,7 @@ impl Project {
         Ref::new(Self { handle })
     }
 
+    /// All of the open [`Project`]s
     pub fn all_open() -> Array<Project> {
         let mut count = 0;
         let result = unsafe { BNGetOpenProjects(&mut count) };
@@ -36,7 +40,6 @@ impl Project {
         unsafe { Array::new(result, count, ()) }
     }
 
-    // TODO: Path here is actually local path?
     /// Create a new project
     ///
     /// * `path` - Path to the project directory (.bnpr)
@@ -48,7 +51,6 @@ impl Project {
         NonNull::new(handle).map(|h| unsafe { Self::ref_from_raw(h) })
     }
 
-    // TODO: Path here is actually local path?
     /// Open an existing project
     ///
     /// * `path` - Path to the project directory (.bnpr) or project metadata file (.bnpm)
@@ -72,7 +74,7 @@ impl Project {
         }
     }
 
-    /// Close a open project
+    /// Close an open project
     pub fn close(&self) -> Result<(), ()> {
         if unsafe { BNProjectClose(self.handle.as_ptr()) } {
             Ok(())
@@ -86,9 +88,10 @@ impl Project {
         unsafe { BnString::into_string(BNProjectGetId(self.handle.as_ptr())) }
     }
 
-    /// Get the path of the project
-    pub fn path(&self) -> String {
-        unsafe { BnString::into_string(BNProjectGetPath(self.handle.as_ptr())) }
+    /// Get the path on disk for the project
+    pub fn path(&self) -> PathBuf {
+        let path_str = unsafe { BnString::into_string(BNProjectGetPath(self.handle.as_ptr())) };
+        PathBuf::from(path_str)
     }
 
     /// Get the name of the project
@@ -135,6 +138,7 @@ impl Project {
         unsafe { BNProjectRemoveMetadata(self.handle.as_ptr(), key_raw.as_ptr()) }
     }
 
+    /// Call this after updating the [`ProjectFolder`] to have the changes reflected in the database.
     pub fn push_folder(&self, file: &ProjectFolder) -> bool {
         unsafe { BNProjectPushFolder(self.handle.as_ptr(), file.handle.as_ptr()) }
     }
@@ -211,6 +215,7 @@ impl Project {
         }
     }
 
+    // TODO: Rename create_folder_with_id and comment about the id being unique
     /// Recursively create files and folders in the project from a path on disk
     ///
     /// * `parent` - Parent folder in the project that will contain the new folder
@@ -288,6 +293,7 @@ impl Project {
         }
     }
 
+    /// Call this after updating the [`ProjectFile`] to have the changes reflected in the database.
     pub fn push_file(&self, file: &ProjectFile) -> bool {
         unsafe { BNProjectPushFile(self.handle.as_ptr(), file.handle.as_ptr()) }
     }
@@ -587,6 +593,15 @@ impl Project {
         unsafe { Array::new(result, count, ()) }
     }
 
+    /// Retrieve a list of files in the project in a given folder.
+    pub fn files_in_folder(&self, folder: Option<&ProjectFolder>) -> Array<ProjectFile> {
+        let folder_ptr = folder.map(|f| f.handle.as_ptr()).unwrap_or(null_mut());
+        let mut count = 0;
+        let result =
+            unsafe { BNProjectGetFilesInFolder(self.handle.as_ptr(), folder_ptr, &mut count) };
+        unsafe { Array::new(result, count, ()) }
+    }
+
     /// Delete a file from the project
     pub fn delete_file(&self, file: &ProjectFile) -> bool {
         unsafe { BNProjectDeleteFile(self.handle.as_ptr(), file.handle.as_ptr()) }
@@ -624,6 +639,20 @@ impl Debug for Project {
             .field("name", &self.name())
             .field("description", &self.description())
             .finish()
+    }
+}
+
+impl PartialEq for Project {
+    fn eq(&self, other: &Self) -> bool {
+        self.id() == other.id()
+    }
+}
+
+impl Eq for Project {}
+
+impl Hash for Project {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
     }
 }
 

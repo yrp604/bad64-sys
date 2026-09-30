@@ -1,25 +1,22 @@
 #include "VirtualMemory.h"
 
-void VirtualMemory::MapRegion(WeakFileAccessor fileAccessor, AddressRange mappedRange, uint64_t fileOffset)
+void VirtualMemory::MapRegion(std::shared_ptr<MappedFileRegion> file, AddressRange mappedRange, uint64_t fileOffset)
 {
-	// Create a new VirtualMemoryRegion object
-	VirtualMemoryRegion region(fileOffset, std::move(fileAccessor));
+	VirtualMemoryRegion region(fileOffset, std::move(file));
 
 	// TODO: How to handle overlapping regions?
 	for (const auto& [existingRange, existingRegion] : m_regions)
 	{
 		if (existingRange.Overlaps(mappedRange))
 		{
-			// Handle overlapping regions, e.g., throw an exception or skip the mapping
 			BinaryNinja::LogErrorF("Overlapping memory region {:#x}", existingRange.start);
 		}
 	}
 
-	// Insert the region into the map
-	m_regions.insert_or_assign(mappedRange, region);
+	m_regions.insert_or_assign(mappedRange, std::move(region));
 }
 
-std::optional<VirtualMemoryRegion> VirtualMemory::GetRegionAtAddress(uint64_t address, uint64_t& addressOffset)
+const VirtualMemoryRegion* VirtualMemory::FindRegionAtAddress(uint64_t address, uint64_t& addressOffset) const
 {
 	if (const auto& it = m_regions.find(address); it != m_regions.end())
 	{
@@ -27,35 +24,26 @@ std::optional<VirtualMemoryRegion> VirtualMemory::GetRegionAtAddress(uint64_t ad
 		// be multiple in newer caches) This is relevant for reading out the data in the rest of this file. The second
 		// item in the returned pair is the offset of `address` within the file.
 		const auto& range = it->first;
-		auto mapping = it->second;
+		const auto& mapping = it->second;
 		addressOffset = mapping.fileOffset + (address - range.start);
-		return mapping;
+		return &mapping;
 	}
 
-	return std::nullopt;
+	return nullptr;
 }
 
-std::optional<VirtualMemoryRegion> VirtualMemory::GetRegionAtAddress(uint64_t address)
+const VirtualMemoryRegion* VirtualMemory::FindRegionAtAddress(uint64_t address) const
 {
 	uint64_t offset;
-	return GetRegionAtAddress(address, offset);
+	return FindRegionAtAddress(address, offset);
 }
 
-bool VirtualMemory::IsAddressMapped(uint64_t address)
+bool VirtualMemory::IsAddressMapped(uint64_t address) const
 {
 	return m_regions.find(address) != m_regions.end();
 }
 
-void VirtualMemory::WritePointer(uint64_t address, size_t pointer)
-{
-	uint64_t offset;
-	auto region = GetRegionAtAddress(address, offset);
-	if (!region.has_value())
-		throw UnmappedRegionException(address);
-	region->fileAccessor.lock()->WritePointer(offset, pointer);
-}
-
-uint64_t VirtualMemory::ReadPointer(uint64_t address)
+uint64_t VirtualMemory::ReadPointer(uint64_t address) const
 {
 	switch (m_addressSize)
 	{
@@ -70,112 +58,112 @@ uint64_t VirtualMemory::ReadPointer(uint64_t address)
 	}
 }
 
-std::string VirtualMemory::ReadCString(uint64_t address)
+std::string VirtualMemory::ReadCString(uint64_t address) const
 {
 	uint64_t offset;
-	auto region = GetRegionAtAddress(address, offset);
-	if (!region.has_value())
+	auto* region = FindRegionAtAddress(address, offset);
+	if (!region)
 		throw UnmappedRegionException(address);
-	return region->fileAccessor.lock()->ReadNullTermString(offset);
+	return region->file->ReadNullTermString(offset);
 }
 
-uint8_t VirtualMemory::ReadUInt8(uint64_t address)
+uint8_t VirtualMemory::ReadUInt8(uint64_t address) const
 {
 	uint64_t offset;
-	auto region = GetRegionAtAddress(address, offset);
-	if (!region.has_value())
+	auto* region = FindRegionAtAddress(address, offset);
+	if (!region)
 		throw UnmappedRegionException(address);
-	return region->fileAccessor.lock()->ReadUInt8(offset);
+	return region->file->ReadUInt8(offset);
 }
 
-int8_t VirtualMemory::ReadInt8(uint64_t address)
+int8_t VirtualMemory::ReadInt8(uint64_t address) const
 {
 	uint64_t offset;
-	auto region = GetRegionAtAddress(address, offset);
-	if (!region.has_value())
+	auto* region = FindRegionAtAddress(address, offset);
+	if (!region)
 		throw UnmappedRegionException(address);
-	return region->fileAccessor.lock()->ReadInt8(offset);
+	return region->file->ReadInt8(offset);
 }
 
-uint16_t VirtualMemory::ReadUInt16(uint64_t address)
+uint16_t VirtualMemory::ReadUInt16(uint64_t address) const
 {
 	uint64_t offset;
-	auto region = GetRegionAtAddress(address, offset);
-	if (!region.has_value())
+	auto* region = FindRegionAtAddress(address, offset);
+	if (!region)
 		throw UnmappedRegionException(address);
-	return region->fileAccessor.lock()->ReadUInt16(offset);
+	return region->file->ReadUInt16(offset);
 }
 
-int16_t VirtualMemory::ReadInt16(uint64_t address)
+int16_t VirtualMemory::ReadInt16(uint64_t address) const
 {
 	uint64_t offset;
-	auto region = GetRegionAtAddress(address, offset);
-	if (!region.has_value())
+	auto* region = FindRegionAtAddress(address, offset);
+	if (!region)
 		throw UnmappedRegionException(address);
-	return region->fileAccessor.lock()->ReadInt16(offset);
+	return region->file->ReadInt16(offset);
 }
 
-uint32_t VirtualMemory::ReadUInt32(uint64_t address)
+uint32_t VirtualMemory::ReadUInt32(uint64_t address) const
 {
 	uint64_t offset;
-	auto region = GetRegionAtAddress(address, offset);
-	if (!region.has_value())
+	auto* region = FindRegionAtAddress(address, offset);
+	if (!region)
 		throw UnmappedRegionException(address);
-	return region->fileAccessor.lock()->ReadUInt32(offset);
+	return region->file->ReadUInt32(offset);
 }
 
-int32_t VirtualMemory::ReadInt32(uint64_t address)
+int32_t VirtualMemory::ReadInt32(uint64_t address) const
 {
 	uint64_t offset;
-	auto region = GetRegionAtAddress(address, offset);
-	if (!region.has_value())
+	auto* region = FindRegionAtAddress(address, offset);
+	if (!region)
 		throw UnmappedRegionException(address);
-	return region->fileAccessor.lock()->ReadInt32(offset);
+	return region->file->ReadInt32(offset);
 }
 
-uint64_t VirtualMemory::ReadUInt64(uint64_t address)
+uint64_t VirtualMemory::ReadUInt64(uint64_t address) const
 {
 	uint64_t offset;
-	auto region = GetRegionAtAddress(address, offset);
-	if (!region.has_value())
+	auto* region = FindRegionAtAddress(address, offset);
+	if (!region)
 		throw UnmappedRegionException(address);
-	return region->fileAccessor.lock()->ReadUInt64(offset);
+	return region->file->ReadUInt64(offset);
 }
 
-int64_t VirtualMemory::ReadInt64(uint64_t address)
+int64_t VirtualMemory::ReadInt64(uint64_t address) const
 {
 	uint64_t offset;
-	auto region = GetRegionAtAddress(address, offset);
-	if (!region.has_value())
+	auto* region = FindRegionAtAddress(address, offset);
+	if (!region)
 		throw UnmappedRegionException(address);
-	return region->fileAccessor.lock()->ReadInt64(offset);
+	return region->file->ReadInt64(offset);
 }
 
-BinaryNinja::DataBuffer VirtualMemory::ReadBuffer(uint64_t address, size_t length)
+BinaryNinja::DataBuffer VirtualMemory::ReadBuffer(uint64_t address, size_t length) const
 {
 	uint64_t offset;
-	auto region = GetRegionAtAddress(address, offset);
-	if (!region.has_value())
+	auto* region = FindRegionAtAddress(address, offset);
+	if (!region)
 		throw UnmappedRegionException(address);
-	return region->fileAccessor.lock()->ReadBuffer(offset, length);
+	return region->file->ReadBuffer(offset, length);
 }
 
-std::pair<const uint8_t*, const uint8_t*> VirtualMemory::ReadSpan(uint64_t address, size_t length)
+std::span<const uint8_t> VirtualMemory::ReadSpan(uint64_t address, size_t length) const
 {
 	uint64_t offset;
-	auto region = GetRegionAtAddress(address, offset);
-	if (!region.has_value())
+	auto* region = FindRegionAtAddress(address, offset);
+	if (!region)
 		throw UnmappedRegionException(address);
-	return region->fileAccessor.lock()->ReadSpan(offset, length);
+	return region->file->ReadSpan(offset, length);
 }
 
-void VirtualMemory::Read(void* dest, uint64_t address, size_t length)
+void VirtualMemory::Read(void* dest, uint64_t address, size_t length) const
 {
 	uint64_t offset;
-	auto region = GetRegionAtAddress(address, offset);
-	if (!region.has_value())
+	auto* region = FindRegionAtAddress(address, offset);
+	if (!region)
 		throw UnmappedRegionException(address);
-	region->fileAccessor.lock()->Read(dest, offset, length);
+	region->file->Read(dest, offset, length);
 }
 
 VirtualMemoryReader::VirtualMemoryReader(std::shared_ptr<VirtualMemory> memory)
@@ -187,74 +175,11 @@ VirtualMemoryReader::VirtualMemoryReader(std::shared_ptr<VirtualMemory> memory)
 std::string VirtualMemoryReader::ReadCString(uint64_t address, size_t maxLength)
 {
 	uint64_t offset;
-	auto region = m_memory->GetRegionAtAddress(address, offset);
-	if (!region.has_value())
+	auto* region = m_memory->FindRegionAtAddress(address, offset);
+	if (!region)
 		throw UnmappedRegionException(address);
 	// TODO: Advance cursor?
-	return region->fileAccessor.lock()->ReadNullTermString(offset, maxLength);
-}
-
-uint64_t VirtualMemoryReader::ReadULEB128(size_t cursorLimit)
-{
-	uint64_t result = 0;
-	int bit = 0;
-	uint64_t offset;
-	auto mapping = m_memory->GetRegionAtAddress(m_cursor, offset);
-	auto fileLimit = offset + (cursorLimit - m_cursor);
-	auto fa = mapping->fileAccessor.lock();
-	auto* fileBuff = (uint8_t*)fa->Data();
-	do
-	{
-		if (offset >= fileLimit)
-			return -1;
-		uint64_t slice = ((uint64_t*)&((fileBuff)[offset]))[0] & 0x7f;
-		if (bit > 63)
-			return -1;
-		else
-		{
-			result |= (slice << bit);
-			bit += 7;
-		}
-	} while (((uint64_t*)&(fileBuff[offset++]))[0] & 0x80);
-	// TODO: There has got to be a better way to prevent this...
-	fa->Data();  // prevent deallocation of the fileAccessor as we're operating on the raw data buffer
-	return result;
-}
-
-int64_t VirtualMemoryReader::ReadSLEB128(size_t cursorLimit)
-{
-	constexpr size_t BYTE_SIZE = 7;    // Number of bits in each SLEB128 byte
-	constexpr size_t INT64_BITS = 64;  // Total number of bits in an int64_t
-
-	int64_t value = 0;
-	size_t shift = 0;
-	uint64_t offset;
-
-	// Retrieve associated memory region and the file buffer
-	auto mapping = m_memory->GetRegionAtAddress(m_cursor, offset);
-	auto fileLimit = offset + (cursorLimit - m_cursor);
-	auto fileAccessor = mapping->fileAccessor.lock();
-	auto* fileBuffer = static_cast<uint8_t*>(fileAccessor->Data());
-
-	// Loop through the SLEB128 encoded bytes
-	while (offset < fileLimit)
-	{
-		uint8_t currentByte = fileBuffer[offset++];
-		value |= (static_cast<int64_t>(currentByte & 0x7F) << shift);
-		shift += BYTE_SIZE;
-
-		if ((currentByte & 0x80) == 0)  // If MSB is not set, we're done
-			break;
-	}
-
-	// Properly sign-extend the value according to its size
-	value = (value << (INT64_BITS - shift)) >> (INT64_BITS - shift);
-
-	// TODO: There has got to be a better way to prevent this...
-	// Prevent deallocation of the fileAccessor
-	fileAccessor->Data();
-
-	return value;
+	return region->file->ReadNullTermString(offset, maxLength);
 }
 
 uint64_t VirtualMemoryReader::ReadPointer()

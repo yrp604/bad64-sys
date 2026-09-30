@@ -1,8 +1,13 @@
+#include <QElapsedTimer>
 #include <QHeaderView>
+#include <QHideEvent>
 #include <QMessageBox>
+#include <QShowEvent>
+#include <QTimer>
 #include <utility>
 #include "dsctriage.h"
 #include "globalarea.h"
+#include "stringstable.h"
 #include "symboltable.h"
 #include "ui/fontsettings.h"
 
@@ -44,7 +49,7 @@ DSCTriageView::DSCTriageView(QWidget* parent, BinaryViewRef data) : QWidget(pare
 
 	UIContext::registerNotification(this);
 
-	m_triageCollection = new DockableTabCollection();
+	m_triageCollection = new DockableTabCollection(this);
 	m_triageTabs = new SplitTabWidget(m_triageCollection);
 
 	auto triageTabStyle = new GlobalAreaTabStyle();
@@ -52,7 +57,15 @@ DSCTriageView::DSCTriageView(QWidget* parent, BinaryViewRef data) : QWidget(pare
 
 	QWidget* defaultWidget = initImageTable();
 	initSymbolTable();
+	initStringsTab();
 	initCacheInfoTables();
+
+	// The string scan and symbol fetch are expensive, so each panel starts its load only once its
+	// tab is first shown, and clears its large result set after the tab leaves the screen.
+	connect(m_triageTabs, &SplitTabWidget::currentChanged, this, [this](QWidget* widget) {
+		m_stringsPanel->setCurrentTabWidget(widget);
+		m_symbolsPanel->setCurrentTabWidget(widget);
+	});
 
 	m_layout = new QVBoxLayout(this);
 	m_layout->addWidget(m_triageTabs);
@@ -73,7 +86,8 @@ DSCTriageView::~DSCTriageView()
 }
 
 
-void DSCTriageView::loadImagesWithAddr(const std::vector<uint64_t>& addresses, bool includeDependencies) {
+void DSCTriageView::loadImagesWithAddr(const std::vector<uint64_t>& addresses, bool includeDependencies,
+	std::optional<uint64_t> navigateTo) {
 	auto controller = SharedCacheController::GetController(*m_data);
 	if (!controller)
 		return;
@@ -119,24 +133,29 @@ void DSCTriageView::loadImagesWithAddr(const std::vector<uint64_t>& addresses, b
 
 	// Apply the images in a future than update the triage view and run analysis.
 	QPointer<QFutureWatcher<ImageList>> watcher = new QFutureWatcher<ImageList>(this);
-	connect(watcher, &QFutureWatcher<ImageList>::finished, this, [watcher, this]() {
+	connect(watcher, &QFutureWatcher<ImageList>::finished, this, [watcher, navigateTo, this]() {
 		if (watcher)
 		{
 			auto loadedImages = watcher->result();
-			if (loadedImages.empty())
-				return;
+			if (!loadedImages.empty())
+			{
+				// Update the triage to display the images as loaded.
+				for (const auto& image : loadedImages)
+					setImageLoaded(image.headerAddress);
 
-			// Update the triage to display the images as loaded.
-			for (const auto& image : loadedImages)
-				setImageLoaded(image.headerAddress);
+				// Run analysis.
+				this->m_data->AddAnalysisOption("linearsweep");
+				this->m_data->AddAnalysisOption("pointersweep");
+				this->m_data->UpdateAnalysis();
+			}
 
-			// Run analysis.
-			this->m_data->AddAnalysisOption("linearsweep");
-			this->m_data->AddAnalysisOption("pointersweep");
-			this->m_data->UpdateAnalysis();
+			if (navigateTo)
+				navigateToAddress(*navigateTo);
+
+			watcher->deleteLater();
 		}
 	});
-	QFuture<ImageList> future = QtConcurrent::run([this, controller, images, imageLoadTask]() {
+	QFuture<ImageList> future = QtConcurrent::run([data = m_data, controller, images, imageLoadTask]() {
 		ImageList loadedImages = {};
 		for (const auto& image : images)
 		{
@@ -144,7 +163,7 @@ void DSCTriageView::loadImagesWithAddr(const std::vector<uint64_t>& addresses, b
 				break;
 			std::string newLoad = fmt::format("Loading images... ({}/{})", loadedImages.size(), images.size());
 			imageLoadTask->SetProgressText(newLoad);
-			if (controller->ApplyImage(*this->m_data, image))
+			if (controller->ApplyImage(*data, image))
 				loadedImages.emplace_back(image);
 		}
 		imageLoadTask->Finish();
@@ -258,6 +277,26 @@ QWidget* DSCTriageView::initImageTable()
 	});
 	loadImageButton->setText(" Load Selected ");
 
+	auto loadImageWithDepsButton = new QPushButton();
+	connect(loadImageWithDepsButton, &QPushButton::clicked, [this](bool) {
+		// Collect only visible selected rows
+		QModelIndexList selected;
+		for (const auto& index : m_imageTable->selectionModel()->selectedRows()) {
+			if (!m_imageTable->isRowHidden(index.row())) {
+				selected.append(index);
+			}
+		}
+
+		if (selected.empty())
+			return;
+
+		std::vector<uint64_t> addresses;
+		for (const auto& idx : selected)
+			addresses.push_back(idx.data().toString().toULongLong(nullptr, 16));
+		loadImagesWithAddr(addresses, true);
+	});
+	loadImageWithDepsButton->setText(" Load with Dependencies ");
+
 	auto refreshDataButton = new QPushButton();
 	{
 		// TODO: Might want to introduce a cooldown for this button (if we even keep it)
@@ -267,8 +306,11 @@ QWidget* DSCTriageView::initImageTable()
 
 	auto loadImageFilterEdit = new FilterEdit(m_imageTable);
 	loadImageFilterEdit->setPlaceholderText("Filter images");
-	connect(loadImageFilterEdit, &FilterEdit::textChanged, [this](const QString& filter) {
-		m_imageTable->setFilter(filter.toStdString());
+	connect(loadImageFilterEdit, &FilterEdit::textChanged, [this, loadImageFilterEdit](const QString& filter) {
+		m_imageTable->setFilter(filter.toStdString(), loadImageFilterEdit->getFilterOptions());
+	});
+	connect(loadImageFilterEdit, &FilterEdit::optionsChanged, [this, loadImageFilterEdit](FilterOptions options) {
+		m_imageTable->setFilter(loadImageFilterEdit->text().toStdString(), options);
 	});
 
 	connect(m_imageTable, &FilterableTableView::activated, this, [=, this](const QModelIndex& index) {
@@ -282,6 +324,7 @@ QWidget* DSCTriageView::initImageTable()
 
 	auto loadImageFooterLayout = new QHBoxLayout;
 	loadImageFooterLayout->addWidget(loadImageButton);
+	loadImageFooterLayout->addWidget(loadImageWithDepsButton);
 	loadImageFooterLayout->addWidget(refreshDataButton);
 	loadImageFooterLayout->setAlignment(Qt::AlignLeft);
 	loadImageLayout->addLayout(loadImageFooterLayout);
@@ -315,58 +358,32 @@ QWidget* DSCTriageView::initImageTable()
 void DSCTriageView::initSymbolTable()
 {
 	m_symbolTable = new SymbolTableView(this);
-
-	// Apply custom column styling
-	m_symbolTable->setItemDelegateForColumn(0, new AddressColorDelegate(m_symbolTable));
-
-	auto symbolFilterEdit = new FilterEdit(m_symbolTable);
-	symbolFilterEdit->setPlaceholderText("Filter symbols");
-	connect(symbolFilterEdit, &FilterEdit::textChanged, [this](const QString& filter) {
-		m_symbolTable->setFilter(filter.toStdString());
+	m_symbolsPanel = new TriageTablePanel(this, m_symbolTable, "Filter symbols", "symbols");
+	m_symbolsPanel->setLoader([this] { return startSymbolLoad(); });
+	m_symbolsPanel->setClearHandler([this] {
+		// Discard an in-flight symbol fetch rather than letting its results repopulate the
+		// cleared table.
+		if (m_symbolsWatcher)
+		{
+			m_symbolsWatcher->disconnect();
+			m_symbolsWatcher->deleteLater();
+		}
 	});
 
-	auto loadSymbolImageButton = new QPushButton();
+	m_symbolsPanel->addFilterToggle(":/icons/images/folder.png", "Match Image Names",
+		[this](bool checked) { m_symbolTable->symbolsModel()->setMatchImageNames(checked); });
+
+	auto loadSymbolImageButton = m_symbolsPanel->addSelectionButton("Load Image");
 	connect(loadSymbolImageButton, &QPushButton::clicked, [this](bool) {
 		auto selected = m_symbolTable->selectionModel()->selectedRows();
 		std::vector<uint64_t> addresses;
 		for (const auto& row : selected)
-			addresses.push_back(row.data().toString().toULongLong(nullptr, 16));
+			addresses.push_back(m_symbolTable->getSymbolAtRow(row.row()).address);
 		loadImagesWithAddr(addresses);
 	});
-	loadSymbolImageButton->setText("Load Image");
 
-	// Shows the current selected rows image name.
-	auto currentImageLabel = new QLabel(this);
-	currentImageLabel->setText("");
-	currentImageLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-	connect(m_symbolTable->selectionModel(), &QItemSelectionModel::currentRowChanged, this, [this, currentImageLabel](const QModelIndex &current, const QModelIndex &) {
-		auto symbol = m_symbolTable->getSymbolAtRow(current.row());
-		auto controller = SharedCacheController::GetController(*this->m_data);
-		if (!controller)
-			return;
-		auto image = controller->GetImageContaining(symbol.address);
-		if (image)
-			currentImageLabel->setText("Image: " + QString::fromStdString(image->name));
-		else
-			currentImageLabel->setText("");
-	});
-
-	auto symbolFooterLayout = new QHBoxLayout;
-	symbolFooterLayout->addWidget(loadSymbolImageButton);
-	symbolFooterLayout->addWidget(currentImageLabel);
-	symbolFooterLayout->setAlignment(Qt::AlignLeft);
-
-	auto symbolLayout = new QVBoxLayout;
-	symbolLayout->addWidget(symbolFilterEdit);
-	symbolLayout->addWidget(m_symbolTable);
-	symbolLayout->addLayout(symbolFooterLayout);
-
-	auto symbolWidget = new QWidget;
-	symbolWidget->setLayout(symbolLayout);
-
-	connect(m_symbolTable, &SymbolTableView::activated, this, [=, this](const QModelIndex& index){
+	connect(m_symbolTable, &SymbolTableView::activated, this, [this](const QModelIndex& index){
 		auto symbol = m_symbolTable->getSymbolAtRow(index.row());
-		auto dialog = new QMessageBox(this);
 
 		auto controller = SharedCacheController::GetController(*this->m_data);
 		if (!controller)
@@ -376,20 +393,264 @@ void DSCTriageView::initSymbolTable()
 		if (!image.has_value())
 			return;
 
-		dialog->setText("Load " + QString::fromStdString(image->name) + "?");
-		dialog->setStandardButtons(QMessageBox::Yes | QMessageBox::No);
-
-		connect(dialog, &QMessageBox::buttonClicked, this, [=, this](QAbstractButton* button)
+		if (controller->IsImageLoaded(*image))
 		{
-			if (button == dialog->button(QMessageBox::Yes))
-				loadImagesWithAddr({image->headerAddress});
-		});
+			navigateToAddress(symbol.address);
+			return;
+		}
 
-		dialog->exec();
+		promptToLoadImage(image->name, image->headerAddress, symbol.address);
 	});
 
-	m_triageTabs->addTab(symbolWidget, "Symbols");
-	m_triageTabs->setCanCloseTab(symbolWidget, false);
+	m_triageTabs->addTab(m_symbolsPanel, "Symbols");
+	m_triageTabs->setCanCloseTab(m_symbolsPanel, false);
+}
+
+
+bool DSCTriageView::startSymbolLoad()
+{
+	// The controller is not available until view init has finished. Retry on the next activation.
+	auto controller = SharedCacheController::GetController(*m_data);
+	if (!controller)
+		return false;
+
+	m_symbolTable->setNameSources(*controller);
+	m_symbolsPanel->statusLabel()->setText("Loading…");
+
+	typedef std::vector<CacheSymbol> SymbolList;
+	QPointer<QFutureWatcher<SymbolList>> watcher = new QFutureWatcher<SymbolList>(this);
+	m_symbolsWatcher = watcher;
+	connect(watcher, &QFutureWatcher<SymbolList>::finished, this, [watcher, this]() {
+		if (!watcher)
+			return;
+		m_symbolTable->symbolsModel()->appendSymbols(watcher->result());
+		m_symbolsPanel->finishLoad();
+		watcher->deleteLater();
+	});
+	QFuture<SymbolList> future = QtConcurrent::run([controller]() { return controller->GetSymbols(); });
+	watcher->setFuture(future);
+	connect(this, &QObject::destroyed, this, [watcher]() {
+		if (watcher && watcher->isRunning()) {
+			watcher->cancel();
+			watcher->waitForFinished();
+		}
+	});
+	return true;
+}
+
+
+void DSCTriageView::promptToLoadImage(const std::string& imageName, uint64_t address, uint64_t navigateTo)
+{
+	auto dialog = new QMessageBox(this);
+	dialog->setText("Load " + QString::fromStdString(imageName) + "?");
+	auto loadButton = dialog->addButton("Load Image", QMessageBox::AcceptRole);
+	dialog->addButton(QMessageBox::Cancel);
+	dialog->setDefaultButton(loadButton);
+
+	connect(dialog, &QMessageBox::buttonClicked, this, [=, this](QAbstractButton* button)
+	{
+		if (button == loadButton)
+			loadImagesWithAddr({address}, false, navigateTo);
+	});
+
+	dialog->exec();
+}
+
+
+void DSCTriageView::initStringsTab()
+{
+	m_stringsTable = new StringsTableView(this);
+	m_stringsPanel = new TriageTablePanel(this, m_stringsTable, "Filter strings", "strings");
+	m_stringsPanel->setLoader([this] { return startStringScan(); });
+	m_stringsPanel->setClearHandler([this] {
+		m_stringsPollTimer->stop();
+		m_stringScanner.reset();
+	});
+	// Strings hidden by the visibility toggles are not part of the searched population, so they
+	// do not appear in the count unless a text filter narrows it.
+	m_stringsPanel->setBaselineCount(
+		[this] { return m_stringsTable->stringsModel()->baselineStringCount(); });
+
+	m_stringsPanel->addFilterToggle(":/icons/images/folder.png", "Match Image Names",
+		[this](bool checked) { m_stringsTable->stringsModel()->setMatchImageNames(checked); });
+	// Strings in regions that belong to no image (dyld data and other non-image regions) are
+	// rarely of interest, so they are hidden unless this is toggled on.
+	m_stringsPanel->addFilterToggle(":/icons/images/stack.png", "Show Non-Image Strings",
+		[this](bool checked) { m_stringsTable->stringsModel()->setShowNonImageStrings(checked); });
+
+	auto loadStringImageButton = m_stringsPanel->addSelectionButton("Load Image");
+	connect(loadStringImageButton, &QPushButton::clicked, [this](bool) {
+		auto selected = m_stringsTable->selectionModel()->selectedRows();
+		std::vector<uint64_t> imageAddresses;
+		for (const auto& row : selected)
+		{
+			const auto string = m_stringsTable->getStringAtRow(row.row());
+			if (string.imageStart)
+				imageAddresses.push_back(string.address);
+			else
+				loadStringRegion(string, std::nullopt);
+		}
+		loadImagesWithAddr(imageAddresses);
+	});
+
+	connect(m_stringsTable, &StringsTableView::activated, this, [this](const QModelIndex& index) {
+		const auto string = m_stringsTable->getStringAtRow(index.row());
+		auto controller = SharedCacheController::GetController(*this->m_data);
+		if (!controller)
+			return;
+
+		// Strings outside any image (e.g. the coalesced selector pool) load just their region.
+		if (!string.imageStart)
+		{
+			loadStringRegion(string, string.address);
+			return;
+		}
+
+		auto image = controller->GetImageAt(string.imageStart);
+		if (!image.has_value())
+			return;
+
+		if (controller->IsImageLoaded(*image))
+		{
+			navigateToAddress(string.address);
+			return;
+		}
+
+		promptToLoadImage(image->name, image->headerAddress, string.address);
+	});
+
+	m_stringsPollTimer = new QTimer(this);
+	m_stringsPollTimer->setInterval(250);
+	connect(m_stringsPollTimer, &QTimer::timeout, this, &DSCTriageView::pollStringScan);
+
+	m_triageTabs->addTab(m_stringsPanel, "Strings");
+	m_triageTabs->setCanCloseTab(m_stringsPanel, false);
+}
+
+
+void DSCTriageView::showEvent(QShowEvent* event)
+{
+	QWidget::showEvent(event);
+	m_stringsPanel->setViewVisible(true);
+	m_symbolsPanel->setViewVisible(true);
+}
+
+
+void DSCTriageView::hideEvent(QHideEvent* event)
+{
+	QWidget::hideEvent(event);
+	m_stringsPanel->setViewVisible(false);
+	m_symbolsPanel->setViewVisible(false);
+}
+
+
+bool DSCTriageView::startStringScan()
+{
+	// The controller is not available until view init has finished. Retry on the next activation.
+	auto controller = SharedCacheController::GetController(*m_data);
+	if (!controller)
+		return false;
+
+	m_stringsTable->setNameSources(*controller);
+	m_stringScanner = controller->CreateStringScanner();
+	m_stringScanner->Start();
+	m_stringsPanel->statusLabel()->setText("Scanning…");
+	m_stringsPollTimer->start();
+	return true;
+}
+
+
+void DSCTriageView::pollStringScan()
+{
+	if (!m_stringScanner)
+		return;
+
+	auto model = m_stringsTable->stringsModel();
+	constexpr uint64_t maxBatchSize = 250000;
+	constexpr qint64 maxIngestMilliseconds = 150;
+	// Ingest batches until the time budget is spent, then yield so the UI stays responsive.
+	QElapsedTimer ingestTimer;
+	ingestTimer.start();
+	do
+	{
+		auto batch = m_stringScanner->TakeStrings(maxBatchSize);
+		if (batch.empty())
+			break;
+		model->appendStrings(std::move(batch));
+	} while (ingestTimer.elapsed() < maxIngestMilliseconds);
+
+	const bool scanComplete = m_stringScanner->IsComplete();
+	const QLocale locale;
+	if (scanComplete && model->totalRowCount() == m_stringScanner->GetStringCount())
+	{
+		m_stringsPollTimer->stop();
+		m_stringScanner.reset();
+		m_stringsPanel->finishLoad();
+	}
+	else if (scanComplete)
+	{
+		// The scan has finished but the table is still ingesting batched results.
+		const QString totalStrings = locale.toString(static_cast<qulonglong>(m_stringScanner->GetStringCount()));
+		const QString fetchedStrings =
+			locale.toString(static_cast<qulonglong>(model->totalRowCount())).rightJustified(totalStrings.size());
+		m_stringsPanel->statusLabel()->setText(QString("Loading… %1 / %2 strings").arg(fetchedStrings, totalStrings));
+	}
+	else
+	{
+		const auto [current, total] = m_stringScanner->GetProgress();
+		const QString totalMB = locale.toString(static_cast<qulonglong>(total / (1024 * 1024)));
+		// Pad the growing values so the label width stays stable while scanning.
+		const QString currentMB =
+			locale.toString(static_cast<qulonglong>(current / (1024 * 1024))).rightJustified(totalMB.size());
+		const QString stringCount =
+			locale.toString(static_cast<qulonglong>(model->totalRowCount())).rightJustified(10);
+		m_stringsPanel->statusLabel()->setText(
+			QString("Scanning… %1 / %2 MB — %3 strings").arg(currentMB, totalMB, stringCount));
+	}
+}
+
+
+void DSCTriageView::loadStringRegion(const CacheString& string, std::optional<uint64_t> navigateTo)
+{
+	auto controller = SharedCacheController::GetController(*m_data);
+	if (!controller)
+		return;
+
+	auto region = controller->GetRegionAt(string.regionStart);
+	if (!region.has_value())
+		return;
+
+	QPointer<QFutureWatcher<bool>> watcher = new QFutureWatcher<bool>(this);
+	connect(watcher, &QFutureWatcher<bool>::finished, this, [watcher, navigateTo, this]() {
+		if (!watcher)
+			return;
+		if (watcher->result())
+			m_data->UpdateAnalysis();
+		if (navigateTo)
+			navigateToAddress(*navigateTo);
+		watcher->deleteLater();
+	});
+	QFuture<bool> future = QtConcurrent::run([data = m_data, controller, region]() {
+		return controller->ApplyRegion(*data, *region);
+	});
+	watcher->setFuture(future);
+	connect(this, &QObject::destroyed, this, [watcher]() {
+		if (watcher && watcher->isRunning()) {
+			watcher->cancel();
+			watcher->waitForFinished();
+		}
+	});
+}
+
+
+void DSCTriageView::navigateToAddress(uint64_t address)
+{
+	ViewFrame* frame = ViewFrame::viewFrameForWidget(this);
+	if (!frame)
+		return;
+	// Navigating the frame's current view would hit DSCTriageView::navigate, which is not
+	// navigable. Switch to the linear view of the cache instead.
+	frame->navigate("Linear:" + frame->getCurrentDataType(), address, true, true);
 }
 
 
@@ -454,8 +715,11 @@ void DSCTriageView::initCacheInfoTables()
 	auto mappingLabel = new QLabel("Mappings");
 	auto mappingFilterEdit = new FilterEdit(m_mappingTable);
 	mappingFilterEdit->setPlaceholderText("Filter mappings");
-	connect(mappingFilterEdit, &FilterEdit::textChanged, [this](const QString& filter) {
-		m_mappingTable->setFilter(filter.toStdString());
+	connect(mappingFilterEdit, &FilterEdit::textChanged, [this, mappingFilterEdit](const QString& filter) {
+		m_mappingTable->setFilter(filter.toStdString(), mappingFilterEdit->getFilterOptions());
+	});
+	connect(mappingFilterEdit, &FilterEdit::optionsChanged, [this, mappingFilterEdit](FilterOptions options) {
+		m_mappingTable->setFilter(mappingFilterEdit->text().toStdString(), options);
 	});
 
 	auto mappingHeaderLayout = new QHBoxLayout;
@@ -467,8 +731,11 @@ void DSCTriageView::initCacheInfoTables()
 	auto regionLabel = new QLabel("Regions");
 	auto regionFilterEdit = new FilterEdit(m_regionTable);
 	regionFilterEdit->setPlaceholderText("Filter regions");
-	connect(regionFilterEdit, &FilterEdit::textChanged, [this](const QString& filter) {
-		m_regionTable->setFilter(filter.toStdString());
+	connect(regionFilterEdit, &FilterEdit::textChanged, [this, regionFilterEdit](const QString& filter) {
+		m_regionTable->setFilter(filter.toStdString(), regionFilterEdit->getFilterOptions());
+	});
+	connect(regionFilterEdit, &FilterEdit::optionsChanged, [this, regionFilterEdit](FilterOptions options) {
+		m_regionTable->setFilter(regionFilterEdit->text().toStdString(), options);
 	});
 
 	auto regionHeaderLayout = new QHBoxLayout;
@@ -593,6 +860,8 @@ void DSCTriageView::RefreshData()
 	// TODO: This should use `QSortFilterProxyModel`, but that's a bigger change.
 	m_mappingTable->setSortingEnabled(true);
 
-
-	m_symbolTable->populateSymbols(*m_data);
+	// Symbols and strings are loaded lazily when their tabs are shown.
+	// Discard any loaded content so the reload picks up the refreshed cache information.
+	m_symbolsPanel->resetContent();
+	m_stringsPanel->resetContent();
 }

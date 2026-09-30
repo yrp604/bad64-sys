@@ -440,6 +440,12 @@ class PowerpcArchitecture: public Architecture
 			}
 
 			case PPC_ID_BCLRx:
+				// Keep linked branches as calls in LLIL so dataflow can distinguish
+				// a GOT-address helper returning through incoming LR from an indirect call.
+				if ((bo & 0x14) == 0x14)
+					result.AddBranch(FunctionReturn);
+				break;
+
 			case PPC_ID_VLE_SE_BLRx:
 				if (!instruction.flags.lk && (bo & 0x14) == 0x14)
 					result.AddBranch(FunctionReturn);
@@ -517,14 +523,14 @@ class PowerpcArchitecture: public Architecture
 
 			case PPC_OP_SIMM:
 				if (op->simm < 0 && op->simm > -0x10000)
-					snprintf(buf, sizeof(buf), "-0x%llx", -op->simm);
+					snprintf(buf, sizeof(buf), "-0x%" PRIx64, -op->simm);
 				else
-					snprintf(buf, sizeof(buf), "0x%llx", op->simm);
+					snprintf(buf, sizeof(buf), "0x%" PRIx64, op->simm);
 				result.emplace_back(IntegerToken, buf, op->simm, 4);
 				break;
 
 			case PPC_OP_LABEL:
-				snprintf(buf, sizeof(buf), "0x%llx", op->label);
+				snprintf(buf, sizeof(buf), "0x%" PRIx64, op->label);
 				result.emplace_back(CodeRelativeAddressToken, buf, op->label, 4);
 				break;
 
@@ -661,6 +667,11 @@ class PowerpcArchitecture: public Architecture
 		return "";
 	}
 
+	virtual BNIntrinsicClass GetIntrinsicClass(uint32_t intrinsic) override
+	{
+		return intrinsic == PPC_INTRIN_COPY_STRING_WORDS ? MemoryIntrinsicClass : GeneralIntrinsicClass;
+	}
+
 	virtual string GetIntrinsicName(uint32_t intrinsic) override
 	{
 		switch (intrinsic)
@@ -669,6 +680,8 @@ class PowerpcArchitecture: public Architecture
 			return "__builtin_clz";
 		case PPC_INTRIN_FRSP:
 			return "float_round";
+		case PPC_INTRIN_COPY_STRING_WORDS:
+			return "copy_string_words";
 		default:
 			if ((decodeFlags & DECODE_FLAGS_PS))
 			{
@@ -682,9 +695,7 @@ class PowerpcArchitecture: public Architecture
 
 	virtual std::vector<uint32_t> GetAllIntrinsics() override
 	{
-		// Highest intrinsic number currently is PPC_PS_INTRIN_END.
-		// If new extensions are added please update this code.
-		std::vector<uint32_t> result{PPC_PS_INTRIN_END};
+		std::vector<uint32_t> result{PPC_INTRIN_COPY_STRING_WORDS};
 
 		// Double check someone didn't insert a new intrinsic at the beginning of our enum since we rely
 		// on it to fill the next array.
@@ -728,6 +739,10 @@ class PowerpcArchitecture: public Architecture
 			return {NameAndType(Type::IntegerType(4, false))};
 		case PPC_INTRIN_FRSP:
 			return {NameAndType(Type::FloatType(4))};
+		case PPC_INTRIN_COPY_STRING_WORDS:
+			return {NameAndType("dest", Type::PointerType(GetAddressSize(), Type::IntegerType(1, false))),
+				NameAndType("source", Type::PointerType(GetAddressSize(), Type::IntegerType(1, false))),
+				NameAndType("count", Type::IntegerType(4, false))};
 		// for now, quantize is operating on the float in, and the gqr that holds the scale
 		default:
 			if ((decodeFlags & DECODE_FLAGS_PS))
@@ -762,6 +777,9 @@ class PowerpcArchitecture: public Architecture
 			return {Type::IntegerType(4, false)};
 		case PPC_INTRIN_FRSP:
 			return {Type::FloatType(4)};
+		case PPC_INTRIN_COPY_STRING_WORDS:
+			// Up to eight words loaded by lswi, preserved as native-width GPR values.
+			return vector<Confidence<Ref<Type>>>(8, Type::IntegerType(GetAddressSize(), false));
 		default:
 			if ((decodeFlags & DECODE_FLAGS_PS))
 			{
@@ -775,6 +793,7 @@ class PowerpcArchitecture: public Architecture
 
 	virtual bool GetInstructionLowLevelIL(const uint8_t* data, uint64_t addr, size_t& len, LowLevelILFunction& il) override
 	{
+		const size_t available = len;
 		size_t instructionLength = GetInstructionLength(data, len, decodeFlags);
 		if (instructionLength == 0)
 		{
@@ -783,13 +802,26 @@ class PowerpcArchitecture: public Architecture
 		}
 
 		len = instructionLength;
-
 		Instruction instruction;
 		if (!FillInstruction(&instruction, data, instructionLength, addr, DECODE_FLAGS_VLE_TRANSLATE))
 		{
 			MYLOG("ERROR: FillInstruction()\n");
 			il.AddInstruction(il.Undefined());
 			return false;
+		}
+
+		// The default lifter supplies the remaining bytes of the current basic block.
+		// Keep instruction decoding at four bytes; only lifting consumes the pair.
+		if (!(decodeFlags & DECODE_FLAGS_VLE) && instruction.id == PPC_ID_LSWI && available >= 8
+			&& !il.GetLabelForAddress(this, addr + 4))
+		{
+			Instruction store;
+			if (FillInstruction(&store, data + 4, 4, addr + 4)
+				&& GetLowLevelILForPPCStringCopy(this, il, &instruction, &store))
+			{
+				len = 8;
+				return true;
+			}
 		}
 
 		return GetLowLevelILForPPCInstruction(this, il, &instruction, addr);
@@ -2293,6 +2325,11 @@ public:
 	{
 	}
 
+    virtual bool IsStackReservedForArgumentRegisters() override
+    {
+        return true;
+    }
+
 
 	virtual vector<uint32_t> GetIntegerArgumentRegisters() override
 	{
@@ -2469,7 +2506,8 @@ public:
 
 	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
 	{
-		(void)view; (void)arch; (void)result;
+		(void)arch; (void)result;
+		Ref<Logger> logger = view->CreateLogger("PpcElfReloc");
 		set<uint64_t> relocTypes;
 		for (auto& reloc : result)
 		{
@@ -2526,7 +2564,7 @@ public:
 			}
 		}
 		for (auto& reloc : relocTypes)
-			LogWarn("Unsupported ELF relocation type: %s", GetRelocationString((ElfPpcRelocationType)reloc));
+			logger->LogWarn("Unsupported ELF relocation type: %s", GetRelocationString((ElfPpcRelocationType)reloc));
 		return true;
 	}
 
@@ -2555,7 +2593,8 @@ class PpcMachoRelocationHandler: public RelocationHandler
 public:
 	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
 	{
-		(void)view; (void)arch;
+		(void)arch;
+		Ref<Logger> logger = view->CreateLogger("PpcMachoReloc");
 		set<uint64_t> relocTypes;
 		for (auto& reloc : result)
 		{
@@ -2563,7 +2602,7 @@ public:
 			relocTypes.insert(reloc.nativeType);
 		}
 		for (auto& reloc : relocTypes)
-			LogWarn("Unsupported Mach-O relocation type: %s", GetRelocationString((MachoPpcRelocationType)reloc));
+			logger->LogWarn("Unsupported Mach-O relocation type: %s", GetRelocationString((MachoPpcRelocationType)reloc));
 		return false;
 	}
 };

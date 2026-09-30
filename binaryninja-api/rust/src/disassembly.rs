@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,11 +19,11 @@ use crate::architecture::Architecture;
 use crate::architecture::CoreArchitecture;
 use crate::basic_block::BasicBlock;
 use crate::function::{Location, NativeBlock};
-use crate::high_level_il as hlil;
 use crate::low_level_il as llil;
 use crate::medium_level_il as mlil;
 use crate::string::IntoCStr;
 use crate::string::{raw_to_string, strings_to_string_list, BnString};
+use crate::{high_level_il as hlil, BN_INVALID_EXPR};
 
 use crate::rc::*;
 
@@ -266,8 +266,7 @@ pub struct InstructionTextToken {
     pub text: String,
     pub confidence: u8,
     pub context: InstructionTextTokenContext,
-    // TODO: Document that this is not necessary to set and that this is valid in a limited context.
-    pub expr_index: usize,
+    pub expr_index: Option<usize>,
     pub kind: InstructionTextTokenKind,
 }
 
@@ -278,7 +277,10 @@ impl InstructionTextToken {
             text: raw_to_string(value.text).unwrap(),
             confidence: value.confidence,
             context: value.context.into(),
-            expr_index: value.exprIndex,
+            expr_index: match value.exprIndex {
+                BN_INVALID_EXPR => None,
+                index => Some(index),
+            },
             kind: InstructionTextTokenKind::from_raw(value),
         }
     }
@@ -305,7 +307,7 @@ impl InstructionTextToken {
             // NOTE: Expected to be freed with `InstructionTextToken::free_raw`.
             typeNames: strings_to_string_list(&type_names),
             namesCount: type_names.len(),
-            exprIndex: value.expr_index,
+            exprIndex: value.expr_index.unwrap_or(BN_INVALID_EXPR),
         }
     }
 
@@ -326,7 +328,7 @@ impl InstructionTextToken {
             text: text.into(),
             confidence: MAX_CONFIDENCE,
             context: InstructionTextTokenContext::Normal,
-            expr_index: 0,
+            expr_index: None,
             kind,
         }
     }
@@ -341,7 +343,7 @@ impl InstructionTextToken {
             text: text.into(),
             confidence: MAX_CONFIDENCE,
             context: InstructionTextTokenContext::Normal,
-            expr_index: 0,
+            expr_index: None,
             kind,
         }
     }
@@ -392,17 +394,34 @@ unsafe impl CoreArrayProviderInner for Array<InstructionTextToken> {
 pub enum InstructionTextTokenKind {
     Text,
     Instruction,
+    /// Separator between operands, such as `,` or `+`.
+    ///
+    /// This is primarily used to identify the tokens associated with a given operand.
     OperandSeparator,
     Register,
     Integer {
         value: u64,
         /// Size of the integer
         size: Option<usize>,
+        /// The operand this integer is associated with.
+        ///
+        /// This is primarily used to change the display type of the integer.
+        ///
+        /// NOTE: This will be populated by a post-processing step when rendering, so you can leave this
+        /// as `None` when emitting in [`Architecture::instruction_text`] and other similar methods.
+        operand: Option<usize>,
     },
     PossibleAddress {
         value: u64,
         /// Size of the address
         size: Option<usize>,
+        /// The operand this integer is associated with.
+        ///
+        /// This is primarily used to change the display type of the integer.
+        ///
+        /// NOTE: This will be populated by a post-processing step when rendering, so you can leave this
+        /// as `None` when emitting in [`Architecture::instruction_text`] and other similar methods.
+        operand: Option<usize>,
     },
     BeginMemoryOperand,
     EndMemoryOperand,
@@ -414,7 +433,15 @@ pub enum InstructionTextTokenKind {
     Annotation,
     CodeRelativeAddress {
         value: u64,
+        /// Size of the address
         size: Option<usize>,
+        /// The operand this integer is associated with.
+        ///
+        /// This is primarily used to change the display type of the integer.
+        ///
+        /// NOTE: This will be populated by a post-processing step when rendering, so you can leave this
+        /// as `None` when emitting in [`Architecture::instruction_text`] and other similar methods.
+        operand: Option<usize>,
     },
     ArgumentName {
         // TODO: The argument index?
@@ -441,7 +468,15 @@ pub enum InstructionTextTokenKind {
     StringContent {
         ty: StringType,
     },
-    CharacterConstant,
+    CharacterConstant {
+        /// The operand this character is associated with.
+        ///
+        /// This is primarily used to change the display type of the character.
+        ///
+        /// NOTE: This will be populated by a post-processing step when rendering, so you can leave this
+        /// as `None` when emitting in [`Architecture::instruction_text`] and other similar methods.
+        operand: Option<usize>,
+    },
     Keyword {
         // Example usage can be found for `BNAnalysisWarningActionType`.
         value: u64,
@@ -504,6 +539,7 @@ pub enum InstructionTextTokenKind {
         // TODO: Explain what this is
         hash: Option<u64>,
     },
+    ValueLocation,
     CodeSymbol {
         // Target address of the symbol
         value: u64,
@@ -576,6 +612,7 @@ impl InstructionTextTokenKind {
                     0 => None,
                     size => Some(size),
                 },
+                operand: Some(value.operand),
             },
             BNInstructionTextTokenType::PossibleAddressToken => Self::PossibleAddress {
                 value: value.value,
@@ -583,6 +620,7 @@ impl InstructionTextTokenKind {
                     0 => None,
                     size => Some(size),
                 },
+                operand: Some(value.operand),
             },
             BNInstructionTextTokenType::BeginMemoryOperandToken => Self::BeginMemoryOperand,
             BNInstructionTextTokenType::EndMemoryOperandToken => Self::EndMemoryOperand,
@@ -600,6 +638,7 @@ impl InstructionTextTokenKind {
                     0 => None,
                     size => Some(size),
                 },
+                operand: Some(value.operand),
             },
             BNInstructionTextTokenType::ArgumentNameToken => {
                 Self::ArgumentName { value: value.value }
@@ -637,7 +676,9 @@ impl InstructionTextTokenKind {
                 }
                 _ => Self::String { value: value.value },
             },
-            BNInstructionTextTokenType::CharacterConstantToken => Self::CharacterConstant,
+            BNInstructionTextTokenType::CharacterConstantToken => Self::CharacterConstant {
+                operand: Some(value.operand),
+            },
             BNInstructionTextTokenType::KeywordToken => Self::Keyword { value: value.value },
             BNInstructionTextTokenType::TypeNameToken => Self::TypeName,
             BNInstructionTextTokenType::FieldNameToken => Self::FieldName {
@@ -698,6 +739,7 @@ impl InstructionTextTokenKind {
                     hash => Some(hash),
                 },
             },
+            BNInstructionTextTokenType::ValueLocationToken => Self::ValueLocation,
             BNInstructionTextTokenType::CodeSymbolToken => Self::CodeSymbol {
                 value: value.value,
                 size: value.size,
@@ -795,6 +837,10 @@ impl InstructionTextTokenKind {
     /// Mapping to the [`BNInstructionTextTokenType::operand`] field.
     fn try_operand(&self) -> Option<usize> {
         match self {
+            InstructionTextTokenKind::Integer { operand, .. } => *operand,
+            InstructionTextTokenKind::PossibleAddress { operand, .. } => *operand,
+            InstructionTextTokenKind::CodeRelativeAddress { operand, .. } => *operand,
+            InstructionTextTokenKind::CharacterConstant { operand, .. } => *operand,
             InstructionTextTokenKind::LocalVariable { ssa_version, .. } => Some(*ssa_version),
             InstructionTextTokenKind::IndirectImport { source_operand, .. } => {
                 Some(*source_operand)
@@ -862,7 +908,7 @@ impl From<InstructionTextTokenKind> for BNInstructionTextTokenType {
             InstructionTextTokenKind::StringContent { .. } => {
                 BNInstructionTextTokenType::StringToken
             }
-            InstructionTextTokenKind::CharacterConstant => {
+            InstructionTextTokenKind::CharacterConstant { .. } => {
                 BNInstructionTextTokenType::CharacterConstantToken
             }
             InstructionTextTokenKind::Keyword { .. } => BNInstructionTextTokenType::KeywordToken,
@@ -912,6 +958,9 @@ impl From<InstructionTextTokenKind> for BNInstructionTextTokenType {
                 BNInstructionTextTokenType::BaseStructureSeparatorToken
             }
             InstructionTextTokenKind::Brace { .. } => BNInstructionTextTokenType::BraceToken,
+            InstructionTextTokenKind::ValueLocation => {
+                BNInstructionTextTokenType::ValueLocationToken
+            }
             InstructionTextTokenKind::CodeSymbol { .. } => {
                 BNInstructionTextTokenType::CodeSymbolToken
             }

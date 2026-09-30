@@ -1,13 +1,24 @@
 #pragma once
 
 #include <QtCore/QAbstractItemModel>
+#include <QtCore/QHash>
 #include <QtCore/QItemSelection>
+#include <QtCore/QMimeData>
 #include <QtCore/QModelIndex>
+#include <QtCore/QPoint>
+#include <QtCore/QPointer>
 #include <QtCore/QRegularExpression>
+#include <QtCore/QSet>
 #include <QtCore/QSize>
 #include <QtCore/QSortFilterProxyModel>
+#include <QtCore/QStringList>
 #include <QtCore/QTimer>
 #include <QtCore/QVariant>
+#include <QtGui/QDrag>
+#include <QtGui/QDragEnterEvent>
+#include <QtGui/QDragLeaveEvent>
+#include <QtGui/QDragMoveEvent>
+#include <QtGui/QDropEvent>
 #include <QtGui/QMouseEvent>
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QComboBox>
@@ -18,7 +29,9 @@
 #include <QtWidgets/QSpinBox>
 #include <QtWidgets/QStyledItemDelegate>
 #include <QtWidgets/QTableWidget>
+#include <QtWidgets/QToolButton>
 #include <QtWidgets/QTreeView>
+#include <QtWidgets/QVBoxLayout>
 
 #include <map>
 #include <optional>
@@ -30,6 +43,9 @@
 #include "render.h"
 #include "menus.h"
 #include "clickablelabel.h"
+#include "theme.h"
+
+class QSplitter;
 
 /*!
 
@@ -105,16 +121,18 @@ class BINARYNINJAUIAPI SettingsFilterProxyModel : public QSortFilterProxyModel
 	int scopeFilter() { return m_scopeFilter; }
 	void setScopeFilter(int scope)
 	{
+		beginFilterChange();
 		m_scopeFilter = scope;
-		invalidateFilter();
 		m_subgroupFilterCache.clear();
+		endFilterChange();
 	}
 	int scopeForSchema() { return m_scopeForSchema; }
 	void setScopeForSchema(int scope)
 	{
-		invalidateFilter();
+		beginFilterChange();
 		m_subgroupFilterCache.clear();
 		m_scopeForSchema = scope;
+		endFilterChange();
 	}
 
 	QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
@@ -140,6 +158,75 @@ class BINARYNINJAUIAPI SettingsOutlineProxyModel : public QSortFilterProxyModel
 
   protected:
 	bool filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const override;
+};
+
+
+/*!
+    \ingroup settingsview
+
+    Editor widget for array-of-string settings. Renders one editable row per item
+    plus a top row for adding new entries. Used by SettingsEditor in place of the
+    raw JSON QLineEdit for settings whose value is a list of strings.
+*/
+class BINARYNINJAUIAPI ArrayStringSettingEditor : public QWidget
+{
+	Q_OBJECT
+
+  private:
+	QStringList m_enumValues;
+	QSet<QString> m_defaultValueSet;
+	bool m_readOnly = false;
+	bool m_reorderable = false;
+	// When the schema supplies an enum, existing rows are read-only and added
+	// values must be members of the enum (enforced in onAddClicked).
+	bool m_restrictToEnum = false;
+	QVBoxLayout* m_rowLayout = nullptr;
+	QWidget* m_addRowWidget = nullptr;
+	QLineEdit* m_addLineEdit = nullptr;
+	QComboBox* m_addComboBox = nullptr;
+	CustomStyleFlatToolButton* m_addButton = nullptr;
+	std::vector<QWidget*> m_rows;
+
+	int m_dropIndicatorY = -1;
+	QPoint m_dragStartPos;
+	int m_dragSourceIndex = -1;
+	// Bumped whenever the row set is rebuilt (setValues/clearRows). A drag
+	// captures the current value and dropEvent aborts if it changed during the
+	// nested drag event loop (e.g. an external settings repopulate).
+	unsigned m_revision = 0;
+	int m_dragRevision = -1;
+
+	QLineEdit* addRowInputField() const;
+	void clearRows();
+	QString currentAddText() const;
+	void appendRow(const QString& text);
+	void updateTabOrder();
+	int rowIndexAtY(int y) const;
+	void removeRowWidget(QWidget* row, bool restoreFocus);
+
+  private Q_SLOTS:
+	void onAddClicked();
+	void onRowEditingFinished();
+	void onRowRemoveClicked();
+
+  public:
+	ArrayStringSettingEditor(QWidget* parent, const QStringList& enumValues, const QStringList& defaultValues, bool readOnly, bool reorderable);
+
+	void setValues(const QStringList& values);
+	QStringList values() const;
+	void clearAddText();
+
+  protected:
+	void paintEvent(QPaintEvent* event) override;
+	bool eventFilter(QObject* watched, QEvent* event) override;
+	void dragEnterEvent(QDragEnterEvent* event) override;
+	void dragMoveEvent(QDragMoveEvent* event) override;
+	void dragLeaveEvent(QDragLeaveEvent* event) override;
+	void dropEvent(QDropEvent* event) override;
+
+  Q_SIGNALS:
+	void changed();
+	void geometryChanged();
 };
 
 
@@ -174,6 +261,7 @@ class BINARYNINJAUIAPI SettingsEditor : public QWidget
 	QSpinBox* m_spinBox = nullptr;
 	QComboBox* m_comboBox = nullptr;
 	QTableWidget* m_objectTable = nullptr;
+	ArrayStringSettingEditor* m_stringListEditor = nullptr;
 	std::set<QString> m_validComboSelections;
 	std::vector<std::pair<std::string, Json::ValueType>> m_objectTableColumns;
 	Json::StreamWriterBuilder m_builder;
@@ -184,7 +272,9 @@ class BINARYNINJAUIAPI SettingsEditor : public QWidget
 	bool m_settingModified = false;
 
 	int m_minHeight;
-	int m_maxAdjustedWidth;
+	int m_baseHeightForWidth;
+	int m_lastDescWidth = 0;
+	bool m_geometryDirty = false;
 
 	std::pair<bool, std::vector<std::pair<std::string, Json::ValueType>>> isObjectSetting(const Json::Value& value);
 	QTableWidgetItem* getTableItemForValue(const Json::Value& value);
@@ -215,6 +305,8 @@ class BINARYNINJAUIAPI SettingsEditor : public QWidget
 	void updateDoubleNumberSetting(double value);
 	void updateIntNumberSetting(int value);
 	void updateObjectSetting();
+	void updateStringListSetting();
+	void onStringListGeometryChanged();
 	void addArraySetting(const QString& text);
 	void resetSetting();
 	void resetAllSettings(BNSettingsScope scope);
@@ -226,7 +318,6 @@ class BINARYNINJAUIAPI SettingsEditor : public QWidget
 
   public Q_SLOTS:
 	void updateScope(BinaryViewRef, BNSettingsScope);
-	void updateSize();
 	void notifyGeometryChanged();
 	void updateViewMode(bool enabled);
 
@@ -235,6 +326,7 @@ class BINARYNINJAUIAPI SettingsEditor : public QWidget
 
   protected:
 	bool eventFilter(QObject* obj, QEvent* event) override;
+	void resizeEvent(QResizeEvent* event) override;
 	void mousePressEvent(QMouseEvent* event) override;
 	void paintEvent(QPaintEvent* event) override;
 };
@@ -261,6 +353,10 @@ class BINARYNINJAUIAPI SettingsDelegate : public QStyledItemDelegate
 	QTimer* m_updateModelTimer;
 	QTimer* m_resizeTimer;
 	QSize m_lastViewportSize;
+	QPersistentModelIndex m_scrollAnchorIdx;
+	int m_scrollAnchorOffset = 0;
+	bool m_resizing = false;
+	mutable QHash<QPersistentModelIndex, QPointer<SettingsEditor>> m_settingEditors;
 
 	QTreeView* m_treeView;
 	std::function<void(const QModelIndex& index)> m_hoverAction = nullptr;
@@ -288,7 +384,6 @@ class BINARYNINJAUIAPI SettingsDelegate : public QStyledItemDelegate
   Q_SIGNALS:
 	void refreshAllSettings() const;
 	void scopeChanged(BinaryViewRef, BNSettingsScope);
-	void sizeChanged();
 	void viewModeChanged(bool enabled) const;
 	void notifyNeedsRestart() const;
 	void notifySettingChanged(QString settingId) const;
@@ -319,6 +414,7 @@ class BINARYNINJAUIAPI SettingsTreeView : public QTreeView
 	~SettingsTreeView();
 
 	void updateTheme();
+	void scheduleRelayout() { scheduleDelayedItemsLayout(); }
 
   protected:
 	virtual void resizeEvent(QResizeEvent* event) override;
@@ -430,6 +526,7 @@ class BINARYNINJAUIAPI SettingsView : public QWidget
   private:
 	QWidget* m_owner = nullptr;
 	SettingsRef m_settings;
+	QSplitter* m_splitter = nullptr;
 	SettingsFilterProxyModel* m_proxyModel = nullptr;
 	SettingsOutlineProxyModel* m_outlineProxyModel = nullptr;
 	QTreeView* m_outlineView = nullptr;
@@ -454,6 +551,7 @@ class BINARYNINJAUIAPI SettingsView : public QWidget
 	void refreshCurrentScope();
 	void setData(BinaryViewRef view, const QString& name = "");
 	void setScope(BNSettingsScope scope);
+	void setOutlineVisible(bool visible);
 	void setDefaultGroupSelection(const QString& group, const QString& subgroup = "");
 	void focusSearch();
 	void setSearchFilter(const QString& filter) { if (m_search) m_search->setText(filter); };

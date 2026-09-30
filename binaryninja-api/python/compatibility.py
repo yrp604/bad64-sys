@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -22,7 +22,7 @@ import sys
 
 
 def pyNativeStr(arg):
-	if isinstance(arg, str):
+	if arg is None or isinstance(arg, str):
 		return arg
 	else:
 		try:

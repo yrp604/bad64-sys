@@ -8,20 +8,16 @@
 
 using namespace BinaryNinja;
 
-std::pair<std::string, Ref<Type>> CacheSymbol::DemangledName(BinaryView &view) const
+std::pair<Ref<Symbol>, Ref<Type>> CacheSymbol::GetBNSymbolAndType(const DemanglerConfig& config) const
 {
-	QualifiedName qname;
-	Ref<Type> outType;
+	Ref<Type> demangledType;
 	std::string shortName = name;
-	if (DemangleGeneric(view.GetDefaultArchitecture(), name, outType, qname, &view, true))
-		shortName = qname.GetString();
-	return { shortName, outType };
-}
-
-std::pair<Ref<Symbol>, Ref<Type>> CacheSymbol::GetBNSymbolAndType(BinaryView& view) const
-{
-	auto [shortName, demangledType] = DemangledName(view);
-	auto symbol = new Symbol(type, shortName, shortName, name, address, nullptr);
+	if (auto result = Demangler::DemangleAny(name, config))
+	{
+		shortName = result->name.GetString();
+		demangledType = result->type;
+	}
+	auto symbol = new Symbol(type, shortName, shortName, name, address, binding);
 	return {symbol, demangledType};
 }
 
@@ -33,7 +29,8 @@ std::vector<std::string> CacheImage::GetDependencies() const
 }
 
 CacheEntry::CacheEntry(std::string filePath, std::string fileName, CacheEntryType type, dyld_cache_header header,
-	std::vector<dyld_cache_mapping_info>&& mappings, std::vector<std::pair<std::string, dyld_cache_image_info>>&& images)
+	std::vector<dyld_cache_mapping_info> mappings, std::vector<std::pair<std::string, dyld_cache_image_info>> images,
+	std::shared_ptr<MappedFileRegion> file)
 {
 	m_filePath = std::move(filePath);
 	m_fileName = std::move(fileName);
@@ -41,21 +38,24 @@ CacheEntry::CacheEntry(std::string filePath, std::string fileName, CacheEntryTyp
 	m_header = header;
 	m_mappings = std::move(mappings);
 	m_images = std::move(images);
+	m_file = std::move(file);
 }
 
 CacheEntry CacheEntry::FromFile(const std::string& filePath, const std::string& fileName, CacheEntryType type)
 {
-	auto file = FileAccessorCache::Global().Open(filePath).lock();
+	auto file = MappedFileRegion::Open(filePath);
+	if (!file)
+		throw std::runtime_error(fmt::format("Failed to open cache file: '{}'", filePath));
 
 	// TODO: Pull this out into another function so we can do IsValidDSCFile or something.
 	// We first want to make sure that the base file is dyld.
 	// All entries must start with "dyld".
+	if (file->Length() < 4)
+		throw std::runtime_error(fmt::format("File too small to be a shared cache: '{}'", filePath));
 	DataBuffer sig = file->ReadBuffer(0, 4);
-	if (sig.GetLength() != 4)
-		throw std::runtime_error("File is empty!");
 	const char* magic = static_cast<char*>(sig.GetData());
 	if (strncmp(magic, "dyld", 4) != 0)
-		throw std::runtime_error("File does not start with `dyld`!");
+		throw std::runtime_error(fmt::format("File does not start with 'dyld': '{}'", filePath));
 
 	// Read the header, this _should_ be compatible with all known DSC formats.
 	// Mason: the above is not true! https://github.com/Vector35/binaryninja-api/issues/6073
@@ -74,7 +74,7 @@ CacheEntry CacheEntry::FromFile(const std::string& filePath, const std::string& 
 
 		// Cancel adding the entry if we have an invalid mapping.
 		if (currentMapping.fileOffset + currentMapping.size > file->Length())
-			throw std::runtime_error("Invalid mapping in shared cache entry");
+			throw std::runtime_error(fmt::format("Invalid mapping in shared cache entry: '{}'", filePath));
 
 		// TODO: Check initProt to make sure its in the range of expected values.
 
@@ -139,12 +139,7 @@ CacheEntry CacheEntry::FromFile(const std::string& filePath, const std::string& 
 		images.emplace_back(imageName, branchIslandImg);
 	}
 
-	return {filePath, fileName, type, header, std::move(mappings), std::move(images)};
-}
-
-WeakFileAccessor CacheEntry::GetAccessor() const
-{
-	return FileAccessorCache::Global().Open(m_filePath);
+	return CacheEntry{filePath, fileName, type, header, std::move(mappings), std::move(images), std::move(file)};
 }
 
 std::optional<uint64_t> CacheEntry::GetHeaderAddress() const
@@ -226,8 +221,7 @@ void SharedCache::AddSymbols(std::vector<CacheSymbol>&& symbols)
 
 void SharedCache::AddEntry(CacheEntry entry)
 {
-	// Get the file accessor to associate with the virtual memory region.
-	auto fileAccessor = FileAccessorCache::Global().Open(entry.GetFilePath());
+	const auto& file = entry.GetFile();
 
 	if (entry.GetType() == CacheEntryType::Symbols)
 	{
@@ -236,7 +230,7 @@ void SharedCache::AddEntry(CacheEntry entry)
 		// This is necessary due to code that processes symbols being written in terms of a `VirtualMemory`
 		// rather than something more generic.
 		m_localSymbolsVM = std::make_shared<VirtualMemory>(m_vm->GetAddressSize());
-		m_localSymbolsVM->MapRegion(fileAccessor, {0, fileAccessor.lock()->Length()}, 0);
+		m_localSymbolsVM->MapRegion(m_localSymbolsEntry->GetFile(), {0, m_localSymbolsEntry->GetFile()->Length()}, 0);
 		return;
 	}
 
@@ -245,7 +239,7 @@ void SharedCache::AddEntry(CacheEntry entry)
 	const auto& mappings = entry.GetMappings();
 	for (const auto& mapping : mappings)
 	{
-		m_vm->MapRegion(fileAccessor, {mapping.address, mapping.address + mapping.size}, mapping.fileOffset);
+		m_vm->MapRegion(file, {mapping.address, mapping.address + mapping.size}, mapping.fileOffset);
 
 		// Recalculate the base address.
 		if (mapping.address < m_baseAddress || m_baseAddress == 0)
@@ -421,40 +415,11 @@ void SharedCache::ProcessEntryRegions(const CacheEntry& entry)
 
 void SharedCache::ProcessEntrySlideInfo(const CacheEntry& entry) const
 {
-	auto slideInfoProcessor = SlideInfoProcessor(GetBaseAddress());
-
-	// This will be set for every associated `VirtualMemoryRegion` so that any accesses though the VM will be always be slid.
-	// NOTE: This MUST be called on the CacheEntry object owned by SharedCache, otherwise persistence through the `SharedCacheController` will not occur.
-	// NOTE: This will keep a copy of a processor in the `WeakFileAccessor` until that object is destroyed (likely view destruction).
-	// NOTE: This will keep a copy of the cache entry in the `WeakFileAccessor` until that object is destroyed (likely view destruction).
-	auto reviveCallback = [slideInfoProcessor, entry](MappedFileAccessor& revivedAccessor) {
-		slideInfoProcessor.ProcessEntry(revivedAccessor, entry);
-	};
-
-	// Use the current entry accessor, don't register the callback for this one as we want calls through the VM to be slid only.
-	// Actually process the slide info for this entry, everything else besides this is to support revived file accessors.
-	auto slideMappings = slideInfoProcessor.ProcessEntry(*entry.GetAccessor().lock(), entry);
-
-	// Register the revive callback for all virtual memory regions that have been slid.
-	// The reason we don't just set this on the entry accessor is that accessor is not consulted for anything really after
-	// this point, everything else will be going through the virtual memory, and because the callback is on the weak accessor
-	// reference and not the file accessor cache itself this matters.
-	auto vm = GetVirtualMemory();
-	for (const auto& mapping : slideMappings)
-	{
-		// Because the mapping address is a file offset for us to consult the virtual memory we must first call `GetMappedAddress`.
-		if (auto mappedMappingAddr = entry.GetMappedAddress(mapping.address))
-		{
-			if (auto vmRegion = vm->GetRegionAtAddress(*mappedMappingAddr))
-			{
-				// Ok we have the virtual memory region, lets register the callback on its accessor.
-				vmRegion->fileAccessor.RegisterReviveCallback(reviveCallback);
-				continue;
-			}
-		}
-
-		LogWarnF("Failed to register revive callback for slide mapping {:#x} in entry {:?}", mapping.address, entry.GetFileName().c_str());
-	}
+	const auto& file = entry.GetFile();
+	file->SlideOnce([&] {
+		SlideInfoProcessor processor(GetBaseAddress());
+		processor.ProcessEntry(*file, entry);
+	});
 }
 
 void SharedCache::ProcessSymbols()

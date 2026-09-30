@@ -1,4 +1,4 @@
-// Copyright 2016-2025 Vector 35 Inc.
+// Copyright 2016-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,59 +13,29 @@
 // limitations under the License.
 
 #pragma once
-#include <stdexcept>
-#include <exception>
+#include <optional>
 
-// XXX: Compiled directly into the core for performance reasons
-// Will still work fine compiled independently, just at about a
-// 50-100% performance penalty due to FFI overhead
+// Compiled directly into the core for performance reasons. It also works when
+// compiled independently, but benchmarks after the DemangledTypeNode and
+// template simplifier refactors showed approximately 25% better performance
+// when compiled directly into the core instead of through the FFI.
 #ifdef BINARYNINJACORE_LIBRARY
-#include "qualifiedname.h"
-#include "type.h"
-#include "architecture.h"
 #include "binaryview.h"
 #include "demangle.h"
-#include "unicode.h"
 #define BN BinaryNinjaCore
 #define _STD_STRING BinaryNinjaCore::string
 #define _STD_VECTOR BinaryNinjaCore::vector
-#define _STD_SET BinaryNinjaCore::set
 #else
 #include "binaryninjaapi.h"
 #define BN BinaryNinja
 #define _STD_STRING std::string
 #define _STD_VECTOR std::vector
-#define _STD_SET std::set
 #endif
 
-class DemangleException: public std::exception
-{
-	_STD_STRING m_message;
-public:
-	DemangleException(_STD_STRING msg="Attempt to read beyond bounds or missing expected character"): m_message(msg){}
-	virtual const char* what() const noexcept { return m_message.c_str(); }
-};
-
+#include "demangler/demangled_reader.h"
 
 class Demangle
 {
-	enum NameType
-	{
-		NameEmpty,
-		NameString,
-		NameLookup,
-		NameBackref,
-		NameTemplate,
-		NameConstructor,
-		NameDestructor,
-		NameRtti,
-		NameReturn,
-		NameDynamicInitializer,
-		NameDynamicAtExitDestructor,
-		NameLocalStaticThreadGuard,
-		NameLocalVftable
-	};
-
 	enum FunctionClass
 	{
 		NoneFunctionClass           = 0,
@@ -81,99 +51,201 @@ class Demangle
 		VirtualThunkExFunctionClass = 1 << 9,
 	};
 
-	class Reader
-	{
-	public:
-		Reader(_STD_STRING data);
-		_STD_STRING PeekString(size_t count=1);
-		char Peek();
-		const char* GetRaw();
-		char Read();
-		_STD_STRING ReadString(size_t count=1);
-		_STD_STRING ReadUntil(char sentinal);
-		void Consume(size_t count=1);
-		size_t Length();
-	private:
-		_STD_STRING m_data;
-	};
-
-	class BackrefList
-	{
-	public:
-		_STD_VECTOR<BN::TypeBuilder> typeList;
-		_STD_VECTOR<_STD_STRING> nameList;
-		const BN::TypeBuilder& GetTypeBackref(size_t reference);
-		_STD_STRING GetStringBackref(size_t reference);
-		void PushTypeBackref(BN::TypeBuilder t);
-		void PushStringBackref(_STD_STRING& s);
-		void PushFrontStringBackref(_STD_STRING& s);
-	};
-
-	Reader reader;
-	BackrefList m_backrefList;
-	BN::Architecture* m_arch;
-	BN::Ref<BN::Platform> m_platform;
-	BN::Ref<BN::BinaryView> m_view;
-	BN::QualifiedName m_varName;
-	BN::Ref<BN::Logger> m_logger;
-
-	NameType GetNameType();
-	BN::TypeBuilder DemangleVarType(BackrefList& varList, bool isReturn, BN::QualifiedName& name);
-	void DemangleNumber(int64_t& num);
-	void DemangleChar(char& ch);
-	void DemangleWideChar(uint16_t& wch);
-	void DemangleModifiers(bool& _const, bool& _volatile, bool& isMember);
-	_STD_SET<BNPointerSuffix> DemanglePointerSuffix();
-	void DemangleVariableList(_STD_VECTOR<BN::FunctionParameter>& paramList, BackrefList& varList);
-	void DemangleNameTypeRtti(BNNameType& classFunctionType,
-	                          BackrefList& nameBackrefList,
-	                          _STD_STRING& out,
-	                          _STD_STRING& rttiTypeName);
-	void DemangleTypeNameLookup(_STD_STRING& out, BNNameType& functionType);
-	void DemangleNameTypeString(_STD_STRING& out);
-	void DemangleNameTypeBackref(_STD_STRING& out, const _STD_VECTOR<_STD_STRING>& backrefList);
-	void DemangleName(BN::QualifiedName& nameList,
-	                  BNNameType& classFunctionType,
-	                  BackrefList& nameBackrefList);
-	BN::Ref<BN::CallingConvention> GetCallingConventionForType(BNCallingConventionName ccName);
-	BNCallingConventionName DemangleCallingConvention();
-	BN::TypeBuilder DemangleFunction(BNNameType classFunctionType, bool pointerSuffix, BackrefList& varList, int funcClass = NoneFunctionClass);
-	BN::TypeBuilder DemangleData();
-	void DemangleNameTypeRtti(BNNameType& classFunctionType,
-	                          BackrefList& nameBackrefList,
-	                          _STD_STRING& out);
-	BN::TypeBuilder DemangleVTable();
-	BN::TypeBuilder DemanagleRTTI(BNNameType classFunctionType);
-	_STD_STRING DemangleTemplateInstantiationName(BackrefList& nameBackrefList);
-	_STD_STRING DemangleTemplateParams(_STD_VECTOR<BN::FunctionParameter>& params, BackrefList& nameBackrefList, _STD_STRING& out);
-	_STD_STRING DemangleUnqualifiedSymbolName(BN::QualifiedName& nameList, BackrefList& nameBackrefList, BNNameType& classFunctionType);
-	BN::TypeBuilder DemangleString();
-	BN::TypeBuilder DemangleTypeInfoName();
-
 public:
 	struct DemangleContext
 	{
-		BN::TypeBuilder type;
+		DemangledQualifiedName name;
+		DemangledTypeNode type;
 		BNMemberAccess access;
 		BNMemberScope scope;
 	};
-	Demangle(BN::Architecture* arch, _STD_STRING mangledName);
-	Demangle(BN::Ref<BN::BinaryView> view, _STD_STRING mangledName);
-	Demangle(BN::Ref<BN::Platform> platform, _STD_STRING mangledName);
+
+private:
+	class BackrefList
+	{
+	public:
+		_STD_VECTOR<DemangledTypeNode::NodeRef> typeList;
+		_STD_VECTOR<DemangledNamePart::Ref> nameList;
+		_STD_VECTOR<DemangledNamePart::Ref> templateList;
+		void Clear() { typeList.clear(); nameList.clear(); templateList.clear(); }
+		DemangledTypeNode::NodeRef GetTypeBackrefRef(size_t reference);
+		DemangledNamePart::Ref GetNameBackrefRef(size_t reference);
+		const DemangledTypeNode& GetTypeBackref(size_t reference);
+		const DemangledNamePart& GetNameBackref(size_t reference);
+		DemangledTypeNode::NodeRef PushTypeBackref(DemangledTypeNode::NodeRef t);
+		DemangledTypeNode::NodeRef PushTypeBackref(const DemangledTypeNode& t);
+		DemangledTypeNode::NodeRef PushTypeBackref(DemangledTypeNode&& t);
+		DemangledNamePart::Ref PushNameBackref(DemangledNamePart::Ref t);
+		DemangledNamePart::Ref PushNameBackref(const DemangledNamePart& t);
+		DemangledNamePart::Ref PushNameBackref(DemangledNamePart&& t);
+		DemangledNamePart::Ref PushTemplateSpecialization(DemangledNamePart::Ref t);
+		DemangledNamePart::Ref PushTemplateSpecialization(const DemangledNamePart& t);
+		DemangledNamePart::Ref PushTemplateSpecialization(DemangledNamePart&& t);
+	};
+
+	struct BackrefContextSwitch
+	{
+		BackrefList& active;
+		BackrefList saved;
+
+		BackrefContextSwitch(BackrefList& active);
+		BackrefContextSwitch(const BackrefContextSwitch&) = delete;
+		BackrefContextSwitch& operator=(const BackrefContextSwitch&) = delete;
+		~BackrefContextSwitch();
+
+		static void Swap(BackrefList& left, BackrefList& right);
+	};
+
+	// Internal name list type - keeps template names structured during parsing.
+	using NameList = _STD_VECTOR<DemangledNamePart>;
+
+	static DemangledNamePart MakeNameSegment(const _STD_STRING& s)
+	{
+		return DemangledNamePart(s);
+	}
+
+	static void AppendToLastNameSegment(NameList& nl, const _STD_STRING& suffix)
+	{
+		if (nl.empty())
+			throw DemangleException();
+		nl.back() = MakeNameSegment(nl.back().GetString() + suffix);
+	}
+
+	static _STD_STRING JoinNameList(const NameList& nl)
+	{
+		if (nl.empty()) return {};
+		if (nl.size() == 1) return nl[0].GetString();
+
+		size_t size = 2 * (nl.size() - 1);
+		for (const auto& name : nl)
+			size += name.GetString().size();
+
+		_STD_STRING out;
+		out.reserve(size);
+		out = nl[0].GetString();
+		for (size_t i = 1; i < nl.size(); i++)
+		{
+			out += ':';
+			out += ':';
+			out += nl[i].GetString();
+		}
+		return out;
+	}
+
+	static StringList FinalizeNameList(const NameList& nl)
+	{
+		StringList out;
+		out.reserve(nl.size());
+		for (const auto& n: nl)
+			out.push_back(n.GetString());
+		return out;
+	}
+
+	_STD_STRING m_mangledName; // Owns the string; Reader points into it
+	DemangleReader m_reader;
+	BackrefList m_backrefList;
+	BN::DemanglerConfig m_config;
+	size_t m_templateParamDepth = 0;
+	size_t m_nestingDepth = 0;
+	// The largest observed depth in a real-world corpus of roughly 200k MSVC symbols was 54.
+	static constexpr size_t MAX_DEMANGLE_NESTING_DEPTH = 256;
+	using NestingGuard = DemangleNestingGuard<MAX_DEMANGLE_NESTING_DEPTH>;
+
+	static void RewriteTemplateBackrefName(NameList& typeName, const BackrefList& nameBackrefList);
+	static void PrependNameComponent(NameList& nameList, DemangledNamePart name);
+	void AppendStringName(NameList& nameList, BackrefList& nameBackrefList);
+	static void FinalizeConstructorTemplateName(NameList& nameList, size_t nameListSizeAtEntry, bool pending);
+	static bool FunctionTypeHasPointerSuffix(char functionType);
+	static _STD_STRING FormatFunctionScopeSignature(
+		const DemangledTypeNode& type, const NameList& scopeName, BN::Platform& platform);
+	[[nodiscard]] BN::Platform& GetRenderingPlatform() const;
+	void AppendLocalScope(NameList& nameList, BackrefList& nameBackrefList, uint64_t scopeOrdinal, bool typeNameContext);
+	bool TryAppendLocalScopeAt(NameList& nameList, BackrefList& nameBackrefList, const char* encodedNumberStart,
+		bool typeNameContext);
+	[[nodiscard]] _STD_STRING FormatTypeAndName(const DemangledTypeNode& type, const NameList& name) const;
+	enum class TypeBackrefMode
+	{
+		RecordTopLevel,
+		SuppressTopLevel,
+	};
+	struct EncodedNumber
+	{
+		uint64_t magnitude;
+		bool negative;
+	};
+	enum class ThunkAdjustorKind
+	{
+		Static,
+		Vtordisp,
+		Vtordispex,
+	};
+	struct ThunkAdjustor
+	{
+		ThunkAdjustorKind kind = ThunkAdjustorKind::Static;
+		uint64_t adjustor = 0;
+		int32_t vbptrOffset = 0;
+		int32_t vbOffsetOffset = 0;
+		int32_t vtorDispOffset = 0;
+		uint64_t staticOffset = 0;
+	};
+	struct DemangledFunction
+	{
+		DemangledTypeNode type;
+		std::optional<ThunkAdjustor> thunkAdjustor;
+	};
+	static bool FunctionClassNeedsImplicitThis(int funcClass);
+	static void AppendThunkAdjustorToName(NameList& nameList, const ThunkAdjustor& adjustor);
+	static void SetImplicitThisParameter(DemangledTypeNode& type, BNNameType classFunctionType, const NameList& enclosingName);
+	static void ApplySymbolFunctionContext(DemangledFunction& function, NameList& symbolName,
+		BNNameType classFunctionType, int funcClass);
+	DemangledTypeNode DemangleReferencedSymbolValue(BackrefList& varList);
+	DemangledTypeNode DemangleAutoNonTypeTemplateParam(BackrefList& varList);
+	DemangledTypeNode DemangleVarType(BackrefList& varList, bool isReturn,
+		bool includeImplicitThis = true, DemangledTypeNode::NodeRef* outTypeBackref = nullptr,
+		TypeBackrefMode typeBackrefMode = TypeBackrefMode::RecordTopLevel);
+	EncodedNumber DecodeEncodedNumber();
+	int64_t DecodeEncodedSignedNumber();
+	uint64_t DecodeEncodedUnsignedNumber();
+	int32_t DecodeEncodedSignedInt32();
+	_STD_STRING DecodeEncodedNumberLiteral();
+	char DemangleChar();
+	void DemangleModifiers(bool& _const, bool& _volatile, bool& isMember);
+	uint8_t DemanglePointerSuffix();
+	void DemangleVariableList(_STD_VECTOR<DemangledTypeNode::Param>& paramList, BackrefList& varList, bool typeBackrefs = true);
+	void DemangleTypeNameLookup(_STD_STRING& out, BNNameType& functionType);
+	bool TryDemangleWinRTEscapedScopeName(NameList& nameList, BackrefList& nameBackrefList);
+	void DemangleNameTypeString(_STD_STRING& out);
+	void DemangleName(NameList& nameList,
+	                  BNNameType& classFunctionType,
+	                  BackrefList& nameBackrefList,
+	                  bool typeNameContext = false);
+	BNCallingConventionName DemangleCallingConvention();
+	void ConsumeExtendedModifierPrefix();
+	DemangledFunction DemangleFunction(BNNameType classFunctionType, bool pointerSuffix, BackrefList& varList,
+		int funcClass = NoneFunctionClass);
+	DemangledTypeNode DemangleData(BackrefList& varList);
+	void DemangleNameTypeRtti(BNNameType& classFunctionType,
+	                          BackrefList& nameBackrefList,
+	                          _STD_STRING& out);
+	DemangledTypeNode DemangleVTable(BackrefList& nameBackrefList, NameList& symbolName);
+	DemangledTypeNode DemangleRTTI(BNNameType classFunctionType, const NameList& symbolName);
+	DemangledNamePart DemangleTemplateInstantiationNameInLocalContext(BackrefList& nameBackrefList);
+	DemangledNamePart DemangleTemplateInstantiationName(BackrefList& nameBackrefList);
+	void DemangleTemplateParams(_STD_VECTOR<DemangledTypeNode::Param>& params, BackrefList& nameBackrefList, DemangledNamePart& out);
+	DemangledNamePart DemangleUnqualifiedSymbolName(BackrefList& nameBackrefList, BNNameType& classFunctionType,
+		bool& backrefEligible);
+	DemangledTypeNode DemangleString(NameList& symbolName);
+	DemangledTypeNode DemangleTypeInfoName(NameList& symbolName);
+	DemangleContext DemangleDynamicInitFini(bool isDtor, BackrefList& backrefList);
+	DemangleContext DemangleSymbol(BackrefList& backrefList);
+
+public:
+	Demangle(const BN::DemanglerConfig& config, _STD_STRING  mangledName);
+	void Reset(const BN::DemanglerConfig& config, const _STD_STRING& mangledName);
+	Demangle(const Demangle&) = delete;
+	Demangle(Demangle&&) = delete;
+	Demangle& operator=(const Demangle&) = delete;
+	Demangle& operator=(Demangle&&) = delete;
 	DemangleContext DemangleSymbol();
-	BN::QualifiedName GetVarName() const { return m_varName; }
-
-	// Be careful not to accidentally implicitly cast a BinaryView* to a bool
-	static bool DemangleMS(BN::Architecture* arch, const _STD_STRING& mangledName, BN::Ref<BN::Type>& outType,
-	                       BN::QualifiedName& outVarName, const BN::Ref<BN::BinaryView>& view);
-	static bool DemangleMS(BN::Architecture* arch, const _STD_STRING& mangledName, BN::Ref<BN::Type>& outType,
-	                       BN::QualifiedName& outVarName, BN::BinaryView* view);
-	static bool DemangleMS(BN::Architecture* arch, const _STD_STRING& mangledName, BN::Ref<BN::Type>& outType,
-	                       BN::QualifiedName& outVarName);
-
-	static bool DemangleMS(const _STD_STRING& mangledName, BN::Ref<BN::Type>& outType,
-	                       BN::QualifiedName& outVarName, const BN::Ref<BN::BinaryView>& view);
-	static bool DemangleMS(const _STD_STRING& mangledName, BN::Ref<BN::Type>& outType,
-	                       BN::QualifiedName& outVarName, BN::BinaryView* view);
+	BN::DemanglerResult Finalize();
 };
-

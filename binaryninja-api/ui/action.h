@@ -114,6 +114,7 @@ struct BINARYNINJAUIAPI UIAction
 	static std::set<QString> getAllRegisteredActions();
 	static QList<QKeySequence> getDefaultKeyBinding(const QString& name);
 	static QList<QKeySequence> getKeyBinding(const QString& name);
+	static QList<QString> getAliases(const QString& name);
 	static QString getActionDisplayName(const QString& name, const UIActionContext& context);
 
 	static int rawControl();
@@ -252,8 +253,10 @@ class BINARYNINJAUIAPI UIActionHandler
 	ActionPriority getPriority(const QString& name);
 
 	void bindCopyAsActions(const UITransformAction& action);
+	void bindCopyAsActions(const UITransformAction& action, const std::function<bool()>& shouldShow);
 	void bindPasteFromActions(const UITransformAction& action);
 	void bindTransformActions(const UITransformAction& encode, const UITransformAction& decode);
+	void bindTransformActions(const UITransformAction& encode, const UITransformAction& decode, const std::function<bool()>& shouldShow);
 	void unbindCopyAsActions();
 	void unbindPasteFromActions();
 	void unbindTransformActions();

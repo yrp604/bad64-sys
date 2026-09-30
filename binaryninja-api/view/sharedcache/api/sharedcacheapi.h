@@ -3,6 +3,8 @@
 #include <binaryninjaapi.h>
 #include "sharedcachecore.h"
 
+#include <memory>
+
 template<class T>
 class DSCRefCountObject {
 	void AddRefInternal() { m_refs.fetch_add(1); }
@@ -286,14 +288,45 @@ namespace SharedCacheAPI {
 	struct CacheSymbol
 	{
 		BNSymbolType type;
+		BNSymbolBinding binding = NoBinding;
 		uint64_t address;
 		std::string name;
-
-		std::pair<std::string, BinaryNinja::Ref<BinaryNinja::Type>> DemangledName(BinaryNinja::BinaryView &view) const;
-		BinaryNinja::Ref<BinaryNinja::Symbol> GetBNSymbol(BinaryNinja::BinaryView& view) const;
 	};
 
 	std::string GetSymbolTypeAsString(const BNSymbolType& type);
+
+	struct CacheString
+	{
+		// UTF-8 display text, truncated.
+		std::string text;
+		uint64_t address;
+		uint64_t regionStart;
+		// Header address of the image owning the string's region, or 0 if it is not part of an image.
+		uint64_t imageStart;
+		BNStringType type;
+		// Length of the string in the cache, in bytes.
+		uint32_t rawLength;
+	};
+
+	class CacheStringScanner
+	{
+		BNSharedCacheStringScanner* m_object = nullptr;
+
+	public:
+		explicit CacheStringScanner(BNSharedCacheStringScanner* scanner);
+		~CacheStringScanner();
+
+		CacheStringScanner(const CacheStringScanner&) = delete;
+		CacheStringScanner& operator=(const CacheStringScanner&) = delete;
+		CacheStringScanner(CacheStringScanner&& other) noexcept;
+		CacheStringScanner& operator=(CacheStringScanner&& other) noexcept;
+
+		bool Start();
+		bool IsComplete() const;
+		std::pair<uint64_t, uint64_t> GetProgress() const;
+		uint64_t GetStringCount() const;
+		std::vector<CacheString> TakeStrings(uint64_t maxCount);
+	};
 
 	class SharedCacheController : public DSCCoreRefCountObject<BNSharedCacheController, BNNewSharedCacheControllerReference, BNFreeSharedCacheControllerReference> {
 	public:
@@ -329,5 +362,7 @@ namespace SharedCacheAPI {
 		std::vector<CacheImage> GetImages() const;
 		std::vector<CacheImage> GetLoadedImages() const;
 		std::vector<CacheSymbol> GetSymbols() const;
+
+		std::unique_ptr<CacheStringScanner> CreateStringScanner() const;
 	};
 }

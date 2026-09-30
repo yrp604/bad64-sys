@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -97,6 +97,12 @@ void LowLevelILFunction::SetCurrentAddress(Architecture* arch, uint64_t addr)
 }
 
 
+void LowLevelILFunction::SetCurrentSourceBlock(BasicBlock* source)
+{
+	BNLowLevelILSetCurrentSourceBlock(m_object, source->GetObject());
+}
+
+
 size_t LowLevelILFunction::GetInstructionStart(Architecture* arch, uint64_t addr)
 {
 	return BNLowLevelILGetInstructionStart(m_object, arch ? arch->GetObject() : nullptr, addr);
@@ -142,6 +148,12 @@ void LowLevelILFunction::SetIndirectBranches(const vector<ArchAndAddr>& branches
 	}
 	BNLowLevelILSetIndirectBranches(m_object, branchList, branches.size());
 	delete[] branchList;
+}
+
+
+bool LowLevelILFunction::HasIndirectBranches() const
+{
+	return BNLowLevelILFunctionHasIndirectBranches(m_object);
 }
 
 
@@ -327,7 +339,7 @@ std::vector<SSAFlag> LowLevelILFunction::GetSSAFlags()
 
 size_t LowLevelILFunction::CachePossibleValueSet(const PossibleValueSet& pvs)
 {
-	BNPossibleValueSet ugh = pvs.ToAPIObject();
+	BNPossibleValueSet ugh = pvs.ToAPIStruct();
 	return BNCacheLowLevelILPossibleValueSet(m_object, &ugh);
 }
 
@@ -335,7 +347,7 @@ size_t LowLevelILFunction::CachePossibleValueSet(const PossibleValueSet& pvs)
 PossibleValueSet LowLevelILFunction::GetCachedPossibleValueSet(size_t idx)
 {
 	BNPossibleValueSet api = BNGetCachedLowLevelILPossibleValueSet(m_object, idx);
-	return PossibleValueSet::FromAPIObject(api);
+	return PossibleValueSet::FromAPIStruct(api);
 }
 
 
@@ -837,21 +849,21 @@ set<size_t> LowLevelILFunction::GetSSAMemoryUses(size_t version) const
 RegisterValue LowLevelILFunction::GetSSARegisterValue(const SSARegister& reg)
 {
 	BNRegisterValue value = BNGetLowLevelILSSARegisterValue(m_object, reg.reg, reg.version);
-	return RegisterValue::FromAPIObject(value);
+	return RegisterValue::FromAPIStruct(value);
 }
 
 
 RegisterValue LowLevelILFunction::GetSSAFlagValue(const SSAFlag& flag)
 {
 	BNRegisterValue value = BNGetLowLevelILSSAFlagValue(m_object, flag.flag, flag.version);
-	return RegisterValue::FromAPIObject(value);
+	return RegisterValue::FromAPIStruct(value);
 }
 
 
 RegisterValue LowLevelILFunction::GetExprValue(size_t expr)
 {
 	BNRegisterValue value = BNGetLowLevelILExprValue(m_object, expr);
-	return RegisterValue::FromAPIObject(value);
+	return RegisterValue::FromAPIStruct(value);
 }
 
 
@@ -869,7 +881,7 @@ PossibleValueSet LowLevelILFunction::GetPossibleExprValues(size_t expr, const se
 		optionArray[idx++] = i;
 	BNPossibleValueSet value = BNGetLowLevelILPossibleExprValues(m_object, expr, optionArray, options.size());
 	delete[] optionArray;
-	return PossibleValueSet::FromAPIObject(value);
+	return PossibleValueSet::FromAPIStruct(value);
 }
 
 
@@ -883,14 +895,14 @@ PossibleValueSet LowLevelILFunction::GetPossibleExprValues(
 RegisterValue LowLevelILFunction::GetRegisterValueAtInstruction(uint32_t reg, size_t instr)
 {
 	BNRegisterValue value = BNGetLowLevelILRegisterValueAtInstruction(m_object, reg, instr);
-	return RegisterValue::FromAPIObject(value);
+	return RegisterValue::FromAPIStruct(value);
 }
 
 
 RegisterValue LowLevelILFunction::GetRegisterValueAfterInstruction(uint32_t reg, size_t instr)
 {
 	BNRegisterValue value = BNGetLowLevelILRegisterValueAfterInstruction(m_object, reg, instr);
-	return RegisterValue::FromAPIObject(value);
+	return RegisterValue::FromAPIStruct(value);
 }
 
 
@@ -904,7 +916,7 @@ PossibleValueSet LowLevelILFunction::GetPossibleRegisterValuesAtInstruction(
 	BNPossibleValueSet value =
 	    BNGetLowLevelILPossibleRegisterValuesAtInstruction(m_object, reg, instr, optionArray, options.size());
 	delete[] optionArray;
-	return PossibleValueSet::FromAPIObject(value);
+	return PossibleValueSet::FromAPIStruct(value);
 }
 
 
@@ -918,21 +930,21 @@ PossibleValueSet LowLevelILFunction::GetPossibleRegisterValuesAfterInstruction(
 	BNPossibleValueSet value =
 	    BNGetLowLevelILPossibleRegisterValuesAfterInstruction(m_object, reg, instr, optionArray, options.size());
 	delete[] optionArray;
-	return PossibleValueSet::FromAPIObject(value);
+	return PossibleValueSet::FromAPIStruct(value);
 }
 
 
 RegisterValue LowLevelILFunction::GetFlagValueAtInstruction(uint32_t flag, size_t instr)
 {
 	BNRegisterValue value = BNGetLowLevelILFlagValueAtInstruction(m_object, flag, instr);
-	return RegisterValue::FromAPIObject(value);
+	return RegisterValue::FromAPIStruct(value);
 }
 
 
 RegisterValue LowLevelILFunction::GetFlagValueAfterInstruction(uint32_t flag, size_t instr)
 {
 	BNRegisterValue value = BNGetLowLevelILFlagValueAfterInstruction(m_object, flag, instr);
-	return RegisterValue::FromAPIObject(value);
+	return RegisterValue::FromAPIStruct(value);
 }
 
 
@@ -946,7 +958,7 @@ PossibleValueSet LowLevelILFunction::GetPossibleFlagValuesAtInstruction(
 	BNPossibleValueSet value =
 	    BNGetLowLevelILPossibleFlagValuesAtInstruction(m_object, flag, instr, optionArray, options.size());
 	delete[] optionArray;
-	return PossibleValueSet::FromAPIObject(value);
+	return PossibleValueSet::FromAPIStruct(value);
 }
 
 
@@ -960,21 +972,21 @@ PossibleValueSet LowLevelILFunction::GetPossibleFlagValuesAfterInstruction(
 	BNPossibleValueSet value =
 	    BNGetLowLevelILPossibleFlagValuesAfterInstruction(m_object, flag, instr, optionArray, options.size());
 	delete[] optionArray;
-	return PossibleValueSet::FromAPIObject(value);
+	return PossibleValueSet::FromAPIStruct(value);
 }
 
 
 RegisterValue LowLevelILFunction::GetStackContentsAtInstruction(int32_t offset, size_t len, size_t instr)
 {
 	BNRegisterValue value = BNGetLowLevelILStackContentsAtInstruction(m_object, offset, len, instr);
-	return RegisterValue::FromAPIObject(value);
+	return RegisterValue::FromAPIStruct(value);
 }
 
 
 RegisterValue LowLevelILFunction::GetStackContentsAfterInstruction(int32_t offset, size_t len, size_t instr)
 {
 	BNRegisterValue value = BNGetLowLevelILStackContentsAfterInstruction(m_object, offset, len, instr);
-	return RegisterValue::FromAPIObject(value);
+	return RegisterValue::FromAPIStruct(value);
 }
 
 
@@ -988,7 +1000,7 @@ PossibleValueSet LowLevelILFunction::GetPossibleStackContentsAtInstruction(
 	BNPossibleValueSet value =
 	    BNGetLowLevelILPossibleStackContentsAtInstruction(m_object, offset, len, instr, optionArray, options.size());
 	delete[] optionArray;
-	return PossibleValueSet::FromAPIObject(value);
+	return PossibleValueSet::FromAPIStruct(value);
 }
 
 
@@ -1002,7 +1014,7 @@ PossibleValueSet LowLevelILFunction::GetPossibleStackContentsAfterInstruction(
 	BNPossibleValueSet value =
 	    BNGetLowLevelILPossibleStackContentsAfterInstruction(m_object, offset, len, instr, optionArray, options.size());
 	delete[] optionArray;
-	return PossibleValueSet::FromAPIObject(value);
+	return PossibleValueSet::FromAPIStruct(value);
 }
 
 

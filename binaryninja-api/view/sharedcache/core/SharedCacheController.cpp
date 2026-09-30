@@ -8,7 +8,8 @@ using namespace BinaryNinja::DSC;
 // Unique ID for a given Binary View.
 typedef uint64_t ViewId;
 
-std::shared_mutex GlobalControllersMutex;
+static std::shared_mutex GlobalControllersMutex;
+static const char* METADATA_KEY = "shared_cache";
 
 std::map<ViewId, DSCRef<SharedCacheController>>& GlobalControllers()
 {
@@ -37,14 +38,6 @@ void DeleteController(const FileMetadata& file)
 		if (controller->m_refs > 2)
 			LogWarnF("Deleting SharedCacheController for view {:#x}, but there are still {} references", id,
 				controller->m_refs.load());
-
-		// Go through the file accessor cache and remove the entries we reference.
-		auto& fileAccessorCache = FileAccessorCache::Global();
-		for (const auto& entry : controller->GetCache().GetEntries())
-		{
-			auto accessorId = GetCacheAccessorID(entry.GetFilePath());
-			fileAccessorCache.RemoveAccessor(accessorId);
-		}
 
 		controllers.erase(it);
 		LogDebugF("Deleted SharedCacheController for view {:?}", file.GetFilename().c_str());
@@ -227,20 +220,13 @@ bool SharedCacheController::ApplyImage(BinaryView& view, const CacheImage& image
 		view.SetFunctionAnalysisUpdateDisabled(prevDisabledState);
 
 		// Load objective-c information.
-		auto objcProcessor = DSCObjC::SharedCacheObjCProcessor(&view, image.headerAddress);
-		try
-		{
-			if (m_processObjC)
-				objcProcessor.ProcessObjCData();
-			if (m_processCFStrings)
-				objcProcessor.ProcessObjCLiterals();
-		}
-		catch (std::exception& e)
-		{
-			// Let the user know there was an error in processing the objc stuff but let the image load
-			// regardless, as its non-critical.
-			m_logger->LogErrorF("Failed to process ObjC information: {}", e.what());
-		}
+		ObjCProcessor::Tasks tasks = ObjCProcessor::Tasks::None;
+		if (m_processObjC)
+			tasks |= ObjCProcessor::Tasks::Metadata;
+		if (m_processCFStrings)
+			tasks |= ObjCProcessor::Tasks::Literals;
+		if (tasks != ObjCProcessor::Tasks::None)
+			DSCObjC::SharedCacheObjCProcessor(&view, image.headerAddress).Process(tasks);
 	}
 
 	m_loadedImages.insert(image.headerAddress);
@@ -296,6 +282,37 @@ void SharedCacheController::LoadMetadata(const Metadata& metadata)
 	{
 		const auto loadedRegions = controllerMeta["loadedRegions"]->GetUnsignedIntegerList();
 		for (const auto& region : loadedRegions)
-			m_loadedImages.insert(region);
+			m_loadedRegions.insert(region);
 	}
+}
+
+
+void SharedCacheController::ProcessObjCForLoadedImagesIfNeeded(BinaryView& view)
+{
+	if (m_loadedImages.empty())
+		return;
+
+	ObjCProcessor::Tasks requested = ObjCProcessor::Tasks::None;
+	if (m_processObjC)
+		requested |= ObjCProcessor::Tasks::Metadata;
+	if (m_processCFStrings)
+		requested |= ObjCProcessor::Tasks::Literals;
+
+	ObjCProcessor::Tasks tasks = ObjCProcessor::NeededTasks(&view, requested);
+	if (tasks == ObjCProcessor::Tasks::None)
+		return;
+
+	for (const auto& headerAddress : m_loadedImages)
+	{
+		auto image = m_cache.GetImageAt(headerAddress);
+		if (!image)
+			continue;
+
+		DSCObjC::SharedCacheObjCProcessor(&view, image->headerAddress).Process(tasks);
+	}
+}
+
+std::unique_ptr<CacheStringScanner> SharedCacheController::CreateStringScanner()
+{
+	return std::make_unique<CacheStringScanner>(m_cache, m_regionFilter, m_logger);
 }

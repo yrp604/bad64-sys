@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -114,14 +114,14 @@ bool Transform::DecodeWithContextCallback(void* ctxt, BNTransformContext* contex
 		paramMap[params[i].name] = DataBuffer(BNDuplicateDataBuffer(params[i].value));
 
 	CallbackRef<Transform> xform(ctxt);
-	return xform->DecodeWithContext(new TransformContext(context), paramMap);
+	return xform->DecodeWithContext(new TransformContext(BNNewTransformContextReference(context)), paramMap);
 }
 
 
 bool Transform::CanDecodeCallback(void* ctxt, BNBinaryView* input)
 {
 	CallbackRef<Transform> xform(ctxt);
-	return xform->CanDecode(new BinaryView(input));
+	return xform->CanDecode(new BinaryView(BNNewViewReference(input)));
 }
 
 

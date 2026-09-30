@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -226,7 +226,7 @@ void BinaryDataNotification::DerivedStringFoundCallback(void* ctxt, BNBinaryView
 {
 	BinaryDataNotification* notify = (BinaryDataNotification*)ctxt;
 	Ref<BinaryView> view = new BinaryView(BNNewViewReference(data));
-	notify->OnDerivedStringFound(view, DerivedString::FromAPIObject(str, false));
+	notify->OnDerivedStringFound(view, DerivedString::FromAPIStruct(str, false));
 }
 
 
@@ -234,7 +234,7 @@ void BinaryDataNotification::DerivedStringRemovedCallback(void* ctxt, BNBinaryVi
 {
 	BinaryDataNotification* notify = (BinaryDataNotification*)ctxt;
 	Ref<BinaryView> view = new BinaryView(BNNewViewReference(data));
-	notify->OnDerivedStringRemoved(view, DerivedString::FromAPIObject(str, false));
+	notify->OnDerivedStringRemoved(view, DerivedString::FromAPIStruct(str, false));
 }
 
 
@@ -243,7 +243,7 @@ void BinaryDataNotification::TypeDefinedCallback(void* ctxt, BNBinaryView* data,
 	BinaryDataNotification* notify = (BinaryDataNotification*)ctxt;
 	Ref<BinaryView> view = new BinaryView(BNNewViewReference(data));
 	Ref<Type> typeObj = new Type(BNNewTypeReference(type));
-	notify->OnTypeDefined(view, QualifiedName::FromAPIObject(name), typeObj);
+	notify->OnTypeDefined(view, QualifiedName::FromAPIStruct(name), typeObj);
 }
 
 
@@ -252,7 +252,7 @@ void BinaryDataNotification::TypeUndefinedCallback(void* ctxt, BNBinaryView* dat
 	BinaryDataNotification* notify = (BinaryDataNotification*)ctxt;
 	Ref<BinaryView> view = new BinaryView(BNNewViewReference(data));
 	Ref<Type> typeObj = new Type(BNNewTypeReference(type));
-	notify->OnTypeUndefined(view, QualifiedName::FromAPIObject(name), typeObj);
+	notify->OnTypeUndefined(view, QualifiedName::FromAPIStruct(name), typeObj);
 }
 
 
@@ -262,7 +262,7 @@ void BinaryDataNotification::TypeReferenceChangedCallback(
 	BinaryDataNotification* notify = (BinaryDataNotification*)ctxt;
 	Ref<BinaryView> view = new BinaryView(BNNewViewReference(data));
 	Ref<Type> typeObj = new Type(BNNewTypeReference(type));
-	notify->OnTypeReferenceChanged(view, QualifiedName::FromAPIObject(name), typeObj);
+	notify->OnTypeReferenceChanged(view, QualifiedName::FromAPIStruct(name), typeObj);
 }
 
 
@@ -271,7 +271,7 @@ void BinaryDataNotification::TypeFieldReferenceChangedCallback(
 {
 	BinaryDataNotification* notify = (BinaryDataNotification*)ctxt;
 	Ref<BinaryView> view = new BinaryView(BNNewViewReference(data));
-	notify->OnTypeFieldReferenceChanged(view, QualifiedName::FromAPIObject(name), offset);
+	notify->OnTypeFieldReferenceChanged(view, QualifiedName::FromAPIStruct(name), offset);
 }
 
 
@@ -756,18 +756,18 @@ size_t StringRef::size() const
 Symbol::Symbol(BNSymbolType type, const string& shortName, const string& fullName, const string& rawName, uint64_t addr,
     BNSymbolBinding binding, const NameSpace& nameSpace, uint64_t ordinal)
 {
-	BNNameSpace ns = nameSpace.GetAPIObject();
+	BNNameSpace ns = nameSpace.ToAPIStruct();
 	m_object = BNCreateSymbol(type, shortName.c_str(), fullName.c_str(), rawName.c_str(), addr, binding, &ns, ordinal);
-	NameSpace::FreeAPIObject(&ns);
+	NameSpace::FreeAPIStruct(&ns);
 }
 
 
 Symbol::Symbol(BNSymbolType type, const std::string& name, uint64_t addr, BNSymbolBinding binding,
     const NameSpace& nameSpace, uint64_t ordinal)
 {
-	BNNameSpace ns = nameSpace.GetAPIObject();
+	BNNameSpace ns = nameSpace.ToAPIStruct();
 	m_object = BNCreateSymbol(type, name.c_str(), name.c_str(), name.c_str(), addr, binding, &ns, ordinal);
-	NameSpace::FreeAPIObject(&ns);
+	NameSpace::FreeAPIStruct(&ns);
 }
 
 
@@ -805,7 +805,7 @@ BNSymbolBinding Symbol::GetBinding() const
 NameSpace Symbol::GetNameSpace() const
 {
 	BNNameSpace name = BNGetSymbolNameSpace(m_object);
-	NameSpace result = NameSpace::FromAPIObject(&name);
+	NameSpace result = NameSpace::FromAPIStruct(&name);
 	BNFreeNameSpace(&name);
 	return result;
 }
@@ -1365,6 +1365,7 @@ BinaryView::BinaryView(const std::string& typeName, FileMetadata* file, BinaryVi
 	view.isRelocatable = IsRelocatableCallback;
 	view.getAddressSize = GetAddressSizeCallback;
 	view.save = SaveCallback;
+	view.onAfterSnapshotDataApplied = OnAfterSnapshotDataAppliedCallback;
 	m_file = file;
 	AddRefForRegistration();
 	m_object = BNCreateCustomBinaryView(
@@ -1383,8 +1384,39 @@ BinaryView::BinaryView(BNBinaryView* view)
 
 bool BinaryView::InitCallback(void* ctxt)
 {
-	CallbackRef<BinaryView> view(ctxt);
-	return view->Init();
+	try
+	{
+		CallbackRef<BinaryView> view(ctxt);
+		return view->Init();
+	}
+	catch (const std::exception& e)
+	{
+		LogError("BinaryView::Init failed: %s", e.what());
+		return false;
+	}
+	catch (...)
+	{
+		LogError("BinaryView::Init failed with unknown exception");
+		return false;
+	}
+}
+
+
+void BinaryView::OnAfterSnapshotDataAppliedCallback(void* ctxt)
+{
+	try
+	{
+		CallbackRef<BinaryView> view(ctxt);
+		view->OnAfterSnapshotDataApplied();
+	}
+	catch (const std::exception& e)
+	{
+		LogError("BinaryView::OnAfterSnapshotDataApplied failed: %s", e.what());
+	}
+	catch (...)
+	{
+		LogError("BinaryView::OnAfterSnapshotDataApplied failed with unknown exception");
+	}
 }
 
 
@@ -1523,9 +1555,22 @@ size_t BinaryView::GetAddressSizeCallback(void* ctxt)
 
 bool BinaryView::SaveCallback(void* ctxt, BNFileAccessor* file)
 {
-	CallbackRef<BinaryView> view(ctxt);
-	CoreFileAccessor accessor(file);
-	return view->PerformSave(&accessor);
+	try
+	{
+		CallbackRef<BinaryView> view(ctxt);
+		CoreFileAccessor accessor(file);
+		return view->PerformSave(&accessor);
+	}
+	catch (const std::exception& e)
+	{
+		LogError("BinaryView::Save failed: %s", e.what());
+		return false;
+	}
+	catch (...)
+	{
+		LogError("BinaryView::Save failed with unknown exception");
+		return false;
+	}
 }
 
 
@@ -2013,6 +2058,12 @@ bool BinaryView::IsOffsetWritableSemantics(uint64_t offset) const
 }
 
 
+bool BinaryView::IsOffsetReadOnlySemantics(uint64_t offset) const
+{
+	return BNIsOffsetReadOnlySemantics(m_object, offset);
+}
+
+
 uint64_t BinaryView::GetNextValidOffset(uint64_t offset) const
 {
 	return BNGetNextValidOffset(m_object, offset);
@@ -2412,6 +2463,7 @@ vector<Ref<Function>> BinaryView::GetAllEntryFunctions()
 		return {};
 
 	vector<Ref<Function>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(new Function(BNNewFunctionReference(funcs[i])));
 	BNFreeFunctionList(funcs, count);
@@ -2656,10 +2708,10 @@ vector<ReferenceSource> BinaryView::GetCodeReferencesForType(const QualifiedName
 {
 	size_t count;
 
-	BNQualifiedName nameObj = type.GetAPIObject();
+	BNQualifiedName nameObj = type.ToAPIStruct();
 	BNReferenceSource* refs =
 		BNGetCodeReferencesForType(m_object, &nameObj, &count, maxItems.has_value(), maxItems.value_or(0));
-	QualifiedName::FreeAPIObject(&nameObj);
+	QualifiedName::FreeAPIStruct(&nameObj);
 
 	vector<ReferenceSource> result;
 	result.reserve(count);
@@ -2680,9 +2732,9 @@ vector<ReferenceSource> BinaryView::GetCodeReferencesForType(const QualifiedName
 vector<uint64_t> BinaryView::GetDataReferencesForType(const QualifiedName& type, std::optional<size_t> maxItems)
 {
 	size_t count;
-	BNQualifiedName nameObj = type.GetAPIObject();
+	BNQualifiedName nameObj = type.ToAPIStruct();
 	uint64_t* refs = BNGetDataReferencesForType(m_object, &nameObj, &count, maxItems.has_value(), maxItems.value_or(0));
-	QualifiedName::FreeAPIObject(&nameObj);
+	QualifiedName::FreeAPIStruct(&nameObj);
 
 	vector<uint64_t> result(refs, &refs[count]);
 	BNFreeDataReferences(refs);
@@ -2695,17 +2747,17 @@ vector<TypeReferenceSource> BinaryView::GetTypeReferencesForType(
 {
 	size_t count;
 
-	BNQualifiedName nameObj = type.GetAPIObject();
+	BNQualifiedName nameObj = type.ToAPIStruct();
 	BNTypeReferenceSource* refs =
 		BNGetTypeReferencesForType(m_object, &nameObj, &count, maxItems.has_value(), maxItems.value_or(0));
-	QualifiedName::FreeAPIObject(&nameObj);
+	QualifiedName::FreeAPIStruct(&nameObj);
 
 	vector<TypeReferenceSource> result;
 	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		TypeReferenceSource src;
-		src.name = QualifiedName::FromAPIObject(&refs[i].name);
+		src.name = QualifiedName::FromAPIStruct(&refs[i].name);
 		src.offset = refs[i].offset;
 		src.type = refs[i].type;
 		result.push_back(src);
@@ -2720,10 +2772,10 @@ vector<TypeFieldReference> BinaryView::GetCodeReferencesForTypeField(
 	const QualifiedName& type, uint64_t offset, std::optional<size_t> maxItems)
 {
 	size_t count;
-	BNQualifiedName nameObj = type.GetAPIObject();
+	BNQualifiedName nameObj = type.ToAPIStruct();
 	BNTypeFieldReference* refs =
 		BNGetCodeReferencesForTypeField(m_object, &nameObj, offset, &count, maxItems.has_value(), maxItems.value_or(0));
-	QualifiedName::FreeAPIObject(&nameObj);
+	QualifiedName::FreeAPIStruct(&nameObj);
 
 	vector<TypeFieldReference> result;
 	result.reserve(count);
@@ -2749,10 +2801,10 @@ vector<uint64_t> BinaryView::GetDataReferencesForTypeField(
 	const QualifiedName& type, uint64_t offset, std::optional<size_t> maxItems)
 {
 	size_t count;
-	BNQualifiedName nameObj = type.GetAPIObject();
+	BNQualifiedName nameObj = type.ToAPIStruct();
 	uint64_t* refs =
 		BNGetDataReferencesForTypeField(m_object, &nameObj, offset, &count, maxItems.has_value(), maxItems.value_or(0));
-	QualifiedName::FreeAPIObject(&nameObj);
+	QualifiedName::FreeAPIStruct(&nameObj);
 
 	vector<uint64_t> result(refs, &refs[count]);
 	BNFreeDataReferences(refs);
@@ -2764,10 +2816,10 @@ vector<uint64_t> BinaryView::GetDataReferencesFromForTypeField(
 	const QualifiedName& type, uint64_t offset, std::optional<size_t> maxItems)
 {
 	size_t count;
-	BNQualifiedName nameObj = type.GetAPIObject();
+	BNQualifiedName nameObj = type.ToAPIStruct();
 	uint64_t* refs = BNGetDataReferencesFromForTypeField(
 		m_object, &nameObj, offset, &count, maxItems.has_value(), maxItems.value_or(0));
-	QualifiedName::FreeAPIObject(&nameObj);
+	QualifiedName::FreeAPIStruct(&nameObj);
 
 	vector<uint64_t> result(refs, &refs[count]);
 	BNFreeDataReferences(refs);
@@ -2779,17 +2831,17 @@ vector<TypeReferenceSource> BinaryView::GetTypeReferencesForTypeField(
 	const QualifiedName& type, uint64_t offset, std::optional<size_t> maxItems)
 {
 	size_t count;
-	BNQualifiedName nameObj = type.GetAPIObject();
+	BNQualifiedName nameObj = type.ToAPIStruct();
 	BNTypeReferenceSource* refs =
 		BNGetTypeReferencesForTypeField(m_object, &nameObj, offset, &count, maxItems.has_value(), maxItems.value_or(0));
-	QualifiedName::FreeAPIObject(&nameObj);
+	QualifiedName::FreeAPIStruct(&nameObj);
 
 	vector<TypeReferenceSource> result;
 	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		TypeReferenceSource src;
-		src.name = QualifiedName::FromAPIObject(&refs[i].name);
+		src.name = QualifiedName::FromAPIStruct(&refs[i].name);
 		src.offset = refs[i].offset;
 		src.type = refs[i].type;
 		result.push_back(src);
@@ -2802,10 +2854,10 @@ vector<TypeReferenceSource> BinaryView::GetTypeReferencesForTypeField(
 
 AllTypeReferences BinaryView::GetAllReferencesForType(const QualifiedName& type, std::optional<size_t> maxItems)
 {
-	BNQualifiedName nameObj = type.GetAPIObject();
+	BNQualifiedName nameObj = type.ToAPIStruct();
 	BNAllTypeReferences refs =
 		BNGetAllReferencesForType(m_object, &nameObj, maxItems.has_value(), maxItems.value_or(0));
-	QualifiedName::FreeAPIObject(&nameObj);
+	QualifiedName::FreeAPIStruct(&nameObj);
 
 	AllTypeReferences result;
 
@@ -2825,7 +2877,7 @@ AllTypeReferences BinaryView::GetAllReferencesForType(const QualifiedName& type,
 	for (size_t i = 0; i < refs.typeRefCount; i++)
 	{
 		TypeReferenceSource src;
-		src.name = QualifiedName::FromAPIObject(&refs.typeRefs[i].name);
+		src.name = QualifiedName::FromAPIStruct(&refs.typeRefs[i].name);
 		src.offset = refs.typeRefs[i].offset;
 		src.type = refs.typeRefs[i].type;
 		result.typeRefs.push_back(src);
@@ -2839,10 +2891,10 @@ AllTypeReferences BinaryView::GetAllReferencesForType(const QualifiedName& type,
 AllTypeFieldReferences BinaryView::GetAllReferencesForTypeField(
 	const QualifiedName& type, uint64_t offset, std::optional<size_t> maxItems)
 {
-	BNQualifiedName nameObj = type.GetAPIObject();
+	BNQualifiedName nameObj = type.ToAPIStruct();
 	BNAllTypeFieldReferences refs =
 		BNGetAllReferencesForTypeField(m_object, &nameObj, offset, maxItems.has_value(), maxItems.value_or(0));
-	QualifiedName::FreeAPIObject(&nameObj);
+	QualifiedName::FreeAPIStruct(&nameObj);
 
 	AllTypeFieldReferences result;
 
@@ -2867,7 +2919,7 @@ AllTypeFieldReferences BinaryView::GetAllReferencesForTypeField(
 	for (size_t i = 0; i < refs.typeRefCount; i++)
 	{
 		TypeReferenceSource src;
-		src.name = QualifiedName::FromAPIObject(&refs.typeRefs[i].name);
+		src.name = QualifiedName::FromAPIStruct(&refs.typeRefs[i].name);
 		src.offset = refs.typeRefs[i].offset;
 		src.type = refs.typeRefs[i].type;
 		result.typeRefs.push_back(src);
@@ -2889,7 +2941,7 @@ vector<TypeReferenceSource> BinaryView::GetCodeReferencesForTypeFrom(ReferenceSo
 	for (size_t i = 0; i < count; i++)
 	{
 		TypeReferenceSource src;
-		src.name = QualifiedName::FromAPIObject(&refs[i].name);
+		src.name = QualifiedName::FromAPIStruct(&refs[i].name);
 		src.offset = refs[i].offset;
 		src.type = refs[i].type;
 		result.push_back(src);
@@ -2911,7 +2963,7 @@ vector<TypeReferenceSource> BinaryView::GetCodeReferencesForTypeFrom(ReferenceSo
 	for (size_t i = 0; i < count; i++)
 	{
 		TypeReferenceSource src;
-		src.name = QualifiedName::FromAPIObject(&refs[i].name);
+		src.name = QualifiedName::FromAPIStruct(&refs[i].name);
 		src.offset = refs[i].offset;
 		src.type = refs[i].type;
 		result.push_back(src);
@@ -2932,7 +2984,7 @@ vector<TypeReferenceSource> BinaryView::GetCodeReferencesForTypeFieldFrom(Refere
 	for (size_t i = 0; i < count; i++)
 	{
 		TypeReferenceSource src;
-		src.name = QualifiedName::FromAPIObject(&refs[i].name);
+		src.name = QualifiedName::FromAPIStruct(&refs[i].name);
 		src.offset = refs[i].offset;
 		src.type = refs[i].type;
 		result.push_back(src);
@@ -2954,7 +3006,7 @@ vector<TypeReferenceSource> BinaryView::GetCodeReferencesForTypeFieldFrom(Refere
 	for (size_t i = 0; i < count; i++)
 	{
 		TypeReferenceSource src;
-		src.name = QualifiedName::FromAPIObject(&refs[i].name);
+		src.name = QualifiedName::FromAPIStruct(&refs[i].name);
 		src.offset = refs[i].offset;
 		src.type = refs[i].type;
 		result.push_back(src);
@@ -2968,7 +3020,7 @@ vector<TypeReferenceSource> BinaryView::GetCodeReferencesForTypeFieldFrom(Refere
 vector<uint64_t> BinaryView::GetAllFieldsReferenced(const QualifiedName& type)
 {
 	size_t count;
-	BNQualifiedName nameObj = type.GetAPIObject();
+	BNQualifiedName nameObj = type.ToAPIStruct();
 	uint64_t* fields = BNGetAllFieldsReferenced(m_object, &nameObj, &count);
 
 	vector<uint64_t> result(fields, &fields[count]);
@@ -2982,7 +3034,7 @@ vector<uint64_t> BinaryView::GetAllFieldsReferenced(const QualifiedName& type)
 std::map<uint64_t, std::vector<size_t>> BinaryView::GetAllSizesReferenced(const QualifiedName& type)
 {
 	size_t count;
-	BNQualifiedName nameObj = type.GetAPIObject();
+	BNQualifiedName nameObj = type.ToAPIStruct();
 	BNTypeFieldReferenceSizeInfo* fields = BNGetAllSizesReferenced(m_object, &nameObj, &count);
 
 	std::map<uint64_t, std::vector<size_t>> result;
@@ -3003,7 +3055,7 @@ std::map<uint64_t, std::vector<size_t>> BinaryView::GetAllSizesReferenced(const 
 std::map<uint64_t, std::vector<Confidence<Ref<Type>>>> BinaryView::GetAllTypesReferenced(const QualifiedName& type)
 {
 	size_t count;
-	BNQualifiedName nameObj = type.GetAPIObject();
+	BNQualifiedName nameObj = type.ToAPIStruct();
 	BNTypeFieldReferenceTypeInfo* fields = BNGetAllTypesReferenced(m_object, &nameObj, &count);
 
 	std::map<uint64_t, std::vector<Confidence<Ref<Type>>>> result;
@@ -3026,7 +3078,7 @@ std::map<uint64_t, std::vector<Confidence<Ref<Type>>>> BinaryView::GetAllTypesRe
 std::vector<size_t> BinaryView::GetSizesReferenced(const QualifiedName& type, uint64_t offset)
 {
 	size_t count;
-	BNQualifiedName nameObj = type.GetAPIObject();
+	BNQualifiedName nameObj = type.ToAPIStruct();
 	size_t* refs = BNGetSizesReferenced(m_object, &nameObj, offset, &count);
 
 	std::vector<size_t> result;
@@ -3042,7 +3094,7 @@ std::vector<size_t> BinaryView::GetSizesReferenced(const QualifiedName& type, ui
 std::vector<Confidence<Ref<Type>>> BinaryView::GetTypesReferenced(const QualifiedName& type, uint64_t offset)
 {
 	size_t count;
-	BNQualifiedName nameObj = type.GetAPIObject();
+	BNQualifiedName nameObj = type.ToAPIStruct();
 	BNTypeWithConfidence* types = BNGetTypesReferenced(m_object, &nameObj, offset, &count);
 
 	std::vector<Confidence<Ref<Type>>> result;
@@ -3062,16 +3114,16 @@ std::vector<Confidence<Ref<Type>>> BinaryView::GetTypesReferenced(const Qualifie
 unordered_set<QualifiedName> BinaryView::GetOutgoingDirectTypeReferences(const QualifiedName& type)
 {
 	size_t count;
-	BNQualifiedName apiType = type.GetAPIObject();
+	BNQualifiedName apiType = type.ToAPIStruct();
 	BNQualifiedName* apiResult = BNGetOutgoingDirectTypeReferences(m_object, &apiType, &count);
-	QualifiedName::FreeAPIObject(&apiType);
+	QualifiedName::FreeAPIStruct(&apiType);
 	if (!apiResult)
 		return {};
 
 	unordered_set<QualifiedName> result;
 	for (size_t i = 0; i < count; i ++)
 	{
-		result.insert(QualifiedName::FromAPIObject(&apiResult[i]));
+		result.insert(QualifiedName::FromAPIStruct(&apiResult[i]));
 	}
 	BNFreeTypeNameList(apiResult, count);
 	return result;
@@ -3088,14 +3140,15 @@ unordered_set<QualifiedName> BinaryView::GetOutgoingRecursiveTypeReferences(cons
 {
 	size_t count;
 	vector<BNQualifiedName> apiTypes;
+	apiTypes.reserve(types.size());
 	for (auto& type: types)
 	{
-		apiTypes.push_back(type.GetAPIObject());
+		apiTypes.push_back(type.ToAPIStruct());
 	}
 	BNQualifiedName* apiResult = BNGetOutgoingRecursiveTypeReferences(m_object, apiTypes.data(), apiTypes.size(), &count);
 	for (auto& type: apiTypes)
 	{
-		QualifiedName::FreeAPIObject(&type);
+		QualifiedName::FreeAPIStruct(&type);
 	}
 	if (!apiResult)
 		return {};
@@ -3103,7 +3156,7 @@ unordered_set<QualifiedName> BinaryView::GetOutgoingRecursiveTypeReferences(cons
 	unordered_set<QualifiedName> result;
 	for (size_t i = 0; i < count; i ++)
 	{
-		result.insert(QualifiedName::FromAPIObject(&apiResult[i]));
+		result.insert(QualifiedName::FromAPIStruct(&apiResult[i]));
 	}
 	BNFreeTypeNameList(apiResult, count);
 	return result;
@@ -3113,16 +3166,16 @@ unordered_set<QualifiedName> BinaryView::GetOutgoingRecursiveTypeReferences(cons
 unordered_set<QualifiedName> BinaryView::GetIncomingDirectTypeReferences(const QualifiedName& type)
 {
 	size_t count;
-	BNQualifiedName apiType = type.GetAPIObject();
+	BNQualifiedName apiType = type.ToAPIStruct();
 	BNQualifiedName* apiResult = BNGetIncomingDirectTypeReferences(m_object, &apiType, &count);
-	QualifiedName::FreeAPIObject(&apiType);
+	QualifiedName::FreeAPIStruct(&apiType);
 	if (!apiResult)
 		return {};
 
 	unordered_set<QualifiedName> result;
 	for (size_t i = 0; i < count; i ++)
 	{
-		result.insert(QualifiedName::FromAPIObject(&apiResult[i]));
+		result.insert(QualifiedName::FromAPIStruct(&apiResult[i]));
 	}
 	BNFreeTypeNameList(apiResult, count);
 	return result;
@@ -3139,14 +3192,15 @@ unordered_set<QualifiedName> BinaryView::GetIncomingRecursiveTypeReferences(cons
 {
 	size_t count;
 	vector<BNQualifiedName> apiTypes;
+	apiTypes.reserve(types.size());
 	for (auto& type: types)
 	{
-		apiTypes.push_back(type.GetAPIObject());
+		apiTypes.push_back(type.ToAPIStruct());
 	}
 	BNQualifiedName* apiResult = BNGetIncomingRecursiveTypeReferences(m_object, apiTypes.data(), apiTypes.size(), &count);
 	for (auto& type: apiTypes)
 	{
-		QualifiedName::FreeAPIObject(&type);
+		QualifiedName::FreeAPIStruct(&type);
 	}
 	if (!apiResult)
 		return {};
@@ -3154,7 +3208,7 @@ unordered_set<QualifiedName> BinaryView::GetIncomingRecursiveTypeReferences(cons
 	unordered_set<QualifiedName> result;
 	for (size_t i = 0; i < count; i ++)
 	{
-		result.insert(QualifiedName::FromAPIObject(&apiResult[i]));
+		result.insert(QualifiedName::FromAPIStruct(&apiResult[i]));
 	}
 	BNFreeTypeNameList(apiResult, count);
 	return result;
@@ -3195,9 +3249,9 @@ vector<ReferenceSource> BinaryView::GetCallers(uint64_t addr)
 
 Ref<Symbol> BinaryView::GetSymbolByAddress(uint64_t addr, const NameSpace& nameSpace)
 {
-	BNNameSpace ns = nameSpace.GetAPIObject();
+	BNNameSpace ns = nameSpace.ToAPIStruct();
 	BNSymbol* sym = BNGetSymbolByAddress(m_object, addr, &ns);
-	NameSpace::FreeAPIObject(&ns);
+	NameSpace::FreeAPIStruct(&ns);
 	if (!sym)
 		return nullptr;
 	return new Symbol(sym);
@@ -3206,9 +3260,9 @@ Ref<Symbol> BinaryView::GetSymbolByAddress(uint64_t addr, const NameSpace& nameS
 
 Ref<Symbol> BinaryView::GetSymbolByRawName(const string& name, const NameSpace& nameSpace)
 {
-	BNNameSpace ns = nameSpace.GetAPIObject();
+	BNNameSpace ns = nameSpace.ToAPIStruct();
 	BNSymbol* sym = BNGetSymbolByRawName(m_object, name.c_str(), &ns);
-	NameSpace::FreeAPIObject(&ns);
+	NameSpace::FreeAPIStruct(&ns);
 	if (!sym)
 		return nullptr;
 	return new Symbol(sym);
@@ -3218,9 +3272,9 @@ Ref<Symbol> BinaryView::GetSymbolByRawName(const string& name, const NameSpace& 
 vector<Ref<Symbol>> BinaryView::GetSymbolsByName(const string& name, const NameSpace& nameSpace)
 {
 	size_t count;
-	BNNameSpace ns = nameSpace.GetAPIObject();
+	BNNameSpace ns = nameSpace.ToAPIStruct();
 	BNSymbol** syms = BNGetSymbolsByName(m_object, name.c_str(), &count, &ns);
-	NameSpace::FreeAPIObject(&ns);
+	NameSpace::FreeAPIStruct(&ns);
 
 	vector<Ref<Symbol>> result;
 	result.reserve(count);
@@ -3235,9 +3289,9 @@ vector<Ref<Symbol>> BinaryView::GetSymbolsByName(const string& name, const NameS
 vector<Ref<Symbol>> BinaryView::GetSymbolsByRawName(const string& name, const NameSpace& nameSpace)
 {
 	size_t count;
-	BNNameSpace ns = nameSpace.GetAPIObject();
+	BNNameSpace ns = nameSpace.ToAPIStruct();
 	BNSymbol** syms = BNGetSymbolsByRawName(m_object, name.c_str(), &count, &ns);
-	NameSpace::FreeAPIObject(&ns);
+	NameSpace::FreeAPIStruct(&ns);
 
 	vector<Ref<Symbol>> result;
 	result.reserve(count);
@@ -3252,9 +3306,9 @@ vector<Ref<Symbol>> BinaryView::GetSymbolsByRawName(const string& name, const Na
 vector<Ref<Symbol>> BinaryView::GetSymbols(const NameSpace& nameSpace)
 {
 	size_t count;
-	BNNameSpace ns = nameSpace.GetAPIObject();
+	BNNameSpace ns = nameSpace.ToAPIStruct();
 	BNSymbol** syms = BNGetSymbols(m_object, &count, &ns);
-	NameSpace::FreeAPIObject(&ns);
+	NameSpace::FreeAPIStruct(&ns);
 
 	vector<Ref<Symbol>> result;
 	result.reserve(count);
@@ -3269,9 +3323,9 @@ vector<Ref<Symbol>> BinaryView::GetSymbols(const NameSpace& nameSpace)
 vector<Ref<Symbol>> BinaryView::GetSymbols(uint64_t start, uint64_t len, const NameSpace& nameSpace)
 {
 	size_t count;
-	BNNameSpace ns = nameSpace.GetAPIObject();
+	BNNameSpace ns = nameSpace.ToAPIStruct();
 	BNSymbol** syms = BNGetSymbolsInRange(m_object, start, len, &count, &ns);
-	NameSpace::FreeAPIObject(&ns);
+	NameSpace::FreeAPIStruct(&ns);
 
 	vector<Ref<Symbol>> result;
 	result.reserve(count);
@@ -3286,9 +3340,9 @@ vector<Ref<Symbol>> BinaryView::GetSymbols(uint64_t start, uint64_t len, const N
 vector<Ref<Symbol>> BinaryView::GetSymbolsOfType(BNSymbolType type, const NameSpace& nameSpace)
 {
 	size_t count;
-	BNNameSpace ns = nameSpace.GetAPIObject();
+	BNNameSpace ns = nameSpace.ToAPIStruct();
 	BNSymbol** syms = BNGetSymbolsOfType(m_object, type, &count, &ns);
-	NameSpace::FreeAPIObject(&ns);
+	NameSpace::FreeAPIStruct(&ns);
 
 	vector<Ref<Symbol>> result;
 	result.reserve(count);
@@ -3304,9 +3358,9 @@ vector<Ref<Symbol>> BinaryView::GetSymbolsOfType(
     BNSymbolType type, uint64_t start, uint64_t len, const NameSpace& nameSpace)
 {
 	size_t count;
-	BNNameSpace ns = nameSpace.GetAPIObject();
+	BNNameSpace ns = nameSpace.ToAPIStruct();
 	BNSymbol** syms = BNGetSymbolsOfTypeInRange(m_object, type, start, len, &count, &ns);
-	NameSpace::FreeAPIObject(&ns);
+	NameSpace::FreeAPIStruct(&ns);
 
 	vector<Ref<Symbol>> result;
 	result.reserve(count);
@@ -3321,9 +3375,9 @@ vector<Ref<Symbol>> BinaryView::GetSymbolsOfType(
 std::vector<Ref<Symbol>> BinaryView::GetVisibleSymbols(const NameSpace& nameSpace)
 {
 	size_t count;
-	BNNameSpace ns = nameSpace.GetAPIObject();
+	BNNameSpace ns = nameSpace.ToAPIStruct();
 	BNSymbol** syms = BNGetVisibleSymbols(m_object, &count, &ns);
-	NameSpace::FreeAPIObject(&ns);
+	NameSpace::FreeAPIStruct(&ns);
 
 	vector<Ref<Symbol>> result;
 	result.reserve(count);
@@ -4033,13 +4087,82 @@ vector<BNStringReference> BinaryView::GetStrings(uint64_t start, uint64_t len)
 }
 
 
+StringDetectionParameters StringDetectionParameters::FromSettings(Ref<Settings> settings, Ref<BinaryView> view)
+{
+	StringDetectionParameters params;
+	params.minStringLength = settings->Get<uint64_t>("analysis.limits.minStringLength", view);
+	params.utf8Enabled = settings->Get<bool>("analysis.unicode.utf8", view);
+	params.utf16Enabled = settings->Get<bool>("analysis.unicode.utf16", view);
+	params.utf32Enabled = settings->Get<bool>("analysis.unicode.utf32", view);
+	params.unicodeBlockNames = settings->Get<vector<string>>("analysis.unicode.blocks", view);
+	return params;
+}
+
+
+StringDetector::StringDetector(const StringDetectionParameters& params)
+{
+	BNStringDetectionParameters apiParams;
+	apiParams.minStringLength = params.minStringLength;
+	apiParams.utf8Enabled = params.utf8Enabled;
+	apiParams.utf16Enabled = params.utf16Enabled;
+	apiParams.utf32Enabled = params.utf32Enabled;
+	vector<const char*> blockNames;
+	blockNames.reserve(params.unicodeBlockNames.size());
+	for (const auto& name : params.unicodeBlockNames)
+		blockNames.push_back(name.c_str());
+	apiParams.unicodeBlockNames = blockNames.data();
+	apiParams.unicodeBlockNameCount = blockNames.size();
+	m_object = BNCreateStringDetector(&apiParams);
+}
+
+
+StringDetector::~StringDetector()
+{
+	if (m_object)
+		BNFreeStringDetector(m_object);
+}
+
+
+StringDetector::StringDetector(StringDetector&& other) noexcept : m_object(other.m_object)
+{
+	other.m_object = nullptr;
+}
+
+
+StringDetector& StringDetector::operator=(StringDetector&& other) noexcept
+{
+	if (this != &other)
+	{
+		if (m_object)
+			BNFreeStringDetector(m_object);
+		m_object = other.m_object;
+		other.m_object = nullptr;
+	}
+	return *this;
+}
+
+
+vector<BNStringReference> StringDetector::DetectStrings(const void* data, size_t dataLen, size_t blockLen,
+	uint64_t baseAddress, BNStringReference* lastFoundString) const
+{
+	size_t count = 0;
+	BNStringReference* strings = BNStringDetectorDetectStrings(m_object, static_cast<const uint8_t*>(data),
+		dataLen, blockLen, baseAddress, lastFoundString, &count);
+	vector<BNStringReference> result;
+	result.insert(result.end(), strings, strings + count);
+	BNFreeStringReferenceList(strings);
+	return result;
+}
+
+
 vector<DerivedString> BinaryView::GetDerivedStrings()
 {
 	size_t count;
 	BNDerivedString* strings = BNGetDerivedStrings(m_object, &count);
 	vector<DerivedString> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
-		result.push_back(DerivedString::FromAPIObject(&strings[i], false));
+		result.push_back(DerivedString::FromAPIStruct(&strings[i], false));
 	BNFreeDerivedStringList(strings, count);
 	return result;
 }
@@ -4048,7 +4171,7 @@ vector<DerivedString> BinaryView::GetDerivedStrings()
 vector<ReferenceSource> BinaryView::GetDerivedStringCodeReferences(
 	const DerivedString& str, std::optional<size_t> maxItems)
 {
-	BNDerivedString derivedStr = str.ToAPIObject(false);
+	BNDerivedString derivedStr = str.ToAPIStruct(false);
 
 	size_t count;
 	BNReferenceSource* refs = BNGetDerivedStringCodeReferences(
@@ -4166,7 +4289,7 @@ bool BinaryView::ParsePossibleValueSet(
 		return false;
 	}
 
-	result = PossibleValueSet::FromAPIObject(res);
+	result = PossibleValueSet::FromAPIStruct(res);
 	errors = "";
 	return true;
 }
@@ -4184,7 +4307,7 @@ bool BinaryView::ParseTypeString(const string& text, QualifiedNameAndType& resul
 	size_t i = 0;
 	for (auto& type : typesAllowRedefinition)
 	{
-		typesList.names[i] = type.GetAPIObject();
+		typesList.names[i] = type.ToAPIStruct();
 		i++;
 	}
 
@@ -4196,7 +4319,7 @@ bool BinaryView::ParseTypeString(const string& text, QualifiedNameAndType& resul
 		return false;
 	}
 
-	result.name = QualifiedName::FromAPIObject(&nt.name);
+	result.name = QualifiedName::FromAPIStruct(&nt.name);
 	result.type = new Type(BNNewTypeReference(nt.type));
 	errors = "";
 	BNFreeQualifiedNameAndType(&nt);
@@ -4222,7 +4345,7 @@ bool BinaryView::ParseTypeString(const string& source, map<QualifiedName, Ref<Ty
 	size_t i = 0;
 	for (auto& type : typesAllowRedefinition)
 	{
-		typesList.names[i] = type.GetAPIObject();
+		typesList.names[i] = type.ToAPIStruct();
 		i++;
 	}
 
@@ -4242,17 +4365,17 @@ bool BinaryView::ParseTypeString(const string& source, map<QualifiedName, Ref<Ty
 
 	for (size_t i = 0; i < result.typeCount; i++)
 	{
-		QualifiedName name = QualifiedName::FromAPIObject(&result.types[i].name);
+		QualifiedName name = QualifiedName::FromAPIStruct(&result.types[i].name);
 		types[name] = new Type(BNNewTypeReference(result.types[i].type));
 	}
 	for (size_t i = 0; i < result.variableCount; i++)
 	{
-		QualifiedName name = QualifiedName::FromAPIObject(&result.variables[i].name);
+		QualifiedName name = QualifiedName::FromAPIStruct(&result.variables[i].name);
 		variables[name] = new Type(BNNewTypeReference(result.variables[i].type));
 	}
 	for (size_t i = 0; i < result.functionCount; i++)
 	{
-		QualifiedName name = QualifiedName::FromAPIObject(&result.functions[i].name);
+		QualifiedName name = QualifiedName::FromAPIStruct(&result.functions[i].name);
 		functions[name] = new Type(BNNewTypeReference(result.functions[i].type));
 	}
 	BNFreeTypeParserResult(&result);
@@ -4269,15 +4392,17 @@ bool BinaryView::ParseTypesFromSource(const string& source, const vector<string>
 	size_t i = 0;
 	for (auto& type : typesAllowRedefinition)
 	{
-		typesList.names[i] = type.GetAPIObject();
+		typesList.names[i] = type.ToAPIStruct();
 		i++;
 	}
 
 	vector<const char*> coreOptions;
+	coreOptions.reserve(options.size());
 	for (auto& option : options)
 		coreOptions.push_back(option.c_str());
 
 	vector<const char*> coreIncludeDirs;
+	coreIncludeDirs.reserve(includeDirs.size());
 	for (auto& includeDir : includeDirs)
 		coreIncludeDirs.push_back(includeDir.c_str());
 
@@ -4299,7 +4424,7 @@ bool BinaryView::ParseTypesFromSource(const string& source, const vector<string>
 	for (size_t j = 0; j < apiResult.typeCount; ++j)
 	{
 		result.types.push_back({
-			QualifiedName::FromAPIObject(&apiResult.types[j].name),
+			QualifiedName::FromAPIStruct(&apiResult.types[j].name),
 			new Type(BNNewTypeReference(apiResult.types[j].type)),
 			apiResult.types[j].isUser
 		});
@@ -4309,7 +4434,7 @@ bool BinaryView::ParseTypesFromSource(const string& source, const vector<string>
 	for (size_t j = 0; j < apiResult.variableCount; ++j)
 	{
 		result.variables.push_back({
-			QualifiedName::FromAPIObject(&apiResult.variables[j].name),
+			QualifiedName::FromAPIStruct(&apiResult.variables[j].name),
 			new Type(BNNewTypeReference(apiResult.variables[j].type)),
 			apiResult.variables[j].isUser
 		});
@@ -4319,7 +4444,7 @@ bool BinaryView::ParseTypesFromSource(const string& source, const vector<string>
 	for (size_t j = 0; j < apiResult.functionCount; ++j)
 	{
 		result.functions.push_back({
-			QualifiedName::FromAPIObject(&apiResult.functions[j].name),
+			QualifiedName::FromAPIStruct(&apiResult.functions[j].name),
 			new Type(BNNewTypeReference(apiResult.functions[j].type)),
 			apiResult.functions[j].isUser
 		});
@@ -4356,7 +4481,7 @@ map<QualifiedName, Ref<Type>> BinaryView::GetTypes()
 	map<QualifiedName, Ref<Type>> result;
 	for (size_t i = 0; i < count; i++)
 	{
-		QualifiedName name = QualifiedName::FromAPIObject(&types[i].name);
+		QualifiedName name = QualifiedName::FromAPIStruct(&types[i].name);
 		result[name] = new Type(BNNewTypeReference(types[i].type));
 	}
 
@@ -4371,9 +4496,10 @@ vector<pair<QualifiedName, Ref<Type>>> BinaryView::GetDependencySortedTypes()
 	BNQualifiedNameAndType* types = BNGetAnalysisDependencySortedTypeList(m_object, &count);
 
 	vector<pair<QualifiedName, Ref<Type>>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
-		QualifiedName name = QualifiedName::FromAPIObject(&types[i].name);
+		QualifiedName name = QualifiedName::FromAPIStruct(&types[i].name);
 		result.emplace_back(name, new Type(BNNewTypeReference(types[i].type)));
 	}
 
@@ -4391,7 +4517,7 @@ vector<QualifiedName> BinaryView::GetTypeNames(const string& matching)
 	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
-		result.push_back(QualifiedName::FromAPIObject(&names[i]));
+		result.push_back(QualifiedName::FromAPIStruct(&names[i]));
 	}
 
 	BNFreeTypeNameList(names, count);
@@ -4401,9 +4527,9 @@ vector<QualifiedName> BinaryView::GetTypeNames(const string& matching)
 
 Ref<Type> BinaryView::GetTypeByName(const QualifiedName& name)
 {
-	BNQualifiedName nameObj = name.GetAPIObject();
+	BNQualifiedName nameObj = name.ToAPIStruct();
 	BNType* type = BNGetAnalysisTypeByName(m_object, &nameObj);
-	QualifiedName::FreeAPIObject(&nameObj);
+	QualifiedName::FreeAPIStruct(&nameObj);
 
 	if (!type)
 		return nullptr;
@@ -4432,7 +4558,7 @@ Ref<Type> BinaryView::GetTypeById(const string& id)
 QualifiedName BinaryView::GetTypeNameById(const string& id)
 {
 	BNQualifiedName name = BNGetAnalysisTypeNameById(m_object, id.c_str());
-	QualifiedName result = QualifiedName::FromAPIObject(&name);
+	QualifiedName result = QualifiedName::FromAPIStruct(&name);
 	BNFreeQualifiedName(&name);
 	return result;
 }
@@ -4440,9 +4566,9 @@ QualifiedName BinaryView::GetTypeNameById(const string& id)
 
 string BinaryView::GetTypeId(const QualifiedName& name)
 {
-	BNQualifiedName nameObj = name.GetAPIObject();
+	BNQualifiedName nameObj = name.ToAPIStruct();
 	char* id = BNGetAnalysisTypeId(m_object, &nameObj);
-	QualifiedName::FreeAPIObject(&nameObj);
+	QualifiedName::FreeAPIStruct(&nameObj);
 	string result = id;
 	BNFreeString(id);
 	return result;
@@ -4451,19 +4577,19 @@ string BinaryView::GetTypeId(const QualifiedName& name)
 
 bool BinaryView::IsTypeAutoDefined(const QualifiedName& name)
 {
-	BNQualifiedName nameObj = name.GetAPIObject();
+	BNQualifiedName nameObj = name.ToAPIStruct();
 	bool result = BNIsAnalysisTypeAutoDefined(m_object, &nameObj);
-	QualifiedName::FreeAPIObject(&nameObj);
+	QualifiedName::FreeAPIStruct(&nameObj);
 	return result;
 }
 
 
 QualifiedName BinaryView::DefineType(const string& id, const QualifiedName& defaultName, Ref<Type> type)
 {
-	BNQualifiedName nameObj = defaultName.GetAPIObject();
+	BNQualifiedName nameObj = defaultName.ToAPIStruct();
 	BNQualifiedName regName = BNDefineAnalysisType(m_object, id.c_str(), &nameObj, type->GetObject());
-	QualifiedName::FreeAPIObject(&nameObj);
-	QualifiedName result = QualifiedName::FromAPIObject(&regName);
+	QualifiedName::FreeAPIStruct(&nameObj);
+	QualifiedName result = QualifiedName::FromAPIStruct(&regName);
 	BNFreeQualifiedName(&regName);
 	return result;
 }
@@ -4471,9 +4597,9 @@ QualifiedName BinaryView::DefineType(const string& id, const QualifiedName& defa
 
 void BinaryView::DefineUserType(const QualifiedName& name, Ref<Type> type)
 {
-	BNQualifiedName nameObj = name.GetAPIObject();
+	BNQualifiedName nameObj = name.ToAPIStruct();
 	BNDefineUserAnalysisType(m_object, &nameObj, type->GetObject());
-	QualifiedName::FreeAPIObject(&nameObj);
+	QualifiedName::FreeAPIStruct(&nameObj);
 }
 
 
@@ -4482,7 +4608,7 @@ std::unordered_map<std::string, QualifiedName> BinaryView::DefineTypes(const vec
 	BNQualifiedNameTypeAndId* apiTypes = new BNQualifiedNameTypeAndId[types.size()];
 	for (size_t i = 0; i < types.size(); i++)
 	{
-		apiTypes[i].name = types[i].second.name.GetAPIObject();
+		apiTypes[i].name = types[i].second.name.ToAPIStruct();
 		apiTypes[i].type = types[i].second.type->GetObject();
 		apiTypes[i].id = BNAllocString(types[i].first.c_str());
 	}
@@ -4497,7 +4623,7 @@ std::unordered_map<std::string, QualifiedName> BinaryView::DefineTypes(const vec
 	for (size_t i = 0; i < resultCount; i ++)
 	{
 		string id = resultIds[i];
-		QualifiedName name = QualifiedName::FromAPIObject(&resultNames[i]);
+		QualifiedName name = QualifiedName::FromAPIStruct(&resultNames[i]);
 		result.insert({id, name});
 	}
 
@@ -4506,7 +4632,7 @@ std::unordered_map<std::string, QualifiedName> BinaryView::DefineTypes(const vec
 
 	for (size_t i = 0; i < types.size(); i++)
 	{
-		QualifiedName::FreeAPIObject(&apiTypes[i].name);
+		QualifiedName::FreeAPIStruct(&apiTypes[i].name);
 		BNFreeString(apiTypes[i].id);
 	}
 	delete [] apiTypes;
@@ -4520,7 +4646,7 @@ void BinaryView::DefineUserTypes(const vector<QualifiedNameAndType>& types, Prog
 	BNQualifiedNameAndType* apiTypes = new BNQualifiedNameAndType[types.size()];
 	for (size_t i = 0; i < types.size(); i++)
 	{
-		apiTypes[i].name = types[i].name.GetAPIObject();
+		apiTypes[i].name = types[i].name.ToAPIStruct();
 		apiTypes[i].type = types[i].type->GetObject();
 	}
 
@@ -4530,7 +4656,7 @@ void BinaryView::DefineUserTypes(const vector<QualifiedNameAndType>& types, Prog
 
 	for (size_t i = 0; i < types.size(); i++)
 	{
-		QualifiedName::FreeAPIObject(&apiTypes[i].name);
+		QualifiedName::FreeAPIStruct(&apiTypes[i].name);
 	}
 	delete [] apiTypes;
 }
@@ -4541,7 +4667,7 @@ void BinaryView::DefineUserTypes(const vector<ParsedType>& types, ProgressFuncti
 	BNQualifiedNameAndType* apiTypes = new BNQualifiedNameAndType[types.size()];
 	for (size_t i = 0; i < types.size(); i++)
 	{
-		apiTypes[i].name = types[i].name.GetAPIObject();
+		apiTypes[i].name = types[i].name.ToAPIStruct();
 		apiTypes[i].type = types[i].type->GetObject();
 	}
 
@@ -4551,7 +4677,7 @@ void BinaryView::DefineUserTypes(const vector<ParsedType>& types, ProgressFuncti
 
 	for (size_t i = 0; i < types.size(); i++)
 	{
-		QualifiedName::FreeAPIObject(&apiTypes[i].name);
+		QualifiedName::FreeAPIStruct(&apiTypes[i].name);
 	}
 	delete [] apiTypes;
 }
@@ -4565,19 +4691,19 @@ void BinaryView::UndefineType(const string& id)
 
 void BinaryView::UndefineUserType(const QualifiedName& name)
 {
-	BNQualifiedName nameObj = name.GetAPIObject();
+	BNQualifiedName nameObj = name.ToAPIStruct();
 	BNUndefineUserAnalysisType(m_object, &nameObj);
-	QualifiedName::FreeAPIObject(&nameObj);
+	QualifiedName::FreeAPIStruct(&nameObj);
 }
 
 
 void BinaryView::RenameType(const QualifiedName& oldName, const QualifiedName& newName)
 {
-	BNQualifiedName oldNameObj = oldName.GetAPIObject();
-	BNQualifiedName newNameObj = newName.GetAPIObject();
+	BNQualifiedName oldNameObj = oldName.ToAPIStruct();
+	BNQualifiedName newNameObj = newName.ToAPIStruct();
 	BNRenameAnalysisType(m_object, &oldNameObj, &newNameObj);
-	QualifiedName::FreeAPIObject(&oldNameObj);
-	QualifiedName::FreeAPIObject(&newNameObj);
+	QualifiedName::FreeAPIStruct(&oldNameObj);
+	QualifiedName::FreeAPIStruct(&newNameObj);
 }
 
 
@@ -4609,12 +4735,12 @@ std::optional<std::pair<Ref<Platform>, QualifiedName>> BinaryView::LookupImporte
 {
 	BNPlatform* resultLib;
 	BNQualifiedName resultName;
-	BNQualifiedName sourceName = name.GetAPIObject();
+	BNQualifiedName sourceName = name.ToAPIStruct();
 	bool result = BNLookupImportedTypePlatform(m_object, &sourceName, &resultLib, &resultName);
-	QualifiedName::FreeAPIObject(&sourceName);
+	QualifiedName::FreeAPIStruct(&sourceName);
 	if (!result)
 		return std::nullopt;
-	QualifiedName targetName = QualifiedName::FromAPIObject(&resultName);
+	QualifiedName targetName = QualifiedName::FromAPIStruct(&resultName);
 	BNFreeQualifiedName(&resultName);
 	return std::make_pair(new CorePlatform(resultLib), targetName);
 }
@@ -4641,6 +4767,7 @@ std::vector<Ref<TypeLibrary>> BinaryView::GetTypeLibraries()
 	BNTypeLibrary** libs = BNGetBinaryViewTypeLibraries(m_object, &count);
 
 	vector<Ref<TypeLibrary>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		result.push_back(new TypeLibrary(BNNewTypeLibraryReference(libs[i])));
@@ -4653,11 +4780,11 @@ std::vector<Ref<TypeLibrary>> BinaryView::GetTypeLibraries()
 
 Ref<Type> BinaryView::ImportTypeLibraryType(Ref<TypeLibrary>& lib, const QualifiedName& name)
 {
-	BNQualifiedName apiName = name.GetAPIObject();
+	BNQualifiedName apiName = name.ToAPIStruct();
 	BNTypeLibrary* apiLib = lib ? lib->GetObject() : nullptr;
 	BNType* result = BNBinaryViewImportTypeLibraryType(m_object, &apiLib, &apiName);
 	lib = apiLib ? new TypeLibrary(apiLib) : nullptr;
-	QualifiedName::FreeAPIObject(&apiName);
+	QualifiedName::FreeAPIStruct(&apiName);
 	if (!result)
 		return nullptr;
 	return new Type(result);
@@ -4666,11 +4793,11 @@ Ref<Type> BinaryView::ImportTypeLibraryType(Ref<TypeLibrary>& lib, const Qualifi
 
 Ref<Type> BinaryView::ImportTypeLibraryObject(Ref<TypeLibrary>& lib, const QualifiedName& name)
 {
-	BNQualifiedName apiName = name.GetAPIObject();
+	BNQualifiedName apiName = name.ToAPIStruct();
 	BNTypeLibrary* apiLib = lib ? lib->GetObject() : nullptr;
 	BNType* result = BNBinaryViewImportTypeLibraryObject(m_object, &apiLib, &apiName);
 	lib = apiLib ? new TypeLibrary(apiLib) : nullptr;
-	QualifiedName::FreeAPIObject(&apiName);
+	QualifiedName::FreeAPIStruct(&apiName);
 	if (!result)
 		return nullptr;
 	return new Type(result);
@@ -4692,7 +4819,7 @@ std::optional<QualifiedName> BinaryView::GetTypeNameByGuid(const std::string& gu
 	if (result.nameCount == 0)
 		return std::nullopt;
 
-	auto name = QualifiedName::FromAPIObject(&result);
+	auto name = QualifiedName::FromAPIStruct(&result);
 	BNFreeQualifiedName(&result);
 	return name;
 }
@@ -4700,25 +4827,25 @@ std::optional<QualifiedName> BinaryView::GetTypeNameByGuid(const std::string& gu
 
 void BinaryView::ExportTypeToTypeLibrary(TypeLibrary* lib, const QualifiedName& name, Type* type)
 {
-	BNQualifiedName apiName = name.GetAPIObject();
+	BNQualifiedName apiName = name.ToAPIStruct();
 	BNBinaryViewExportTypeToTypeLibrary(m_object, lib->GetObject(), &apiName, type->GetObject());
-	QualifiedName::FreeAPIObject(&apiName);
+	QualifiedName::FreeAPIStruct(&apiName);
 }
 
 
 void BinaryView::ExportObjectToTypeLibrary(TypeLibrary* lib, const QualifiedName& name, Type* type)
 {
-	BNQualifiedName apiName = name.GetAPIObject();
+	BNQualifiedName apiName = name.ToAPIStruct();
 	BNBinaryViewExportObjectToTypeLibrary(m_object, lib->GetObject(), &apiName, type->GetObject());
-	QualifiedName::FreeAPIObject(&apiName);
+	QualifiedName::FreeAPIStruct(&apiName);
 }
 
 
 void BinaryView::RecordImportedObjectLibrary(Platform* tgtPlatform, uint64_t tgtAddr, TypeLibrary* lib, const QualifiedName& name)
 {
-	BNQualifiedName apiName = name.GetAPIObject();
+	BNQualifiedName apiName = name.ToAPIStruct();
 	BNBinaryViewRecordImportedObjectLibrary(m_object, tgtPlatform->m_object, tgtAddr, lib->GetObject(), &apiName);
-	QualifiedName::FreeAPIObject(&apiName);
+	QualifiedName::FreeAPIStruct(&apiName);
 }
 
 
@@ -4728,7 +4855,7 @@ std::optional<std::pair<Ref<TypeLibrary>, QualifiedName>> BinaryView::LookupImpo
 	BNQualifiedName resultName;
 	if (!BNBinaryViewLookupImportedObjectLibrary(m_object, tgtPlatform->m_object, tgtAddr, &resultLib, &resultName))
 		return std::nullopt;
-	QualifiedName name = QualifiedName::FromAPIObject(&resultName);
+	QualifiedName name = QualifiedName::FromAPIStruct(&resultName);
 	BNFreeQualifiedName(&resultName);
 	return std::make_pair(new TypeLibrary(resultLib), name);
 }
@@ -4738,12 +4865,12 @@ std::optional<std::pair<Ref<TypeLibrary>, QualifiedName>> BinaryView::LookupImpo
 {
 	BNTypeLibrary* resultLib;
 	BNQualifiedName resultName;
-	BNQualifiedName sourceName = name.GetAPIObject();
+	BNQualifiedName sourceName = name.ToAPIStruct();
 	bool result = BNBinaryViewLookupImportedTypeLibrary(m_object, &sourceName, &resultLib, &resultName);
-	QualifiedName::FreeAPIObject(&sourceName);
+	QualifiedName::FreeAPIStruct(&sourceName);
 	if (!result)
 		return std::nullopt;
-	QualifiedName targetName = QualifiedName::FromAPIObject(&resultName);
+	QualifiedName targetName = QualifiedName::FromAPIStruct(&resultName);
 	BNFreeQualifiedName(&resultName);
 	return std::make_pair(new TypeLibrary(resultLib), targetName);
 }
@@ -4902,6 +5029,7 @@ bool BinaryView::DisassociateTypeArchiveType(const std::string& typeId)
 bool BinaryView::PullTypeArchiveTypes(const std::string& archiveId, const std::unordered_set<std::string>& archiveTypeIds, std::unordered_map<std::string, std::string>& updatedTypes)
 {
 	std::vector<const char*> apiArchiveTypeIds;
+	apiArchiveTypeIds.reserve(archiveTypeIds.size());
 	for (const auto& archiveTypeId: archiveTypeIds)
 	{
 		apiArchiveTypeIds.push_back(archiveTypeId.c_str());
@@ -4926,6 +5054,7 @@ bool BinaryView::PullTypeArchiveTypes(const std::string& archiveId, const std::u
 bool BinaryView::PushTypeArchiveTypes(const std::string& archiveId, const std::unordered_set<std::string>& typeIds, std::unordered_map<std::string, std::string>& updatedTypes)
 {
 	std::vector<const char*> apiTypeIds;
+	apiTypeIds.reserve(typeIds.size());
 	for (const auto& typeId: typeIds)
 	{
 		apiTypeIds.push_back(typeId.c_str());
@@ -4955,13 +5084,13 @@ bool BinaryView::FindNextData(uint64_t start, const DataBuffer& data, uint64_t& 
 bool BinaryView::FindNextText(uint64_t start, const std::string& data, uint64_t& result,
     Ref<DisassemblySettings> settings, BNFindFlag flags, const FunctionViewType& viewType)
 {
-	return BNFindNextText(m_object, start, data.c_str(), &result, settings->GetObject(), flags, viewType.ToAPIObject());
+	return BNFindNextText(m_object, start, data.c_str(), &result, settings->GetObject(), flags, viewType.ToAPIStruct());
 }
 
 bool BinaryView::FindNextConstant(
     uint64_t start, uint64_t constant, uint64_t& result, Ref<DisassemblySettings> settings, const FunctionViewType& viewType)
 {
-	return BNFindNextConstant(m_object, start, constant, &result, settings->GetObject(), viewType.ToAPIObject());
+	return BNFindNextConstant(m_object, start, constant, &result, settings->GetObject(), viewType.ToAPIStruct());
 }
 
 
@@ -4988,7 +5117,7 @@ static bool MatchCallbackForText(void* ctxt, uint64_t addr, const char* buffer, 
 {
 	MatchCallbackContextForText* cb = (MatchCallbackContextForText*)ctxt;
 
-	LinearDisassemblyLine result = LinearDisassemblyLine::FromAPIObject(line);
+	LinearDisassemblyLine result = LinearDisassemblyLine::FromAPIStruct(line);
 	BNFreeLinearDisassemblyLines(line, 1);
 
 	return cb->func(addr, string(buffer), result);
@@ -5005,7 +5134,7 @@ static bool MatchCallbackForConstant(void* ctxt, uint64_t addr, BNLinearDisassem
 {
 	MatchCallbackContextForConstant* cb = (MatchCallbackContextForConstant*)ctxt;
 
-	LinearDisassemblyLine result = LinearDisassemblyLine::FromAPIObject(line);
+	LinearDisassemblyLine result = LinearDisassemblyLine::FromAPIStruct(line);
 	BNFreeLinearDisassemblyLines(line, 1);
 
 	return cb->func(addr, result);
@@ -5029,7 +5158,7 @@ bool BinaryView::FindNextText(uint64_t start, uint64_t end, const std::string& d
 	ProgressContext fp;
 	fp.callback = progress;
 	return BNFindNextTextWithProgress(
-	    m_object, start, end, data.c_str(), &addr, settings->GetObject(), flags, viewType.ToAPIObject(), &fp, ProgressCallback);
+	    m_object, start, end, data.c_str(), &addr, settings->GetObject(), flags, viewType.ToAPIStruct(), &fp, ProgressCallback);
 }
 
 
@@ -5040,7 +5169,7 @@ bool BinaryView::FindNextConstant(uint64_t start, uint64_t end, uint64_t constan
 	ProgressContext fp;
 	fp.callback = progress;
 	return BNFindNextConstantWithProgress(
-	    m_object, start, end, constant, &addr, settings->GetObject(), viewType.ToAPIObject(), &fp, ProgressCallback);
+	    m_object, start, end, constant, &addr, settings->GetObject(), viewType.ToAPIStruct(), &fp, ProgressCallback);
 }
 
 
@@ -5066,7 +5195,7 @@ bool BinaryView::FindAllText(uint64_t start, uint64_t end, const std::string& da
 	fp.callback = progress;
 	MatchCallbackContextForText mc;
 	mc.func = matchCallback;
-	return BNFindAllTextWithProgress(m_object, start, end, data.c_str(), settings->GetObject(), flags, viewType.ToAPIObject(), &fp,
+	return BNFindAllTextWithProgress(m_object, start, end, data.c_str(), settings->GetObject(), flags, viewType.ToAPIStruct(), &fp,
 	    ProgressCallback, &mc, MatchCallbackForText);
 }
 
@@ -5079,7 +5208,7 @@ bool BinaryView::FindAllConstant(uint64_t start, uint64_t end, uint64_t constant
 	fp.callback = progress;
 	MatchCallbackContextForConstant mc;
 	mc.func = matchCallback;
-	return BNFindAllConstantWithProgress(m_object, start, end, constant, settings->GetObject(), viewType.ToAPIObject(), &fp,
+	return BNFindAllConstantWithProgress(m_object, start, end, constant, settings->GetObject(), viewType.ToAPIStruct(), &fp,
 	    ProgressCallback, &mc, MatchCallbackForConstant);
 }
 
@@ -5263,6 +5392,12 @@ void BinaryView::AddAutoSection(const string& name, uint64_t start, uint64_t len
 }
 
 
+void BinaryView::AddAutoSections(const vector<BNSectionInfo>& sections)
+{
+	BNAddAutoSections(m_object, sections.data(), sections.size());
+}
+
+
 void BinaryView::RemoveAutoSection(const string& name)
 {
 	BNRemoveAutoSection(m_object, name.c_str());
@@ -5275,6 +5410,12 @@ void BinaryView::AddUserSection(const string& name, uint64_t start, uint64_t len
 {
 	BNAddUserSection(m_object, name.c_str(), start, length, semantics, type.c_str(), align, entrySize,
 	    linkedSection.c_str(), infoSection.c_str(), infoData);
+}
+
+
+void BinaryView::AddUserSections(const vector<BNSectionInfo>& sections)
+{
+	BNAddUserSections(m_object, sections.data(), sections.size());
 }
 
 
@@ -5405,11 +5546,11 @@ void BinaryView::SetCommentForAddress(uint64_t addr, const string& comment)
 }
 
 
-void BinaryView::StoreMetadata(const std::string& key, Ref<Metadata> inValue, bool isAuto)
+void BinaryView::StoreMetadata(const std::string& key, Ref<Metadata> inValue, BNMetadataStoreFlag flags)
 {
 	if (!inValue)
 		return;
-	BNBinaryViewStoreMetadata(m_object, key.c_str(), inValue->GetObject(), isAuto);
+	BNBinaryViewStoreMetadata(m_object, key.c_str(), inValue->GetObject(), flags);
 }
 
 
@@ -5552,7 +5693,7 @@ set<NameSpace> BinaryView::GetNameSpaces() const
 	size_t count = 0;
 	BNNameSpace* nameSpaceList = BNGetNameSpaces(m_object, &count);
 	for (size_t i = 0; i < count; i++)
-		nameSpaces.insert(NameSpace::FromAPIObject(&nameSpaceList[i]));
+		nameSpaces.insert(NameSpace::FromAPIStruct(&nameSpaceList[i]));
 	BNFreeNameSpaceList(nameSpaceList, count);
 	return nameSpaces;
 }
@@ -5561,7 +5702,7 @@ set<NameSpace> BinaryView::GetNameSpaces() const
 NameSpace BinaryView::GetInternalNameSpace()
 {
 	BNNameSpace ns = BNGetInternalNameSpace();
-	NameSpace nameSpace = NameSpace::FromAPIObject(&ns);
+	NameSpace nameSpace = NameSpace::FromAPIStruct(&ns);
 	BNFreeNameSpace(&ns);
 	return nameSpace;
 }
@@ -5570,7 +5711,7 @@ NameSpace BinaryView::GetInternalNameSpace()
 NameSpace BinaryView::GetExternalNameSpace()
 {
 	BNNameSpace ns = BNGetExternalNameSpace();
-	NameSpace nameSpace = NameSpace::FromAPIObject(&ns);
+	NameSpace nameSpace = NameSpace::FromAPIStruct(&ns);
 	BNFreeNameSpace(&ns);
 	return nameSpace;
 }
@@ -5595,7 +5736,7 @@ bool BinaryView::ParseExpression(
 
 Ref<Structure> BinaryView::CreateStructureFromOffsetAccess(const QualifiedName& type, bool* newMemberAdded) const
 {
-	BNQualifiedName typeObj = type.GetAPIObject();
+	BNQualifiedName typeObj = type.ToAPIStruct();
 	BNStructure* result = BNCreateStructureFromOffsetAccess(m_object, &typeObj, newMemberAdded);
 	return new Structure(result);
 }
@@ -5603,7 +5744,7 @@ Ref<Structure> BinaryView::CreateStructureFromOffsetAccess(const QualifiedName& 
 
 Confidence<Ref<Type>> BinaryView::CreateStructureMemberFromAccess(const QualifiedName& name, uint64_t offset) const
 {
-	BNQualifiedName typeObj = name.GetAPIObject();
+	BNQualifiedName typeObj = name.ToAPIStruct();
 	BNTypeWithConfidence type = BNCreateStructureMemberFromAccess(m_object, &typeObj, offset);
 
 	if (type.type)
@@ -5692,7 +5833,7 @@ Ref<ExternalLibrary> BinaryView::GetExternalLibrary(const std::string& name)
 	BNExternalLibrary* lib = BNBinaryViewGetExternalLibrary(m_object, name.c_str());
 	if (!lib)
 		return nullptr;
-	return new ExternalLibrary(BNNewExternalLibraryReference(lib));
+	return new ExternalLibrary(lib);
 }
 
 
@@ -5723,7 +5864,7 @@ Ref<ExternalLocation> BinaryView::AddExternalLocation(Ref<Symbol> sourceSymbol, 
 
 	if (!loc)
 		return nullptr;
-	return new ExternalLocation(BNNewExternalLocationReference(loc));
+	return new ExternalLocation(loc);
 }
 
 
@@ -5738,7 +5879,7 @@ Ref<ExternalLocation> BinaryView::GetExternalLocation(Ref<Symbol> sourceSymbol)
 	BNExternalLocation* loc = BNBinaryViewGetExternalLocation(m_object, sourceSymbol->GetObject());
 	if (!loc)
 		return nullptr;
-	return new ExternalLocation(BNNewExternalLocationReference(loc));
+	return new ExternalLocation(loc);
 }
 
 
@@ -5759,32 +5900,102 @@ std::vector<Ref<ExternalLocation>> BinaryView::GetExternalLocations()
 
 Confidence<RegisterValue> BinaryView::GetGlobalPointerValue() const
 {
-	BNRegisterValueWithConfidence value = BNGetGlobalPointerValue(m_object);
-	return Confidence<RegisterValue>(RegisterValue::FromAPIObject(value.value), value.confidence);
+	auto values = GetGlobalPointerValues();
+	if (values.empty())
+		return Confidence<RegisterValue>();
+	return values[0].second;
+}
+
+
+static vector<pair<uint32_t, Confidence<RegisterValue>>> ConvertGlobalPointerValues(
+	BNRegisterValueWithConfidenceAndRegister* values, size_t count)
+{
+	vector<pair<uint32_t, Confidence<RegisterValue>>> result;
+	result.reserve(count);
+	for (size_t i = 0; i < count; i++)
+		result.emplace_back(values[i].reg,
+			Confidence<RegisterValue>(RegisterValue::FromAPIStruct(values[i].value.value), values[i].value.confidence));
+	BNFreeRegisterValueWithConfidenceAndRegisterList(values);
+	return result;
+}
+
+
+vector<pair<uint32_t, Confidence<RegisterValue>>> BinaryView::GetGlobalPointerValues() const
+{
+	size_t count;
+	BNRegisterValueWithConfidenceAndRegister* values = BNGetGlobalPointerValues(m_object, &count);
+	return ConvertGlobalPointerValues(values, count);
+}
+
+
+vector<pair<uint32_t, Confidence<RegisterValue>>> BinaryView::GetDefaultGlobalPointerValues() const
+{
+	size_t count;
+	BNRegisterValueWithConfidenceAndRegister* values = BNGetDefaultGlobalPointerValues(m_object, &count);
+	return ConvertGlobalPointerValues(values, count);
+}
+
+
+vector<pair<uint32_t, Confidence<RegisterValue>>> BinaryView::GetUserGlobalPointerValues() const
+{
+	size_t count;
+	BNRegisterValueWithConfidenceAndRegister* values = BNGetUserGlobalPointerValues(m_object, &count);
+	return ConvertGlobalPointerValues(values, count);
 }
 
 
 bool BinaryView::UserGlobalPointerValueSet() const
 {
-	return BNUserGlobalPointerValueSet(m_object);
+	return UserGlobalPointerValuesSet();
+}
+
+
+bool BinaryView::UserGlobalPointerValuesSet() const
+{
+	return BNUserGlobalPointerValuesSet(m_object);
 }
 
 
 void BinaryView::ClearUserGlobalPointerValue()
 {
-	return BNClearUserGlobalPointerValue(m_object);
+	ClearUserGlobalPointerValues();
+}
+
+
+void BinaryView::ClearUserGlobalPointerValues()
+{
+	return BNClearUserGlobalPointerValues(m_object);
 }
 
 
 void BinaryView::SetUserGlobalPointerValue(const Confidence<RegisterValue>& value)
 {
-	BNRegisterValueWithConfidence v;
-	v.confidence = value.GetConfidence();
-	v.value.value = value.GetValue().value;
-	v.value.state = value.GetValue().state;
-	v.value.size = value.GetValue().size;
-	v.value.offset = value.GetValue().offset;
-	BNSetUserGlobalPointerValue(m_object, v);
+	vector<pair<uint32_t, Confidence<RegisterValue>>> values;
+	for (auto& [reg, _] : GetGlobalPointerValues())
+		if (reg != BN_INVALID_REGISTER)
+			values.emplace_back(reg, value);
+	if (values.empty())
+		values.emplace_back(BN_INVALID_REGISTER, value);
+	SetUserGlobalPointerValues(values);
+}
+
+
+void BinaryView::SetUserGlobalPointerValues(const vector<pair<uint32_t, Confidence<RegisterValue>>>& values)
+{
+	vector<BNRegisterValueWithConfidenceAndRegister> apiValues;
+	apiValues.reserve(values.size());
+	for (auto& [reg, value] : values)
+	{
+		BNRegisterValueWithConfidenceAndRegister v;
+		v.reg = reg;
+		v.value.confidence = value.GetConfidence();
+		v.value.value.value = value.GetValue().value;
+		v.value.value.state = value.GetValue().state;
+		v.value.value.size = value.GetValue().size;
+		v.value.value.offset = value.GetValue().offset;
+		apiValues.push_back(v);
+	}
+	BNSetUserGlobalPointerValues(m_object, apiValues.data(), apiValues.size());
 }
 
 
@@ -5798,6 +6009,36 @@ optional<pair<string, BNStringType>> BinaryView::StringifyUnicodeData(Architectu
 	string result(str);
 	BNFreeString(str);
 	return make_pair(result, type);
+}
+
+
+Ref<Relocation> BinaryView::GetNextRelocation(uint64_t addr, uint64_t maxAddr)
+{
+	BNRelocation* reloc = BNGetNextRelocation(m_object, addr, maxAddr);
+	if (!reloc)
+		return nullptr;
+
+	return new Relocation(reloc);
+}
+
+
+vector<FunctionParameter> BinaryView::DerefParameterNamedTypeRefs(const vector<FunctionParameter>& params)
+{
+	vector<FunctionParameter> result;
+	result.reserve(params.size());
+	for (auto& i : params)
+		result.emplace_back(i.name, i.type->DerefNamedTypeReference(this)->WithConfidence(i.type.GetConfidence()),
+			i.locationSource, i.location);
+	return result;
+}
+
+
+ReturnValue BinaryView::DerefReturnValueNamedTypeRefs(const ReturnValue& returnValue)
+{
+	ReturnValue result = returnValue;
+	if (result.type.GetValue())
+		result.type.SetValue(result.type->DerefNamedTypeReference(this));
+	return result;
 }
 
 

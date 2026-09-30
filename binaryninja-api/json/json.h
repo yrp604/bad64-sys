@@ -78,6 +78,14 @@ license you like.
 /// to prevent private header inclusion.
 #define JSON_IS_AMALGAMATION
 
+#ifdef BINARYNINJACORE_LIBRARY
+#define JSONCPP_INLINE_NS_BEGIN inline namespace Core {
+#define JSONCPP_INLINE_NS_END }
+#else
+#define JSONCPP_INLINE_NS_BEGIN
+#define JSONCPP_INLINE_NS_END
+#endif
+
 // //////////////////////////////////////////////////////////////////////
 // Beginning of content of file: include/json/version.h
 // //////////////////////////////////////////////////////////////////////
@@ -278,6 +286,7 @@ license you like.
 #endif // if !defined(JSON_IS_AMALGAMATION)
 
 namespace Json {
+JSONCPP_INLINE_NS_BEGIN
 typedef int Int;
 typedef unsigned int UInt;
 #if defined(JSON_NO_INT64)
@@ -315,6 +324,7 @@ typedef UInt64 LargestUInt;
 #define JSONCPP_ISTRINGSTREAM std::istringstream
 #define JSONCPP_ISTREAM std::istream
 #endif // if JSONCPP_USING_SECURE_MEMORY
+JSONCPP_INLINE_NS_END
 } // end namespace Json
 
 #endif // JSON_CONFIG_H_INCLUDED
@@ -345,6 +355,7 @@ typedef UInt64 LargestUInt;
 #endif // if !defined(JSON_IS_AMALGAMATION)
 
 namespace Json {
+JSONCPP_INLINE_NS_BEGIN
 
 // writer.h
 class FastWriter;
@@ -366,6 +377,7 @@ class ValueIteratorBase;
 class ValueIterator;
 class ValueConstIterator;
 
+JSONCPP_INLINE_NS_END
 } // namespace Json
 
 #endif // JSON_FORWARDS_H_INCLUDED
@@ -398,6 +410,7 @@ class ValueConstIterator;
 #pragma pack(push, 8)
 
 namespace Json {
+JSONCPP_INLINE_NS_BEGIN
 
 /** \brief Configuration passed to reader and writer.
  * This configuration object can be used to force the Reader or Writer
@@ -439,6 +452,7 @@ public:
   bool allowNumericKeys_;
 };
 
+JSONCPP_INLINE_NS_END
 } // namespace Json
 
 #pragma pack(pop)
@@ -515,6 +529,7 @@ public:
 /** \brief JSON (JavaScript Object Notation).
  */
 namespace Json {
+JSONCPP_INLINE_NS_BEGIN
 
 /** Base class for all exceptions we throw.
  *
@@ -1364,6 +1379,7 @@ public:
 
 inline void swap(Value& a, Value& b) { a.swap(b); }
 
+JSONCPP_INLINE_NS_END
 } // namespace Json
 
 #pragma pack(pop)
@@ -1415,6 +1431,7 @@ inline void swap(Value& a, Value& b) { a.swap(b); }
 #pragma pack(push, 8)
 
 namespace Json {
+JSONCPP_INLINE_NS_BEGIN
 
 /** \brief Unserialize a <a HREF="http://www.json.org">JSON</a> document into a
  *Value.
@@ -1798,6 +1815,7 @@ bool JSON_API parseFromStream(CharReader::Factory const&,
 */
 JSON_API JSONCPP_ISTREAM& operator>>(JSONCPP_ISTREAM&, Value&);
 
+JSONCPP_INLINE_NS_END
 } // namespace Json
 
 #pragma pack(pop)
@@ -1846,6 +1864,7 @@ JSON_API JSONCPP_ISTREAM& operator>>(JSONCPP_ISTREAM&, Value&);
 #pragma pack(push, 8)
 
 namespace Json {
+JSONCPP_INLINE_NS_BEGIN
 
 class Value;
 
@@ -2180,6 +2199,7 @@ JSONCPP_STRING JSON_API valueToQuotedString(const char* value);
 /// \see Json::operator>>()
 JSON_API JSONCPP_OSTREAM& operator<<(JSONCPP_OSTREAM&, const Value& root);
 
+JSONCPP_INLINE_NS_END
 } // namespace Json
 
 #pragma pack(pop)

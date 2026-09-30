@@ -50,14 +50,33 @@ Binary Ninja currently only supports `dyld_shared_cache` files that have been ex
 
 To load the shared cache, open the **Primary** file in Binary Ninja. In the example above this would be `dyld_shared_cache_arm64`.
 
-???+ Danger "Warning"
+!!! Warning "Warning"
     Opening any other file (e.g. `dyld_shared_cache_arm64.01`) will result in a partial shared cache, with only the information present in the file you opened.
+
+### Original Cache Files Are Required
+
+Unlike other binaries, when you save an analysis database (`.bndb`) for the shared cache, Binary Ninja will not include the original files in the database. As a result, reopening the database still requires access to the `dyld_shared_cache` file and any related cache files in the same set.
+
+This is required even if you previously loaded only a small number of images because Binary Ninja re-parses the shared cache headers on load and analysis may need information from images that were not previously loaded into the view. For example, names for external symbols can be defined by other images in the cache, so metadata from other files than the images you explicitly loaded may be needed.
+
+If Binary Ninja cannot find the primary shared cache file when reopening a database, it may ask you to select it. Select the original primary `dyld_shared_cache` file, not another `.bndb` database.
+
+When running without the UI, Binary Ninja will try and resolve the primary file automatically (or use `loader.dsc.primaryFilePath`, if provided). If the provided path is invalid or missing, and the primary shared cache file can't be found automatically, the database won't load. An example of specifying the location manually is:
+
+```python
+from binaryninja import load
+
+bv = load(
+    "your_database.bndb",
+    options={"loader.dsc.primaryFilePath": "/path/to/dyld_shared_cache_arm64"},
+)
+```
+
+Note: `loader.dsc.primaryFilePath` is used only for the *current* load. Binary Ninja does not persist the absolute override path. When the primary file is resolved in a project, Binary Ninja stores the project-relative path. When it is resolved outside a project, Binary Ninja stores a path relative to the database when possible.
 
 ### Project Support
 
-Binary Ninja projects support `dyld_shared_cache` files. However, due to the nature of the project files not having a mappable path,
-saving the analysis database (`.bndb`) in a separate directory will require you to select the primary shared cache file on
-every open of the database. As a result, we advise keeping your analysis database in the same folder as your `dyld_shared_cache` files.
+Binary Ninja projects support `dyld_shared_cache` files. We recommend keeping your analysis database (`.bndb`) in the same project folder as your `dyld_shared_cache` files. If the database and shared cache files are in different project folders, Binary Ninja will try to store and resolve the primary shared cache file using its project-relative path.
 
   - `your_project_folder`
     - `dyld_shared_cache_arm64` (**Primary**)
@@ -65,6 +84,7 @@ every open of the database. As a result, we advise keeping your analysis databas
     - `dyld_shared_cache_arm64.02` (Secondary, optional)
     - `dyld_shared_cache_arm64.symbols` (Symbols, optional)
     - `your_database.bndb` (This is recommended)
+
 
 ## Interacting With a Shared Cache
 
@@ -116,7 +136,7 @@ for image in dsc.loaded_images:
         dsc.apply_image(bv, dep_image)
 ```
 
-???+ Note "Note"
+!!! Note "Note"
     If you are processing `dyld_shared_cache` files headlessly, [`loader.dsc.autoLoadPattern`](settings.md) is a *very* useful setting to override. This is a regex you can have match all the files you *want* to analyze, skipping the need to use the Python or C++ API to load them manually.
 
 ## Glossary

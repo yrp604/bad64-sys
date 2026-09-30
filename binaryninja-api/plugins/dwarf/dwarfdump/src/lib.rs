@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,10 +13,11 @@
 // limitations under the License.
 
 use binaryninja::{
-    binary_view::{BinaryView, BinaryViewExt},
+    architecture::BranchType,
+    binary_view::BinaryView,
     command::{register_command, Command},
     disassembly::{DisassemblyTextLine, InstructionTextToken, InstructionTextTokenKind},
-    flowgraph::{BranchType, EdgeStyle, FlowGraph, FlowGraphNode, FlowGraphOption},
+    flowgraph::{EdgeStyle, FlowGraph, FlowGraphNode, FlowGraphOption},
 };
 use dwarfreader::is_valid;
 
@@ -141,6 +142,7 @@ fn get_info_string<R: Reader>(
                 InstructionTextTokenKind::Integer {
                     value: addr,
                     size: None,
+                    operand: None,
                 },
             ));
         } else if let Ok(attr_reader) = dwarf.attr_string(unit, attr.value()) {
@@ -179,6 +181,7 @@ fn get_info_string<R: Reader>(
                 InstructionTextTokenKind::Integer {
                     value: 1,
                     size: None,
+                    operand: None,
                 },
             ));
         } else if let Flag(false) = attr.value() {
@@ -187,6 +190,7 @@ fn get_info_string<R: Reader>(
                 InstructionTextTokenKind::Integer {
                     value: 0,
                     size: None,
+                    operand: None,
                 },
             ));
 
@@ -198,6 +202,7 @@ fn get_info_string<R: Reader>(
                 InstructionTextTokenKind::Integer {
                     value: value as u64,
                     size: None,
+                    operand: None,
                 },
             ));
         } else if let Some(value) = attr.u16_value() {
@@ -207,13 +212,18 @@ fn get_info_string<R: Reader>(
                 InstructionTextTokenKind::Integer {
                     value: value as u64,
                     size: None,
+                    operand: None,
                 },
             ));
         } else if let Some(value) = attr.udata_value() {
             let value_string = format!("{}", value);
             attr_line.push(InstructionTextToken::new(
                 &value_string,
-                InstructionTextTokenKind::Integer { value, size: None },
+                InstructionTextTokenKind::Integer {
+                    value,
+                    size: None,
+                    operand: None,
+                },
             ));
         } else if let Some(value) = attr.sdata_value() {
             let value_string = format!("{}", value);
@@ -222,6 +232,7 @@ fn get_info_string<R: Reader>(
                 InstructionTextTokenKind::Integer {
                     value: value as u64,
                     size: None,
+                    operand: None,
                 },
             ));
         } else {

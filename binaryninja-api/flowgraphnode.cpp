@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -111,7 +111,7 @@ const vector<DisassemblyTextLine>& FlowGraphNode::GetLines()
 	size_t count;
 	BNDisassemblyTextLine* lines = BNGetFlowGraphNodeLines(m_object, &count);
 
-	vector<DisassemblyTextLine> result = ParseAPIObjectList<DisassemblyTextLine>(lines, count);
+	vector<DisassemblyTextLine> result = ParseAPIStructList<DisassemblyTextLine>(lines, count);
 	BNFreeDisassemblyTextLines(lines, count);
 	m_cachedLines = result;
 	return m_cachedLines;
@@ -121,10 +121,10 @@ const vector<DisassemblyTextLine>& FlowGraphNode::GetLines()
 void FlowGraphNode::SetLines(const vector<DisassemblyTextLine>& lines)
 {
 	size_t inCount = 0;
-	BNDisassemblyTextLine* inLines = AllocAPIObjectList<DisassemblyTextLine>(lines, &inCount);
+	BNDisassemblyTextLine* inLines = AllocAPIStructList<DisassemblyTextLine>(lines, &inCount);
 	BNSetFlowGraphNodeLines(m_object, inLines, inCount);
 
-	FreeAPIObjectList<DisassemblyTextLine>(inLines, inCount);
+	FreeAPIStructList<DisassemblyTextLine>(inLines, inCount);
 
 	m_cachedLines = lines;
 	m_cachedLinesValid = true;

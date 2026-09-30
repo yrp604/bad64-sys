@@ -8,6 +8,7 @@
 #include "commentdialog.h"
 #include "menus.h"
 #include "uicontext.h"
+#include "tokennavigation.h"
 
 /*!
 
@@ -33,6 +34,7 @@ class BINARYNINJAUIAPI TokenizedTextViewHistoryEntry : public HistoryEntry
 	void setCursorLine(size_t line) { m_cursorLine = line; }
 	void setHighlightTokenState(const HighlightTokenState& state) { m_highlight = state; }
 
+	virtual QString getDescription() const override;
 	virtual Json::Value serialize() const override;
 	virtual bool deserialize(const Json::Value& value) override;
 };
@@ -44,6 +46,7 @@ class BINARYNINJAUIAPI TokenizedTextViewHistoryEntry : public HistoryEntry
 class BINARYNINJAUIAPI TokenizedTextView :
     public QAbstractScrollArea,
     public View,
+    public TokenNavigationHandler,
     public BinaryNinja::BinaryDataNotification
 {
 	Q_OBJECT
@@ -53,6 +56,7 @@ class BINARYNINJAUIAPI TokenizedTextView :
 
 	RenderContext m_render;
 	int m_cols, m_rows;
+	size_t m_contentCols = 0;
 	int m_wheelDelta;
 	bool m_updatingScrollBar;
 
@@ -72,6 +76,7 @@ class BINARYNINJAUIAPI TokenizedTextView :
 	QPointer<CommentDialog> m_commentDialog;
 
 	void adjustSize(int width, int height);
+	void updateContentWidth();
 
 	void scrollLines(int count);
 
@@ -94,6 +99,14 @@ class BINARYNINJAUIAPI TokenizedTextView :
 	void comment();
 	void commentAccepted();
 
+	BinaryViewRef getBinaryViewForTokenActivation() override;
+	QWidget* getWidgetForTokenActivation() override;
+	View* getViewForTokenActivation() override;
+	FunctionRef getFunctionForTokenActivation() override;
+	void navigateToTokenTarget(uint64_t addr) override;
+	void defineNameForSelectedToken() override;
+	void editCommentForSelectedToken() override;
+
 	void convertToNop();
 	void alwaysBranch();
 	void invertBranch();
@@ -105,6 +118,7 @@ class BINARYNINJAUIAPI TokenizedTextView :
 	void makeInt32();
 	void makeInt64();
 	void toggleIntSize();
+	void toggleIntSign();
 	void makeFloat32();
 	void makeFloat64();
 	void toggleFloatSize();
@@ -115,7 +129,7 @@ class BINARYNINJAUIAPI TokenizedTextView :
 
 	//! Get the length of of the string (if there is one) starting at the
 	//! given address. String type is assumed to be UTF-8 by default, but the
-	//! `charSize` parameter can be set to 2 or 4 to look for UTF-16 or
+	//! \c charSize parameter can be set to 2 or 4 to look for UTF-16 or
 	//! UTF-32 string, respectively.
 	//!
 	//! Returns the length of the string in bytes, NOT the number of characters.
@@ -148,6 +162,7 @@ class BINARYNINJAUIAPI TokenizedTextView :
 	virtual BinaryNinja::Ref<HistoryEntry> getHistoryEntry() override;
 	void populateDefaultHistoryEntry(TokenizedTextViewHistoryEntry* entry);
 	virtual void navigateToHistoryEntry(BinaryNinja::Ref<HistoryEntry> entry) override;
+	virtual bool canDisplayAs(const UIActionContext& context, const BNIntegerDisplayType displayType) override;
 
 	virtual void OnBinaryDataWritten(BinaryNinja::BinaryView* data, uint64_t offset, size_t len) override;
 	virtual void OnBinaryDataInserted(BinaryNinja::BinaryView* data, uint64_t offset, size_t len) override;

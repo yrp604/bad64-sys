@@ -44,6 +44,7 @@ fn main() {
         .derive_hash(true)
         .derive_partialeq(true)
         .use_core()
+        .ctypes_prefix("::core::ffi")
         .rustified_enum("OperandClass")
         .rustified_enum("ShiftType")
         .rustified_enum("ArrangementSpec")

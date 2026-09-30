@@ -7,12 +7,13 @@ use base64::Engine;
 use binaryninja::download::DownloadProvider;
 use serde::Deserialize;
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use uuid::Uuid;
 use warp::chunk::ChunkKind;
 use warp::r#type::guid::TypeGUID;
 use warp::r#type::{ComputedType, Type};
+use warp::signature::constraint::ConstraintGUID;
 use warp::signature::function::{Function, FunctionGUID};
 use warp::target::Target;
 use warp::WarpFile;
@@ -30,14 +31,26 @@ pub struct NetworkClient {
 impl NetworkClient {
     pub fn new(server_url: String, server_token: Option<String>) -> Self {
         // TODO: This might want to be kept for the request header?
-        let mut headers: Vec<(String, String)> = vec![];
+        let mut headers: Vec<(String, String)> =
+            vec![("Content-Encoding".to_string(), "gzip".to_string())];
         if let Some(token) = &server_token {
             headers.push(("authorization".to_string(), format!("Bearer {}", token)));
         }
+        // NOTE: Because we pull in the system certificates as well in the enterprise download provider
+        // it is safe to assume that provider when available, so that we can connect to enterprise servers
+        // when a client is running under an enterprise client build.
+        let provider = DownloadProvider::get("_EnterpriseDownloadProvider").unwrap_or_else(|| {
+            // Not running under an enterprise client, fallback to the default download provider.
+            DownloadProvider::try_default().expect("No default download provider")
+        });
         Self {
-            provider: DownloadProvider::try_default().unwrap(),
+            provider,
             headers,
-            server_url,
+            // We place the '/' already in the materialized URLs we query, so strip it here.
+            server_url: server_url
+                .strip_suffix('/')
+                .unwrap_or(&server_url)
+                .to_string(),
         }
     }
 
@@ -207,13 +220,14 @@ impl NetworkClient {
         source: Option<SourceId>,
         source_tags: &[SourceTag],
         guids: &[FunctionGUID],
+        constraints: &[ConstraintGUID],
     ) -> serde_json::Value {
-        let guids_str: Vec<String> = guids.iter().map(|g| g.to_string()).collect();
+        let guids_str: HashSet<String> = guids.iter().map(|g| g.to_string()).collect();
         // TODO: The limit here needs to be somewhat flexible. But 1000 will do for now.
         let mut body = json!({
             "format": "flatbuffer",
             "guids": guids_str,
-            "limit": 1000
+            "limit": 10000,
         });
         if let Some(target_id) = target {
             body["target_id"] = json!(target_id);
@@ -223,6 +237,11 @@ impl NetworkClient {
         }
         if !source_tags.is_empty() {
             body["source_tags"] = json!(source_tags);
+        }
+        if !constraints.is_empty() {
+            let constraint_guids_str: HashSet<String> =
+                constraints.iter().map(|g| g.to_string()).collect();
+            body["constraints"] = json!(constraint_guids_str);
         }
         body
     }
@@ -237,13 +256,13 @@ impl NetworkClient {
         target: Option<NetworkTargetId>,
         source: Option<SourceId>,
         guids: &[FunctionGUID],
+        constraints: &[ConstraintGUID],
     ) -> Result<WarpFile<'static>, String> {
         let query_functions_url = format!("{}/api/v1/functions/query", self.server_url);
         // TODO: Allow for source tags? We really only need this in query_functions_source as that
         // TODO: is what prevents a undesired source from being "known" to the container.
-        let payload = Self::query_functions_body(target, source, &[], guids);
+        let payload = Self::query_functions_body(target, source, &[], guids, constraints);
         let mut inst = self.provider.create_instance().unwrap();
-
         let resp = inst.post_json(&query_functions_url, self.headers.clone(), &payload)?;
         if !resp.is_success() {
             return Err(format!(
@@ -268,7 +287,10 @@ impl NetworkClient {
     ) -> Result<HashMap<SourceId, Vec<FunctionGUID>>, String> {
         let query_functions_source_url =
             format!("{}/api/v1/functions/query/source", self.server_url);
-        let payload = Self::query_functions_body(target, None, tags, guids);
+        // NOTE: We do not filter by constraint guids here since this pass is only responsible for
+        // returning the source ids, not the actual function data, see [`NetworkClient::query_functions`]
+        // for the place where the constraints are applied, and _do_ matter.
+        let payload = Self::query_functions_body(target, None, tags, guids, &[]);
         let mut inst = self.provider.create_instance().unwrap();
 
         let resp = inst.post_json(&query_functions_source_url, self.headers.clone(), &payload)?;
@@ -489,14 +511,14 @@ impl NetworkClient {
             let kind = match item.kind.as_str() {
                 "function" => {
                     let Some(data) = &item.data else {
-                        log::warn!(
+                        tracing::warn!(
                             "Function item {} has no data from network, skipping...",
                             item.id
                         );
                         continue;
                     };
                     let Some(func) = Function::from_bytes(&data) else {
-                        log::warn!(
+                        tracing::warn!(
                             "Function item {} has invalid data from network, skipping...",
                             item.id
                         );
@@ -507,7 +529,7 @@ impl NetworkClient {
                 "source" => ContainerSearchItemKind::Source {
                     path: match item.name {
                         None => {
-                            log::warn!("Source item {} has no name", item.id);
+                            tracing::warn!("Source item {} has no name", item.id);
                             continue;
                         }
                         Some(name) => SourcePath(format!("{}/{}", self.server_url, name).into()),
@@ -516,14 +538,14 @@ impl NetworkClient {
                 },
                 "type" => {
                     let Some(data) = &item.data else {
-                        log::warn!(
+                        tracing::warn!(
                             "Type item {} has no data from network, skipping...",
                             item.id
                         );
                         continue;
                     };
                     let Some(ty) = Type::from_bytes(&data) else {
-                        log::warn!(
+                        tracing::warn!(
                             "Type item {} has invalid data from network, skipping...",
                             item.id
                         );

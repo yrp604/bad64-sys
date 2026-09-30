@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -58,7 +58,7 @@ void RenderLayer::ApplyToLinearViewObjectCallback(
 )
 {
 	RenderLayer* layer = (RenderLayer*)ctxt;
-	vector<LinearDisassemblyLine> lines = ParseAPIObjectList<LinearDisassemblyLine>(inLines, inLineCount);
+	vector<LinearDisassemblyLine> lines = ParseAPIStructList<LinearDisassemblyLine>(inLines, inLineCount);
 
 	layer->ApplyToLinearViewObject(
 		new LinearViewObject(BNNewLinearViewObjectReference(obj)),
@@ -67,13 +67,13 @@ void RenderLayer::ApplyToLinearViewObjectCallback(
 		lines
 	);
 
-	AllocAPIObjectList<LinearDisassemblyLine>(lines, outLines, outLineCount);
+	AllocAPIStructList<LinearDisassemblyLine>(lines, outLines, outLineCount);
 }
 
 
 void RenderLayer::FreeLinesCallback(void* ctxt, BNLinearDisassemblyLine* lines, size_t count)
 {
-	FreeAPIObjectList<LinearDisassemblyLine>(lines, count);
+	FreeAPIStructList<LinearDisassemblyLine>(lines, count);
 }
 
 
@@ -215,11 +215,13 @@ void RenderLayer::ApplyToLinearViewObject(
 					if (!disasmLines.empty())
 					{
 						ApplyToBlock(lastBlock, disasmLines);
+						Ref<BinaryView> view = blockLines[0].view;
 						Ref<Function> func = blockLines[0].function;
 						Ref<BasicBlock> block = blockLines[0].block;
 						for (auto& blockLine: disasmLines)
 						{
 							LinearDisassemblyLine newLine;
+							newLine.view = view;
 							newLine.type = CodeDisassemblyLineType;
 							newLine.function = func;
 							newLine.block = block;
@@ -309,7 +311,7 @@ void CoreRenderLayer::ApplyToLinearViewObject(
 {
 	BNLinearDisassemblyLine* inLines;
 	size_t inLineCount;
-	AllocAPIObjectList<LinearDisassemblyLine>(lines, &inLines, &inLineCount);
+	AllocAPIStructList<LinearDisassemblyLine>(lines, &inLines, &inLineCount);
 
 	BNLinearDisassemblyLine* outLines;
 	size_t outLineCount;
@@ -325,7 +327,7 @@ void CoreRenderLayer::ApplyToLinearViewObject(
 		&outLineCount
 	);
 
-	lines = ParseAPIObjectList<LinearDisassemblyLine>(outLines, outLineCount);
-	FreeAPIObjectList<LinearDisassemblyLine>(inLines, inLineCount);
+	lines = ParseAPIStructList<LinearDisassemblyLine>(outLines, outLineCount);
+	FreeAPIStructList<LinearDisassemblyLine>(inLines, inLineCount);
 	BNFreeLinearDisassemblyLines(outLines, outLineCount);
 }

@@ -1,12 +1,16 @@
 #include "plugin.h"
-
-#include <QToolBar>
-
 #include "matched.h"
 #include "matches.h"
 #include "symbollist.h"
 #include "viewframe.h"
+#include "shared/processordialog.h"
 #include "shared/fetchdialog.h"
+#include "shared/file.h"
+
+#include <QToolBar>
+#include <QVBoxLayout>
+#include <QtCore/QMetaObject>
+#include <utility>
 
 using namespace BinaryNinja;
 
@@ -61,7 +65,7 @@ void ShowNetworkNotice()
 	}
 }
 
-WarpSidebarWidget::WarpSidebarWidget(BinaryViewRef data) : SidebarWidget("WARP"), m_data(data)
+WarpSidebarWidget::WarpSidebarWidget(BinaryViewRef data) : SidebarWidget("WARP"), m_data(std::move(data))
 {
 	m_logger = LogRegistry::CreateLogger("WARP UI");
 	m_currentFrame = nullptr;
@@ -85,29 +89,24 @@ WarpSidebarWidget::WarpSidebarWidget(BinaryViewRef data) : SidebarWidget("WARP")
 	});
 	fetchAction->setToolTip("Fetch data from WARP containers");
 
-	auto commitIcon = GetColoredIcon(":/icons/images/arrow-push.png", getThemeColor(BlueStandardHighlightColor));
-	auto commitAction = headerToolbar->addAction(commitIcon, "Commit a WARP file to a source", [this]() {
-		UIActionHandler* handler = m_currentFrame->getCurrentViewInterface()->actionHandler();
-		handler->executeAction("WARP\\Commit File");
+	auto processIcon = GetColoredIcon(":/icons/images/plus.png", getThemeColor(BlueStandardHighlightColor));
+	auto processAction = headerToolbar->addAction(processIcon, "Process files or views for WARP", [this]() {
+		auto* dialog = new ProcessorDialog(this);
+		dialog->setAttribute(Qt::WA_DeleteOnClose);
+		dialog->onAddBinaryView(m_data);
+		dialog->show();
 	});
-	commitAction->setToolTip("Commit a WARP file to a source");
+	processAction->setToolTip("Process files or views for WARP");
 
 	// We want to make it clear that the container actions for fetching and pushing are seperate.
 	headerToolbar->addSeparator();
 
-	auto loadIcon = GetColoredIcon(":/icons/images/file-add.png", getThemeColor(BlueStandardHighlightColor));
+	auto loadIcon = GetColoredIcon(":/icons/images/archive.png", getThemeColor(BlueStandardHighlightColor));
 	auto loadAction = headerToolbar->addAction(loadIcon, "Load Signature File", [this]() {
 		UIActionHandler* handler = m_currentFrame->getCurrentViewInterface()->actionHandler();
 		handler->executeAction("WARP\\Load File");
 	});
 	loadAction->setToolTip("Load a signature file to match against");
-
-	auto saveIcon = GetColoredIcon(":/icons/images/edit.png", getThemeColor(BlueStandardHighlightColor));
-	auto saveAction = headerToolbar->addAction(saveIcon, "Create Signature File", [this]() {
-		UIActionHandler* handler = m_currentFrame->getCurrentViewInterface()->actionHandler();
-		handler->executeAction("WARP\\Create\\From Current View");
-	});
-	saveAction->setToolTip("Save data to a signature file");
 
 	headerToolbar->addSeparator();
 
@@ -136,7 +135,7 @@ WarpSidebarWidget::WarpSidebarWidget(BinaryViewRef data) : SidebarWidget("WARP")
 	m_headerWidget->setLayout(headerLayout);
 
 	QFrame* currentFunctionFrame = new QFrame(this);
-	m_currentFunctionWidget = new WarpCurrentFunctionWidget();
+	m_currentFunctionWidget = new WarpCurrentFunctionWidget(this);
 	QVBoxLayout* currentFunctionLayout = new QVBoxLayout();
 	currentFunctionLayout->setContentsMargins(0, 0, 0, 0);
 	currentFunctionLayout->setSpacing(0);
@@ -172,11 +171,18 @@ WarpSidebarWidget::WarpSidebarWidget(BinaryViewRef data) : SidebarWidget("WARP")
 	this->setLayout(layout);
 
 	// Do a full update if analysis has been done, otherwise we may persist old data and not have new data.
-	m_analysisEvent = new AnalysisCompletionEvent(m_data, [this]() { ExecuteOnMainThread([this]() { Update(); }); });
+	m_analysisEvent = new AnalysisCompletionEvent(m_data, [this]() {
+		QMetaObject::invokeMethod(this, [this]() { Update(); });
+	});
 
 	m_fetcher = WarpFetcher::Global();
 	m_callbackId = m_fetcher->AddCompletionCallback([this]() {
-		ExecuteOnMainThread([this]() { Update(); });
+		QMetaObject::invokeMethod(this, [this]() {
+			// Instead of doing a full update after fetching, we only want to make sure the current function has
+			// up-to-date matches, since the other two tabs (all matches, container list) do not get populated with
+			// additional information or manage their own updates (e.g. container source list).
+			m_currentFunctionWidget->UpdateMatches();
+		});
 		return KeepCallback;
 	});
 
@@ -194,6 +200,7 @@ void WarpSidebarWidget::Update()
 {
 	m_currentFunctionWidget->UpdateMatches();
 	m_matchedWidget->Update();
+	m_containerWidget->refresh();
 	// TODO: Obviously this probably should not be called here.
 	setMatcherActionIcon(false);
 }
@@ -226,7 +233,6 @@ void WarpSidebarWidget::notifyViewChanged(ViewFrame* view)
 	if (view == m_currentFrame)
 		return;
 	m_currentFrame = view;
-	// TODO: We need to set some stuff here prolly.
 }
 
 void WarpSidebarWidget::notifyViewLocationChanged(View* view, const ViewLocation& location)
@@ -234,14 +240,57 @@ void WarpSidebarWidget::notifyViewLocationChanged(View* view, const ViewLocation
 	// Warp sidebar really should only update if it is visible, otherwise its a waste of cycles.
 	if (!this->isVisible())
 		return;
-	auto function = location.getFunction();
-	// TODO: Only update if the function exists?
 	// NOTE: The function called will exit early if it is the same function.
-	m_currentFunctionWidget->SetCurrentFunction(function);
+	m_currentFunctionWidget->SetCurrentFunction(location.getFunction());
+}
+
+void WarpSidebarWidget::focus()
+{
+	m_currentFunctionWidget->SetCurrentFunction(m_currentFrame->getViewLocation().getFunction());
+	SidebarWidget::focus();
 }
 
 WarpSidebarWidgetType::WarpSidebarWidgetType() : SidebarWidgetType(QImage(":/icons/images/warp.png"), "WARP") {}
 
+
+void RegisterCommands()
+{
+	RegisterPluginAction(
+		"Fetch",
+		[](const UIActionContext& context) {
+			WarpFetchDialog dlg(context.binaryView, WarpFetcher::Global(), nullptr);
+			dlg.exec();
+		},
+		[](const UIActionContext& context) { return context.binaryView != nullptr; });
+	RegisterPluginAction("Process", [](const UIActionContext& context) {
+		auto* dlg = new ProcessorDialog(context.widget);
+		dlg->setAttribute(Qt::WA_DeleteOnClose);
+		if (context.binaryView)
+			dlg->onAddBinaryView(context.binaryView);
+		dlg->show();
+	});
+	RegisterPluginAction("View File", [](const UIActionContext& context) {
+		std::string path;
+		if (!GetOpenFileNameInput(path, "Open WARP File", "*.warp"))
+			return;
+		auto file = Warp::File::FromPath(path);
+		if (!file)
+			return;
+
+		auto* dlg = new QDialog(context.widget);
+		dlg->setWindowTitle(QString::fromStdString("WARP File: " + path));
+		dlg->setAttribute(Qt::WA_DeleteOnClose);
+
+		auto* layout = new QVBoxLayout(dlg);
+		layout->setContentsMargins(10, 10, 10, 10);
+		auto* fileWidget = new FileWidget(dlg);
+		fileWidget->setFile(file);
+		layout->addWidget(fileWidget);
+
+		dlg->resize(1000, 700);
+		dlg->show();
+	});
+}
 
 extern "C"
 {
@@ -261,7 +310,7 @@ extern "C"
 	BINARYNINJAPLUGIN bool UIPluginInit()
 #endif
 	{
-		RegisterWarpFetchFunctionsCommand();
+		RegisterCommands();
 		Sidebar::addSidebarWidgetType(new WarpSidebarWidgetType());
 		return true;
 	}

@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <exception>
+#include <mutex>
 
 #include "binaryninjaapi.h"
 #include "lowlevelilinstruction.h"
@@ -29,6 +30,111 @@ using namespace std;
 #define COALESCE_MAX_INSTRS 100
 
 #define HANDLE_CASE(orig, opposite) case orig: case opposite: return (candidate == orig) || (candidate == opposite)
+
+static Ref<Enumeration> GetMrsOpEnum()
+{
+	static Ref<Enumeration> cachedEnum = []() {
+		EnumerationBuilder builder;
+		builder.AddMemberWithValue("apsr", REGS_APSR);
+		builder.AddMemberWithValue("cpsr", REGS_CPSR);
+		builder.AddMemberWithValue("spsr", REGS_SPSR);
+		return builder.Finalize();
+	}();
+	return cachedEnum;
+}
+
+static Ref<Enumeration> GetMsrOpEnum()
+{
+	static Ref<Enumeration> cachedEnum = []() {
+		EnumerationBuilder builder;
+		builder.AddMemberWithValue("apsr", REGS_APSR);
+		builder.AddMemberWithValue("apsr_g", REGS_APSR_G);
+		builder.AddMemberWithValue("apsr_nzcvq", REGS_APSR_NZCVQ);
+		builder.AddMemberWithValue("apsr_nzcvqg", REGS_APSR_NZCVQG);
+		builder.AddMemberWithValue("cpsr", REGS_CPSR);
+		builder.AddMemberWithValue("cpsr_c", REGS_CPSR_C);
+		builder.AddMemberWithValue("cpsr_x", REGS_CPSR_X);
+		builder.AddMemberWithValue("cpsr_xc", REGS_CPSR_XC);
+		builder.AddMemberWithValue("cpsr_s", REGS_CPSR_S);
+		builder.AddMemberWithValue("cpsr_sc", REGS_CPSR_SC);
+		builder.AddMemberWithValue("cpsr_sx", REGS_CPSR_SX);
+		builder.AddMemberWithValue("cpsr_sxc", REGS_CPSR_SXC);
+		builder.AddMemberWithValue("cpsr_f", REGS_CPSR_F);
+		builder.AddMemberWithValue("cpsr_fc", REGS_CPSR_FC);
+		builder.AddMemberWithValue("cpsr_fx", REGS_CPSR_FX);
+		builder.AddMemberWithValue("cpsr_fxc", REGS_CPSR_FXC);
+		builder.AddMemberWithValue("cpsr_fs", REGS_CPSR_FS);
+		builder.AddMemberWithValue("cpsr_fsc", REGS_CPSR_FSC);
+		builder.AddMemberWithValue("cpsr_fsx", REGS_CPSR_FSX);
+		builder.AddMemberWithValue("cpsr_fsxc", REGS_CPSR_FSXC);
+		builder.AddMemberWithValue("spsr", REGS_SPSR);
+		builder.AddMemberWithValue("spsr_c", REGS_SPSR_C);
+		builder.AddMemberWithValue("spsr_x", REGS_SPSR_X);
+		builder.AddMemberWithValue("spsr_xc", REGS_SPSR_XC);
+		builder.AddMemberWithValue("spsr_s", REGS_SPSR_S);
+		builder.AddMemberWithValue("spsr_sc", REGS_SPSR_SC);
+		builder.AddMemberWithValue("spsr_sx", REGS_SPSR_SX);
+		builder.AddMemberWithValue("spsr_sxc", REGS_SPSR_SXC);
+		builder.AddMemberWithValue("spsr_f", REGS_SPSR_F);
+		builder.AddMemberWithValue("spsr_fc", REGS_SPSR_FC);
+		builder.AddMemberWithValue("spsr_fx", REGS_SPSR_FX);
+		builder.AddMemberWithValue("spsr_fxc", REGS_SPSR_FXC);
+		builder.AddMemberWithValue("spsr_fs", REGS_SPSR_FS);
+		builder.AddMemberWithValue("spsr_fsc", REGS_SPSR_FSC);
+		builder.AddMemberWithValue("spsr_fsx", REGS_SPSR_FSX);
+		builder.AddMemberWithValue("spsr_fsxc", REGS_SPSR_FSXC);
+		builder.AddMemberWithValue("apsr_nzcv", REGS_APSR_NZCV);
+		return builder.Finalize();
+	}();
+	return cachedEnum;
+}
+
+static Ref<Enumeration> GetVfpStatusRegisterEnum()
+{
+	static Ref<Enumeration> cachedEnum = []() {
+		EnumerationBuilder builder;
+		builder.AddMemberWithValue("fpsid", REGS_FPSID);
+		builder.AddMemberWithValue("fpscr", REGS_FPSCR);
+		builder.AddMemberWithValue("mvfr2", REGS_MVFR2);
+		builder.AddMemberWithValue("mvfr1", REGS_MVFR1);
+		builder.AddMemberWithValue("mvfr0", REGS_MVFR0);
+		builder.AddMemberWithValue("fpexc", REGS_FPEXC);
+		builder.AddMemberWithValue("fpinst", REGS_FPINST);
+		builder.AddMemberWithValue("fpinst2", REGS_FPINST2);
+		return builder.Finalize();
+	}();
+	return cachedEnum;
+}
+
+static Ref<Enumeration> GetCpsIflagsEnum()
+{
+	static Ref<Enumeration> cachedEnum = []() {
+		EnumerationBuilder builder;
+		builder.AddMemberWithValue("none", IFL_NONE);
+		builder.AddMemberWithValue("a", IFL_A);
+		builder.AddMemberWithValue("i", IFL_I);
+		builder.AddMemberWithValue("ia", IFL_IA);
+		builder.AddMemberWithValue("f", IFL_F);
+		builder.AddMemberWithValue("fa", IFL_FA);
+		builder.AddMemberWithValue("fi", IFL_FI);
+		builder.AddMemberWithValue("fia", IFL_FIA);
+		return builder.Finalize();
+	}();
+	return cachedEnum;
+}
+
+template <Ref<Enumeration> (*GetEnumeration)(), size_t Width>
+static Ref<Type> GetCachedEnumerationType(Architecture* arch)
+{
+	static Ref<Type> cachedTypes[2];
+	static once_flag initFlags[2];
+	size_t index = arch->GetEndianness() == BigEndian ? 1 : 0;
+
+	call_once(initFlags[index], [arch, index]() {
+		cachedTypes[index] = Type::EnumerationType(arch, GetEnumeration(), Width, false);
+	});
+	return cachedTypes[index];
+}
 
 static bool IsRelatedCondition(Condition orig, Condition candidate)
 {
@@ -345,140 +451,138 @@ static const char* GetRelocationString(MachoArmRelocationType rel)
 
 static const char* GetRelocationString(ElfArmRelocationType rel)
 {
-	static map<ElfArmRelocationType, const char*> relocTable =
+	switch (rel)
 	{
-		{R_ARM_NONE, "R_ARM_NONE"},
-		{R_ARM_PC24, "R_ARM_PC24"},
-		{R_ARM_ABS32, "R_ARM_ABS32"},
-		{R_ARM_REL32, "R_ARM_REL32"},
-		{R_ARM_LDR_PC_G0, "R_ARM_LDR_PC_G0"},
-		{R_ARM_ABS16, "R_ARM_ABS16"},
-		{R_ARM_ABS12, "R_ARM_ABS12"},
-		{R_ARM_THM_ABS5, "R_ARM_THM_ABS5"},
-		{R_ARM_ABS8, "R_ARM_ABS8"},
-		{R_ARM_SBREL32, "R_ARM_SBREL32"},
-		{R_ARM_THM_CALL, "R_ARM_THM_CALL"},
-		{R_ARM_THM_PC8, "R_ARM_THM_PC8"},
-		{R_ARM_BREL_ADJ, "R_ARM_BREL_ADJ"},
-		{R_ARM_TLS_DESC, "R_ARM_TLS_DESC"},
-		{R_ARM_THM_SWI8, "R_ARM_THM_SWI8"},
-		{R_ARM_XPC25, "R_ARM_XPC25"},
-		{R_ARM_THM_XPC22, "R_ARM_THM_XPC22"},
-		{R_ARM_TLS_DTPMOD32, "R_ARM_TLS_DTPMOD32"},
-		{R_ARM_TLS_DTPOFF32, "R_ARM_TLS_DTPOFF32"},
-		{R_ARM_TLS_TPOFF32, "R_ARM_TLS_TPOFF32"},
-		{R_ARM_COPY, "R_ARM_COPY"},
-		{R_ARM_GLOB_DAT, "R_ARM_GLOB_DAT"},
-		{R_ARM_JUMP_SLOT, "R_ARM_JUMP_SLOT"},
-		{R_ARM_RELATIVE, "R_ARM_RELATIVE"},
-		{R_ARM_GOTOFF32, "R_ARM_GOTOFF32"},
-		{R_ARM_BASE_PREL, "R_ARM_BASE_PREL"},
-		{R_ARM_GOT_BREL, "R_ARM_GOT_BREL"},
-		{R_ARM_PLT32, "R_ARM_PLT32"},
-		{R_ARM_CALL, "R_ARM_CALL"},
-		{R_ARM_JUMP24, "R_ARM_JUMP24"},
-		{R_ARM_THM_JUMP24, "R_ARM_THM_JUMP24"},
-		{R_ARM_BASE_ABS, "R_ARM_BASE_ABS"},
-		{R_ARM_ALU_PCREL_7_0, "R_ARM_ALU_PCREL_7_0"},
-		{R_ARM_ALU_PCREL_15_8, "R_ARM_ALU_PCREL_15_8"},
-		{R_ARM_ALU_PCREL_23_15, "R_ARM_ALU_PCREL_23_15"},
-		{R_ARM_LDR_SBREL_11_0_NC, "R_ARM_LDR_SBREL_11_0_NC"},
-		{R_ARM_ALU_SBREL_19_12_NC, "R_ARM_ALU_SBREL_19_12_NC"},
-		{R_ARM_ALU_SBREL_27_20_CK, "R_ARM_ALU_SBREL_27_20_CK"},
-		{R_ARM_TARGET1, "R_ARM_TARGET1"},
-		{R_ARM_SBREL31, "R_ARM_SBREL31"},
-		{R_ARM_V4BX, "R_ARM_V4BX"},
-		{R_ARM_TARGET2, "R_ARM_TARGET2"},
-		{R_ARM_PREL31, "R_ARM_PREL31"},
-		{R_ARM_MOVW_ABS_NC, "R_ARM_MOVW_ABS_NC"},
-		{R_ARM_MOVT_ABS, "R_ARM_MOVT_ABS"},
-		{R_ARM_MOVW_PREL_NC, "R_ARM_MOVW_PREL_NC"},
-		{R_ARM_MOVT_PREL, "R_ARM_MOVT_PREL"},
-		{R_ARM_THM_MOVW_ABS_NC, "R_ARM_THM_MOVW_ABS_NC"},
-		{R_ARM_THM_MOVT_ABS, "R_ARM_THM_MOVT_ABS"},
-		{R_ARM_THM_MOVW_PREL_NC, "R_ARM_THM_MOVW_PREL_NC"},
-		{R_ARM_THM_MOVT_PREL, "R_ARM_THM_MOVT_PREL"},
-		{R_ARM_THM_JUMP19, "R_ARM_THM_JUMP19"},
-		{R_ARM_THM_JUMP6, "R_ARM_THM_JUMP6"},
-		{R_ARM_THM_ALU_PREL_11_0, "R_ARM_THM_ALU_PREL_11_0"},
-		{R_ARM_THM_PC12, "R_ARM_THM_PC12"},
-		{R_ARM_ABS32_NOI, "R_ARM_ABS32_NOI"},
-		{R_ARM_REL32_NOI, "R_ARM_REL32_NOI"},
-		{R_ARM_ALU_PC_G0_NC, "R_ARM_ALU_PC_G0_NC"},
-		{R_ARM_ALU_PC_G0, "R_ARM_ALU_PC_G0"},
-		{R_ARM_ALU_PC_G1_NC, "R_ARM_ALU_PC_G1_NC"},
-		{R_ARM_ALU_PC_G1, "R_ARM_ALU_PC_G1"},
-		{R_ARM_ALU_PC_G2, "R_ARM_ALU_PC_G2"},
-		{R_ARM_LDR_PC_G1, "R_ARM_LDR_PC_G1"},
-		{R_ARM_LDR_PC_G2, "R_ARM_LDR_PC_G2"},
-		{R_ARM_LDRS_PC_G0, "R_ARM_LDRS_PC_G0"},
-		{R_ARM_LDRS_PC_G1, "R_ARM_LDRS_PC_G1"},
-		{R_ARM_LDRS_PC_G2, "R_ARM_LDRS_PC_G2"},
-		{R_ARM_LDC_PC_G0, "R_ARM_LDC_PC_G0"},
-		{R_ARM_LDC_PC_G1, "R_ARM_LDC_PC_G1"},
-		{R_ARM_LDC_PC_G2, "R_ARM_LDC_PC_G2"},
-		{R_ARM_ALU_SB_G0_NC, "R_ARM_ALU_SB_G0_NC"},
-		{R_ARM_ALU_SB_G0, "R_ARM_ALU_SB_G0"},
-		{R_ARM_ALU_SB_G1_NC, "R_ARM_ALU_SB_G1_NC"},
-		{R_ARM_ALU_SB_G1, "R_ARM_ALU_SB_G1"},
-		{R_ARM_ALU_SB_G2, "R_ARM_ALU_SB_G2"},
-		{R_ARM_LDR_SB_G0, "R_ARM_LDR_SB_G0"},
-		{R_ARM_LDR_SB_G1, "R_ARM_LDR_SB_G1"},
-		{R_ARM_LDR_SB_G2, "R_ARM_LDR_SB_G2"},
-		{R_ARM_LDRS_SB_G0, "R_ARM_LDRS_SB_G0"},
-		{R_ARM_LDRS_SB_G1, "R_ARM_LDRS_SB_G1"},
-		{R_ARM_LDRS_SB_G2, "R_ARM_LDRS_SB_G2"},
-		{R_ARM_LDC_SB_G0, "R_ARM_LDC_SB_G0"},
-		{R_ARM_LDC_SB_G1, "R_ARM_LDC_SB_G1"},
-		{R_ARM_LDC_SB_G2, "R_ARM_LDC_SB_G2"},
-		{R_ARM_MOVW_BREL_NC, "R_ARM_MOVW_BREL_NC"},
-		{R_ARM_MOVT_BREL, "R_ARM_MOVT_BREL"},
-		{R_ARM_MOVW_BREL, "R_ARM_MOVW_BREL"},
-		{R_ARM_THM_MOVW_BREL_NC, "R_ARM_THM_MOVW_BREL_NC"},
-		{R_ARM_THM_MOVT_BREL, "R_ARM_THM_MOVT_BREL"},
-		{R_ARM_THM_MOVW_BREL, "R_ARM_THM_MOVW_BREL"},
-		{R_ARM_TLS_GOTDESC, "R_ARM_TLS_GOTDESC"},
-		{R_ARM_TLS_CALL, "R_ARM_TLS_CALL"},
-		{R_ARM_TLS_DESCSEQ, "R_ARM_TLS_DESCSEQ"},
-		{R_ARM_THM_TLS_CALL, "R_ARM_THM_TLS_CALL"},
-		{R_ARM_PLT32_ABS, "R_ARM_PLT32_ABS"},
-		{R_ARM_GOT_ABS, "R_ARM_GOT_ABS"},
-		{R_ARM_GOT_PREL, "R_ARM_GOT_PREL"},
-		{R_ARM_GOT_BREL12, "R_ARM_GOT_BREL12"},
-		{R_ARM_GOTOFF12, "R_ARM_GOTOFF12"},
-		{R_ARM_GOTRELAX, "R_ARM_GOTRELAX"},
-		{R_ARM_GNU_VTENTRY, "R_ARM_GNU_VTENTRY"},
-		{R_ARM_GNU_VTINHERIT, "R_ARM_GNU_VTINHERIT"},
-		{R_ARM_THM_JUMP11, "R_ARM_THM_JUMP11"},
-		{R_ARM_THM_JUMP8, "R_ARM_THM_JUMP8"},
-		{R_ARM_TLS_GD32, "R_ARM_TLS_GD32"},
-		{R_ARM_TLS_LDM32, "R_ARM_TLS_LDM32"},
-		{R_ARM_TLS_LDO32, "R_ARM_TLS_LDO32"},
-		{R_ARM_TLS_IE32, "R_ARM_TLS_IE32"},
-		{R_ARM_TLS_LE32, "R_ARM_TLS_LE32"},
-		{R_ARM_TLS_LDO12, "R_ARM_TLS_LDO12"},
-		{R_ARM_TLS_LE12, "R_ARM_TLS_LE12"},
-		{R_ARM_TLS_IE12GP, "R_ARM_TLS_IE12GP"},
-		{R_ARM_ME_TOO, "R_ARM_ME_TOO"},
-		{R_ARM_THM_TLS_DESCSEQ16, "R_ARM_THM_TLS_DESCSEQ16"},
-		{R_ARM_THM_TLS_DESCSEQ32, "R_ARM_THM_TLS_DESCSEQ32"},
-		{R_ARM_THM_GOT_BREL12, "R_ARM_THM_GOT_BREL12"},
-		{R_ARM_THM_ALU_ABS_G0_NC, "R_ARM_THM_ALU_ABS_G0_NC"},
-		{R_ARM_THM_ALU_ABS_G1_NC, "R_ARM_THM_ALU_ABS_G1_NC"},
-		{R_ARM_THM_ALU_ABS_G2_NC, "R_ARM_THM_ALU_ABS_G2_NC"},
-		{R_ARM_THM_ALU_ABS_G3, "R_ARM_THM_ALU_ABS_G3"},
-		{R_ARM_IRELATIVE, "R_ARM_IRELATIVE"},
-		{R_ARM_RXPC25, "R_ARM_RXPC25"},
-		{R_ARM_RSBREL32, "R_ARM_RSBREL32"},
-		{R_ARM_THM_RPC22, "R_ARM_THM_RPC22"},
-		{R_ARM_RREL32, "R_ARM_RREL32"},
-		{R_ARM_RABS32, "R_ARM_RABS32"},
-		{R_ARM_RPC24, "R_ARM_RPC24"},
-		{R_ARM_RBASE, "R_ARM_RBASE"}
-	};
-	if (relocTable.count(rel))
-		return relocTable.at(rel);
-	return "Unknown ARM relocation";
+	case R_ARM_NONE: return "R_ARM_NONE";
+	case R_ARM_PC24: return "R_ARM_PC24";
+	case R_ARM_ABS32: return "R_ARM_ABS32";
+	case R_ARM_REL32: return "R_ARM_REL32";
+	case R_ARM_LDR_PC_G0: return "R_ARM_LDR_PC_G0";
+	case R_ARM_ABS16: return "R_ARM_ABS16";
+	case R_ARM_ABS12: return "R_ARM_ABS12";
+	case R_ARM_THM_ABS5: return "R_ARM_THM_ABS5";
+	case R_ARM_ABS8: return "R_ARM_ABS8";
+	case R_ARM_SBREL32: return "R_ARM_SBREL32";
+	case R_ARM_THM_CALL: return "R_ARM_THM_CALL";
+	case R_ARM_THM_PC8: return "R_ARM_THM_PC8";
+	case R_ARM_BREL_ADJ: return "R_ARM_BREL_ADJ";
+	case R_ARM_TLS_DESC: return "R_ARM_TLS_DESC";
+	case R_ARM_THM_SWI8: return "R_ARM_THM_SWI8";
+	case R_ARM_XPC25: return "R_ARM_XPC25";
+	case R_ARM_THM_XPC22: return "R_ARM_THM_XPC22";
+	case R_ARM_TLS_DTPMOD32: return "R_ARM_TLS_DTPMOD32";
+	case R_ARM_TLS_DTPOFF32: return "R_ARM_TLS_DTPOFF32";
+	case R_ARM_TLS_TPOFF32: return "R_ARM_TLS_TPOFF32";
+	case R_ARM_COPY: return "R_ARM_COPY";
+	case R_ARM_GLOB_DAT: return "R_ARM_GLOB_DAT";
+	case R_ARM_JUMP_SLOT: return "R_ARM_JUMP_SLOT";
+	case R_ARM_RELATIVE: return "R_ARM_RELATIVE";
+	case R_ARM_GOTOFF32: return "R_ARM_GOTOFF32";
+	case R_ARM_BASE_PREL: return "R_ARM_BASE_PREL";
+	case R_ARM_GOT_BREL: return "R_ARM_GOT_BREL";
+	case R_ARM_PLT32: return "R_ARM_PLT32";
+	case R_ARM_CALL: return "R_ARM_CALL";
+	case R_ARM_JUMP24: return "R_ARM_JUMP24";
+	case R_ARM_THM_JUMP24: return "R_ARM_THM_JUMP24";
+	case R_ARM_BASE_ABS: return "R_ARM_BASE_ABS";
+	case R_ARM_ALU_PCREL_7_0: return "R_ARM_ALU_PCREL_7_0";
+	case R_ARM_ALU_PCREL_15_8: return "R_ARM_ALU_PCREL_15_8";
+	case R_ARM_ALU_PCREL_23_15: return "R_ARM_ALU_PCREL_23_15";
+	case R_ARM_LDR_SBREL_11_0_NC: return "R_ARM_LDR_SBREL_11_0_NC";
+	case R_ARM_ALU_SBREL_19_12_NC: return "R_ARM_ALU_SBREL_19_12_NC";
+	case R_ARM_ALU_SBREL_27_20_CK: return "R_ARM_ALU_SBREL_27_20_CK";
+	case R_ARM_TARGET1: return "R_ARM_TARGET1";
+	case R_ARM_SBREL31: return "R_ARM_SBREL31";
+	case R_ARM_V4BX: return "R_ARM_V4BX";
+	case R_ARM_TARGET2: return "R_ARM_TARGET2";
+	case R_ARM_PREL31: return "R_ARM_PREL31";
+	case R_ARM_MOVW_ABS_NC: return "R_ARM_MOVW_ABS_NC";
+	case R_ARM_MOVT_ABS: return "R_ARM_MOVT_ABS";
+	case R_ARM_MOVW_PREL_NC: return "R_ARM_MOVW_PREL_NC";
+	case R_ARM_MOVT_PREL: return "R_ARM_MOVT_PREL";
+	case R_ARM_THM_MOVW_ABS_NC: return "R_ARM_THM_MOVW_ABS_NC";
+	case R_ARM_THM_MOVT_ABS: return "R_ARM_THM_MOVT_ABS";
+	case R_ARM_THM_MOVW_PREL_NC: return "R_ARM_THM_MOVW_PREL_NC";
+	case R_ARM_THM_MOVT_PREL: return "R_ARM_THM_MOVT_PREL";
+	case R_ARM_THM_JUMP19: return "R_ARM_THM_JUMP19";
+	case R_ARM_THM_JUMP6: return "R_ARM_THM_JUMP6";
+	case R_ARM_THM_ALU_PREL_11_0: return "R_ARM_THM_ALU_PREL_11_0";
+	case R_ARM_THM_PC12: return "R_ARM_THM_PC12";
+	case R_ARM_ABS32_NOI: return "R_ARM_ABS32_NOI";
+	case R_ARM_REL32_NOI: return "R_ARM_REL32_NOI";
+	case R_ARM_ALU_PC_G0_NC: return "R_ARM_ALU_PC_G0_NC";
+	case R_ARM_ALU_PC_G0: return "R_ARM_ALU_PC_G0";
+	case R_ARM_ALU_PC_G1_NC: return "R_ARM_ALU_PC_G1_NC";
+	case R_ARM_ALU_PC_G1: return "R_ARM_ALU_PC_G1";
+	case R_ARM_ALU_PC_G2: return "R_ARM_ALU_PC_G2";
+	case R_ARM_LDR_PC_G1: return "R_ARM_LDR_PC_G1";
+	case R_ARM_LDR_PC_G2: return "R_ARM_LDR_PC_G2";
+	case R_ARM_LDRS_PC_G0: return "R_ARM_LDRS_PC_G0";
+	case R_ARM_LDRS_PC_G1: return "R_ARM_LDRS_PC_G1";
+	case R_ARM_LDRS_PC_G2: return "R_ARM_LDRS_PC_G2";
+	case R_ARM_LDC_PC_G0: return "R_ARM_LDC_PC_G0";
+	case R_ARM_LDC_PC_G1: return "R_ARM_LDC_PC_G1";
+	case R_ARM_LDC_PC_G2: return "R_ARM_LDC_PC_G2";
+	case R_ARM_ALU_SB_G0_NC: return "R_ARM_ALU_SB_G0_NC";
+	case R_ARM_ALU_SB_G0: return "R_ARM_ALU_SB_G0";
+	case R_ARM_ALU_SB_G1_NC: return "R_ARM_ALU_SB_G1_NC";
+	case R_ARM_ALU_SB_G1: return "R_ARM_ALU_SB_G1";
+	case R_ARM_ALU_SB_G2: return "R_ARM_ALU_SB_G2";
+	case R_ARM_LDR_SB_G0: return "R_ARM_LDR_SB_G0";
+	case R_ARM_LDR_SB_G1: return "R_ARM_LDR_SB_G1";
+	case R_ARM_LDR_SB_G2: return "R_ARM_LDR_SB_G2";
+	case R_ARM_LDRS_SB_G0: return "R_ARM_LDRS_SB_G0";
+	case R_ARM_LDRS_SB_G1: return "R_ARM_LDRS_SB_G1";
+	case R_ARM_LDRS_SB_G2: return "R_ARM_LDRS_SB_G2";
+	case R_ARM_LDC_SB_G0: return "R_ARM_LDC_SB_G0";
+	case R_ARM_LDC_SB_G1: return "R_ARM_LDC_SB_G1";
+	case R_ARM_LDC_SB_G2: return "R_ARM_LDC_SB_G2";
+	case R_ARM_MOVW_BREL_NC: return "R_ARM_MOVW_BREL_NC";
+	case R_ARM_MOVT_BREL: return "R_ARM_MOVT_BREL";
+	case R_ARM_MOVW_BREL: return "R_ARM_MOVW_BREL";
+	case R_ARM_THM_MOVW_BREL_NC: return "R_ARM_THM_MOVW_BREL_NC";
+	case R_ARM_THM_MOVT_BREL: return "R_ARM_THM_MOVT_BREL";
+	case R_ARM_THM_MOVW_BREL: return "R_ARM_THM_MOVW_BREL";
+	case R_ARM_TLS_GOTDESC: return "R_ARM_TLS_GOTDESC";
+	case R_ARM_TLS_CALL: return "R_ARM_TLS_CALL";
+	case R_ARM_TLS_DESCSEQ: return "R_ARM_TLS_DESCSEQ";
+	case R_ARM_THM_TLS_CALL: return "R_ARM_THM_TLS_CALL";
+	case R_ARM_PLT32_ABS: return "R_ARM_PLT32_ABS";
+	case R_ARM_GOT_ABS: return "R_ARM_GOT_ABS";
+	case R_ARM_GOT_PREL: return "R_ARM_GOT_PREL";
+	case R_ARM_GOT_BREL12: return "R_ARM_GOT_BREL12";
+	case R_ARM_GOTOFF12: return "R_ARM_GOTOFF12";
+	case R_ARM_GOTRELAX: return "R_ARM_GOTRELAX";
+	case R_ARM_GNU_VTENTRY: return "R_ARM_GNU_VTENTRY";
+	case R_ARM_GNU_VTINHERIT: return "R_ARM_GNU_VTINHERIT";
+	case R_ARM_THM_JUMP11: return "R_ARM_THM_JUMP11";
+	case R_ARM_THM_JUMP8: return "R_ARM_THM_JUMP8";
+	case R_ARM_TLS_GD32: return "R_ARM_TLS_GD32";
+	case R_ARM_TLS_LDM32: return "R_ARM_TLS_LDM32";
+	case R_ARM_TLS_LDO32: return "R_ARM_TLS_LDO32";
+	case R_ARM_TLS_IE32: return "R_ARM_TLS_IE32";
+	case R_ARM_TLS_LE32: return "R_ARM_TLS_LE32";
+	case R_ARM_TLS_LDO12: return "R_ARM_TLS_LDO12";
+	case R_ARM_TLS_LE12: return "R_ARM_TLS_LE12";
+	case R_ARM_TLS_IE12GP: return "R_ARM_TLS_IE12GP";
+	case R_ARM_ME_TOO: return "R_ARM_ME_TOO";
+	case R_ARM_THM_TLS_DESCSEQ16: return "R_ARM_THM_TLS_DESCSEQ16";
+	case R_ARM_THM_TLS_DESCSEQ32: return "R_ARM_THM_TLS_DESCSEQ32";
+	case R_ARM_THM_GOT_BREL12: return "R_ARM_THM_GOT_BREL12";
+	case R_ARM_THM_ALU_ABS_G0_NC: return "R_ARM_THM_ALU_ABS_G0_NC";
+	case R_ARM_THM_ALU_ABS_G1_NC: return "R_ARM_THM_ALU_ABS_G1_NC";
+	case R_ARM_THM_ALU_ABS_G2_NC: return "R_ARM_THM_ALU_ABS_G2_NC";
+	case R_ARM_THM_ALU_ABS_G3: return "R_ARM_THM_ALU_ABS_G3";
+	case R_ARM_IRELATIVE: return "R_ARM_IRELATIVE";
+	case R_ARM_RXPC25: return "R_ARM_RXPC25";
+	case R_ARM_RSBREL32: return "R_ARM_RSBREL32";
+	case R_ARM_THM_RPC22: return "R_ARM_THM_RPC22";
+	case R_ARM_RREL32: return "R_ARM_RREL32";
+	case R_ARM_RABS32: return "R_ARM_RABS32";
+	case R_ARM_RPC24: return "R_ARM_RPC24";
+	case R_ARM_RBASE: return "R_ARM_RBASE";
+	default: return "Unknown ARM relocation";
+	}
 }
 
 
@@ -514,140 +618,44 @@ static const char* GetRelocationString(PeArmRelocationType rel)
 
 static bool IsELFDataRelocation(ElfArmRelocationType reloc)
 {
-	map<ElfArmRelocationType, bool> isDataMap =
+	switch (reloc)
 	{
-		{R_ARM_NONE, false},
-		{R_ARM_PC24, false},
-		{R_ARM_ABS32, true},
-		{R_ARM_REL32, true},
-		{R_ARM_LDR_PC_G0, false},
-		{R_ARM_ABS16, true},
-		{R_ARM_ABS12, false},
-		{R_ARM_THM_ABS5, false},
-		{R_ARM_ABS8, true},
-		{R_ARM_SBREL32, true},
-		{R_ARM_THM_CALL, false},
-		{R_ARM_THM_PC8, false},
-		{R_ARM_BREL_ADJ, true},
-		{R_ARM_TLS_DESC, true},
-		{R_ARM_THM_SWI8, false},
-		{R_ARM_XPC25, false},
-		{R_ARM_THM_XPC22, false},
-		{R_ARM_TLS_DTPMOD32, true},
-		{R_ARM_TLS_DTPOFF32, true},
-		{R_ARM_TLS_TPOFF32, true},
-		{R_ARM_COPY, true},
-		{R_ARM_GLOB_DAT, true},
-		{R_ARM_JUMP_SLOT, true},
-		{R_ARM_RELATIVE, true},
-		{R_ARM_GOTOFF32, true},
-		{R_ARM_BASE_PREL, true},
-		{R_ARM_GOT_BREL, true},
-		{R_ARM_PLT32, false},
-		{R_ARM_CALL, false},
-		{R_ARM_JUMP24, false},
-		{R_ARM_THM_JUMP24, false},
-		{R_ARM_BASE_ABS, true},
-		{R_ARM_ALU_PCREL_7_0, false},
-		{R_ARM_ALU_PCREL_15_8, false},
-		{R_ARM_ALU_PCREL_23_15, false},
-		{R_ARM_LDR_SBREL_11_0_NC, false},
-		{R_ARM_ALU_SBREL_19_12_NC, false},
-		{R_ARM_ALU_SBREL_27_20_CK, false},
-		{R_ARM_TARGET1, false},
-		{R_ARM_SBREL31, true},
-		{R_ARM_V4BX, false},
-		{R_ARM_TARGET2, false},
-		{R_ARM_PREL31, true},
-		{R_ARM_MOVW_ABS_NC, false},
-		{R_ARM_MOVT_ABS, false},
-		{R_ARM_MOVW_PREL_NC, false},
-		{R_ARM_MOVT_PREL, false},
-		{R_ARM_THM_MOVW_ABS_NC, false},
-		{R_ARM_THM_MOVT_ABS, false},
-		{R_ARM_THM_MOVW_PREL_NC, false},
-		{R_ARM_THM_MOVT_PREL, false},
-		{R_ARM_THM_JUMP19, false},
-		{R_ARM_THM_JUMP6, false},
-		{R_ARM_THM_ALU_PREL_11_0, false},
-		{R_ARM_THM_PC12, false},
-		{R_ARM_ABS32_NOI, true},
-		{R_ARM_REL32_NOI, true},
-		{R_ARM_ALU_PC_G0_NC, false},
-		{R_ARM_ALU_PC_G0, false},
-		{R_ARM_ALU_PC_G1_NC, false},
-		{R_ARM_ALU_PC_G1, false},
-		{R_ARM_ALU_PC_G2, false},
-		{R_ARM_LDR_PC_G1, false},
-		{R_ARM_LDR_PC_G2, false},
-		{R_ARM_LDRS_PC_G0, false},
-		{R_ARM_LDRS_PC_G1, false},
-		{R_ARM_LDRS_PC_G2, false},
-		{R_ARM_LDC_PC_G0, false},
-		{R_ARM_LDC_PC_G1, false},
-		{R_ARM_LDC_PC_G2, false},
-		{R_ARM_ALU_SB_G0_NC, false},
-		{R_ARM_ALU_SB_G0, false},
-		{R_ARM_ALU_SB_G1_NC, false},
-		{R_ARM_ALU_SB_G1, false},
-		{R_ARM_ALU_SB_G2, false},
-		{R_ARM_LDR_SB_G0, false},
-		{R_ARM_LDR_SB_G1, false},
-		{R_ARM_LDR_SB_G2, false},
-		{R_ARM_LDRS_SB_G0, false},
-		{R_ARM_LDRS_SB_G1, false},
-		{R_ARM_LDRS_SB_G2, false},
-		{R_ARM_LDC_SB_G0, false},
-		{R_ARM_LDC_SB_G1, false},
-		{R_ARM_LDC_SB_G2, false},
-		{R_ARM_MOVW_BREL_NC, false},
-		{R_ARM_MOVT_BREL, false},
-		{R_ARM_MOVW_BREL, false},
-		{R_ARM_THM_MOVW_BREL_NC, false},
-		{R_ARM_THM_MOVT_BREL, false},
-		{R_ARM_THM_MOVW_BREL, false},
-		{R_ARM_TLS_GOTDESC, true},
-		{R_ARM_TLS_CALL, false},
-		{R_ARM_TLS_DESCSEQ, false},
-		{R_ARM_THM_TLS_CALL, false},
-		{R_ARM_PLT32_ABS, true},
-		{R_ARM_GOT_ABS, true},
-		{R_ARM_GOT_PREL, true},
-		{R_ARM_GOT_BREL12, false},
-		{R_ARM_GOTOFF12, false},
-		{R_ARM_GOTRELAX, false},
-		{R_ARM_GNU_VTENTRY, true},
-		{R_ARM_GNU_VTINHERIT, true},
-		{R_ARM_THM_JUMP11, false},
-		{R_ARM_THM_JUMP8, false},
-		{R_ARM_TLS_GD32, true},
-		{R_ARM_TLS_LDM32, true},
-		{R_ARM_TLS_LDO32, true},
-		{R_ARM_TLS_IE32, true},
-		{R_ARM_TLS_LE32, false},
-		{R_ARM_TLS_LDO12, false},
-		{R_ARM_TLS_LE12, false},
-		{R_ARM_TLS_IE12GP, false},
-		{R_ARM_ME_TOO, false},
-		{R_ARM_THM_TLS_DESCSEQ16, false},
-		{R_ARM_THM_TLS_DESCSEQ32, false},
-		{R_ARM_THM_GOT_BREL12, false},
-		{R_ARM_THM_ALU_ABS_G0_NC, false},
-		{R_ARM_THM_ALU_ABS_G1_NC, false},
-		{R_ARM_THM_ALU_ABS_G2_NC, false},
-		{R_ARM_THM_ALU_ABS_G3, false},
-		{R_ARM_IRELATIVE, false},
-		{R_ARM_RXPC25, false},
-		{R_ARM_RSBREL32, false},
-		{R_ARM_THM_RPC22, false},
-		{R_ARM_RREL32, false},
-		{R_ARM_RABS32, false},
-		{R_ARM_RPC24, false},
-		{R_ARM_RBASE, false}
-	};
-	if (!isDataMap.count(reloc))
+	case R_ARM_ABS32:
+	case R_ARM_REL32:
+	case R_ARM_ABS16:
+	case R_ARM_ABS8:
+	case R_ARM_SBREL32:
+	case R_ARM_BREL_ADJ:
+	case R_ARM_TLS_DESC:
+	case R_ARM_TLS_DTPMOD32:
+	case R_ARM_TLS_DTPOFF32:
+	case R_ARM_TLS_TPOFF32:
+	case R_ARM_COPY:
+	case R_ARM_GLOB_DAT:
+	case R_ARM_JUMP_SLOT:
+	case R_ARM_RELATIVE:
+	case R_ARM_GOTOFF32:
+	case R_ARM_BASE_PREL:
+	case R_ARM_GOT_BREL:
+	case R_ARM_BASE_ABS:
+	case R_ARM_SBREL31:
+	case R_ARM_PREL31:
+	case R_ARM_ABS32_NOI:
+	case R_ARM_REL32_NOI:
+	case R_ARM_TLS_GOTDESC:
+	case R_ARM_PLT32_ABS:
+	case R_ARM_GOT_ABS:
+	case R_ARM_GOT_PREL:
+	case R_ARM_GNU_VTENTRY:
+	case R_ARM_GNU_VTINHERIT:
+	case R_ARM_TLS_GD32:
+	case R_ARM_TLS_LDM32:
+	case R_ARM_TLS_LDO32:
+	case R_ARM_TLS_IE32:
+		return true;
+	default:
 		return false;
-	return isDataMap.at(reloc);
+	}
 }
 
 static BNRegisterInfo RegisterInfo(uint32_t fullWidthReg, size_t offset, size_t size, bool zeroExtend = false)
@@ -884,11 +892,9 @@ protected:
 		const InstructionOperand& op,
 		vector<InstructionTextToken>& result)
 	{
-		const char* reg = NULL;
-		reg = GetRegisterName((enum Register)op.reg).c_str();
-		if (reg == NULL)
+		auto reg = GetRegisterName((enum Register)op.reg);
+		if (reg.empty())
 			return FAILED_TO_DISASSEMBLE_REGISTER;
-
 
 		result.emplace_back(RegisterToken, reg);
 		tokenize_shift(op, result);
@@ -1409,10 +1415,410 @@ public:
 			return "Coproc_SendOneWord";
 		case ARMV7_INTRIN_COPROC_SENDTWOWORDS:
 			return "Coproc_SendTwoWords";
+		case ARMV7_INTRIN_COPROC_STORE:
+			return "Coproc_Store";
+		case ARMV7_INTRIN_COPROC_LOAD:
+			return "Coproc_Load";
+		case ARMV7_INTRIN_COPROC_DATAPROCESSING:
+			return "Coproc_DataProcessing";
 		case ARMV7_INTRIN_EXCLUSIVE_MONITORS_PASS:
 			return "ExclusiveMonitorsPass";
 		case ARMV7_INTRIN_SET_EXCLUSIVE_MONITORS:
 			return "SetExclusiveMonitors";
+		case ARMV7_INTRIN_DBG:
+			return "__dbg";
+		case ARMV7_INTRIN_DMB_SY:
+			return "__dmb_SY";
+		case ARMV7_INTRIN_DMB_ST:
+			return "__dmb_ST";
+		case ARMV7_INTRIN_DMB_ISH:
+			return "__dmb_ISH";
+		case ARMV7_INTRIN_DMB_ISHST:
+			return "__dmb_ISHST";
+		case ARMV7_INTRIN_DMB_NSH:
+			return "__dmb_NSH";
+		case ARMV7_INTRIN_DMB_NSHST:
+			return "__dmb_NSHST";
+		case ARMV7_INTRIN_DMB_OSH:
+			return "__dmb_OSH";
+		case ARMV7_INTRIN_DMB_OSHST:
+			return "__dmb_OSHST";
+		case ARMV7_INTRIN_DSB_SY:
+			return "__dsb_SY";
+		case ARMV7_INTRIN_DSB_ST:
+			return "__dsb_ST";
+		case ARMV7_INTRIN_DSB_ISH:
+			return "__dsb_ISH";
+		case ARMV7_INTRIN_DSB_ISHST:
+			return "__dsb_ISHST";
+		case ARMV7_INTRIN_DSB_NSH:
+			return "__dsb_NSH";
+		case ARMV7_INTRIN_DSB_NSHST:
+			return "__dsb_NSHST";
+		case ARMV7_INTRIN_DSB_OSH:
+			return "__dsb_OSH";
+		case ARMV7_INTRIN_DSB_OSHST:
+			return "__dsb_OSHST";
+		case ARMV7_INTRIN_ISB:
+			return "__isb";
+		case ARMV7_INTRIN_CPS:
+			return "__cps";
+		case ARMV7_INTRIN_CPSID:
+			return "__cpsid";
+		case ARMV7_INTRIN_CPSIE:
+			return "__cpsie";
+		case ARMV7_INTRIN_SETEND:
+			return "__setend";
+		case ARMV7_INTRIN_CLREX:
+			return "__clrex";
+		case ARMV7_INTRIN_PLD:
+			return "__pld";
+		case ARMV7_INTRIN_CRC32B:
+			return "__crc32b";
+		case ARMV7_INTRIN_CRC32CB:
+			return "__crc32cb";
+		case ARMV7_INTRIN_CRC32CH:
+			return "__crc32ch";
+		case ARMV7_INTRIN_CRC32CW:
+			return "__crc32cw";
+		case ARMV7_INTRIN_CRC32H:
+			return "__crc32h";
+		case ARMV7_INTRIN_CRC32W:
+			return "__crc32w";
+		case ARMV7_INTRIN_SEL:
+			return "__sel";
+		case ARMV7_INTRIN_YIELD:
+			return "__yield";
+		case ARMV7_INTRIN_SEV:
+			return "__sev";
+		case ARMV7_INTRIN_WFE:
+			return "__wfe";
+		case ARMV7_INTRIN_WFI:
+			return "__wfi";
+		case ARMV7_INTRIN_HINT:
+			return "__hint";
+		case ARMV7_INTRIN_UNPREDICTABLE:
+			return "__unpredictable";
+		case ARMV7_INTRIN_HVC:
+			return "__hvc";
+		case ARMV7_INTRIN_SMC:
+			return "__smc";
+		case ARMV7_INTRIN_MRS:
+			return "__mrs";
+		case ARMV7_INTRIN_MSR:
+			return "__msr";
+		case ARMV7_INTRIN_VMRS:
+			return "__vmrs";
+		case ARMV7_INTRIN_VMSR:
+			return "__vmsr";
+		case ARMV7_INTRIN_VRINTA:
+			return "__vrinta";
+		case ARMV7_INTRIN_VMAXNM:
+			return "__vmaxnm";
+		case ARMV7_INTRIN_VMINNM:
+			return "__vminnm";
+		case ARMV7_INTRIN_VMAX:
+			return "__vmax";
+		case ARMV7_INTRIN_VMIN:
+			return "__vmin";
+		case ARMV7_INTRIN_VPADD:
+			return "__vpadd";
+		case ARMV7_INTRIN_VPMAX:
+			return "__vpmax";
+		case ARMV7_INTRIN_VPMIN:
+			return "__vpmin";
+		case ARMV7_INTRIN_VREV16:
+			return "__vrev16";
+		case ARMV7_INTRIN_VREV32:
+			return "__vrev32";
+		case ARMV7_INTRIN_VREV64:
+			return "__vrev64";
+		case ARMV7_INTRIN_VEXT:
+			return "__vext";
+		case ARMV7_INTRIN_VCGT:
+			return "__vcgt";
+		case ARMV7_INTRIN_VCGT_Q:
+			return "__vcgt_q";
+		case ARMV7_INTRIN_VCLT:
+			return "__vclt";
+		case ARMV7_INTRIN_VCLT_Q:
+			return "__vclt_q";
+		case ARMV7_INTRIN_VCGE:
+			return "__vcge";
+		case ARMV7_INTRIN_VCGE_Q:
+			return "__vcge_q";
+		case ARMV7_INTRIN_VCEQ:
+			return "__vceq";
+		case ARMV7_INTRIN_VTBL:
+			return "__vtbl";
+		case ARMV7_INTRIN_VTBX:
+			return "__vtbx";
+		case ARMV7_INTRIN_VDUP:
+			return "__vdup";
+		case ARMV7_INTRIN_VABD:
+			return "__vabd";
+		case ARMV7_INTRIN_VABDL:
+			return "__vabdl";
+		case ARMV7_INTRIN_VABA:
+			return "__vaba";
+		case ARMV7_INTRIN_VABAL:
+			return "__vabal";
+		case ARMV7_INTRIN_VADD:
+			return "__vadd";
+		case ARMV7_INTRIN_VSUB:
+			return "__vsub";
+		case ARMV7_INTRIN_VADDL:
+			return "__vaddl";
+		case ARMV7_INTRIN_VADDW:
+			return "__vaddw";
+		case ARMV7_INTRIN_VRADDHN:
+			return "__vraddhn";
+		case ARMV7_INTRIN_VRSHR:
+			return "__vrshr";
+		case ARMV7_INTRIN_VRSHL:
+			return "__vrshl";
+		case ARMV7_INTRIN_VSRA:
+			return "__vsra";
+		case ARMV7_INTRIN_VRSRA:
+			return "__vrsra";
+		case ARMV7_INTRIN_VSRI:
+			return "__vsri";
+		case ARMV7_INTRIN_VSLI:
+			return "__vsli";
+		case ARMV7_INTRIN_VLD2:
+			return "__vld2";
+		case ARMV7_INTRIN_VLD4:
+			return "__vld4";
+		case ARMV7_INTRIN_VST2:
+			return "__vst2";
+		case ARMV7_INTRIN_VST4:
+			return "__vst4";
+		case ARMV7_INTRIN_VSHL_Q:
+			return "__vshl_q";
+		case ARMV7_INTRIN_VSHL_IMM:
+			return "__vshl_imm";
+		case ARMV7_INTRIN_VSHL_IMM_Q:
+			return "__vshl_imm_q";
+		case ARMV7_INTRIN_VSHR_Q:
+			return "__vshr_q";
+		case ARMV7_INTRIN_VSHRN:
+			return "__vshrn";
+		case ARMV7_INTRIN_VTRN:
+			return "__vtrn";
+		case ARMV7_INTRIN_VTRN_Q:
+			return "__vtrn_q";
+		case ARMV7_INTRIN_VUZP:
+			return "__vuzp";
+		case ARMV7_INTRIN_VUZP_Q:
+			return "__vuzp_q";
+		case ARMV7_INTRIN_VZIP:
+			return "__vzip";
+		case ARMV7_INTRIN_VZIP_Q:
+			return "__vzip_q";
+		case ARMV7_INTRIN_VTST:
+			return "__vtst";
+		case ARMV7_INTRIN_VTST_Q:
+			return "__vtst_q";
+		case ARMV7_INTRIN_VSHL:
+			return "__vshl";
+		case ARMV7_INTRIN_VSHR:
+			return "__vshr";
+		case ARMV7_INTRIN_VSHLL:
+			return "__vshll";
+		case ARMV7_INTRIN_VMOVL:
+			return "__vmovl";
+		case ARMV7_INTRIN_VMOVN:
+			return "__vmovn";
+		case ARMV7_INTRIN_VBIF:
+			return "__vbif";
+		case ARMV7_INTRIN_VBIT:
+			return "__vbit";
+		case ARMV7_INTRIN_VBSL:
+			return "__vbsl";
+		case ARMV7_INTRIN_VQADD:
+			return "__vqadd";
+		case ARMV7_INTRIN_VHADD:
+			return "__vhadd";
+		case ARMV7_INTRIN_VRHADD:
+			return "__vrhadd";
+		case ARMV7_INTRIN_VRECPE:
+			return "__vrecpe";
+		case ARMV7_INTRIN_VABS:
+			return "__vabs";
+		case ARMV7_INTRIN_VNEG:
+			return "__vneg";
+		case ARMV7_INTRIN_VNEG_Q:
+			return "__vneg_q";
+		case ARMV7_INTRIN_VCVT_FIXED:
+			return "__vcvt_fixed";
+		case ARMV7_INTRIN_VABS_Q:
+			return "__vabs_q";
+		case ARMV7_INTRIN_VCVT_FIXED_Q:
+			return "__vcvt_fixed_q";
+		case ARMV7_INTRIN_VQSHL:
+			return "__vqshl";
+		case ARMV7_INTRIN_VQRSHL:
+			return "__vqrshl";
+		case ARMV7_INTRIN_VQSHRN:
+			return "__vqshrn";
+		case ARMV7_INTRIN_VQSHRUN:
+			return "__vqshrun";
+		case ARMV7_INTRIN_VQRSHRN:
+			return "__vqrshrn";
+		case ARMV7_INTRIN_VQRSHRUN:
+			return "__vqrshrun";
+		case ARMV7_INTRIN_VQMOVN:
+			return "__vqmovn";
+		case ARMV7_INTRIN_VQMOVUN:
+			return "__vqmovun";
+		case ARMV7_INTRIN_VMLA:
+			return "__vmla";
+		case ARMV7_INTRIN_VMLS:
+			return "__vmls";
+		case ARMV7_INTRIN_VMLAL:
+			return "__vmlal";
+		case ARMV7_INTRIN_VMLSL:
+			return "__vmlsl";
+		case ARMV7_INTRIN_VMUL:
+			return "__vmul";
+		case ARMV7_INTRIN_VMULL:
+			return "__vmull";
+		case ARMV7_INTRIN_VQDMULL:
+			return "__vqdmull";
+		case ARMV7_INTRIN_SSAT:
+			return "__ssat";
+		case ARMV7_INTRIN_SSAT16:
+			return "__ssat16";
+		case ARMV7_INTRIN_USAT:
+			return "__usat";
+		case ARMV7_INTRIN_USAT16:
+			return "__usat16";
+		case ARMV7_INTRIN_SRS:
+			return "__srs";
+		case ARMV7_INTRIN_RFE:
+			return "__rfe";
+		case ARMV7_INTRIN_QADD:
+			return "__qadd";
+		case ARMV7_INTRIN_QSUB:
+			return "__qsub";
+		case ARMV7_INTRIN_QDADD:
+			return "__qdadd";
+		case ARMV7_INTRIN_QDSUB:
+			return "__qdsub";
+		case ARMV7_INTRIN_QADD16:
+			return "__qadd16";
+		case ARMV7_INTRIN_QADD8:
+			return "__qadd8";
+		case ARMV7_INTRIN_QSUB16:
+			return "__qsub16";
+		case ARMV7_INTRIN_QSUB8:
+			return "__qsub8";
+		case ARMV7_INTRIN_UQADD16:
+			return "__uqadd16";
+		case ARMV7_INTRIN_UQADD8:
+			return "__uqadd8";
+		case ARMV7_INTRIN_UQSUB16:
+			return "__uqsub16";
+		case ARMV7_INTRIN_UQSUB8:
+			return "__uqsub8";
+		case ARMV7_INTRIN_SXTAB16:
+			return "__sxtab16";
+		case ARMV7_INTRIN_SXTB16:
+			return "__sxtb16";
+		case ARMV7_INTRIN_UXTAB16:
+			return "__uxtab16";
+		case ARMV7_INTRIN_UXTB16:
+			return "__uxtb16";
+		case ARMV7_INTRIN_SADD16:
+			return "__sadd16";
+		case ARMV7_INTRIN_SADD8:
+			return "__sadd8";
+		case ARMV7_INTRIN_UADD16:
+			return "__uadd16";
+		case ARMV7_INTRIN_UADD8:
+			return "__uadd8";
+		case ARMV7_INTRIN_SHADD16:
+			return "__shadd16";
+		case ARMV7_INTRIN_SHADD8:
+			return "__shadd8";
+		case ARMV7_INTRIN_UHADD16:
+			return "__uhadd16";
+		case ARMV7_INTRIN_UHADD8:
+			return "__uhadd8";
+		case ARMV7_INTRIN_SASX:
+			return "__sasx";
+		case ARMV7_INTRIN_UASX:
+			return "__uasx";
+		case ARMV7_INTRIN_SHASX:
+			return "__shasx";
+		case ARMV7_INTRIN_UHASX:
+			return "__uhasx";
+		case ARMV7_INTRIN_SSAX:
+			return "__ssax";
+		case ARMV7_INTRIN_USAX:
+			return "__usax";
+		case ARMV7_INTRIN_SSUB16:
+			return "__ssub16";
+		case ARMV7_INTRIN_SSUB8:
+			return "__ssub8";
+		case ARMV7_INTRIN_SHSUB8:
+			return "__shsub8";
+		case ARMV7_INTRIN_SHSUB16:
+			return "__shsub16";
+		case ARMV7_INTRIN_UHSUB8:
+			return "__uhsub8";
+		case ARMV7_INTRIN_UHSUB16:
+			return "__uhsub16";
+		case ARMV7_INTRIN_USUB8:
+			return "__usub8";
+		case ARMV7_INTRIN_USUB16:
+			return "__usub16";
+		case ARMV7_INTRIN_SMLAD:
+			return "__smlad";
+		case ARMV7_INTRIN_SMLADX:
+			return "__smladx";
+		case ARMV7_INTRIN_SMUAD:
+			return "__smuad";
+		case ARMV7_INTRIN_SMUADX:
+			return "__smuadx";
+		case ARMV7_INTRIN_SMUSD:
+			return "__smusd";
+		case ARMV7_INTRIN_SMUSDX:
+			return "__smusdx";
+		case ARMV7_INTRIN_SMLSD:
+			return "__smlsd";
+		case ARMV7_INTRIN_SMLSDX:
+			return "__smlsdx";
+		case ARMV7_INTRIN_SMLSLD:
+			return "__smlsld";
+		case ARMV7_INTRIN_SMLSLDX:
+			return "__smlsldx";
+		case ARMV7_INTRIN_SMLAWB:
+			return "__smlawb";
+		case ARMV7_INTRIN_SMLAWT:
+			return "__smlawt";
+		case ARMV7_INTRIN_SMLABB:
+			return "__smlabb";
+		case ARMV7_INTRIN_SMLABT:
+			return "__smlabt";
+		case ARMV7_INTRIN_SMLATB:
+			return "__smlatb";
+		case ARMV7_INTRIN_SMLATT:
+			return "__smlatt";
+		case ARMV7_INTRIN_SMLALD:
+			return "__smlald";
+		case ARMV7_INTRIN_SMLALDX:
+			return "__smlaldx";
+		case ARMV7_INTRIN_USAD8:
+			return "__usad8";
+		case ARMV7_INTRIN_USADA8:
+			return "__usada8";
+		case ARMV7_INTRIN_QSAX:
+			return "__qsax";
+		case ARMV7_INTRIN_UQASX:
+			return "__uqasx";
+		case ARMV7_INTRIN_UQSAX:
+			return "__uqsax";
 		default:
 			return "";
 		}
@@ -1421,12 +1827,208 @@ public:
 	virtual vector<uint32_t> GetAllIntrinsics() override
 	{
 		return vector<uint32_t> {
-				ARMV7_INTRIN_COPROC_GETONEWORD,
-				ARMV7_INTRIN_COPROC_GETTWOWORDS,
-				ARMV7_INTRIN_COPROC_SENDONEWORD,
-				ARMV7_INTRIN_COPROC_SENDTWOWORDS,
-				ARMV7_INTRIN_EXCLUSIVE_MONITORS_PASS,
-				ARMV7_INTRIN_SET_EXCLUSIVE_MONITORS,
+			ARMV7_INTRIN_COPROC_GETONEWORD,
+			ARMV7_INTRIN_COPROC_GETTWOWORDS,
+			ARMV7_INTRIN_COPROC_SENDONEWORD,
+			ARMV7_INTRIN_COPROC_SENDTWOWORDS,
+			ARMV7_INTRIN_COPROC_STORE,
+			ARMV7_INTRIN_COPROC_LOAD,
+			ARMV7_INTRIN_COPROC_DATAPROCESSING,
+			ARMV7_INTRIN_EXCLUSIVE_MONITORS_PASS,
+			ARMV7_INTRIN_SET_EXCLUSIVE_MONITORS,
+			ARMV7_INTRIN_DBG,
+			ARMV7_INTRIN_DMB_SY,
+			ARMV7_INTRIN_DMB_ST,
+			ARMV7_INTRIN_DMB_ISH,
+			ARMV7_INTRIN_DMB_ISHST,
+			ARMV7_INTRIN_DMB_NSH,
+			ARMV7_INTRIN_DMB_NSHST,
+			ARMV7_INTRIN_DMB_OSH,
+			ARMV7_INTRIN_DMB_OSHST,
+			ARMV7_INTRIN_DSB_SY,
+			ARMV7_INTRIN_DSB_ST,
+			ARMV7_INTRIN_DSB_ISH,
+			ARMV7_INTRIN_DSB_ISHST,
+			ARMV7_INTRIN_DSB_NSH,
+			ARMV7_INTRIN_DSB_NSHST,
+			ARMV7_INTRIN_DSB_OSH,
+			ARMV7_INTRIN_DSB_OSHST,
+			ARMV7_INTRIN_ISB,
+			ARMV7_INTRIN_CPS,
+			ARMV7_INTRIN_CPSID,
+			ARMV7_INTRIN_CPSIE,
+			ARMV7_INTRIN_SETEND,
+			ARMV7_INTRIN_CLREX,
+			ARMV7_INTRIN_PLD,
+			ARMV7_INTRIN_CRC32B,
+			ARMV7_INTRIN_CRC32CB,
+			ARMV7_INTRIN_CRC32CH,
+			ARMV7_INTRIN_CRC32CW,
+			ARMV7_INTRIN_CRC32H,
+			ARMV7_INTRIN_CRC32W,
+			ARMV7_INTRIN_SEL,
+			ARMV7_INTRIN_YIELD,
+			ARMV7_INTRIN_SEV,
+			ARMV7_INTRIN_WFE,
+			ARMV7_INTRIN_WFI,
+			ARMV7_INTRIN_HINT,
+			ARMV7_INTRIN_UNPREDICTABLE,
+			ARMV7_INTRIN_HVC,
+			ARMV7_INTRIN_SMC,
+			ARMV7_INTRIN_MRS,
+			ARMV7_INTRIN_MSR,
+			ARMV7_INTRIN_VMRS,
+			ARMV7_INTRIN_VMSR,
+			ARMV7_INTRIN_VRINTA,
+			ARMV7_INTRIN_VMAXNM,
+			ARMV7_INTRIN_VMINNM,
+			ARMV7_INTRIN_VMAX,
+			ARMV7_INTRIN_VMIN,
+			ARMV7_INTRIN_VPADD,
+			ARMV7_INTRIN_VPMAX,
+			ARMV7_INTRIN_VPMIN,
+			ARMV7_INTRIN_VREV16,
+			ARMV7_INTRIN_VREV32,
+			ARMV7_INTRIN_VREV64,
+			ARMV7_INTRIN_VEXT,
+			ARMV7_INTRIN_VCGT,
+			ARMV7_INTRIN_VCGT_Q,
+			ARMV7_INTRIN_VCLT,
+			ARMV7_INTRIN_VCLT_Q,
+			ARMV7_INTRIN_VCGE,
+			ARMV7_INTRIN_VCGE_Q,
+			ARMV7_INTRIN_VCEQ,
+			ARMV7_INTRIN_VTBL,
+			ARMV7_INTRIN_VTBX,
+			ARMV7_INTRIN_VDUP,
+			ARMV7_INTRIN_VABD,
+			ARMV7_INTRIN_VABDL,
+			ARMV7_INTRIN_VABA,
+			ARMV7_INTRIN_VABAL,
+			ARMV7_INTRIN_VADDL,
+			ARMV7_INTRIN_VADDW,
+			ARMV7_INTRIN_VRADDHN,
+			ARMV7_INTRIN_VRSHR,
+			ARMV7_INTRIN_VRSHL,
+			ARMV7_INTRIN_VSRA,
+			ARMV7_INTRIN_VRSRA,
+			ARMV7_INTRIN_VSRI,
+			ARMV7_INTRIN_VSLI,
+			ARMV7_INTRIN_VLD2,
+			ARMV7_INTRIN_VLD4,
+			ARMV7_INTRIN_VST2,
+			ARMV7_INTRIN_VST4,
+			ARMV7_INTRIN_VSHL,
+			ARMV7_INTRIN_VSHL_Q,
+			ARMV7_INTRIN_VSHL_IMM,
+			ARMV7_INTRIN_VSHL_IMM_Q,
+			ARMV7_INTRIN_VSHR_Q,
+			ARMV7_INTRIN_VSHRN,
+			ARMV7_INTRIN_VTRN,
+			ARMV7_INTRIN_VTRN_Q,
+			ARMV7_INTRIN_VUZP,
+			ARMV7_INTRIN_VUZP_Q,
+			ARMV7_INTRIN_VZIP,
+			ARMV7_INTRIN_VZIP_Q,
+			ARMV7_INTRIN_VTST,
+			ARMV7_INTRIN_VTST_Q,
+			ARMV7_INTRIN_VSHR,
+			ARMV7_INTRIN_VSHLL,
+			ARMV7_INTRIN_VMOVL,
+			ARMV7_INTRIN_VMOVN,
+			ARMV7_INTRIN_VBIF,
+			ARMV7_INTRIN_VBIT,
+			ARMV7_INTRIN_VBSL,
+			ARMV7_INTRIN_VQADD,
+			ARMV7_INTRIN_VHADD,
+			ARMV7_INTRIN_VRHADD,
+			ARMV7_INTRIN_VRECPE,
+			ARMV7_INTRIN_VABS,
+			ARMV7_INTRIN_VNEG,
+			ARMV7_INTRIN_VNEG_Q,
+			ARMV7_INTRIN_VCVT_FIXED,
+			ARMV7_INTRIN_VABS_Q,
+			ARMV7_INTRIN_VCVT_FIXED_Q,
+			ARMV7_INTRIN_VQSHL,
+			ARMV7_INTRIN_VQRSHL,
+			ARMV7_INTRIN_VQSHRN,
+			ARMV7_INTRIN_VQSHRUN,
+			ARMV7_INTRIN_VQRSHRN,
+			ARMV7_INTRIN_VQRSHRUN,
+			ARMV7_INTRIN_VQMOVN,
+			ARMV7_INTRIN_VQMOVUN,
+			ARMV7_INTRIN_VMLA,
+			ARMV7_INTRIN_VMLS,
+			ARMV7_INTRIN_VMLAL,
+			ARMV7_INTRIN_VMLSL,
+			ARMV7_INTRIN_VMUL,
+			ARMV7_INTRIN_VMULL,
+			ARMV7_INTRIN_VQDMULL,
+			ARMV7_INTRIN_SSAT,
+			ARMV7_INTRIN_SSAT16,
+			ARMV7_INTRIN_USAT,
+			ARMV7_INTRIN_USAT16,
+			ARMV7_INTRIN_SRS,
+			ARMV7_INTRIN_RFE,
+			ARMV7_INTRIN_QADD,
+			ARMV7_INTRIN_QSUB,
+			ARMV7_INTRIN_QDADD,
+			ARMV7_INTRIN_QDSUB,
+			ARMV7_INTRIN_QADD16,
+			ARMV7_INTRIN_QADD8,
+			ARMV7_INTRIN_QSUB16,
+			ARMV7_INTRIN_QSUB8,
+			ARMV7_INTRIN_UQADD16,
+			ARMV7_INTRIN_UQADD8,
+			ARMV7_INTRIN_UQSUB16,
+			ARMV7_INTRIN_UQSUB8,
+			ARMV7_INTRIN_SXTAB16,
+			ARMV7_INTRIN_SXTB16,
+			ARMV7_INTRIN_UXTAB16,
+			ARMV7_INTRIN_UXTB16,
+			ARMV7_INTRIN_SADD16,
+			ARMV7_INTRIN_SADD8,
+			ARMV7_INTRIN_SHADD16,
+			ARMV7_INTRIN_SHADD8,
+			ARMV7_INTRIN_UHADD16,
+			ARMV7_INTRIN_UHADD8,
+			ARMV7_INTRIN_SASX,
+			ARMV7_INTRIN_UASX,
+			ARMV7_INTRIN_SHASX,
+			ARMV7_INTRIN_UHASX,
+			ARMV7_INTRIN_SSAX,
+			ARMV7_INTRIN_USAX,
+			ARMV7_INTRIN_SSUB16,
+			ARMV7_INTRIN_SSUB8,
+			ARMV7_INTRIN_SHSUB8,
+			ARMV7_INTRIN_SHSUB16,
+			ARMV7_INTRIN_UHSUB8,
+			ARMV7_INTRIN_UHSUB16,
+			ARMV7_INTRIN_USUB8,
+			ARMV7_INTRIN_USUB16,
+			ARMV7_INTRIN_SMLAD,
+			ARMV7_INTRIN_SMLADX,
+			ARMV7_INTRIN_SMUAD,
+			ARMV7_INTRIN_SMUADX,
+			ARMV7_INTRIN_SMUSD,
+			ARMV7_INTRIN_SMUSDX,
+			ARMV7_INTRIN_SMLSD,
+			ARMV7_INTRIN_SMLSDX,
+			ARMV7_INTRIN_SMLSLD,
+			ARMV7_INTRIN_SMLSLDX,
+			ARMV7_INTRIN_SMLAWB,
+			ARMV7_INTRIN_SMLAWT,
+			ARMV7_INTRIN_SMLABB,
+			ARMV7_INTRIN_SMLABT,
+			ARMV7_INTRIN_SMLATB,
+			ARMV7_INTRIN_SMLATT,
+			ARMV7_INTRIN_SMLALD,
+			ARMV7_INTRIN_SMLALDX,
+			ARMV7_INTRIN_USAD8,
+			ARMV7_INTRIN_USADA8,
+			ARMV7_INTRIN_QSAX,
+			ARMV7_INTRIN_UQASX,
+			ARMV7_INTRIN_UQSAX,
 		};
 	}
 
@@ -1465,11 +2067,528 @@ public:
 				NameAndType(Type::IntegerType(1, false)),
 				NameAndType("m", Type::IntegerType(1, false)),
 			};
+		case ARMV7_INTRIN_COPROC_STORE:
+		case ARMV7_INTRIN_COPROC_LOAD:
+			return {
+				NameAndType("address", Type::PointerType(4, Confidence(Type::VoidType(), 0), Confidence(false), Confidence(false), PointerReferenceType)),
+				NameAndType("cp", Type::IntegerType(1, false)),
+				NameAndType("d", Type::IntegerType(1, false)),
+				NameAndType("long_transfer", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_COPROC_DATAPROCESSING:
+			return {
+				NameAndType("cp", Type::IntegerType(1, false)),
+				NameAndType("opc1", Type::IntegerType(1, false)),
+				NameAndType("d", Type::IntegerType(1, false)),
+				NameAndType("n", Type::IntegerType(1, false)),
+				NameAndType("m", Type::IntegerType(1, false)),
+				NameAndType("opc2", Type::IntegerType(1, false)),
+			};
 		case ARMV7_INTRIN_EXCLUSIVE_MONITORS_PASS:
 		case ARMV7_INTRIN_SET_EXCLUSIVE_MONITORS:
 			return {
 				NameAndType("address", Type::PointerType(4, Confidence(Type::VoidType(), 0), Confidence(false), Confidence(false), PointerReferenceType)),
 				NameAndType("size", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_SMC:
+			return {
+				NameAndType("imm", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_HVC:
+			return {
+				NameAndType("imm", Type::IntegerType(2, false)),
+			};
+		case ARMV7_INTRIN_DBG:
+			return {
+				NameAndType("option", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_HINT:
+			return {
+				NameAndType("imm", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_PLD:
+			return {
+				NameAndType("address", Type::PointerType(4, Confidence(Type::VoidType(), 0), Confidence(false), Confidence(false), PointerReferenceType)),
+			};
+		case ARMV7_INTRIN_CRC32B:
+		case ARMV7_INTRIN_CRC32CB:
+			return {
+				NameAndType("accumulator", Type::IntegerType(4, false)),
+				NameAndType("value", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_CRC32H:
+		case ARMV7_INTRIN_CRC32CH:
+			return {
+				NameAndType("accumulator", Type::IntegerType(4, false)),
+				NameAndType("value", Type::IntegerType(2, false)),
+			};
+		case ARMV7_INTRIN_CRC32W:
+		case ARMV7_INTRIN_CRC32CW:
+			return {
+				NameAndType("accumulator", Type::IntegerType(4, false)),
+				NameAndType("value", Type::IntegerType(4, false)),
+			};
+		case ARMV7_INTRIN_SEL:
+			return {
+				NameAndType("rn", Type::IntegerType(4, false)),
+				NameAndType("rm", Type::IntegerType(4, false)),
+				NameAndType("ge", Type::IntegerType(4, false)),
+			};
+		case ARMV7_INTRIN_QADD:
+		case ARMV7_INTRIN_QSUB:
+		case ARMV7_INTRIN_QDADD:
+		case ARMV7_INTRIN_QDSUB:
+		case ARMV7_INTRIN_QADD16:
+		case ARMV7_INTRIN_QADD8:
+		case ARMV7_INTRIN_QSUB16:
+		case ARMV7_INTRIN_QSUB8:
+		case ARMV7_INTRIN_UQADD16:
+		case ARMV7_INTRIN_UQADD8:
+		case ARMV7_INTRIN_UQSUB16:
+		case ARMV7_INTRIN_UQSUB8:
+		case ARMV7_INTRIN_QSAX:
+		case ARMV7_INTRIN_UQASX:
+		case ARMV7_INTRIN_UQSAX:
+		case ARMV7_INTRIN_SXTAB16:
+		case ARMV7_INTRIN_UXTAB16:
+		case ARMV7_INTRIN_SADD16:
+		case ARMV7_INTRIN_SADD8:
+		case ARMV7_INTRIN_UADD16:
+		case ARMV7_INTRIN_UADD8:
+		case ARMV7_INTRIN_SHADD16:
+		case ARMV7_INTRIN_SHADD8:
+		case ARMV7_INTRIN_UHADD16:
+		case ARMV7_INTRIN_UHADD8:
+		case ARMV7_INTRIN_SASX:
+		case ARMV7_INTRIN_UASX:
+		case ARMV7_INTRIN_SHASX:
+		case ARMV7_INTRIN_UHASX:
+		case ARMV7_INTRIN_SSAX:
+		case ARMV7_INTRIN_USAX:
+		case ARMV7_INTRIN_SSUB16:
+		case ARMV7_INTRIN_SSUB8:
+		case ARMV7_INTRIN_SHSUB8:
+		case ARMV7_INTRIN_SHSUB16:
+		case ARMV7_INTRIN_UHSUB8:
+		case ARMV7_INTRIN_UHSUB16:
+		case ARMV7_INTRIN_USUB8:
+		case ARMV7_INTRIN_USUB16:
+		case ARMV7_INTRIN_USAD8:
+		case ARMV7_INTRIN_SMUAD:
+		case ARMV7_INTRIN_SMUADX:
+		case ARMV7_INTRIN_SMUSD:
+		case ARMV7_INTRIN_SMUSDX:
+			return {
+				NameAndType("source1", Type::IntegerType(4, false)),
+				NameAndType("source2", Type::IntegerType(4, false)),
+			};
+		case ARMV7_INTRIN_SMLAD:
+		case ARMV7_INTRIN_SMLADX:
+		case ARMV7_INTRIN_SMLSD:
+		case ARMV7_INTRIN_SMLSDX:
+		case ARMV7_INTRIN_SMLAWB:
+		case ARMV7_INTRIN_SMLAWT:
+		case ARMV7_INTRIN_SMLABB:
+		case ARMV7_INTRIN_SMLABT:
+		case ARMV7_INTRIN_SMLATB:
+		case ARMV7_INTRIN_SMLATT:
+			return {
+				NameAndType("source1", Type::IntegerType(4, false)),
+				NameAndType("source2", Type::IntegerType(4, false)),
+				NameAndType("accumulator", Type::IntegerType(4, false)),
+			};
+		case ARMV7_INTRIN_SMLSLD:
+		case ARMV7_INTRIN_SMLSLDX:
+		case ARMV7_INTRIN_SMLALD:
+		case ARMV7_INTRIN_SMLALDX:
+			return {
+				NameAndType("source1", Type::IntegerType(4, false)),
+				NameAndType("source2", Type::IntegerType(4, false)),
+				NameAndType("accumulator", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_SXTB16:
+		case ARMV7_INTRIN_UXTB16:
+			return {
+				NameAndType("source", Type::IntegerType(4, false)),
+			};
+		case ARMV7_INTRIN_USADA8:
+			return {
+				NameAndType("source1", Type::IntegerType(4, false)),
+				NameAndType("source2", Type::IntegerType(4, false)),
+				NameAndType("accumulator", Type::IntegerType(4, false)),
+			};
+		case ARMV7_INTRIN_CPS:
+			return {
+				NameAndType("mode", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_SETEND:
+			return {
+				NameAndType("endian", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_CPSID:
+		case ARMV7_INTRIN_CPSIE:
+			return {
+				NameAndType("iflags", Confidence<Ref<Type>>(GetCachedEnumerationType<GetCpsIflagsEnum, 1>(this), BN_FULL_CONFIDENCE)),
+				NameAndType("mode", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_MRS:
+			return {
+				NameAndType("status_register", Confidence<Ref<Type>>(GetCachedEnumerationType<GetMrsOpEnum, 4>(this), BN_FULL_CONFIDENCE)),
+			};
+		case ARMV7_INTRIN_MSR:
+			return {
+				NameAndType("status_register", Confidence<Ref<Type>>(GetCachedEnumerationType<GetMsrOpEnum, 4>(this), BN_FULL_CONFIDENCE)),
+				NameAndType("source_register", Type::IntegerType(4, false)),
+			};
+		case ARMV7_INTRIN_VMRS:
+			return {
+				NameAndType("status_register", Confidence<Ref<Type>>(GetCachedEnumerationType<GetVfpStatusRegisterEnum, 4>(this), BN_FULL_CONFIDENCE)),
+			};
+		case ARMV7_INTRIN_VMSR:
+			return {
+				NameAndType("status_register", Confidence<Ref<Type>>(GetCachedEnumerationType<GetVfpStatusRegisterEnum, 4>(this), BN_FULL_CONFIDENCE)),
+				NameAndType("source_register", Type::IntegerType(4, false)),
+			};
+		case ARMV7_INTRIN_VRINTA:
+			return {
+				NameAndType("source_register", Type::IntegerType(4, false)),
+			};
+		case ARMV7_INTRIN_VMAXNM:
+		case ARMV7_INTRIN_VMINNM:
+			return {
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VMAX:
+		case ARMV7_INTRIN_VMIN:
+		case ARMV7_INTRIN_VPMAX:
+		case ARMV7_INTRIN_VPMIN:
+		case ARMV7_INTRIN_VHADD:
+		case ARMV7_INTRIN_VRHADD:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VCGT:
+		case ARMV7_INTRIN_VCGT_Q:
+		case ARMV7_INTRIN_VCGE:
+		case ARMV7_INTRIN_VCGE_Q:
+		case ARMV7_INTRIN_VCLT:
+		case ARMV7_INTRIN_VCLT_Q:
+		{
+			size_t vectorSize = intrinsic == ARMV7_INTRIN_VCGE_Q || intrinsic == ARMV7_INTRIN_VCGT_Q
+				|| intrinsic == ARMV7_INTRIN_VCLT_Q ? 16 : 8;
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("is_float", Type::BoolType()),
+				NameAndType("source1", Type::IntegerType(vectorSize, false)),
+				NameAndType("source2", Type::IntegerType(vectorSize, false)),
+			};
+		}
+		case ARMV7_INTRIN_VPADD:
+		case ARMV7_INTRIN_VCEQ:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_float", Type::BoolType()),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VRECPE:
+		case ARMV7_INTRIN_VNEG:
+		case ARMV7_INTRIN_VABS:
+		case ARMV7_INTRIN_VABS_Q:
+		case ARMV7_INTRIN_VNEG_Q:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_float", Type::BoolType()),
+				NameAndType("source", Type::IntegerType(
+					(intrinsic == ARMV7_INTRIN_VABS_Q || intrinsic == ARMV7_INTRIN_VNEG_Q) ? 16 : 8, false)),
+			};
+		case ARMV7_INTRIN_VCVT_FIXED:
+		case ARMV7_INTRIN_VCVT_FIXED_Q:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("fractional_bits", Type::IntegerType(1, false)),
+				NameAndType("to_fixed", Type::BoolType()),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source", Type::IntegerType(
+					intrinsic == ARMV7_INTRIN_VCVT_FIXED_Q ? 16 : 8, false)),
+			};
+		case ARMV7_INTRIN_VREV16:
+		case ARMV7_INTRIN_VREV32:
+		case ARMV7_INTRIN_VREV64:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("source", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VEXT:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+				NameAndType("index", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_SSAT:
+		case ARMV7_INTRIN_SSAT16:
+		case ARMV7_INTRIN_USAT:
+		case ARMV7_INTRIN_USAT16:
+			return {
+				NameAndType("saturate_to", Type::IntegerType(4, false)),
+				NameAndType("source", Type::IntegerType(4, false)),
+			};
+		case ARMV7_INTRIN_VTBL:
+			return {
+				NameAndType("length", Type::IntegerType(1, false)),
+				NameAndType("table0", Type::IntegerType(8, false)),
+				NameAndType("table1", Type::IntegerType(8, false)),
+				NameAndType("table2", Type::IntegerType(8, false)),
+				NameAndType("table3", Type::IntegerType(8, false)),
+				NameAndType("indices", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VTBX:
+			return {
+				NameAndType("length", Type::IntegerType(1, false)),
+				NameAndType("table0", Type::IntegerType(8, false)),
+				NameAndType("table1", Type::IntegerType(8, false)),
+				NameAndType("table2", Type::IntegerType(8, false)),
+				NameAndType("table3", Type::IntegerType(8, false)),
+				NameAndType("indices", Type::IntegerType(8, false)),
+				NameAndType("destination", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VDUP:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("source", Type::IntegerType(8, false)),
+				NameAndType("index", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_VABD:
+		case ARMV7_INTRIN_VABDL:
+		case ARMV7_INTRIN_VADD:
+		case ARMV7_INTRIN_VSUB:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VABA:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("accumulator", Type::IntegerType(16, false)),
+				NameAndType("source1", Type::IntegerType(16, false)),
+				NameAndType("source2", Type::IntegerType(16, false)),
+			};
+		case ARMV7_INTRIN_VABAL:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("accumulator", Type::IntegerType(16, false)),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VADDL:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VADDW:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source1", Type::IntegerType(16, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VRADDHN:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("source1", Type::IntegerType(16, false)),
+				NameAndType("source2", Type::IntegerType(16, false)),
+			};
+		case ARMV7_INTRIN_VSHL_Q:
+		case ARMV7_INTRIN_VSHR_Q:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source", Type::IntegerType(16, false)),
+				NameAndType("shift", Type::IntegerType(intrinsic == ARMV7_INTRIN_VSHL_Q ? 16 : 8, false)),
+			};
+		case ARMV7_INTRIN_VTST:
+		case ARMV7_INTRIN_VTST_Q:
+		case ARMV7_INTRIN_VZIP:
+		case ARMV7_INTRIN_VZIP_Q:
+		case ARMV7_INTRIN_VUZP:
+		case ARMV7_INTRIN_VUZP_Q:
+		case ARMV7_INTRIN_VTRN:
+		case ARMV7_INTRIN_VTRN_Q:
+		{
+			size_t size = (intrinsic == ARMV7_INTRIN_VTRN_Q || intrinsic == ARMV7_INTRIN_VTST_Q
+				|| intrinsic == ARMV7_INTRIN_VUZP_Q || intrinsic == ARMV7_INTRIN_VZIP_Q) ? 16 : 8;
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("source1", Type::IntegerType(size, false)),
+				NameAndType("source2", Type::IntegerType(size, false)),
+			};
+		}
+		case ARMV7_INTRIN_VSHL_IMM:
+		case ARMV7_INTRIN_VSHL_IMM_Q:
+		case ARMV7_INTRIN_VSHRN:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("source", Type::IntegerType(intrinsic == ARMV7_INTRIN_VSHL_IMM ? 8 : 16, false)),
+				NameAndType("shift", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_VRSHR:
+		case ARMV7_INTRIN_VRSHL:
+		case ARMV7_INTRIN_VSHL:
+		case ARMV7_INTRIN_VSHR:
+		case ARMV7_INTRIN_VSHLL:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source", Type::IntegerType(8, false)),
+				NameAndType("shift", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VMOVL:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VMOVN:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("source", Type::IntegerType(16, false)),
+			};
+		case ARMV7_INTRIN_VBIF:
+		case ARMV7_INTRIN_VBIT:
+		case ARMV7_INTRIN_VBSL:
+			return {
+				NameAndType("destination", Type::IntegerType(8, false)),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VSRA:
+		case ARMV7_INTRIN_VRSRA:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("accumulator", Type::IntegerType(8, false)),
+				NameAndType("source", Type::IntegerType(8, false)),
+				NameAndType("shift", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VSRI:
+		case ARMV7_INTRIN_VSLI:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("destination", Type::IntegerType(8, false)),
+				NameAndType("source", Type::IntegerType(8, false)),
+				NameAndType("shift", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VLD2:
+		case ARMV7_INTRIN_VLD4:
+			return {
+				NameAndType("address", Type::PointerType(4, Confidence(Type::VoidType(), 0), Confidence(false), Confidence(false), PointerReferenceType)),
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("alignment", Type::IntegerType(1, false)),
+				NameAndType("index", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_VST2:
+		case ARMV7_INTRIN_VST4:
+			return {
+				NameAndType("address", Type::PointerType(4, Confidence(Type::VoidType(), 0), Confidence(false), Confidence(false), PointerReferenceType)),
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("alignment", Type::IntegerType(1, false)),
+				NameAndType("index", Type::IntegerType(1, false)),
+				NameAndType("source0", Type::IntegerType(8, false)),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+				NameAndType("source3", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VQADD:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VQSHL:
+		case ARMV7_INTRIN_VQRSHL:
+		case ARMV7_INTRIN_VQSHRN:
+		case ARMV7_INTRIN_VQSHRUN:
+		case ARMV7_INTRIN_VQRSHRN:
+		case ARMV7_INTRIN_VQRSHRUN:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("source_unsigned", Type::BoolType()),
+				NameAndType("destination_unsigned", Type::BoolType()),
+				NameAndType("source", Type::IntegerType(
+					(intrinsic == ARMV7_INTRIN_VQSHL || intrinsic == ARMV7_INTRIN_VQRSHL) ? 8 : 16, false)),
+				NameAndType("shift", Type::IntegerType(
+					(intrinsic == ARMV7_INTRIN_VQSHL || intrinsic == ARMV7_INTRIN_VQRSHL) ? 8 : 16, false)),
+			};
+		case ARMV7_INTRIN_VQMOVN:
+		case ARMV7_INTRIN_VQMOVUN:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("source_unsigned", Type::BoolType()),
+				NameAndType("destination_unsigned", Type::BoolType()),
+				NameAndType("source", Type::IntegerType(16, false)),
+			};
+		case ARMV7_INTRIN_VMLA:
+		case ARMV7_INTRIN_VMLS:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("accumulator", Type::IntegerType(8, false)),
+				NameAndType("source", Type::IntegerType(8, false)),
+				NameAndType("scalar", Type::IntegerType(8, false)),
+				NameAndType("index", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_VMLAL:
+		case ARMV7_INTRIN_VMLSL:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("accumulator", Type::IntegerType(16, false)),
+				NameAndType("source", Type::IntegerType(8, false)),
+				NameAndType("scalar", Type::IntegerType(8, false)),
+				NameAndType("index", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_VMULL:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("is_polynomial", Type::BoolType()),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+				NameAndType("index", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_VMUL:
+		case ARMV7_INTRIN_VQDMULL:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_SRS:
+			return {
+				NameAndType("mode", Type::IntegerType(1, false)),
+				NameAndType("increment", Type::BoolType()),
+				NameAndType("wordhigher", Type::BoolType()),
+				NameAndType("writeback", Type::BoolType()),
+			};
+		case ARMV7_INTRIN_RFE:
+			return {
+				NameAndType("base_register", Type::IntegerType(4, false)),
+				NameAndType("increment", Type::BoolType()),
+				NameAndType("wordhigher", Type::BoolType()),
+				NameAndType("writeback", Type::BoolType()),
 			};
 		default:
 			return vector<NameAndType>();
@@ -1486,6 +2605,174 @@ public:
 			return { Type::IntegerType(4, false), Type::IntegerType(4, false) };
 		case ARMV7_INTRIN_EXCLUSIVE_MONITORS_PASS:
 			return { Type::BoolType() };
+		case ARMV7_INTRIN_SADD16:
+		case ARMV7_INTRIN_SADD8:
+		case ARMV7_INTRIN_UADD16:
+		case ARMV7_INTRIN_UADD8:
+		case ARMV7_INTRIN_SASX:
+		case ARMV7_INTRIN_UASX:
+		case ARMV7_INTRIN_SSAX:
+		case ARMV7_INTRIN_USAX:
+		case ARMV7_INTRIN_SSUB16:
+		case ARMV7_INTRIN_SSUB8:
+		case ARMV7_INTRIN_USUB8:
+		case ARMV7_INTRIN_USUB16:
+			return { Type::IntegerType(4, false), Type::IntegerType(4, false) };
+		case ARMV7_INTRIN_MRS:
+		case ARMV7_INTRIN_VMRS:
+		case ARMV7_INTRIN_SEL:
+		case ARMV7_INTRIN_QADD:
+		case ARMV7_INTRIN_QSUB:
+		case ARMV7_INTRIN_QDADD:
+		case ARMV7_INTRIN_QDSUB:
+		case ARMV7_INTRIN_QADD16:
+		case ARMV7_INTRIN_QADD8:
+		case ARMV7_INTRIN_QSUB16:
+		case ARMV7_INTRIN_QSUB8:
+		case ARMV7_INTRIN_UQADD16:
+		case ARMV7_INTRIN_UQADD8:
+		case ARMV7_INTRIN_UQSUB16:
+		case ARMV7_INTRIN_UQSUB8:
+		case ARMV7_INTRIN_QSAX:
+		case ARMV7_INTRIN_UQASX:
+		case ARMV7_INTRIN_SXTAB16:
+		case ARMV7_INTRIN_SXTB16:
+		case ARMV7_INTRIN_UXTAB16:
+		case ARMV7_INTRIN_UXTB16:
+		case ARMV7_INTRIN_SHADD16:
+		case ARMV7_INTRIN_SHADD8:
+		case ARMV7_INTRIN_UHADD16:
+		case ARMV7_INTRIN_UHADD8:
+		case ARMV7_INTRIN_SHASX:
+		case ARMV7_INTRIN_UHASX:
+		case ARMV7_INTRIN_SHSUB8:
+		case ARMV7_INTRIN_SHSUB16:
+		case ARMV7_INTRIN_UHSUB8:
+		case ARMV7_INTRIN_UHSUB16:
+		case ARMV7_INTRIN_SMLAD:
+		case ARMV7_INTRIN_SMLADX:
+		case ARMV7_INTRIN_SMUAD:
+		case ARMV7_INTRIN_SMUADX:
+		case ARMV7_INTRIN_SMUSD:
+		case ARMV7_INTRIN_SMUSDX:
+		case ARMV7_INTRIN_SMLSD:
+		case ARMV7_INTRIN_SMLSDX:
+		case ARMV7_INTRIN_SMLAWB:
+		case ARMV7_INTRIN_SMLAWT:
+		case ARMV7_INTRIN_SMLABB:
+		case ARMV7_INTRIN_SMLABT:
+		case ARMV7_INTRIN_SMLATB:
+		case ARMV7_INTRIN_SMLATT:
+		case ARMV7_INTRIN_USAD8:
+		case ARMV7_INTRIN_USADA8:
+		case ARMV7_INTRIN_UQSAX:
+		case ARMV7_INTRIN_VRINTA:
+		case ARMV7_INTRIN_VMAXNM:
+		case ARMV7_INTRIN_VMINNM:
+		case ARMV7_INTRIN_SSAT:
+		case ARMV7_INTRIN_SSAT16:
+		case ARMV7_INTRIN_USAT:
+		case ARMV7_INTRIN_USAT16:
+		case ARMV7_INTRIN_CRC32B:
+		case ARMV7_INTRIN_CRC32CB:
+		case ARMV7_INTRIN_CRC32CH:
+		case ARMV7_INTRIN_CRC32CW:
+		case ARMV7_INTRIN_CRC32H:
+		case ARMV7_INTRIN_CRC32W:
+			return { Type::IntegerType(4, false) };
+		case ARMV7_INTRIN_SMLSLD:
+		case ARMV7_INTRIN_SMLSLDX:
+		case ARMV7_INTRIN_SMLALD:
+		case ARMV7_INTRIN_SMLALDX:
+			return { Type::IntegerType(4, false), Type::IntegerType(4, false) };
+		case ARMV7_INTRIN_VZIP_Q:
+		case ARMV7_INTRIN_VUZP_Q:
+		case ARMV7_INTRIN_VTRN_Q:
+			return { Type::IntegerType(16, false), Type::IntegerType(16, false) };
+		case ARMV7_INTRIN_VZIP:
+		case ARMV7_INTRIN_VUZP:
+		case ARMV7_INTRIN_VTRN:
+		case ARMV7_INTRIN_VLD2:
+			return { Type::IntegerType(8, false), Type::IntegerType(8, false) };
+		case ARMV7_INTRIN_VLD4:
+			return { Type::IntegerType(8, false), Type::IntegerType(8, false), Type::IntegerType(8, false), Type::IntegerType(8, false) };
+		case ARMV7_INTRIN_VTBL:
+		case ARMV7_INTRIN_VTBX:
+		case ARMV7_INTRIN_VDUP:
+		case ARMV7_INTRIN_VABD:
+		case ARMV7_INTRIN_VABA:
+		case ARMV7_INTRIN_VRSHR:
+		case ARMV7_INTRIN_VRSHL:
+		case ARMV7_INTRIN_VSRA:
+		case ARMV7_INTRIN_VRSRA:
+		case ARMV7_INTRIN_VSRI:
+		case ARMV7_INTRIN_VSLI:
+		case ARMV7_INTRIN_VRADDHN:
+		case ARMV7_INTRIN_VTST:
+		case ARMV7_INTRIN_VSHL_IMM:
+		case ARMV7_INTRIN_VSHRN:
+		case ARMV7_INTRIN_VSHL:
+		case ARMV7_INTRIN_VSHR:
+		case ARMV7_INTRIN_VMAX:
+		case ARMV7_INTRIN_VMIN:
+		case ARMV7_INTRIN_VPADD:
+		case ARMV7_INTRIN_VPMAX:
+		case ARMV7_INTRIN_VPMIN:
+		case ARMV7_INTRIN_VREV16:
+		case ARMV7_INTRIN_VREV32:
+		case ARMV7_INTRIN_VREV64:
+		case ARMV7_INTRIN_VEXT:
+		case ARMV7_INTRIN_VCGT:
+		case ARMV7_INTRIN_VCGE:
+		case ARMV7_INTRIN_VCLT:
+		case ARMV7_INTRIN_VCEQ:
+		case ARMV7_INTRIN_VADD:
+		case ARMV7_INTRIN_VSUB:
+		case ARMV7_INTRIN_VQADD:
+		case ARMV7_INTRIN_VHADD:
+		case ARMV7_INTRIN_VRHADD:
+		case ARMV7_INTRIN_VRECPE:
+		case ARMV7_INTRIN_VNEG:
+		case ARMV7_INTRIN_VABS:
+		case ARMV7_INTRIN_VCVT_FIXED:
+		case ARMV7_INTRIN_VQSHL:
+		case ARMV7_INTRIN_VQRSHL:
+		case ARMV7_INTRIN_VQSHRN:
+		case ARMV7_INTRIN_VQSHRUN:
+		case ARMV7_INTRIN_VQRSHRN:
+		case ARMV7_INTRIN_VQRSHRUN:
+		case ARMV7_INTRIN_VQMOVN:
+		case ARMV7_INTRIN_VQMOVUN:
+		case ARMV7_INTRIN_VMOVN:
+		case ARMV7_INTRIN_VMLA:
+		case ARMV7_INTRIN_VMLS:
+		case ARMV7_INTRIN_VMUL:
+		case ARMV7_INTRIN_VBIF:
+		case ARMV7_INTRIN_VBIT:
+		case ARMV7_INTRIN_VBSL:
+			return { Type::IntegerType(8, false) };
+		case ARMV7_INTRIN_VTST_Q:
+		case ARMV7_INTRIN_VSHL_Q:
+		case ARMV7_INTRIN_VSHL_IMM_Q:
+		case ARMV7_INTRIN_VSHR_Q:
+		case ARMV7_INTRIN_VABS_Q:
+		case ARMV7_INTRIN_VNEG_Q:
+		case ARMV7_INTRIN_VCVT_FIXED_Q:
+		case ARMV7_INTRIN_VCGE_Q:
+		case ARMV7_INTRIN_VCGT_Q:
+		case ARMV7_INTRIN_VCLT_Q:
+			return { Type::IntegerType(16, false) };
+		case ARMV7_INTRIN_VABAL:
+		case ARMV7_INTRIN_VABDL:
+		case ARMV7_INTRIN_VADDL:
+		case ARMV7_INTRIN_VADDW:
+		case ARMV7_INTRIN_VSHLL:
+		case ARMV7_INTRIN_VMLAL:
+		case ARMV7_INTRIN_VMLSL:
+		case ARMV7_INTRIN_VQDMULL:
+		case ARMV7_INTRIN_VMOVL:
+		case ARMV7_INTRIN_VMULL:
+			return { Type::IntegerType(16, false) };
 		default:
 			return vector<Confidence<Ref<Type>>>();
 		}
@@ -1723,6 +3010,7 @@ string ArmCommonArchitecture::GetFlagWriteTypeName(uint32_t flags)
 		case IL_FLAGWRITE_ALL: return "*";
 		case IL_FLAGWRITE_NZ: return "nz";
 		case IL_FLAGWRITE_CNZ: return "cnz";
+		case IL_FLAGWRITE_FLOAT_COMPARE: return "fcmp";
 		default:
 			return "";
 	}
@@ -1750,6 +3038,7 @@ vector<uint32_t> ArmCommonArchitecture::GetFlagsWrittenByFlagWriteType(uint32_t 
 	switch (flags)
 	{
 	case IL_FLAGWRITE_ALL:
+	case IL_FLAGWRITE_FLOAT_COMPARE:
 		return vector<uint32_t> { IL_FLAG_N, IL_FLAG_Z, IL_FLAG_C, IL_FLAG_V };
 	case IL_FLAGWRITE_NZ:
 		return vector<uint32_t> { IL_FLAG_N, IL_FLAG_Z };
@@ -1793,6 +3082,26 @@ vector<uint32_t> ArmCommonArchitecture::GetFlagsRequiredForFlagCondition(BNLowLe
 size_t ArmCommonArchitecture::GetFlagWriteLowLevelIL(BNLowLevelILOperation op, size_t size, uint32_t flagWriteType,
 		uint32_t flag, BNRegisterOrConstant* operands, size_t operandCount, LowLevelILFunction& il)
 {
+	if ((flagWriteType == IL_FLAGWRITE_FLOAT_COMPARE) && (op == LLIL_FSUB) && (operandCount >= 2))
+	{
+		ExprId lhs = il.GetExprForRegisterOrConstant(operands[0], size);
+		ExprId rhs = il.GetExprForRegisterOrConstant(operands[1], size);
+
+		switch (flag)
+		{
+		case IL_FLAG_N:
+			return il.FloatCompareLessThan(size, lhs, rhs);
+		case IL_FLAG_Z:
+			return il.FloatCompareEqual(size, lhs, rhs);
+		case IL_FLAG_C:
+			return il.Not(1, il.FloatCompareLessThan(size, lhs, rhs));
+		case IL_FLAG_V:
+			return il.FloatCompareUnordered(size, lhs, rhs);
+		default:
+			break;
+		}
+	}
+
 	switch (op)
 	{
 	case LLIL_SBB:
@@ -1931,7 +3240,8 @@ vector<uint32_t> ArmCommonArchitecture::GetAllFlagWriteTypes()
 	return vector<uint32_t>{
 		IL_FLAGWRITE_ALL,
 		IL_FLAGWRITE_NZ,
-		IL_FLAGWRITE_CNZ
+		IL_FLAGWRITE_CNZ,
+		IL_FLAGWRITE_FLOAT_COMPARE
 	};
 }
 
@@ -2497,8 +3807,8 @@ public:
 
 	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
 	{
-		(void)view;
 		(void)arch;
+		Ref<Logger> logger = view->CreateLogger("ArmElfReloc");
 		set<uint64_t> relocTypes;
 		for (auto& reloc: result)
 		{
@@ -2670,7 +3980,7 @@ public:
 			}
 		}
 		for (auto& reloc : relocTypes)
-			LogWarn("Unsupported ELF relocation: %s", GetRelocationString((ElfArmRelocationType)reloc));
+			logger->LogWarn("Unsupported ELF relocation: %s", GetRelocationString((ElfArmRelocationType)reloc));
 		return true;
 	}
 };
@@ -2684,8 +3994,8 @@ public:
 	{
 		auto info = reloc->GetInfo();
 		if (info.nativeType == BINARYNINJA_MANUAL_RELOCATION)
-		{  // Magic number defined in MachOView.cpp for tagged pointers
-			*(uint32_t*)dest = (uint32_t)info.target;
+		{  // Magic number defined in MachOView.cpp for chained fixups
+			*(uint32_t*)dest = (uint32_t)(info.target + info.addend);
 		}
 
 		return true;
@@ -2693,8 +4003,8 @@ public:
 
 	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
 	{
-		(void)view;
 		(void)arch;
+		Ref<Logger> logger = view->CreateLogger("ArmMachoReloc");
 		set<uint64_t> relocTypes;
 		for (auto& reloc: result)
 		{
@@ -2702,7 +4012,7 @@ public:
 			relocTypes.insert(reloc.nativeType);
 		}
 		for (auto& reloc : relocTypes)
-			LogWarn("Unsupported Mach-O relocation %s", GetRelocationString((MachoArmRelocationType)reloc));
+			logger->LogWarn("Unsupported Mach-O relocation %s", GetRelocationString((MachoArmRelocationType)reloc));
 		return false;
 	};
 };
@@ -2745,8 +4055,8 @@ public:
 
 	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
 	{
-		(void)view;
 		(void)arch;
+		Ref<Logger> logger = view->CreateLogger("ArmPeReloc");
 		set<uint64_t> relocTypes;
 		for (auto& reloc: result)
 		{
@@ -2775,7 +4085,7 @@ public:
 			}
 		}
 		for (auto& reloc : relocTypes)
-			LogWarn("Unsupported PE relocation %s", GetRelocationString((PeRelocationType)reloc));
+			logger->LogWarn("Unsupported PE relocation %s", GetRelocationString((PeRelocationType)reloc));
 		return false;
 	}
 
@@ -3162,8 +4472,8 @@ public:
 
 	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
 	{
-		(void)view;
 		(void)arch;
+		Ref<Logger> logger = view->CreateLogger("ArmCoffReloc");
 		set<uint64_t> relocTypes;
 		for (auto& reloc: result)
 		{
@@ -3236,7 +4546,7 @@ public:
 			}
 		}
 		for (auto& reloc : relocTypes)
-			LogWarn("Unsupported COFF relocation %s", GetRelocationString((PeArmRelocationType)reloc));
+			logger->LogWarn("Unsupported COFF relocation %s", GetRelocationString((PeArmRelocationType)reloc));
 		return true;
 	}
 };

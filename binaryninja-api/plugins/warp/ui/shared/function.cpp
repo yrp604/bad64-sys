@@ -8,6 +8,7 @@
 
 #include "constraint.h"
 #include "misc.h"
+#include "render.h"
 
 WarpFunctionItem::WarpFunctionItem(
 	Warp::Ref<Warp::Function> function, BinaryNinja::Ref<BinaryNinja::Function> analysisFunction)
@@ -21,8 +22,8 @@ WarpFunctionItem::WarpFunctionItem(
 	// Serialize the tokens to make it accessible via QModelIndex.
 	// We will take these tokens and then user them in our custom item delegate.
 	TokenData tokenData = TokenData(symbolName);
-	if (BinaryNinja::Ref<BinaryNinja::Type> type = m_function->GetType(*analysisFunction))
-		tokenData = TokenData(*type, symbolName);
+	if (Warp::Ref<Warp::Type> warpType = m_function->GetType())
+		tokenData = TokenData(*warpType->GetAnalysisType(analysisFunction->GetArchitecture()), symbolName);
 	setData(QVariant::fromValue(tokenData), Qt::UserRole);
 }
 
@@ -44,7 +45,8 @@ void WarpFunctionItem::SetSource(Warp::Source source)
 	setData(QString::fromStdString(sourceStr), Qt::UserRole + 1);
 }
 
-WarpFunctionItemModel::WarpFunctionItemModel(const QStringList& labels, QObject* parent)
+WarpFunctionItemModel::WarpFunctionItemModel(const QStringList& labels, QObject* parent) :
+	QStandardItemModel(parent)
 {
 	this->setHorizontalHeaderLabels(labels);
 }
@@ -188,8 +190,7 @@ WarpFunctionTableWidget::WarpFunctionTableWidget(QWidget* parent) : QWidget(pare
 	m_table->setSortingEnabled(true);
 	// NOTE: We only have a single column right now, so disable header.
 	m_table->horizontalHeader()->hide();
-	// Decrease row height to make it look nice.
-	m_table->verticalHeader()->setDefaultSectionSize(30);
+	m_table->verticalHeader()->setDefaultSectionSize(RenderContext(m_table).getFontHeight() + 10);
 
 	// Make the highlight less bright.
 	QPalette palette = m_table->palette();
@@ -256,8 +257,7 @@ void WarpFunctionTableWidget::RegisterContextMenuAction(
 	m_contextMenuActions[name] = callback;
 }
 
-void WarpFunctionTableWidget::RegisterContextMenuAction(
-	const QString& name,
+void WarpFunctionTableWidget::RegisterContextMenuAction(const QString& name,
 	const std::function<void(WarpFunctionItem*, std::optional<uint64_t>)>& callback,
 	const std::function<bool(WarpFunctionItem*, std::optional<uint64_t>)>& isValid)
 {
@@ -299,9 +299,11 @@ void WarpFunctionTableWidget::RemoveFunction(uint64_t address)
 	m_model->RemoveFunction(address);
 }
 
-void WarpFunctionTableWidget::setFilter(const std::string& filter)
+void WarpFunctionTableWidget::setFilter(const std::string& filter, FilterOptions options)
 {
 	m_proxyModel->setFilterFixedString(QString::fromStdString(filter));
+	m_proxyModel->setFilterCaseSensitivity(
+		options.testFlag(CaseSensitiveOption) ? Qt::CaseSensitive : Qt::CaseInsensitive);
 	m_filterView->showFilter(QString::fromStdString(filter));
 }
 

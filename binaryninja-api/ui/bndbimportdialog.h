@@ -117,10 +117,10 @@ public:
 	BndbImportDialog(QWidget* parent, BinaryViewRef view);
 	~BndbImportDialog() = default;
 
-	void setFilter(const std::string& filter) override;
+	void setFilter(const std::string& filter, FilterOptions options) override;
 	void scrollToFirstItem() override;
 	void scrollToCurrentItem() override;
-	void selectFirstItem() override;
-	void activateFirstItem() override;
+	void ensureSelection() override;
+	void activateSelection() override;
 	void closeFilter() override;
 };

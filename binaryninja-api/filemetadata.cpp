@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -73,8 +73,8 @@ FileMetadata::FileMetadata(const string& filename)
 FileMetadata::FileMetadata(Ref<ProjectFile> projectFile)
 {
 	m_object = BNCreateFileMetadata();
-	BNSetProjectFile(m_object, projectFile->m_object);
 	BNSetFilename(m_object, projectFile->GetPathOnDisk().c_str());
+	BNSetProjectFile(m_object, projectFile->m_object);
 }
 
 
@@ -141,6 +141,21 @@ string FileMetadata::GetVirtualPath() const
 void FileMetadata::SetVirtualPath(const string& path)
 {
 	BNSetVirtualPath(m_object, path.c_str());
+}
+
+
+string FileMetadata::GetDisplayName() const
+{
+	char* str = BNGetDisplayName(m_object);
+	string result = str;
+	BNFreeString(str);
+	return result;
+}
+
+
+void FileMetadata::SetDisplayName(const string& name)
+{
+	BNSetDisplayName(m_object, name.c_str());
 }
 
 
@@ -217,6 +232,12 @@ Ref<BinaryView> FileMetadata::OpenDatabaseForConfiguration(const string& path)
 	if (!data)
 		return nullptr;
 	return new BinaryView(data);
+}
+
+
+bool FileMetadata::ReopenMovedDatabase(const string& path)
+{
+	return BNReopenMovedDatabase(m_object, path.c_str());
 }
 
 
@@ -389,6 +410,7 @@ vector<Ref<UndoEntry>> FileMetadata::GetUndoEntries()
 	BNUndoEntry** entries = BNGetUndoEntries(m_object, &count);
 
 	vector<Ref<UndoEntry>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		result.push_back(new UndoEntry(BNNewUndoEntryReference(entries[i])));
@@ -404,6 +426,7 @@ vector<Ref<UndoEntry>> FileMetadata::GetRedoEntries()
 	BNUndoEntry** entries = BNGetRedoEntries(m_object, &count);
 
 	vector<Ref<UndoEntry>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		result.push_back(new UndoEntry(BNNewUndoEntryReference(entries[i])));

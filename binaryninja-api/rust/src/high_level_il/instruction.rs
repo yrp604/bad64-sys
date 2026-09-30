@@ -227,6 +227,22 @@ impl HighLevelILInstruction {
                 left: HighLevelExpressionIndex::from(op.operands[0]),
                 right: HighLevelExpressionIndex::from(op.operands[1]),
             }),
+            HLIL_MINS => Op::MinSigned(BinaryOp {
+                left: HighLevelExpressionIndex::from(op.operands[0]),
+                right: HighLevelExpressionIndex::from(op.operands[1]),
+            }),
+            HLIL_MAXS => Op::MaxSigned(BinaryOp {
+                left: HighLevelExpressionIndex::from(op.operands[0]),
+                right: HighLevelExpressionIndex::from(op.operands[1]),
+            }),
+            HLIL_MINU => Op::MinUnsigned(BinaryOp {
+                left: HighLevelExpressionIndex::from(op.operands[0]),
+                right: HighLevelExpressionIndex::from(op.operands[1]),
+            }),
+            HLIL_MAXU => Op::MaxUnsigned(BinaryOp {
+                left: HighLevelExpressionIndex::from(op.operands[0]),
+                right: HighLevelExpressionIndex::from(op.operands[1]),
+            }),
             HLIL_CMP_E => Op::CmpE(BinaryOp {
                 left: HighLevelExpressionIndex::from(op.operands[0]),
                 right: HighLevelExpressionIndex::from(op.operands[1]),
@@ -400,10 +416,37 @@ impl HighLevelILInstruction {
             HLIL_ADDRESS_OF => Op::AddressOf(UnaryOp {
                 src: HighLevelExpressionIndex::from(op.operands[0]),
             }),
+            HLIL_PASS_BY_REF => Op::PassByRef(UnaryOp {
+                src: HighLevelExpressionIndex::from(op.operands[0]),
+            }),
+            HLIL_RETURN_BY_REF => Op::ReturnByRef(UnaryOp {
+                src: HighLevelExpressionIndex::from(op.operands[0]),
+            }),
             HLIL_NEG => Op::Neg(UnaryOp {
                 src: HighLevelExpressionIndex::from(op.operands[0]),
             }),
             HLIL_NOT => Op::Not(UnaryOp {
+                src: HighLevelExpressionIndex::from(op.operands[0]),
+            }),
+            HLIL_BSWAP => Op::Bswap(UnaryOp {
+                src: HighLevelExpressionIndex::from(op.operands[0]),
+            }),
+            HLIL_POPCNT => Op::Popcnt(UnaryOp {
+                src: HighLevelExpressionIndex::from(op.operands[0]),
+            }),
+            HLIL_CLZ => Op::Clz(UnaryOp {
+                src: HighLevelExpressionIndex::from(op.operands[0]),
+            }),
+            HLIL_CTZ => Op::Ctz(UnaryOp {
+                src: HighLevelExpressionIndex::from(op.operands[0]),
+            }),
+            HLIL_RBIT => Op::Rbit(UnaryOp {
+                src: HighLevelExpressionIndex::from(op.operands[0]),
+            }),
+            HLIL_CLS => Op::Cls(UnaryOp {
+                src: HighLevelExpressionIndex::from(op.operands[0]),
+            }),
+            HLIL_ABS => Op::Abs(UnaryOp {
                 src: HighLevelExpressionIndex::from(op.operands[0]),
             }),
             HLIL_SX => Op::Sx(UnaryOp {
@@ -530,6 +573,15 @@ impl HighLevelILInstruction {
                 offset: op.operands[1],
                 member_index: get_member_index(op.operands[2]),
             }),
+            HLIL_STRUCT_INIT => Op::StructInit(StructInit {
+                num_fields: op.operands[0] as usize,
+                first_field: op.operands[1] as usize,
+            }),
+            HLIL_STRUCT_INIT_FIELD => Op::StructInitField(StructField {
+                offset: op.operands[0],
+                member_index: get_member_index(op.operands[1]),
+                src: HighLevelExpressionIndex::from(op.operands[2]),
+            }),
             HLIL_SWITCH => Op::Switch(Switch {
                 condition: HighLevelExpressionIndex::from(op.operands[0]),
                 default: HighLevelExpressionIndex::from(op.operands[1]),
@@ -570,6 +622,10 @@ impl HighLevelILInstruction {
             }),
             HLIL_VAR_SSA => Op::VarSsa(VarSsa {
                 var: get_var_ssa((op.operands[0], op.operands[1] as usize)),
+            }),
+            HLIL_VAR_SSA_PARTIAL => Op::VarSsaPartial(VarSsaPartial {
+                dest: get_var_ssa((op.operands[0], op.operands[1] as usize)),
+                prev: get_var_ssa((op.operands[0], op.operands[2] as usize)),
             }),
             HLIL_WHILE => Op::While(While {
                 condition: HighLevelExpressionIndex::from(op.operands[0]),
@@ -671,6 +727,10 @@ impl HighLevelILInstruction {
             ModuDp(op) => Lifted::ModuDp(self.lift_binary_op(op)),
             Mods(op) => Lifted::Mods(self.lift_binary_op(op)),
             ModsDp(op) => Lifted::ModsDp(self.lift_binary_op(op)),
+            MinSigned(op) => Lifted::MinSigned(self.lift_binary_op(op)),
+            MaxSigned(op) => Lifted::MaxSigned(self.lift_binary_op(op)),
+            MinUnsigned(op) => Lifted::MinUnsigned(self.lift_binary_op(op)),
+            MaxUnsigned(op) => Lifted::MaxUnsigned(self.lift_binary_op(op)),
             CmpE(op) => Lifted::CmpE(self.lift_binary_op(op)),
             CmpNe(op) => Lifted::CmpNe(self.lift_binary_op(op)),
             CmpSlt(op) => Lifted::CmpSlt(self.lift_binary_op(op)),
@@ -784,8 +844,17 @@ impl HighLevelILInstruction {
 
             Deref(op) => Lifted::Deref(self.lift_unary_op(op)),
             AddressOf(op) => Lifted::AddressOf(self.lift_unary_op(op)),
+            PassByRef(op) => Lifted::PassByRef(self.lift_unary_op(op)),
+            ReturnByRef(op) => Lifted::ReturnByRef(self.lift_unary_op(op)),
             Neg(op) => Lifted::Neg(self.lift_unary_op(op)),
             Not(op) => Lifted::Not(self.lift_unary_op(op)),
+            Bswap(op) => Lifted::Bswap(self.lift_unary_op(op)),
+            Popcnt(op) => Lifted::Popcnt(self.lift_unary_op(op)),
+            Clz(op) => Lifted::Clz(self.lift_unary_op(op)),
+            Ctz(op) => Lifted::Ctz(self.lift_unary_op(op)),
+            Rbit(op) => Lifted::Rbit(self.lift_unary_op(op)),
+            Cls(op) => Lifted::Cls(self.lift_unary_op(op)),
+            Abs(op) => Lifted::Abs(self.lift_unary_op(op)),
             Sx(op) => Lifted::Sx(self.lift_unary_op(op)),
             Zx(op) => Lifted::Zx(self.lift_unary_op(op)),
             LowPart(op) => Lifted::LowPart(self.lift_unary_op(op)),
@@ -880,6 +949,14 @@ impl HighLevelILInstruction {
             }),
             StructField(op) => Lifted::StructField(self.lift_struct_field(op)),
             DerefField(op) => Lifted::DerefField(self.lift_struct_field(op)),
+            StructInit(_op) => Lifted::StructInit(LiftedStructInit {
+                fields: self
+                    .get_expr_list(0)
+                    .iter()
+                    .map(|expr| expr.lift())
+                    .collect(),
+            }),
+            StructInitField(op) => Lifted::StructInitField(self.lift_struct_field(op)),
             Switch(op) => Lifted::Switch(LiftedSwitch {
                 condition: self.lift_operand(op.condition),
                 default: self.lift_operand(op.default),
@@ -921,6 +998,7 @@ impl HighLevelILInstruction {
                 src: self.get_ssa_var_list(2),
             }),
             VarSsa(op) => Lifted::VarSsa(op),
+            VarSsaPartial(op) => Lifted::VarSsaPartial(op),
 
             While(op) => Lifted::While(self.lift_while(op)),
             DoWhile(op) => Lifted::DoWhile(self.lift_while(op)),
@@ -1120,6 +1198,10 @@ pub enum HighLevelILInstructionKind {
     ModuDp(BinaryOp),
     Mods(BinaryOp),
     ModsDp(BinaryOp),
+    MinSigned(BinaryOp),
+    MaxSigned(BinaryOp),
+    MinUnsigned(BinaryOp),
+    MaxUnsigned(BinaryOp),
     CmpE(BinaryOp),
     CmpNe(BinaryOp),
     CmpSlt(BinaryOp),
@@ -1161,8 +1243,17 @@ pub enum HighLevelILInstructionKind {
     ConstData(ConstData),
     Deref(UnaryOp),
     AddressOf(UnaryOp),
+    PassByRef(UnaryOp),
+    ReturnByRef(UnaryOp),
     Neg(UnaryOp),
     Not(UnaryOp),
+    Bswap(UnaryOp),
+    Popcnt(UnaryOp),
+    Clz(UnaryOp),
+    Ctz(UnaryOp),
+    Rbit(UnaryOp),
+    Cls(UnaryOp),
+    Abs(UnaryOp),
     Sx(UnaryOp),
     Zx(UnaryOp),
     LowPart(UnaryOp),
@@ -1195,6 +1286,8 @@ pub enum HighLevelILInstructionKind {
     Split(Split),
     StructField(StructField),
     DerefField(StructField),
+    StructInit(StructInit),
+    StructInitField(StructField),
     Switch(Switch),
     Syscall(Syscall),
     SyscallSsa(SyscallSsa),
@@ -1205,6 +1298,7 @@ pub enum HighLevelILInstructionKind {
     VarInitSsa(VarInitSsa),
     VarPhi(VarPhi),
     VarSsa(VarSsa),
+    VarSsaPartial(VarSsaPartial),
     While(While),
     DoWhile(While),
     WhileSsa(WhileSsa),

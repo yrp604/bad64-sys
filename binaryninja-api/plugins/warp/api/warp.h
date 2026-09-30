@@ -276,14 +276,28 @@ namespace Warp {
 		static Ref<Target> FromPlatform(const BinaryNinja::Platform &platform);
 	};
 
+	class Type : public WarpRefCountObject<BNWARPType, BNWARPNewTypeReference,
+			BNWARPFreeTypeReference>
+	{
+	public:
+		explicit Type(BNWARPType *type);
+
+		[[nodiscard]] static Ref<Type> FromAnalysisType(const BinaryNinja::Type &type, uint8_t confidence);
+
+		std::optional<std::string> GetName() const;
+		uint8_t GetConfidence() const;
+
+		[[nodiscard]] BinaryNinja::Ref<BinaryNinja::Type> GetAnalysisType(BinaryNinja::Architecture* arch = nullptr) const;
+	};
+
 	struct Constraint
 	{
-		ConstraintGUID guid;
+		ConstraintGUID guid {};
 		std::optional<int64_t> offset;
 
 		Constraint(ConstraintGUID guid, std::optional<int64_t> offset);
 
-		static Constraint FromAPIObject(BNWARPConstraint *constraint);
+		static Constraint FromAPIStruct(BNWARPConstraint *constraint);
 	};
 
 	struct FunctionComment
@@ -293,7 +307,7 @@ namespace Warp {
 
 		FunctionComment(std::string text, int64_t offset);
 
-		static FunctionComment FromAPIObject(BNWARPFunctionComment *comment);
+		static FunctionComment FromAPIStruct(BNWARPFunctionComment *comment);
 	};
 
 	class Function : public WarpRefCountObject<BNWARPFunction, BNWARPNewFunctionReference, BNWARPFreeFunctionReference>
@@ -312,7 +326,7 @@ namespace Warp {
 
 		BinaryNinja::Ref<BinaryNinja::Symbol> GetSymbol(const BinaryNinja::Function &function) const;
 
-		BinaryNinja::Ref<BinaryNinja::Type> GetType(const BinaryNinja::Function &function) const;
+		Ref<Type> GetType() const;
 
 		std::vector<Constraint> GetConstraints() const;
 
@@ -354,7 +368,7 @@ namespace Warp {
 
 		Source GetSource() const;
 
-		BinaryNinja::Ref<BinaryNinja::Type> GetType(const BinaryNinja::Ref<BinaryNinja::Architecture> &arch) const;
+		Ref<Type> GetType() const;
 
 		std::string GetName() const;
 
@@ -363,13 +377,13 @@ namespace Warp {
 
 	struct ContainerSearchResponse
 	{
-		std::vector<Ref<ContainerSearchItem> > items;
+		std::vector<Ref<ContainerSearchItem>> items;
 		size_t offset;
 		size_t total;
 
 		ContainerSearchResponse(std::vector<Ref<ContainerSearchItem> > &&items, size_t offset, size_t total);
 
-		static ContainerSearchResponse FromAPIObject(BNWARPContainerSearchResponse *response);
+		static ContainerSearchResponse FromAPIStruct(BNWARPContainerSearchResponse *response);
 	};
 
 	class Container : public WarpRefCountObject<BNWARPContainer, BNWARPNewContainerReference,
@@ -379,7 +393,10 @@ namespace Warp {
 		explicit Container(BNWARPContainer *container);
 
 		/// Retrieve all available containers.
-		static std::vector<Ref<Container> > All();
+		static std::vector<Ref<Container>> All();
+
+		/// Add a new container with the given name.
+		static Ref<Container> Add(const std::string &name);
 
 		std::string GetName() const;
 
@@ -396,17 +413,16 @@ namespace Warp {
 		std::optional<std::string> SourcePath(const Source &source) const;
 
 		bool AddFunctions(const Target &target, const Source &source,
-		                  const std::vector<Ref<Function> > &functions) const;
+		                  const std::vector<Ref<Function>> &functions) const;
 
-		bool AddTypes(const BinaryNinja::BinaryView &view, const Source &source,
-		              const std::vector<BinaryNinja::Ref<BinaryNinja::Type> > &types) const;
+		bool AddTypes(const Source &source, const std::vector<Ref<Type>> &types) const;
 
 		bool RemoveFunctions(const Target &target, const Source &source,
-		                     const std::vector<Ref<Function> > &functions) const;
+		                     const std::vector<Ref<Function>> &functions) const;
 
 		bool RemoveTypes(const Source &source, const std::vector<TypeGUID> &guids) const;
 
-		void FetchFunctions(const Target &target, const std::vector<FunctionGUID> &guids, const std::vector<SourceTag> &tags = {}) const;
+		void FetchFunctions(const Target &target, const std::vector<FunctionGUID> &guids, const std::vector<SourceTag> &tags = {}, const std::vector<ConstraintGUID> &constraints = {}) const;
 
 		std::vector<Source> GetSourcesWithFunctionGUID(const Target &target, const FunctionGUID &guid) const;
 
@@ -415,12 +431,69 @@ namespace Warp {
 		std::vector<Ref<Function> > GetFunctionsWithGUID(const Target &target, const Source &source,
 		                                                 const FunctionGUID &guid) const;
 
-		BinaryNinja::Ref<BinaryNinja::Type> GetTypeWithGUID(const BinaryNinja::Architecture &arch, const Source &source,
-		                                                    const TypeGUID &guid) const;
+		Ref<Type> GetTypeWithGUID(const Source &source, const TypeGUID &guid) const;
 
 		std::vector<TypeGUID> GetTypeGUIDsWithName(const Source &source, const std::string &name) const;
 
 		std::optional<ContainerSearchResponse> Search(const ContainerSearchQuery &query) const;
+	};
+
+	class Chunk : public WarpRefCountObject<BNWARPChunk, BNWARPNewChunkReference, BNWARPFreeChunkReference>
+	{
+		friend class File;
+
+	public:
+		explicit Chunk(BNWARPChunk *chunk);
+
+		Ref<Target> GetTarget() const;
+
+		[[nodiscard]] std::vector<Ref<Function>> GetFunctions() const;
+		[[nodiscard]] std::vector<Ref<Type>> GetTypes() const;
+	};
+
+	class File : public WarpRefCountObject<BNWARPFile, BNWARPNewFileReference, BNWARPFreeFileReference>
+	{
+	public:
+		explicit File(BNWARPFile *file);
+
+		static Ref<File> FromPath(const std::string &path);
+
+		[[nodiscard]] std::vector<Ref<Chunk>> GetChunks() const;
+		[[nodiscard]] BinaryNinja::DataBuffer ToDataBuffer() const;
+	};
+
+	class ProcessorState
+	{
+	public:
+		std::vector<std::string> analyzingFiles;
+		std::vector<std::string> processingFiles;
+		bool cancelled;
+		size_t unprocessedFilesCount;
+		size_t processedFilesCount;
+
+		ProcessorState() = default;
+
+		static ProcessorState FromAPIStruct(BNWARPProcessorState *state);
+	};
+
+	class Processor
+	{
+		BNWARPProcessor* m_object;
+	public:
+		explicit Processor(BNWARPProcessorIncludedData includedData,
+			BNWARPProcessorIncludedFunctions includedFunctions, size_t workerCount);
+
+		~Processor();
+
+		void AddPath(const std::string &path) const;
+		void AddProject(const BinaryNinja::Project &project) const;
+		void AddProjectFile(const BinaryNinja::ProjectFile &projectFile) const;
+		void AddBinaryView(const BinaryNinja::BinaryView &view) const;
+
+		Ref<File> Start() const;
+		void Cancel() const;
+
+		ProcessorState GetState() const;
 	};
 
 	void RunMatcher(const BinaryNinja::BinaryView &view);

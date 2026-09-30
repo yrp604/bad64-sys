@@ -62,6 +62,7 @@ fn generate_stubs() -> PathBuf {
 fn main() {
     println!("cargo:rerun-if-env-changed=BINARYNINJADIR");
     println!("cargo:rerun-if-changed=../../binaryninjacore.h");
+    println!("cargo:rerun-if-changed=../../ui/uitypes.h");
 
     //Cargo's output directory
     let out_dir = env::var("OUT_DIR").unwrap();
@@ -121,6 +122,7 @@ fn main() {
         .allowlist_var("BN_CURRENT_CORE_ABI_VERSION")
         .allowlist_var("BN_MINIMUM_CORE_ABI_VERSION")
         .allowlist_var("MAX_RELOCATION_SIZE")
+        .allowlist_type("BNLinearSweepAnalysisCapability")
         .raw_line(format!(
             "pub const BN_CURRENT_UI_ABI_VERSION: u32 = {};",
             current_version
@@ -130,6 +132,9 @@ fn main() {
             minimum_version
         ))
         .rustified_enum("BN.*")
+        // Flag enums (BN_OPTIONS) must be newtypes, as combined bit values would be
+        // undefined behavior for a fieldless Rust enum.
+        .bitfield_enum("BNMetadataStoreFlag")
         .generate()
         .expect("Unable to generate bindings")
         .write_to_file(PathBuf::from(out_dir).join("bindings.rs"))

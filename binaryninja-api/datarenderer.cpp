@@ -83,7 +83,7 @@ BNDisassemblyTextLine* DataRenderer::GetLinesForDataCallback(void* ctxt, BNBinar
 	}
 	auto lines = renderer->GetLinesForData(viewObj, addr, typeObj, prefixes, width, context,
 		language ? language : string());
-	BNDisassemblyTextLine* result = AllocAPIObjectList(lines, count);
+	BNDisassemblyTextLine* result = AllocAPIStructList(lines, count);
 	for (size_t i = 0; i < ctxCount; i++)
 		context[i].first->Release();
 	return result;
@@ -99,7 +99,7 @@ void DataRenderer::FreeCallback(void* ctxt)
 
 void DataRenderer::FreeLinesCallback(void* ctxt, BNDisassemblyTextLine* lines, size_t count)
 {
-	FreeAPIObjectList<DisassemblyTextLine>(lines, count);
+	FreeAPIStructList<DisassemblyTextLine>(lines, count);
 }
 
 
@@ -135,19 +135,38 @@ vector<DisassemblyTextLine> DataRenderer::GetLinesForData(BinaryView* data, uint
 	for (size_t i = 0; i < prefix.size(); i++)
 	{
 		BNFreeString(prefixes[i].text);
-		for (size_t j = 0; j < prefixes[j].namesCount; j++)
+		for (size_t j = 0; j < prefixes[i].namesCount; j++)
 			BNFreeString(prefixes[i].typeNames[j]);
 		delete[] prefixes[i].typeNames;
 	}
 	delete[] prefixes;
 
-	vector<DisassemblyTextLine> result = ParseAPIObjectList<DisassemblyTextLine>(lines, count);
+	vector<DisassemblyTextLine> result = ParseAPIStructList<DisassemblyTextLine>(lines, count);
 	BNFreeDisassemblyTextLines(lines, count);
 	return result;
 }
 
 
 vector<DisassemblyTextLine> DataRenderer::RenderLinesForData(BinaryView* data, uint64_t addr, Type* type,
+    const std::vector<InstructionTextToken>& prefix, size_t width, vector<pair<Type*, size_t>>& context, const string& language)
+{
+	return DataRendererContainer::RenderLinesForData(data, addr, type, prefix, width, context, language);
+}
+
+
+void DataRendererContainer::RegisterGenericDataRenderer(DataRenderer* renderer)
+{
+	BNRegisterGenericDataRenderer(BNGetDataRendererContainer(), renderer->GetObject());
+}
+
+
+void DataRendererContainer::RegisterTypeSpecificDataRenderer(DataRenderer* renderer)
+{
+	BNRegisterTypeSpecificDataRenderer(BNGetDataRendererContainer(), renderer->GetObject());
+}
+
+
+vector<DisassemblyTextLine> DataRendererContainer::RenderLinesForData(BinaryView* data, uint64_t addr, Type* type,
     const std::vector<InstructionTextToken>& prefix, size_t width, vector<pair<Type*, size_t>>& context, const string& language)
 {
 	BNInstructionTextToken* prefixes = InstructionTextToken::CreateInstructionTextTokenList(prefix);
@@ -166,25 +185,13 @@ vector<DisassemblyTextLine> DataRenderer::RenderLinesForData(BinaryView* data, u
 	for (size_t i = 0; i < prefix.size(); i++)
 	{
 		BNFreeString(prefixes[i].text);
-		for (size_t j = 0; j < prefixes[j].namesCount; j++)
+		for (size_t j = 0; j < prefixes[i].namesCount; j++)
 			BNFreeString(prefixes[i].typeNames[j]);
 		delete[] prefixes[i].typeNames;
 	}
 	delete[] prefixes;
 
-	vector<DisassemblyTextLine> result = ParseAPIObjectList<DisassemblyTextLine>(lines, count);
+	vector<DisassemblyTextLine> result = ParseAPIStructList<DisassemblyTextLine>(lines, count);
 	BNFreeDisassemblyTextLines(lines, count);
 	return result;
-}
-
-
-void DataRendererContainer::RegisterGenericDataRenderer(DataRenderer* renderer)
-{
-	BNRegisterGenericDataRenderer(BNGetDataRendererContainer(), renderer->GetObject());
-}
-
-
-void DataRendererContainer::RegisterTypeSpecificDataRenderer(DataRenderer* renderer)
-{
-	BNRegisterTypeSpecificDataRenderer(BNGetDataRendererContainer(), renderer->GetObject());
 }

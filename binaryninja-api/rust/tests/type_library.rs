@@ -1,8 +1,6 @@
-use binaryninja::binary_view::BinaryViewExt;
 use binaryninja::headless::Session;
 use binaryninja::platform::Platform;
-use binaryninja::type_library::TypeLibrary;
-use binaryninja::types::{Type, TypeClass};
+use binaryninja::types::{Type, TypeClass, TypeLibrary};
 use std::path::PathBuf;
 
 #[test]
@@ -48,7 +46,7 @@ fn test_applying_type_library() {
     // Type library types don't exist in the view until they are imported.
     // Adding the type library to the view will let you import types from it without necessarily knowing "where" they came from.
     let found_lib_type = view
-        .import_type_library("SIP_ADD_NEWPROVIDER", None)
+        .import_type_library_type("SIP_ADD_NEWPROVIDER", None)
         .expect("SIP_ADD_NEWPROVIDER exists");
     assert_eq!(found_lib_type.width(), 48);
     // Per docs type is returned as a NamedTypeReferenceClass.
@@ -71,6 +69,8 @@ fn test_create_type_library() {
     // Create the new type library.
     let my_library = TypeLibrary::new(arch, "test_type_lib");
     my_library.add_alternate_name("alternate_test");
+    my_library.add_alternate_name("alternate_to_be_removed");
+    my_library.remove_alternate_name("alternate_to_be_removed");
     my_library.add_platform(&platform);
     my_library.add_named_type("test_type".into(), &Type::int(7, true));
 

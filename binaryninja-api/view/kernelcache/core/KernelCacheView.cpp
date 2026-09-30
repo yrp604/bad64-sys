@@ -9,7 +9,7 @@
 using namespace BinaryNinja;
 using namespace BinaryNinja::KC;
 
-[[maybe_unused]] KernelCacheViewType* g_kcViewType;
+static KernelCacheViewType* g_kcViewType;
 
 KernelCacheViewType::KernelCacheViewType() : BinaryViewType(KC_VIEW_NAME, KC_VIEW_NAME) {}
 
@@ -73,6 +73,11 @@ Ref<Settings> KernelCacheViewType::GetLoadSettingsForData(BinaryView* data)
 			"default" : true,
 			"description" : "Add function starts sourced from the Function Starts tables to the core for analysis."
 			})");
+
+	// Place the synthetic sections well after the kernel cache to ensure they do
+	// not collide with any images that are later loaded from the kernel cache.
+	constexpr uint64_t syntheticSectionsOffset = 256 * 1024 * 1024;
+	settings->UpdateProperty("loader.syntheticSectionBase", "default", viewRef->GetStart() + syntheticSectionsOffset);
 
 	// Merge existing load settings if they exist. This allows for the selection of a specific object file from a Mach-O
 	// Universal file. The 'Universal' BinaryViewType generates a schema with 'loader.universal.architectures'. This

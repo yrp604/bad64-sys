@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Vector 35 Inc
+# Copyright (c) 2025-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -21,7 +21,7 @@
 import ctypes
 import traceback
 from dataclasses import dataclass
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Any
 
 # Binary Ninja components
 import binaryninja
@@ -118,6 +118,23 @@ class _LineFormatterMetaClass(type):
             raise KeyError("'%s' is not a valid formatter" % str(value))
         return CoreLineFormatter(handle=lang)
 
+    def __contains__(cls: '_LineFormatterMetaClass', name: object) -> bool:
+        if not isinstance(name, str):
+            return False
+        try:
+            cls[name]
+            return True
+        except KeyError:
+            return False
+
+    def get(cls: '_LineFormatterMetaClass', name: str, default: Any = None) -> Optional['LineFormatter']:
+        try:
+            return cls[name]
+        except KeyError:
+            if default is not None:
+                return default
+            return None
+
 
 class LineFormatter(metaclass=_LineFormatterMetaClass):
     """
@@ -199,7 +216,7 @@ class LineFormatter(metaclass=_LineFormatterMetaClass):
                 self.line_buf[i].tokens = function.InstructionTextToken._get_core_struct(line.tokens)
 
             return ctypes.cast(self.line_buf, ctypes.c_void_p).value
-        except:
+        except Exception:
             log_error(traceback.format_exc())
             out_count[0] = 0
             return None
@@ -230,7 +247,7 @@ _formatter_cache = {}
 
 class CoreLineFormatter(LineFormatter):
     def __init__(self, handle: core.BNLineFormatter):
-        super(CoreLineFormatter, self).__init__(handle=handle)
+        super().__init__(handle=handle)
         if type(self) is CoreLineFormatter:
             global _formatter_cache
             _formatter_cache[ctypes.addressof(handle.contents)] = self

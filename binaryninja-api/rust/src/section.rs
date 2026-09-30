@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -67,7 +67,7 @@ pub struct Section {
 }
 
 impl Section {
-    unsafe fn from_raw(handle: *mut BNSection) -> Self {
+    pub(crate) unsafe fn from_raw(handle: *mut BNSection) -> Self {
         debug_assert!(!handle.is_null());
         Self { handle }
     }
@@ -81,7 +81,6 @@ impl Section {
     ///
     /// ```no_run
     /// # use binaryninja::section::Section;
-    /// # use binaryninja::binary_view::BinaryViewExt;
     /// let bv = binaryninja::load("example").unwrap();
     /// bv.add_section(Section::builder("example".to_string(), 0..1024).align(4).entry_size(4))
     /// ```

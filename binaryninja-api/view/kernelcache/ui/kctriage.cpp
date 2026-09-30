@@ -44,7 +44,7 @@ KCTriageView::KCTriageView(QWidget* parent, BinaryViewRef data) : QWidget(parent
 
 	UIContext::registerNotification(this);
 
-	m_triageCollection = new DockableTabCollection();
+	m_triageCollection = new DockableTabCollection(this);
 	m_triageTabs = new SplitTabWidget(m_triageCollection);
 
 	auto triageTabStyle = new GlobalAreaTabStyle();
@@ -208,7 +208,6 @@ QWidget* KCTriageView::initImageTable()
 
 		QAction noSelectionAction("No Images Selected", m_imageTable);
 		QAction loadImagesAction("", m_imageTable);
-		QAction loadImagesWithDepsAction("", m_imageTable);
 		if (selectedCount == 0)
 		{
 			noSelectionAction.setEnabled(false);
@@ -223,14 +222,6 @@ QWidget* KCTriageView::initImageTable()
 				loadImagesWithAddr(addresses, false);
 			});
 			contextMenu.addAction(&loadImagesAction);
-
-			// Format action text for loading selected images with dependencies
-			QString loadWithDepsActionText = (selectedCount == 1) ? "Load Selected Image and Dependencies" : QString("Load %1 Selected Images and Dependencies").arg(selectedCount);
-			loadImagesWithDepsAction.setText(loadWithDepsActionText);
-			connect(&loadImagesWithDepsAction, &QAction::triggered, [this, addresses]() {
-				this->loadImagesWithAddr(addresses, true);
-			});
-			contextMenu.addAction(&loadImagesWithDepsAction);
 		}
 
 		contextMenu.exec(m_imageTable->viewport()->mapToGlobal(pos));
@@ -265,8 +256,8 @@ QWidget* KCTriageView::initImageTable()
 
 	auto loadImageFilterEdit = new FilterEdit(m_imageTable);
 	loadImageFilterEdit->setPlaceholderText("Filter images");
-	connect(loadImageFilterEdit, &FilterEdit::textChanged, [this](const QString& filter) {
-		m_imageTable->setFilter(filter.toStdString());
+	connect(loadImageFilterEdit, &FilterEdit::textChanged, [this, loadImageFilterEdit](const QString& filter) {
+		m_imageTable->setFilter(filter.toStdString(), loadImageFilterEdit->getFilterOptions());
 	});
 
 	connect(m_imageTable, &FilterableTableView::activated, this, [=, this](const QModelIndex& index) {
@@ -319,8 +310,8 @@ void KCTriageView::initSymbolTable()
 
 	auto symbolFilterEdit = new FilterEdit(m_symbolTable);
 	symbolFilterEdit->setPlaceholderText("Filter symbols");
-	connect(symbolFilterEdit, &FilterEdit::textChanged, [this](const QString& filter) {
-		m_symbolTable->setFilter(filter.toStdString());
+	connect(symbolFilterEdit, &FilterEdit::textChanged, [this, symbolFilterEdit](const QString& filter) {
+		m_symbolTable->setFilter(filter.toStdString(), symbolFilterEdit->getFilterOptions());
 	});
 
 	auto loadSymbolImageButton = new QPushButton();

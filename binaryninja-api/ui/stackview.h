@@ -80,13 +80,13 @@ class StackViewLine
 	//! Get the stack frame offset for this line.
 	int64_t offset() const;
 
-	//! Get the value of the base offset
+	//! Get the value of the base offset.
 	int64_t baseOffset() const;
 
-	//! Get the name of the base offset
+	//! Get the name of the base offset.
 	std::string baseName() const;
 
-	//! Set the base offset to a given name and value. Does not affect offset()
+	//! Set the base offset to a given name and value. Does not affect offset().
 	void setBase(const std::string& baseName, int64_t baseOffset);
 
 	//! Get the number of bytes this line represents on the stack.
@@ -219,11 +219,18 @@ class BINARYNINJAUIAPI StackView : public QAbstractScrollArea, public View, publ
 	//! Find the end of a stack void given a start offset.
 	int64_t findVoidEnd(int64_t start) const;
 
-	//! Get the beginning of the current selection (min position)
+	//! Get the beginning of the current selection (min position).
 	void getSelectionRange(size_t& startLine, size_t& startToken, size_t& endLine, size_t& endToken) const;
+
+	//! Whether the current selection represents exactly one cursor position.
+	bool hasSingleItemSelection() const;
+
+	//! Update scrollbar ranges after content, font, or viewport size changes.
+	void updateScrollBars();
 
   protected:
 	void paintEvent(QPaintEvent* event) override;
+	void resizeEvent(QResizeEvent* event) override;
 	void mousePressEvent(QMouseEvent* event) override;
 	void mouseMoveEvent(QMouseEvent* event) override;
 	void mouseReleaseEvent(QMouseEvent* event) override;
@@ -263,15 +270,15 @@ class BINARYNINJAUIAPI StackView : public QAbstractScrollArea, public View, publ
 	//! Show the "Create Variable" dialog.
 	void showCreateVariableDialog();
 
-	//! Create an integer of the given size at the cursor position. Pass `0`
-	//! for `size` to cycle through integer sizes automatically.
+	//! Create an integer of the given size at the cursor position. Pass \c 0
+	//! for \c size to cycle through integer sizes automatically.
 	void quickCreateIntegerAtCursor(size_t size);
 
 	//! Toggle the sign of the integer at the cursor position.
 	void quickInvertIntegerSignAtCursor();
 
-	//! Create an float of the given size at the cursor position. Pass `0`
-	//! for `size` to cycle through float sizes automatically.
+	//! Create an float of the given size at the cursor position. Pass \c 0
+	//! for \c size to cycle through float sizes automatically.
 	void quickCreateFloatAtCursor(size_t size);
 
 	//! Create a pointer the cursor.
@@ -283,28 +290,28 @@ class BINARYNINJAUIAPI StackView : public QAbstractScrollArea, public View, publ
 	//! Create a new struct at the cursor, spanning until the next stack variable.
 	void quickCreateStructAtCursor();
 
-	//! Show the dialog to switch which base register is used for offsets
+	//! Show the dialog to switch which base register is used for offsets.
 	void chooseBaseRegister();
 
-	//! Show the dialog to pick a constant base offset
+	//! Show the dialog to pick a constant base offset.
 	void chooseBaseOffset();
 
-	//! Set the base offset to a register (or clear on nullopt)
+	//! Set the base offset to a register (or clear on nullopt).
 	void setBaseRegister(ArchitectureRef arch, std::optional<std::string> regName);
 
-	//! Get the base offset
+	//! Get the base offset.
 	int64_t getBaseOffset(FunctionRef func);
 
-	//! Set the base offset to a constant (or clear on nullopt)
+	//! Set the base offset to a constant (or clear on nullopt).
 	void setBaseOffset(FunctionRef func, std::optional<int64_t> offset);
 
-	//! Set whether we show only the vars relevant for the current address
+	//! Set whether we show only the vars relevant for the current address.
 	void setPositionAware(bool positionAware);
 
 	//! Override the default event handler so we can have nice tooltips.
 	bool event(QEvent* event) override;
 
-	//! Get the current base name/offset using the currently selected base register
+	//! Get the current base name/offset using the currently selected base register.
 	std::pair<std::string, int64_t> calculateBaseOffset() const;
 
 	BinaryViewRef getData() override;

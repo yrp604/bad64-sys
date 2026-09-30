@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2025 Vector 35 Inc
+// Copyright (c) 2017-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -23,6 +23,37 @@
 
 using namespace BinaryNinja;
 using namespace std;
+
+namespace {
+
+// Memoizes the reverse (LLIL-SSA -> MLIL) expr lookups for one LLIL-SSA function.
+// The same LLIL-SSA expr is reached from many MLIL exprs, and a reverse query
+// derives its result by walking the LLIL-SSA use-def graph rather than reading a
+// stored table, so repeating it for each recurrence is what dominates a
+// whole-function map build.
+class ReverseExprMemo
+{
+	Ref<LowLevelILFunction> m_llilSsa;
+	std::unordered_map<size_t, std::pair<size_t, std::set<size_t>>> m_entries;
+
+public:
+	explicit ReverseExprMemo(Ref<LowLevelILFunction> llilSsa) : m_llilSsa(std::move(llilSsa)) {}
+
+	// The MLIL expr that `llilSsaExpr` maps to directly, paired with every MLIL expr it maps to.
+	const std::pair<size_t, std::set<size_t>>& Get(size_t llilSsaExpr)
+	{
+		auto entry = m_entries.find(llilSsaExpr);
+		if (entry == m_entries.end())
+		{
+			entry = m_entries.emplace(llilSsaExpr,
+				std::make_pair(m_llilSsa->GetMediumLevelILExprIndex(llilSsaExpr), m_llilSsa->GetMediumLevelILExprIndexes(llilSsaExpr))
+			).first;
+		}
+		return entry->second;
+	}
+};
+
+}  // unnamed namespace
 
 
 ILSourceLocation::ILSourceLocation(const struct MediumLevelILInstruction& instr):
@@ -117,12 +148,14 @@ std::unordered_map<size_t /* llil ssa */, size_t /* mlil */> MediumLevelILFuncti
 std::vector<BNExprMapInfo> MediumLevelILFunction::GetLLILSSAToMLILExprMap(bool fromTranslation)
 {
 	std::vector<BNExprMapInfo> result;
+
 	if (fromTranslation)
 	{
 		// TODO: Handle LLIL SSA -> MLIL mappings in case someone is brave enough to try
 		// lifting LLILSSA->MLIL themselves instead of an MLIL->MLIL translation
 		// (which is the only one I've seen people do so far)
 
+		ReverseExprMemo reverse(m_translationData->copyingFunction->GetLowLevelIL()->GetSSAForm());
 		for (auto& [oldExprIndex, newExprIndices]: m_translationData->mlilToMlilExprMap)
 		{
 			// Look up the LLIL SSA expression for the old expr in its function
@@ -132,8 +165,7 @@ std::vector<BNExprMapInfo> MediumLevelILFunction::GetLLILSSAToMLILExprMap(bool f
 			auto oldLLILSSAIndices = m_translationData->copyingFunction->GetLowLevelILExprIndexes(oldExprIndex);
 			for (auto& oldLLILSSAIndex: oldLLILSSAIndices)
 			{
-				size_t oldReverseDirect = m_translationData->copyingFunction->GetLowLevelIL()->GetSSAForm()->GetMediumLevelILExprIndex(oldLLILSSAIndex);
-				auto oldReverseAll = m_translationData->copyingFunction->GetLowLevelIL()->GetSSAForm()->GetMediumLevelILExprIndexes(oldLLILSSAIndex);
+				const auto& [oldReverseDirect, oldReverseAll] = reverse.Get(oldLLILSSAIndex);
 				for (auto& [newExprIndex, newDirect]: newExprIndices)
 				{
 					BNExprMapInfo info;
@@ -150,6 +182,7 @@ std::vector<BNExprMapInfo> MediumLevelILFunction::GetLLILSSAToMLILExprMap(bool f
 	}
 	else
 	{
+		ReverseExprMemo reverse(GetLowLevelIL()->GetSSAForm());
 		for (auto& block: GetBasicBlocks())
 		{
 			for (size_t instrIndex = block->GetStart(); instrIndex < block->GetEnd(); instrIndex++)
@@ -160,8 +193,7 @@ std::vector<BNExprMapInfo> MediumLevelILFunction::GetLLILSSAToMLILExprMap(bool f
 					auto llilSSAIndices = GetLowLevelILExprIndexes(expr.exprIndex);
 					for (auto& llilSSAIndex: llilSSAIndices)
 					{
-						size_t reverseDirect = GetLowLevelIL()->GetSSAForm()->GetMediumLevelILExprIndex(llilSSAIndex);
-						auto reverseAll = GetLowLevelIL()->GetSSAForm()->GetMediumLevelILExprIndexes(llilSSAIndex);
+						const auto& [reverseDirect, reverseAll] = reverse.Get(llilSSAIndex);
 
 						BNExprMapInfo info;
 						info.lowerIndex = llilSSAIndex;
@@ -254,7 +286,7 @@ BNMediumLevelILLabel* MediumLevelILFunction::GetLabelForSourceInstruction(size_t
 
 size_t MediumLevelILFunction::CachePossibleValueSet(const PossibleValueSet& pvs)
 {
-	BNPossibleValueSet ugh = pvs.ToAPIObject();
+	BNPossibleValueSet ugh = pvs.ToAPIStruct();
 	return BNCacheMediumLevelILPossibleValueSet(m_object, &ugh);
 }
 
@@ -262,7 +294,7 @@ size_t MediumLevelILFunction::CachePossibleValueSet(const PossibleValueSet& pvs)
 PossibleValueSet MediumLevelILFunction::GetCachedPossibleValueSet(size_t idx)
 {
 	BNPossibleValueSet api = BNGetCachedMediumLevelILPossibleValueSet(m_object, idx);
-	return PossibleValueSet::FromAPIObject(api);
+	return PossibleValueSet::FromAPIStruct(api);
 }
 
 
@@ -754,14 +786,14 @@ set<size_t> MediumLevelILFunction::GetVariableUses(const Variable& var) const
 RegisterValue MediumLevelILFunction::GetSSAVarValue(const SSAVariable& var)
 {
 	BNRegisterValue value = BNGetMediumLevelILSSAVarValue(m_object, &var.var, var.version);
-	return RegisterValue::FromAPIObject(value);
+	return RegisterValue::FromAPIStruct(value);
 }
 
 
 RegisterValue MediumLevelILFunction::GetExprValue(size_t expr)
 {
 	BNRegisterValue value = BNGetMediumLevelILExprValue(m_object, expr);
-	return RegisterValue::FromAPIObject(value);
+	return RegisterValue::FromAPIStruct(value);
 }
 
 
@@ -781,7 +813,7 @@ PossibleValueSet MediumLevelILFunction::GetPossibleSSAVarValues(
 	BNPossibleValueSet value =
 	    BNGetMediumLevelILPossibleSSAVarValues(m_object, &var.var, var.version, instr, optionArray, options.size());
 	delete[] optionArray;
-	return PossibleValueSet::FromAPIObject(value);
+	return PossibleValueSet::FromAPIStruct(value);
 }
 
 
@@ -793,7 +825,7 @@ PossibleValueSet MediumLevelILFunction::GetPossibleExprValues(size_t expr, const
 		optionArray[idx++] = i;
 	BNPossibleValueSet value = BNGetMediumLevelILPossibleExprValues(m_object, expr, optionArray, options.size());
 	delete[] optionArray;
-	return PossibleValueSet::FromAPIObject(value);
+	return PossibleValueSet::FromAPIStruct(value);
 }
 
 
@@ -867,14 +899,14 @@ Variable MediumLevelILFunction::GetVariableForStackLocationAfterInstruction(int6
 RegisterValue MediumLevelILFunction::GetRegisterValueAtInstruction(uint32_t reg, size_t instr)
 {
 	BNRegisterValue value = BNGetMediumLevelILRegisterValueAtInstruction(m_object, reg, instr);
-	return RegisterValue::FromAPIObject(value);
+	return RegisterValue::FromAPIStruct(value);
 }
 
 
 RegisterValue MediumLevelILFunction::GetRegisterValueAfterInstruction(uint32_t reg, size_t instr)
 {
 	BNRegisterValue value = BNGetMediumLevelILRegisterValueAfterInstruction(m_object, reg, instr);
-	return RegisterValue::FromAPIObject(value);
+	return RegisterValue::FromAPIStruct(value);
 }
 
 
@@ -888,7 +920,7 @@ PossibleValueSet MediumLevelILFunction::GetPossibleRegisterValuesAtInstruction(
 	BNPossibleValueSet value =
 	    BNGetMediumLevelILPossibleRegisterValuesAtInstruction(m_object, reg, instr, optionArray, options.size());
 	delete[] optionArray;
-	return PossibleValueSet::FromAPIObject(value);
+	return PossibleValueSet::FromAPIStruct(value);
 }
 
 
@@ -902,21 +934,21 @@ PossibleValueSet MediumLevelILFunction::GetPossibleRegisterValuesAfterInstructio
 	BNPossibleValueSet value =
 	    BNGetMediumLevelILPossibleRegisterValuesAfterInstruction(m_object, reg, instr, optionArray, options.size());
 	delete[] optionArray;
-	return PossibleValueSet::FromAPIObject(value);
+	return PossibleValueSet::FromAPIStruct(value);
 }
 
 
 RegisterValue MediumLevelILFunction::GetFlagValueAtInstruction(uint32_t flag, size_t instr)
 {
 	BNRegisterValue value = BNGetMediumLevelILFlagValueAtInstruction(m_object, flag, instr);
-	return RegisterValue::FromAPIObject(value);
+	return RegisterValue::FromAPIStruct(value);
 }
 
 
 RegisterValue MediumLevelILFunction::GetFlagValueAfterInstruction(uint32_t flag, size_t instr)
 {
 	BNRegisterValue value = BNGetMediumLevelILFlagValueAfterInstruction(m_object, flag, instr);
-	return RegisterValue::FromAPIObject(value);
+	return RegisterValue::FromAPIStruct(value);
 }
 
 
@@ -930,7 +962,7 @@ PossibleValueSet MediumLevelILFunction::GetPossibleFlagValuesAtInstruction(
 	BNPossibleValueSet value =
 	    BNGetMediumLevelILPossibleFlagValuesAtInstruction(m_object, flag, instr, optionArray, options.size());
 	delete[] optionArray;
-	return PossibleValueSet::FromAPIObject(value);
+	return PossibleValueSet::FromAPIStruct(value);
 }
 
 
@@ -944,21 +976,21 @@ PossibleValueSet MediumLevelILFunction::GetPossibleFlagValuesAfterInstruction(
 	BNPossibleValueSet value =
 	    BNGetMediumLevelILPossibleFlagValuesAfterInstruction(m_object, flag, instr, optionArray, options.size());
 	delete[] optionArray;
-	return PossibleValueSet::FromAPIObject(value);
+	return PossibleValueSet::FromAPIStruct(value);
 }
 
 
 RegisterValue MediumLevelILFunction::GetStackContentsAtInstruction(int32_t offset, size_t len, size_t instr)
 {
 	BNRegisterValue value = BNGetMediumLevelILStackContentsAtInstruction(m_object, offset, len, instr);
-	return RegisterValue::FromAPIObject(value);
+	return RegisterValue::FromAPIStruct(value);
 }
 
 
 RegisterValue MediumLevelILFunction::GetStackContentsAfterInstruction(int32_t offset, size_t len, size_t instr)
 {
 	BNRegisterValue value = BNGetMediumLevelILStackContentsAfterInstruction(m_object, offset, len, instr);
-	return RegisterValue::FromAPIObject(value);
+	return RegisterValue::FromAPIStruct(value);
 }
 
 
@@ -972,7 +1004,7 @@ PossibleValueSet MediumLevelILFunction::GetPossibleStackContentsAtInstruction(
 	BNPossibleValueSet value =
 	    BNGetMediumLevelILPossibleStackContentsAtInstruction(m_object, offset, len, instr, optionArray, options.size());
 	delete[] optionArray;
-	return PossibleValueSet::FromAPIObject(value);
+	return PossibleValueSet::FromAPIStruct(value);
 }
 
 
@@ -986,7 +1018,7 @@ PossibleValueSet MediumLevelILFunction::GetPossibleStackContentsAfterInstruction
 	BNPossibleValueSet value = BNGetMediumLevelILPossibleStackContentsAfterInstruction(
 	    m_object, offset, len, instr, optionArray, options.size());
 	delete[] optionArray;
-	return PossibleValueSet::FromAPIObject(value);
+	return PossibleValueSet::FromAPIStruct(value);
 }
 
 

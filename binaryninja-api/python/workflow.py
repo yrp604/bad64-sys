@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -188,6 +188,281 @@ class AnalysisContext:
 	def inform(self, request: str) -> bool:
 		return core.BNAnalysisContextInform(self.handle, request)
 
+	def get_setting_bool(self, key: str) -> bool:
+		"""
+		Get a boolean setting from the cached settings.
+
+		:param key: Setting key
+		:return: Boolean setting value
+		"""
+		return core.BNAnalysisContextGetSettingBool(self.handle, key)
+
+	def get_setting_double(self, key: str) -> float:
+		"""
+		Get a double setting from the cached settings.
+
+		:param key: Setting key
+		:return: Double setting value
+		"""
+		return core.BNAnalysisContextGetSettingDouble(self.handle, key)
+
+	def get_setting_int64(self, key: str) -> int:
+		"""
+		Get a 64-bit signed integer setting from the cached settings.
+
+		:param key: Setting key
+		:return: Int64 setting value
+		"""
+		return core.BNAnalysisContextGetSettingInt64(self.handle, key)
+
+	def get_setting_uint64(self, key: str) -> int:
+		"""
+		Get a 64-bit unsigned integer setting from the cached settings.
+
+		:param key: Setting key
+		:return: UInt64 setting value
+		"""
+		return core.BNAnalysisContextGetSettingUInt64(self.handle, key)
+
+	def get_setting_string(self, key: str) -> str:
+		"""
+		Get a string setting from the cached settings.
+
+		:param key: Setting key
+		:return: String setting value
+		"""
+		return core.BNAnalysisContextGetSettingString(self.handle, key)
+
+	def get_setting_string_list(self, key: str) -> List[str]:
+		"""
+		Get a string list setting from the cached settings.
+
+		:param key: Setting key
+		:return: List of strings
+		"""
+		count = ctypes.c_size_t()
+		result = core.BNAnalysisContextGetSettingStringList(self.handle, key, ctypes.byref(count))
+		out_list = []
+		for i in range(count.value):
+			out_list.append(result[i].decode('utf-8'))
+		core.BNFreeStringList(result, count.value)
+		return out_list
+
+	def is_valid_offset(self, offset: int) -> bool:
+		"""
+		Check if an offset is mapped in the cached memory map.
+
+		:param offset: Offset to check
+		:return: True if offset is mapped
+		"""
+		return core.BNAnalysisContextIsValidOffset(self.handle, offset)
+
+	def is_offset_readable(self, offset: int) -> bool:
+		"""
+		Check if an offset is readable in the cached memory map.
+
+		:param offset: Offset to check
+		:return: True if offset is readable
+		"""
+		return core.BNAnalysisContextIsOffsetReadable(self.handle, offset)
+
+	def is_offset_writable(self, offset: int) -> bool:
+		"""
+		Check if an offset is writable in the cached memory map.
+
+		:param offset: Offset to check
+		:return: True if offset is writable
+		"""
+		return core.BNAnalysisContextIsOffsetWritable(self.handle, offset)
+
+	def is_offset_executable(self, offset: int) -> bool:
+		"""
+		Check if an offset is executable in the cached memory map.
+
+		:param offset: Offset to check
+		:return: True if offset is executable
+		"""
+		return core.BNAnalysisContextIsOffsetExecutable(self.handle, offset)
+
+	def is_offset_backed_by_file(self, offset: int) -> bool:
+		"""
+		Check if an offset is backed by the file in the cached memory map.
+
+		:param offset: Offset to check
+		:return: True if offset is backed by file
+		"""
+		return core.BNAnalysisContextIsOffsetBackedByFile(self.handle, offset)
+
+	def is_offset_code_semantics(self, offset: int) -> bool:
+		"""
+		Check if an offset has code semantics in the cached section map.
+
+		:param offset: Offset to check
+		:return: True if offset has code semantics
+		"""
+		return core.BNAnalysisContextIsOffsetCodeSemantics(self.handle, offset)
+
+	def is_offset_extern_semantics(self, offset: int) -> bool:
+		"""
+		Check if an offset has external semantics in the cached section map.
+
+		:param offset: Offset to check
+		:return: True if offset has external semantics
+		"""
+		return core.BNAnalysisContextIsOffsetExternSemantics(self.handle, offset)
+
+	def is_offset_writable_semantics(self, offset: int) -> bool:
+		"""
+		Check if an offset has writable semantics in the cached section map.
+
+		:param offset: Offset to check
+		:return: True if offset has writable semantics
+		"""
+		return core.BNAnalysisContextIsOffsetWritableSemantics(self.handle, offset)
+
+	def is_offset_readonly_semantics(self, offset: int) -> bool:
+		"""
+		Check if an offset has read-only semantics in the cached section map.
+
+		:param offset: Offset to check
+		:return: True if offset has read-only semantics
+		"""
+		return core.BNAnalysisContextIsOffsetReadOnlySemantics(self.handle, offset)
+
+	def get_sections(self) -> List['binaryninja.binaryview.Section']:
+		"""
+		Get all sections from the cached section map.
+
+		:return: List of all sections
+		"""
+		count = ctypes.c_ulonglong()
+		sections = core.BNAnalysisContextGetSections(self.handle, count)
+		result = []
+		for i in range(count.value):
+			result.append(binaryninja.binaryview.Section(core.BNNewSectionReference(sections[i])))
+		core.BNFreeSectionList(sections, count.value)
+		return result
+
+	def get_section_by_name(self, name: str) -> Optional['binaryninja.binaryview.Section']:
+		"""
+		Get a section by name from the cached section map.
+
+		:param name: Section name
+		:return: Section with the given name, or None if not found
+		"""
+		section = core.BNAnalysisContextGetSectionByName(self.handle, name)
+		if not section:
+			return None
+		return binaryninja.binaryview.Section(section)
+
+	def get_sections_at(self, addr: int) -> List['binaryninja.binaryview.Section']:
+		"""
+		Get all sections containing the given address from the cached section map.
+
+		:param addr: Address to query
+		:return: List of sections containing the address
+		"""
+		count = ctypes.c_ulonglong()
+		sections = core.BNAnalysisContextGetSectionsAt(self.handle, addr, count)
+		result = []
+		for i in range(count.value):
+			result.append(binaryninja.binaryview.Section(core.BNNewSectionReference(sections[i])))
+		core.BNFreeSectionList(sections, count.value)
+		return result
+
+	def get_start(self) -> int:
+		"""
+		Get the start address from the cached memory map.
+
+		:return: Start address
+		"""
+		return core.BNAnalysisContextGetStart(self.handle)
+
+	def get_end(self) -> int:
+		"""
+		Get the end address from the cached memory map.
+
+		:return: End address
+		"""
+		return core.BNAnalysisContextGetEnd(self.handle)
+
+	def get_length(self) -> int:
+		"""
+		Get the length of the cached memory map.
+
+		:return: Length
+		"""
+		return core.BNAnalysisContextGetLength(self.handle)
+
+	def get_next_valid_offset(self, offset: int) -> int:
+		"""
+		Get the next valid offset after the given offset from the cached memory map.
+
+		:param offset: Starting offset
+		:return: Next valid offset
+		"""
+		return core.BNAnalysisContextGetNextValidOffset(self.handle, offset)
+
+	def get_next_mapped_address(self, addr: int, flags: int = 0) -> int:
+		"""
+		Get the next mapped address after the given address from the cached memory map.
+
+		:param addr: Starting address
+		:param flags: Optional flags to filter by
+		:return: Next mapped address
+		"""
+		return core.BNAnalysisContextGetNextMappedAddress(self.handle, addr, flags)
+
+	def get_next_backed_address(self, addr: int, flags: int = 0) -> int:
+		"""
+		Get the next backed address after the given address from the cached memory map.
+
+		:param addr: Starting address
+		:param flags: Optional flags to filter by
+		:return: Next backed address
+		"""
+		return core.BNAnalysisContextGetNextBackedAddress(self.handle, addr, flags)
+
+	def get_segment_at(self, addr: int) -> Optional['binaryview.Segment']:
+		"""
+		Get the segment containing the given address from the cached memory map.
+
+		:param addr: Address to query
+		:return: Segment containing the address, or None
+		"""
+		segment = core.BNAnalysisContextGetSegmentAt(self.handle, addr)
+		if not segment:
+			return None
+		return binaryview.Segment(segment)
+
+	def get_mapped_address_ranges(self) -> List[tuple]:
+		"""
+		Get all mapped address ranges from the cached memory map.
+
+		:return: List of (start, end) tuples
+		"""
+		count = ctypes.c_size_t()
+		ranges = core.BNAnalysisContextGetMappedAddressRanges(self.handle, ctypes.byref(count))
+		result = []
+		for i in range(count.value):
+			result.append((ranges[i].start, ranges[i].end))
+		core.BNFreeAddressRanges(ranges)
+		return result
+
+	def get_backed_address_ranges(self) -> List[tuple]:
+		"""
+		Get all backed address ranges from the cached memory map.
+
+		:return: List of (start, end) tuples
+		"""
+		count = ctypes.c_size_t()
+		ranges = core.BNAnalysisContextGetBackedAddressRanges(self.handle, ctypes.byref(count))
+		result = []
+		for i in range(count.value):
+			result.append((ranges[i].start, ranges[i].end))
+		core.BNFreeAddressRanges(ranges)
+		return result
+
 
 class Activity(object):
 	"""
@@ -223,7 +498,7 @@ class Activity(object):
 		try:
 			if self.action is not None:
 				self.action(AnalysisContext(ac))
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in Activity._action")
 
 	def __del__(self):
@@ -290,6 +565,23 @@ class _WorkflowMetaclass(type):
 		binaryninja._init_plugins()
 		workflow = core.BNWorkflowGetOrCreate(str(value))
 		return Workflow(handle=workflow)
+
+	def __contains__(cls: '_WorkflowMetaclass', name: object) -> bool:
+		if not isinstance(name, str):
+			return False
+		try:
+			cls[name]
+			return True
+		except KeyError:
+			return False
+
+	def get(cls: '_WorkflowMetaclass', name: str, default: Any = None) -> Optional['Workflow']:
+		try:
+			return cls[name]
+		except KeyError:
+			if default is not None:
+				return default
+			return None
 
 
 class Workflow(metaclass=_WorkflowMetaclass):
@@ -430,7 +722,7 @@ class Workflow(metaclass=_WorkflowMetaclass):
 		handle = core.BNWorkflowRegisterActivity(self.handle, activity.handle, input_list, len(subactivities))
 		if handle is None:
 			return None
-		return activity
+		return Activity(handle=handle)
 
 	def contains(self, activity: ActivityType) -> bool:
 		"""

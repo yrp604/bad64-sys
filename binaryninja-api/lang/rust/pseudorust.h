@@ -10,7 +10,6 @@ class PseudoRustFunction: public BinaryNinja::LanguageRepresentationFunction
 	{
 		FieldDisplayName,
 		FieldDisplayOffset,
-		FieldDisplayMemberOffset,
 		FieldDisplayNone
 	};
 
@@ -42,8 +41,11 @@ class PseudoRustFunction: public BinaryNinja::LanguageRepresentationFunction
 		BinaryNinja::HighLevelILTokenEmitter& tokens, BinaryNinja::DisassemblySettings* settings);
 	void AppendTwoOperandFunctionWithCarry(const std::string& function, const BinaryNinja::HighLevelILInstruction& instr,
 		BinaryNinja::HighLevelILTokenEmitter& tokens, BinaryNinja::DisassemblySettings* settings);
-	void AppendFieldTextTokens(const BinaryNinja::HighLevelILInstruction& var, uint64_t offset, size_t memberIndex, size_t size,
-		BinaryNinja::HighLevelILTokenEmitter& tokens, bool deref);
+	void AppendFieldTextTokens(const BinaryNinja::HighLevelILInstruction& instr,
+		BinaryNinja::HighLevelILTokenEmitter& tokens, BinaryNinja::DisassemblySettings* settings,
+		std::optional<bool> signedHint, bool addrOf);
+	void AppendStructInitFieldTextTokens(const BinaryNinja::HighLevelILInstruction& init, uint64_t offset,
+		size_t memberIndex, size_t size, BinaryNinja::HighLevelILTokenEmitter& tokens);
 	void AppendDefaultSplitExpr(const BinaryNinja::HighLevelILInstruction& instr, BinaryNinja::HighLevelILTokenEmitter& tokens,
 		BinaryNinja::DisassemblySettings* settings, BNOperatorPrecedence precedence);
 	bool IsMutable(const BinaryNinja::Variable& var) const;

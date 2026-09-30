@@ -112,7 +112,7 @@ the name of a type will take you to its definition.
 	* **Type > Make 16-bit Integer** - Create `uint16_t` members in selection
 	* **Type > Make 32-bit Integer** - Create `uint32_t` members in selection
 	* **Type > Make 64-bit Integer** - Create `uint64_t` members in selection
-	* **Type > Invert Integer Sign** - Toggle integer signedness, e.g. between `uint8_t` and `int8_t`
+	* **Type > Toggle Integer Signedness** - Toggle integer signedness, e.g. between `uint8_t` and `int8_t`
 	* **Type > Cycle Integer Size** - Change integer member size in order: `uint8_t`, `uint16_t`, `uint32_t`, `uint64_t`
 	* **Type > Make 32-bit Float** - Create `float` members in selection
 	* **Type > Make 64-bit Float** - Create `double` members in selection

@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -20,6 +20,7 @@
 
 import traceback
 import ctypes
+from typing import Any, Optional
 
 # Binary Ninja components
 import binaryninja
@@ -65,6 +66,23 @@ class _UpdateChannelMetaClass(type):
 			raise KeyError("'%s' is not a valid channel" % str(name))
 		return result
 
+	def __contains__(cls: '_UpdateChannelMetaClass', name: object) -> bool:
+		if not isinstance(name, str):
+			return False
+		try:
+			cls[name]
+			return True
+		except KeyError:
+			return False
+
+	def get(cls: '_UpdateChannelMetaClass', name: str, default: Any = None) -> Optional['UpdateChannel']:
+		try:
+			return cls[name]
+		except KeyError:
+			if default is not None:
+				return default
+			return None
+
 
 class UpdateProgressCallback:
 	def __init__(self, func):
@@ -77,7 +95,7 @@ class UpdateProgressCallback:
 			if self.func is not None:
 				return self.func(progress, total)
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in update progress callback")
 
 	@property

@@ -1,5 +1,7 @@
 #include "microsoft.h"
 
+#include <chrono>
+
 using namespace BinaryNinja;
 using namespace BinaryNinja::RTTI;
 using namespace BinaryNinja::RTTI::Microsoft;
@@ -362,14 +364,15 @@ std::vector<BaseClassInfo> MicrosoftRTTIProcessor::ProcessClassHierarchyDescript
         if (baseClassTypeDescAddr == 0)
         {
             // Fixes issue https://github.com/Vector35/binaryninja-api/issues/6837
-            m_logger->LogWarn("Skipping BaseClassDescriptor with null pTypeDescriptor %llx", baseClassDescAddr);
+            m_logger->LogWarnF("Skipping BaseClassDescriptor with null pTypeDescriptor {:#x}", baseClassDescAddr);
             continue;
         }
         auto baseClassTypeDesc = TypeDescriptor(m_view, baseClassTypeDescAddr);
-        auto baseClassName = DemangleNameMS(m_view, allowMangledClassNames, baseClassTypeDesc.name);
+        auto baseClassName = DemangleNameMS(
+            m_view, allowMangledClassNames, baseClassTypeDesc.name, m_simplifyTemplates);
         if (!baseClassName.has_value())
         {
-            m_logger->LogWarn("Skipping BaseClassDescriptor with mangled name %llx", baseClassTypeDescAddr);
+            m_logger->LogWarnF("Skipping BaseClassDescriptor with mangled name {:#x}", baseClassTypeDescAddr);
             continue;
         }
 
@@ -413,7 +416,7 @@ std::optional<ClassInfo> MicrosoftRTTIProcessor::ProcessRTTI(uint64_t coLocatorA
     // Get type descriptor then check to see if the class name was demangled.
     auto typeDescAddr = resolveAddr(coLocator->pTypeDescriptor);
     auto typeDesc = TypeDescriptor(m_view, typeDescAddr);
-    auto className = DemangleNameMS(m_view, allowMangledClassNames, typeDesc.name);
+    auto className = DemangleNameMS(m_view, allowMangledClassNames, typeDesc.name, m_simplifyTemplates);
     if (!className.has_value())
         return std::nullopt;
 
@@ -422,7 +425,7 @@ std::optional<ClassInfo> MicrosoftRTTIProcessor::ProcessRTTI(uint64_t coLocatorA
     {
         if (!allowAnonymousClassNames)
         {
-            m_logger->LogDebug("Skipping CompleteObjectorLocator with anonymous name %llx", coLocatorAddr);
+            m_logger->LogDebugF("Skipping CompleteObjectorLocator with anonymous name {:#x}", coLocatorAddr);
             return std::nullopt;
         }
         className = fmt::format("anonymous_{:#x}", coLocatorAddr);
@@ -437,7 +440,7 @@ std::optional<ClassInfo> MicrosoftRTTIProcessor::ProcessRTTI(uint64_t coLocatorA
     reader.Seek(classHierarchyDescAddr);
     if (auto signature = reader.Read32(); signature != 0)
     {
-        m_logger->LogWarn("Skipping CompleteObjectorLocator with non-zero hierarchy descriptor signature %llx", coLocatorAddr);
+        m_logger->LogWarnF("Skipping CompleteObjectorLocator with non-zero hierarchy descriptor signature {:#x}", coLocatorAddr);
         return std::nullopt;
     }
 
@@ -480,42 +483,24 @@ std::optional<ClassInfo> MicrosoftRTTIProcessor::ProcessRTTI(uint64_t coLocatorA
 std::optional<VirtualFunctionTableInfo> MicrosoftRTTIProcessor::ProcessVFT(uint64_t vftAddr, ClassInfo &classInfo, std::optional<BaseClassInfo> baseClassInfo)
 {
     VirtualFunctionTableInfo vftInfo = {vftAddr};
-    // Gather all virtual functions
-    BinaryReader reader = BinaryReader(m_view);
-    reader.Seek(vftAddr);
     // Virtual functions and the analysis object of it, if it exists.
     std::vector<std::pair<uint64_t, std::optional<Ref<Function>>>> virtualFunctions = {};
+    uint64_t currentVftEntry = vftAddr;
     while (true)
     {
-        uint64_t readOffset = reader.GetOffset();
-        if (!m_view->IsValidOffset(readOffset))
+        uint64_t vFuncAddr = 0;
+        const FunctionDiscoverState state = DiscoverVirtualFunction(currentVftEntry, vFuncAddr);
+        if (state == FunctionDiscoverState::Failed)
             break;
-        uint64_t vFuncAddr = reader.ReadPointer();
-        auto funcs = m_view->GetAnalysisFunctionsForAddress(vFuncAddr);
-        if (funcs.empty())
-        {
-            Ref<Segment> segment = m_view->GetSegmentAt(vFuncAddr);
-            if (segment == nullptr || !(segment->GetFlags() & (SegmentExecutable | SegmentDenyWrite)))
-            {
-                // Last CompleteObjectLocator or hit the next CompleteObjectLocator
-                break;
-            }
-            // TODO: Is likely a function check here?
-            m_logger->LogDebug("Discovered function from virtual function table... %llx", vFuncAddr);
-            auto vftPlatform = m_view->GetDefaultPlatform()->GetAssociatedPlatformByAddress(vFuncAddr);
-            auto vFunc = m_view->AddFunctionForAnalysis(vftPlatform, vFuncAddr, true);
-            virtualFunctions.emplace_back(vFuncAddr, vFunc ? std::optional(vFunc) : std::nullopt);
-        }
-        else
-        {
-            // Only ever add one function.
-            virtualFunctions.emplace_back(vFuncAddr, funcs.front());
-        }
+        currentVftEntry += m_view->GetAddressSize();
+        Ref<Platform> vftPlatform = m_view->GetDefaultPlatform()->GetAssociatedPlatformByAddress(vFuncAddr);
+        Ref<Function> vFunc = m_view->GetAnalysisFunction(vftPlatform, vFuncAddr);
+        virtualFunctions.emplace_back(vFuncAddr, vFunc ? std::optional(vFunc) : std::nullopt);
     }
 
     if (virtualFunctions.empty())
     {
-        m_logger->LogDebug("Skipping empty virtual function table... %llx", vftAddr);
+        m_logger->LogDebugF("Skipping empty virtual function table... {:#x}", vftAddr);
         return std::nullopt;
     }
 
@@ -543,7 +528,7 @@ std::optional<VirtualFunctionTableInfo> MicrosoftRTTIProcessor::ProcessVFT(uint6
         // Until https://github.com/Vector35/binaryninja-api/issues/5982 is fixed
         auto vftSize = virtualFunctions.size() * addrSize;
         vftBuilder.SetWidth(vftSize);
-        
+
         if (baseClassInfo.has_value() && baseClassInfo->vft.has_value())
         {
             if (baseClassInfo->vft->virtualFunctions.size() <= virtualFunctions.size())
@@ -563,10 +548,10 @@ std::optional<VirtualFunctionTableInfo> MicrosoftRTTIProcessor::ProcessVFT(uint6
             }
             else
             {
-                LogWarn("Skipping adjustments for base VFT with more functions than sub VFT... %llx", vftAddr);
+                LogWarnF("Skipping adjustments for base VFT with more functions than sub VFT... {:#x}", vftAddr);
             }
         }
-        
+
         for (auto &&[_, vFunc]: virtualFunctions)
         {
             auto vFuncName = fmt::format("vFunc_{}", vFuncIdx);
@@ -587,6 +572,15 @@ std::optional<VirtualFunctionTableInfo> MicrosoftRTTIProcessor::ProcessVFT(uint6
             auto vFuncOffset = vFuncIdx * addrSize;
             // We have access to a backing function type, use it, otherwise void!
             auto vFuncType = vFunc.has_value() ? vFunc.value()->GetType() : Type::VoidType();
+            // A pure-virtual vtable slot may point to _purecall, whose analyzed type is parameterless and
+            // no-return. That is the type of the placeholder target, not the virtual method the slot
+            // represents: a slot should describe the polymorphic operation, not the concrete function
+            // currently occupying it. Propagating that type into the vtable would wrongly make dispatch
+            // through the slot no-return. This heuristically recognizes the characteristic _purecall shape
+            // (empty parameters, no-return) and treats it as unknown; it does not prove the target is
+            // _purecall.
+            if (vFuncType && vFuncType->GetClass() == FunctionTypeClass && vFuncType->GetParameters().empty() && !vFuncType->CanReturn().GetValue())
+                vFuncType = Type::VoidType();
             vftBuilder.AddMemberAtOffset(
                 Type::PointerType(addrSize, vFuncType, true), vFuncName, vFuncOffset);
             vFuncIdx++;
@@ -622,7 +616,8 @@ std::optional<VirtualFunctionTableInfo> MicrosoftRTTIProcessor::ProcessVFT(uint6
 MicrosoftRTTIProcessor::MicrosoftRTTIProcessor(const Ref<BinaryView> &view, bool useMangled, bool checkRData, bool vftSweep, bool allowAnonymous)
 {
     m_view = view;
-    m_logger = new Logger("Microsoft RTTI");
+    m_logger = view->CreateLogger("Microsoft RTTI");
+    m_simplifyTemplates = Settings::Instance()->Get<bool>("analysis.types.templateSimplifier", view);
     allowMangledClassNames = useMangled;
     allowAnonymousClassNames = allowAnonymous;
     checkWritableRData = checkRData;
@@ -694,21 +689,41 @@ void MicrosoftRTTIProcessor::ProcessRTTI()
     {
         if (segment->GetFlags() == (SegmentReadable | SegmentContainsData))
         {
-            m_logger->LogDebug("Attempting to find RTTI in segment %llx", segment->GetStart());
-            scan(segment);
+            // If a malformed binary makes the binary view set up unbacked segments we should not attempt to read in them.
+            if (m_view->ReadBuffer(segment->GetStart(), 4).GetLength() != 4)
+            {
+                m_logger->LogInfoF("Unbacked start for segment {:#x}... skipping", segment->GetStart());
+                continue;
+            }
+            m_logger->LogDebugF("Attempting to find RTTI in segment {:#x}", segment->GetStart());
+            try
+            {
+                scan(segment);
+            }
+            catch (std::exception &e)
+            {
+                m_logger->LogWarnF("Unhandled exception in segment scan {:#x} {}", segment->GetStart(), e.what());
+            }
         }
         else if (checkWritableRData && rdataSection && rdataSection->GetStart() == segment->GetStart())
         {
-            m_logger->LogDebug("Attempting to find RTTI in writable rdata segment %llx",
+            m_logger->LogDebugF("Attempting to find RTTI in writable rdata segment {:#x}",
                                segment->GetStart());
-            scan(segment);
+            try
+            {
+                scan(segment);
+            }
+            catch (std::exception &e)
+            {
+                m_logger->LogWarnF("Unhandled exception in writable segment scan {:#x} {}", segment->GetStart(), e.what());
+            }
         }
     }
 
     bgTask->Finish();
     auto end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed_time = end_time - start_time;
-    m_logger->LogDebug("ProcessRTTI took %f seconds", elapsed_time.count());
+    m_logger->LogDebugF("ProcessRTTI took {} seconds", elapsed_time.count());
 }
 
 
@@ -727,7 +742,7 @@ void MicrosoftRTTIProcessor::ProcessVFT()
         }
     }
 
-    if (virtualFunctionTableSweep)
+    if (virtualFunctionTableSweep && !m_classInfo.empty())
     {
         BinaryReader optReader = BinaryReader(m_view);
         auto addrSize = m_view->GetAddressSize();
@@ -756,14 +771,28 @@ void MicrosoftRTTIProcessor::ProcessVFT()
                 break;
             if (segment->GetFlags() == (SegmentReadable | SegmentContainsData))
             {
-                m_logger->LogDebug("Attempting to find VirtualFunctionTables in segment %llx", segment->GetStart());
-                scan(segment);
+                m_logger->LogDebugF("Attempting to find VirtualFunctionTables in segment {:#x}", segment->GetStart());
+                try
+                {
+                    scan(segment);
+                }
+                catch (std::exception &e)
+                {
+                    m_logger->LogWarnF("Unhandled exception in vtable segment scan {:#x} {}", segment->GetStart(), e.what());
+                }
             }
             else if (checkWritableRData && rdataSection && rdataSection->GetStart() == segment->GetStart())
             {
-                m_logger->LogDebug("Attempting to find VirtualFunctionTables in writable rdata segment %llx",
+                m_logger->LogDebugF("Attempting to find VirtualFunctionTables in writable rdata segment {:#x}",
                                    segment->GetStart());
-                scan(segment);
+                try
+                {
+                    scan(segment);
+                }
+                catch (std::exception &e)
+                {
+                    m_logger->LogWarnF("Unhandled exception in vtable writable segment scan {:#x} {}", segment->GetStart(), e.what());
+                }
             }
         }
     }
@@ -826,5 +855,5 @@ void MicrosoftRTTIProcessor::ProcessVFT()
     bgTask->Finish();
     auto end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed_time = end_time - start_time;
-    m_logger->LogDebug("ProcessVFT took %f seconds", elapsed_time.count());
+    m_logger->LogDebugF("ProcessVFT took {} seconds", elapsed_time.count());
 }

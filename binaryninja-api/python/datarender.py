@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -20,6 +20,7 @@
 
 import traceback
 import ctypes
+from typing import List, Optional
 
 import binaryninja
 from . import _binaryninjacore as core
@@ -34,7 +35,7 @@ from . import types
 
 
 class TypeContext:
-	def __init__(self, _type, _offset):
+	def __init__(self, _type: types.Type, _offset: int):
 		self._type = _type
 		self._offset = _offset
 
@@ -85,7 +86,7 @@ class DataRenderer:
 	"""
 	_registered_renderers = []
 
-	def __init__(self, context=None):
+	def __init__(self, context: Optional[TypeContext] = None):
 		self._cb = core.BNCustomDataRenderer()
 		self._cb.context = context
 		self._cb.freeObject = self._cb.freeObject.__class__(self._free_object)
@@ -112,7 +113,7 @@ class DataRenderer:
 	def _free_object(self, ctxt):
 		try:
 			self.perform_free_object(ctxt)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in DataRenderer._free_object")
 
 	def _is_valid_for_data(self, ctxt, view, addr, type, context, ctxCount):
@@ -126,7 +127,7 @@ class DataRenderer:
 				    TypeContext(types.Type.create(core.BNNewTypeReference(context[i].type)), context[i].offset)
 				)
 			return self.perform_is_valid_for_data(ctxt, view, addr, type, pycontext)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in DataRenderer._is_valid_for_data")
 			return False
 
@@ -137,7 +138,7 @@ class DataRenderer:
 			type = types.Type.create(handle=core.BNNewTypeReference(type))
 
 			prefixTokens = function.InstructionTextToken._from_core_struct(prefix, prefixCount)
-			pycontext = []
+			pycontext: List[TypeContext] = []
 			for i in range(ctxCount):
 				pycontext.append(
 				    TypeContext(types.Type.create(core.BNNewTypeReference(typeCtx[i].type)), typeCtx[i].offset)
@@ -174,7 +175,7 @@ class DataRenderer:
 				self.line_buf[i].tokens = function.InstructionTextToken._get_core_struct(line.tokens)
 
 			return ctypes.cast(self.line_buf, ctypes.c_void_p).value
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in DataRenderer._get_lines_for_data")
 			return None
 
@@ -184,13 +185,13 @@ class DataRenderer:
 	def perform_free_object(self, ctxt):
 		pass
 
-	def perform_is_valid_for_data(self, ctxt, view, addr, type, context):
+	def perform_is_valid_for_data(self, ctxt, view: binaryview.BinaryView, addr: int, type: types.Type, context: List[TypeContext]) -> bool:
 		return False
 
-	def perform_get_lines_for_data(self, ctxt, view, addr, type, prefix, width, context):
+	def perform_get_lines_for_data(self, ctxt, view: binaryview.BinaryView, addr: int, type: types.Type, prefix: List[function.InstructionTextToken], width: int, context: List[TypeContext]) -> List['function.DisassemblyTextLine']:
 		return []
 
-	def perform_get_lines_for_data_with_language(self, ctxt, view, addr, type, prefix, width, context, language):
+	def perform_get_lines_for_data_with_language(self, ctxt, view: binaryview.BinaryView, addr: int, type: types.Type, prefix: List[function.InstructionTextToken], width: int, context: List[TypeContext], language: str) -> List['function.DisassemblyTextLine']:
 		return self.perform_get_lines_for_data(ctxt, view, addr, type, prefix, width, context)
 
 	def __del__(self):

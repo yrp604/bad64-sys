@@ -78,7 +78,8 @@ namespace DSCObjC {
 
 		std::shared_ptr<BinaryNinja::ObjCReader> GetReader() override;
 
-		void GetRelativeMethod(BinaryNinja::ObjCReader* reader, BinaryNinja::method_t& meth) override;
+		void GetRelativeMethod(BinaryNinja::ObjCReader* reader, BinaryNinja::method_t& meth,
+			bool typesAreOffsetsFromSelectorBase) override;
 
 		BinaryNinja::Ref<BinaryNinja::Symbol> GetSymbol(uint64_t address) override;
 

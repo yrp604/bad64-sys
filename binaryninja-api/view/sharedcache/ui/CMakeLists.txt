@@ -4,7 +4,7 @@ project(sharedcacheui)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
-find_package(Qt6 COMPONENTS Core Gui Widgets REQUIRED)
+find_package(Qt6 COMPONENTS Core Concurrent Gui Widgets REQUIRED)
 
 file(GLOB SOURCES CONFIGURE_DEPENDS *.cpp *.h)
 list(FILTER SOURCES EXCLUDE REGEX moc_.*)
@@ -93,6 +93,6 @@ get_recursive_include_dirs(sharedcacheapi INCLUDES)
 
 target_include_directories(sharedcacheui PRIVATE ${INCLUDES})
 
-target_link_libraries(sharedcacheui sharedcacheapi sharedcache binaryninjaui Qt6::Core Qt6::Gui Qt6::Widgets)
+target_link_libraries(sharedcacheui sharedcacheapi sharedcache binaryninjaui Qt6::Core Qt6::Concurrent Qt6::Gui Qt6::Widgets)
 
 

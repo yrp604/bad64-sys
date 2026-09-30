@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -22,6 +22,7 @@ import abc
 import ctypes
 import sys
 import traceback
+from typing import Any, Optional
 
 # Binary Ninja Components
 import binaryninja._binaryninjacore as core
@@ -76,7 +77,7 @@ class WebsocketClient(object):
 			if self in self.__class__._registered_clients:
 				self.__class__._registered_clients.remove(self)
 			self.perform_destroy_client()
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in WebsocketClient._destroy_client")
 
 	def _connect(self, ctxt, host, header_count, header_keys, header_values):
@@ -96,7 +97,7 @@ class WebsocketClient(object):
 			data_bytes = (ctypes.c_char * len).from_buffer(data)
 			self.perform_write(data_bytes)
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in WebsocketClient._write")
 			return False
 
@@ -249,6 +250,23 @@ class _WebsocketProviderMetaclass(type):
 			raise KeyError("'%s' is not a valid websocket provider" % str(value))
 		return WebsocketProvider(provider)
 
+	def __contains__(cls: '_WebsocketProviderMetaclass', name: object) -> bool:
+		if not isinstance(name, str):
+			return False
+		try:
+			cls[name]
+			return True
+		except KeyError:
+			return False
+
+	def get(cls: '_WebsocketProviderMetaclass', name: str, default: Any = None) -> Optional['WebsocketProvider']:
+		try:
+			return cls[name]
+		except KeyError:
+			if default is not None:
+				return default
+			return None
+
 	def __setattr__(self, name, value):
 		try:
 			type.__setattr__(self, name, value)
@@ -280,7 +298,7 @@ class WebsocketProvider(metaclass=_WebsocketProviderMetaclass):
 			if result is None:
 				return None
 			return ctypes.cast(core.BNNewWebsocketClientReference(result.handle), ctypes.c_void_p).value
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in WebsocketProvider._create_instance")
 			return None
 

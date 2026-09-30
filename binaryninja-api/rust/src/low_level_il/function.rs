@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -209,16 +209,55 @@ where
             Some(unsafe { BasicBlock::ref_from_raw(block, LowLevelILBlock { function: self }) })
         }
     }
+
+    pub fn set_indirect_branches(&self, branches: &[Location]) {
+        let mut bn_branches: Box<[BNArchitectureAndAddress]> = branches
+            .iter()
+            .map(|loc| BNArchitectureAndAddress {
+                address: loc.addr,
+                arch: loc.arch.unwrap_or_else(|| self.arch()).handle,
+            })
+            .collect();
+
+        unsafe {
+            BNLowLevelILSetIndirectBranches(self.handle, bn_branches.as_mut_ptr(), branches.len());
+        }
+    }
 }
 
 impl<M: FunctionMutability> LowLevelILFunction<M, NonSSA> {
     /// Retrieve the SSA form of the function.
+    ///
+    /// If the function has not had the SSA form generated you may call `generate_ssa_form`.
     pub fn ssa_form(&self) -> Option<Ref<LowLevelILFunction<M, SSA>>> {
         let handle = unsafe { BNGetLowLevelILSSAForm(self.handle) };
         if handle.is_null() {
             return None;
         }
         Some(unsafe { LowLevelILFunction::ref_from_raw(handle) })
+    }
+
+    /// Generates the SSA form of the function. Typically called **after** `finalize`.
+    ///
+    /// If you created a freestanding [`LowLevelILFunction`] with no [`LowLevelILFunction::function`]
+    /// than this function will **not** generate the SSA form, as it is currently impossible.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use binaryninja::low_level_il::LowLevelILMutableFunction;
+    /// use binaryninja::rc::Ref;
+    /// # let mutable_llil: Ref<LowLevelILMutableFunction> = unimplemented!();
+    /// // ... modify the IL
+    /// let finalized_llil = mutable_llil.finalized();
+    /// finalized_llil.generate_ssa_form();
+    /// ```
+    pub fn generate_ssa_form(&self) {
+        use binaryninjacore_sys::BNGenerateLowLevelILSSAForm;
+        // SSA form may only be generated if there is an owning function, otherwise it will crash.
+        if self.function().is_some() {
+            unsafe { BNGenerateLowLevelILSSAForm(self.handle) };
+        }
     }
 }
 
@@ -242,19 +281,29 @@ impl LowLevelILFunction<Mutable, NonSSA> {
 
         unsafe { Self::ref_from_raw_with_arch(handle, Some(arch)) }
     }
-
-    pub fn generate_ssa_form(&self) {
-        use binaryninjacore_sys::BNGenerateLowLevelILSSAForm;
-        unsafe { BNGenerateLowLevelILSSAForm(self.handle) };
-    }
 }
 
 impl Ref<LowLevelILFunction<Mutable, NonSSA>> {
+    /// Finalize the mutated [`LowLevelILFunction`], returning a [`LowLevelILRegularFunction`].
+    ///
+    /// This function **will not** correct the SSA related dataflow, to do that you must call
+    /// the function [`LowLevelILMutableFunction::generate_ssa_form`].
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use binaryninja::low_level_il::LowLevelILMutableFunction;
+    /// use binaryninja::rc::Ref;
+    /// # let mutable_llil: Ref<LowLevelILMutableFunction> = unimplemented!();
+    /// // ... modify the IL
+    /// let finalized_llil = mutable_llil.finalized();
+    /// finalized_llil.generate_ssa_form();
+    /// ```
     pub fn finalized(self) -> Ref<LowLevelILFunction<Finalized, NonSSA>> {
         unsafe {
             BNFinalizeLowLevelILFunction(self.handle);
             // Now that we have finalized return the function as is so the caller can reference the "finalized function".
-            LowLevelILFunction::from_raw(self.handle).to_owned()
+            LowLevelILFunction::from_raw_with_arch(self.handle, self.arch).to_owned()
         }
     }
 }
@@ -264,19 +313,16 @@ impl<M: FunctionMutability> LowLevelILFunction<M, SSA> {
     #[must_use]
     pub fn get_ssa_register_uses<R: ArchReg>(
         &self,
-        reg: LowLevelILSSARegisterKind<R>,
+        reg: impl AsRef<LowLevelILSSARegister<R>>,
     ) -> Vec<LowLevelILInstruction<'_, M, SSA>> {
         use binaryninjacore_sys::BNGetLowLevelILSSARegisterUses;
-        let register_id = match reg {
-            LowLevelILSSARegisterKind::Full { kind, .. } => kind.id(),
-            LowLevelILSSARegisterKind::Partial { partial_reg, .. } => partial_reg.id(),
-        };
+        let reg = reg.as_ref();
         let mut count = 0;
         let instrs = unsafe {
             BNGetLowLevelILSSARegisterUses(
                 self.handle,
-                register_id.into(),
-                reg.version() as usize,
+                reg.id().into(),
+                reg.version as usize,
                 &mut count,
             )
         };
@@ -292,19 +338,12 @@ impl<M: FunctionMutability> LowLevelILFunction<M, SSA> {
     #[must_use]
     pub fn get_ssa_register_definition<R: ArchReg>(
         &self,
-        reg: &LowLevelILSSARegisterKind<R>,
+        reg: impl AsRef<LowLevelILSSARegister<R>>,
     ) -> Option<LowLevelILInstruction<'_, M, SSA>> {
         use binaryninjacore_sys::BNGetLowLevelILSSARegisterDefinition;
-        let register_id = match reg {
-            LowLevelILSSARegisterKind::Full { kind, .. } => kind.id(),
-            LowLevelILSSARegisterKind::Partial { partial_reg, .. } => partial_reg.id(),
-        };
+        let reg = reg.as_ref();
         let instr_idx = unsafe {
-            BNGetLowLevelILSSARegisterDefinition(
-                self.handle,
-                register_id.into(),
-                reg.version() as usize,
-            )
+            BNGetLowLevelILSSARegisterDefinition(self.handle, reg.id().into(), reg.version as usize)
         };
         self.instruction_from_index(LowLevelInstructionIndex(instr_idx))
     }
@@ -313,14 +352,11 @@ impl<M: FunctionMutability> LowLevelILFunction<M, SSA> {
     #[must_use]
     pub fn get_ssa_register_value<R: ArchReg>(
         &self,
-        reg: &LowLevelILSSARegisterKind<R>,
+        reg: impl AsRef<LowLevelILSSARegister<R>>,
     ) -> Option<RegisterValue> {
-        let register_id = match reg {
-            LowLevelILSSARegisterKind::Full { kind, .. } => kind.id(),
-            LowLevelILSSARegisterKind::Partial { partial_reg, .. } => partial_reg.id(),
-        };
+        let reg = reg.as_ref();
         let value = unsafe {
-            BNGetLowLevelILSSARegisterValue(self.handle, register_id.into(), reg.version() as usize)
+            BNGetLowLevelILSSARegisterValue(self.handle, reg.id().into(), reg.version as usize)
         };
         if value.state == BNRegisterValueType::UndeterminedValue {
             return None;

@@ -1,7 +1,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstdint>
-#include <cstdbool>
 
 #include <sys/types.h>
 #include <sys/stat.h>

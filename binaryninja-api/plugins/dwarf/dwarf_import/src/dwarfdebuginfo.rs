@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,22 +19,21 @@ use crate::{
 };
 
 use binaryninja::{
-    binary_view::{BinaryView, BinaryViewBase, BinaryViewExt},
+    binary_view::{BinaryView, BinaryViewBase},
     debuginfo::{DebugFunctionInfo, DebugInfo},
+    demangle::simplify_demangled_template_name,
     platform::Platform,
     rc::*,
     symbol::SymbolType,
-    template_simplifier::simplify_str_to_fqn,
-    types::{FunctionParameter, Type},
+    types::{FunctionParameter, StructureBuilder, StructureType, Type, TypeClass},
     variable::NamedVariableWithType,
 };
 
 use gimli::{DebuggingInformationEntry, Dwarf, Unit};
 
-use binaryninja::confidence::Conf;
+use binaryninja::confidence::{Conf, MAX_CONFIDENCE};
 use binaryninja::variable::{Variable, VariableSourceType};
 use indexmap::{map::Values, IndexMap};
-use log::{debug, error, warn};
 use std::{cmp::Ordering, collections::HashMap, hash::Hash};
 
 pub(crate) type TypeUID = usize;
@@ -102,17 +101,22 @@ impl FunctionInfoBuilder {
 //////////////////////
 // DebugInfoBuilder
 
+// The name given to a subroutine type that has none of its own.
+pub(crate) const UNNAMED_FUNCTION_NAME: &str = "_unnamed_func";
+
 // TODO : Don't make this pub...fix the value thing
 pub(crate) struct DebugType {
     pub name: String,
     pub ty: Ref<Type>,
+    // Named structures and enums keep their definition for committing and an NTR for uses.
+    pub reference: Option<Ref<Type>>,
     pub commit: bool,
     pub target_type_uid: Option<TypeUID>,
 }
 
 impl DebugType {
     pub fn get_type(&self) -> Ref<Type> {
-        self.ty.clone()
+        self.reference.as_ref().unwrap_or(&self.ty).clone()
     }
 }
 
@@ -133,7 +137,7 @@ impl<R: ReaderType> DebugInfoBuilderContext<R> {
             if let Ok(unit) = dwarf.unit(header) {
                 units.push(unit);
             } else {
-                error!("Unable to read DWARF information. File may be malformed or corrupted. Not applying debug info.");
+                tracing::error!("Unable to read DWARF information. File may be malformed or corrupted. Not applying debug info.");
                 return None;
             }
         }
@@ -145,7 +149,7 @@ impl<R: ReaderType> DebugInfoBuilderContext<R> {
                 if let Ok(unit) = sup_dwarf.unit(header) {
                     sup_units.push(unit);
                 } else {
-                    error!("Unable to read supplementary DWARF information. File may be malformed or corrupted. Not applying debug info.");
+                    tracing::error!("Unable to read supplementary DWARF information. File may be malformed or corrupted. Not applying debug info.");
                     return None;
                 }
             }
@@ -193,7 +197,7 @@ impl<R: ReaderType> DebugInfoBuilderContext<R> {
                     match &entry_unit.entry(entry_offset) {
                         Ok(x) => x,
                         Err(e) => {
-                            log::error!(
+                            tracing::error!(
                                 "Failed to get entry {:?} in unit {:?}: {}",
                                 entry_offset,
                                 entry_unit.header.offset(),
@@ -219,6 +223,11 @@ pub(crate) struct DebugInfoBuilder {
     types: IndexMap<TypeUID, DebugType>,
     data_variables: HashMap<u64, (Option<String>, TypeUID)>,
     range_data_offsets: iset::IntervalMap<u64, i64>,
+    structure_placeholders: HashMap<(String, StructureType, u64), Ref<Type>>,
+    typedef_placeholders:
+        HashMap<(String, TypeClass, Option<StructureType>, u64, usize), Ref<Type>>,
+    unnamed_function_placeholder: Option<Ref<Type>>,
+    definition_uids_by_name: HashMap<String, TypeUID>,
 }
 
 impl DebugInfoBuilder {
@@ -230,7 +239,71 @@ impl DebugInfoBuilder {
             types: IndexMap::new(),
             data_variables: HashMap::new(),
             range_data_offsets: iset::IntervalMap::new(),
+            structure_placeholders: HashMap::new(),
+            typedef_placeholders: HashMap::new(),
+            unnamed_function_placeholder: None,
+            definition_uids_by_name: HashMap::new(),
         }
+    }
+
+    // A placeholder named type reference carries nothing but its name and the reference class,
+    // width and alignment that its target contributes, so the same declaration appearing in
+    // another compilation unit produces the same placeholder. Debug info repeats the common
+    // typedefs and structures in every unit that includes their header, so building each one once
+    // saves marshalling the name across the API, building the target, and asking the core for a
+    // reference, every time after the first.
+    pub(crate) fn structure_placeholder(
+        &mut self,
+        name: &str,
+        structure_type: StructureType,
+        size: u64,
+    ) -> Ref<Type> {
+        let key = (name.to_string(), structure_type, size);
+        if let Some(existing) = self.structure_placeholders.get(&key) {
+            return existing.clone();
+        }
+
+        let mut structure_builder = StructureBuilder::new();
+        structure_builder
+            .packed(true)
+            .width(size)
+            .structure_type(structure_type);
+        let placeholder =
+            Type::named_type_from_type(name, &Type::structure(&structure_builder.finalize()));
+        self.structure_placeholders.insert(key, placeholder.clone());
+        placeholder
+    }
+
+    pub(crate) fn typedef_placeholder(&mut self, name: &str, target: &Type) -> Ref<Type> {
+        // A structure target gives the reference its class according to whether it is a struct, a
+        // union or a class, so which of those it is has to identify the placeholder as well.
+        let key = (
+            name.to_string(),
+            target.type_class(),
+            target.get_structure().map(|s| s.structure_type()),
+            target.width(),
+            target.alignment(),
+        );
+        if let Some(existing) = self.typedef_placeholders.get(&key) {
+            return existing.clone();
+        }
+
+        let placeholder = Type::named_type_from_type(name, target);
+        self.typedef_placeholders.insert(key, placeholder.clone());
+        placeholder
+    }
+
+    // Function types carry no width or alignment of their own, so every anonymous subroutine
+    // produces the same placeholder whatever it returns.
+    pub(crate) fn unnamed_function_placeholder(&mut self, return_type: &Type) -> Ref<Type> {
+        self.unnamed_function_placeholder
+            .get_or_insert_with(|| {
+                Type::named_type_from_type(
+                    UNNAMED_FUNCTION_NAME,
+                    &Type::function(return_type, vec![], false),
+                )
+            })
+            .clone()
     }
 
     pub(crate) fn set_range_data_offsets(&mut self, offsets: iset::IntervalMap<u64, i64>) {
@@ -265,7 +338,7 @@ impl DebugInfoBuilder {
             // if the full name exists, update the stored index for the full name
             if let Some(idx) = self.raw_function_name_indices.get(ident) {
                 let function = self.functions.get_mut(*idx).or_else(|| {
-                    log::error!("Failed to get function with index {}", idx);
+                    tracing::error!("Failed to get function with index {}", idx);
                     None
                 })?;
 
@@ -298,7 +371,7 @@ impl DebugInfoBuilder {
             // if the raw name exists, update the stored index for the raw name
             if let Some(idx) = self.full_function_name_indices.get(ident) {
                 let function = self.functions.get_mut(*idx).or_else(|| {
-                    log::error!("Failed to get function with index {}", idx);
+                    tracing::error!("Failed to get function with index {}", idx);
                     None
                 })?;
 
@@ -325,7 +398,7 @@ impl DebugInfoBuilder {
                 return Some(*idx);
             }
         } else {
-            debug!("Function entry in DWARF without full or raw name.");
+            tracing::debug!("Function entry in DWARF without full or raw name.");
             return None;
         }
 
@@ -364,6 +437,26 @@ impl DebugInfoBuilder {
         self.types.values()
     }
 
+    fn definition_name(&mut self, type_uid: TypeUID, name: String, t: &Ref<Type>) -> String {
+        let mut candidate = name.clone();
+        let mut i = 1;
+        while let Some(&existing_uid) = self.definition_uids_by_name.get(&candidate) {
+            let same_definition = existing_uid == type_uid
+                || self
+                    .types
+                    .get(&existing_uid)
+                    .is_some_and(|existing| existing.ty == *t);
+            if same_definition {
+                return candidate;
+            }
+            candidate = format!("{}_{}", name, i);
+            i += 1;
+        }
+        self.definition_uids_by_name
+            .insert(candidate.clone(), type_uid);
+        candidate
+    }
+
     pub(crate) fn add_type(
         &mut self,
         type_uid: TypeUID,
@@ -372,22 +465,37 @@ impl DebugInfoBuilder {
         commit: bool,
         target_type_uid: Option<TypeUID>,
     ) {
+        let (name, reference) = if commit
+            && matches!(
+                t.type_class(),
+                TypeClass::EnumerationTypeClass | TypeClass::StructureTypeClass
+            ) {
+            let name = self.definition_name(type_uid, name, &t);
+            let reference = self.typedef_placeholder(&name, &t);
+            (name, Some(reference))
+        } else {
+            (name, None)
+        };
+
         if let Some(DebugType {
             name: existing_name,
             ty: existing_type,
-            commit: _,
+            reference: _,
+            commit: existing_commit,
             target_type_uid: _,
         }) = self.types.insert(
             type_uid,
             DebugType {
                 name: name.clone(),
                 ty: t.clone(),
+                reference,
                 commit,
                 target_type_uid,
             },
         ) {
-            if existing_type != t && commit {
-                warn!("DWARF info contains duplicate type definition. Overwriting type `{}` (named `{:?}`) with `{}` (named `{:?}`)",
+            // Completing a recursive type replaces its temporary, uncommitted reference.
+            if existing_commit && existing_type != t && commit {
+                tracing::warn!("DWARF info contains duplicate type definition. Overwriting type `{}` (named `{:?}`) with `{}` (named `{:?}`)",
                     existing_type,
                     existing_name,
                     t,
@@ -434,7 +542,7 @@ impl DebugInfoBuilder {
 
         let Some(function_index) = fn_idx else {
             // If we somehow lost track of what subprogram we're in or we're not actually in a subprogram
-            error!(
+            tracing::error!(
                 "Trying to add a local variable outside of a subprogram. Please report this issue."
             );
             return;
@@ -443,7 +551,7 @@ impl DebugInfoBuilder {
         // Either get the known type or use a 0 confidence void type so we at least get the name applied
         let ty = type_uid
             .and_then(|uid| self.get_type(uid))
-            .map(|t| Conf::new(t.ty.clone(), 128))
+            .map(|t| Conf::new(t.get_type(), 128))
             .unwrap_or_else(|| Conf::new(Type::void(), 0));
 
         let function = &mut self.functions[function_index];
@@ -452,12 +560,12 @@ impl DebugInfoBuilder {
 
         let Some(func_addr) = function.address else {
             // If we somehow are processing a function's variables before the function is created
-            error!("Trying to add a local variable without a known function start. Please report this issue.");
+            tracing::error!("Trying to add a local variable without a known function start. Please report this issue.");
             return;
         };
 
         let Some(frame_base) = &function.frame_base else {
-            error!("Trying to add a local variable ({}) to a function ({:#x}) without a frame base. Please report this issue.", name, func_addr);
+            tracing::error!("Trying to add a local variable ({}) to a function ({:#x}) without a frame base. Please report this issue.", name, func_addr);
             return;
         };
 
@@ -480,7 +588,7 @@ impl DebugInfoBuilder {
             .cloned()
         else {
             // Unknown why, but this is happening with MachO + external dSYM
-            debug!("Refusing to add a local variable ({}@{}) to function at {} without a known CFA adjustment.", name, offset, func_addr);
+            tracing::debug!("Refusing to add a local variable ({}@{}) to function at {} without a known CFA adjustment.", name, offset, func_addr);
             return;
         };
 
@@ -510,7 +618,7 @@ impl DebugInfoBuilder {
 
         if adjusted_offset > 0 {
             // If we somehow end up with a positive sp offset
-            error!("Trying to add a local variable \"{}\" in function at {:#x} at positive storage offset {}. Please report this issue.", name, func_addr, adjusted_offset);
+            tracing::error!("Trying to add a local variable \"{}\" in function at {:#x} at positive storage offset {}. Please report this issue.", name, func_addr, adjusted_offset);
             return;
         }
 
@@ -536,7 +644,7 @@ impl DebugInfoBuilder {
             let existing_type = match self.get_type(existing_type_uid) {
                 Some(x) => x.ty.as_ref(),
                 None => {
-                    log::error!(
+                    tracing::error!(
                         "Failed to find existing type with uid {} for data variable at {:#x}",
                         existing_type_uid,
                         address
@@ -548,7 +656,7 @@ impl DebugInfoBuilder {
             let new_type = match self.get_type(type_uid) {
                 Some(x) => x.ty.as_ref(),
                 None => {
-                    log::error!(
+                    tracing::error!(
                         "Failed to find new type with uid {} for data variable at {:#x}",
                         type_uid,
                         address
@@ -558,13 +666,24 @@ impl DebugInfoBuilder {
             };
 
             if existing_type_uid != type_uid || existing_type != new_type {
-                warn!("DWARF info contains duplicate data variable definition. Overwriting data variable at {:#08x} (`{}`) with `{}`",
+                tracing::warn!("DWARF info contains duplicate data variable definition. Overwriting data variable at {:#08x} (`{}`) with `{}`",
                     address,
                     existing_type,
                     new_type
                 );
             }
         }
+    }
+
+    // What committing a type actually stores. A typedef contributes its target, because its own
+    // type is the self-referential placeholder that stands in for it while its children are built.
+    fn committed_type(&self, debug_type: &DebugType) -> Option<Ref<Type>> {
+        if debug_type.ty.get_named_type_reference().is_none() {
+            return Some(debug_type.ty.clone());
+        }
+
+        let target_uid = debug_type.target_type_uid?;
+        Some(self.get_type(target_uid)?.get_type())
     }
 
     fn commit_types(&self, debug_info: &mut DebugInfo) {
@@ -580,9 +699,23 @@ impl DebugInfoBuilder {
             // Prevent storing two types with the same name and differing definitions
             if let Some(stored_uid) = type_uids_by_name.get(&debug_type_name) {
                 let Some(stored_debug_type) = self.types.get(stored_uid) else {
-                    error!("Stored type name without storing a type! Please report this error. UID: {}, name: {}", stored_uid, debug_type_name);
+                    tracing::error!("Stored type name without storing a type! Please report this error. UID: {}, name: {}", stored_uid, debug_type_name);
                     continue;
                 };
+
+                // This name already describes this definition. Debug info repeats a type in every
+                // compilation unit that includes its header, so committing it again would have the
+                // core walk and re-resolve every named reference in it for no gain.
+                let same_definition = match (
+                    self.committed_type(stored_debug_type),
+                    self.committed_type(debug_type),
+                ) {
+                    (Some(stored), Some(current)) => stored.as_ref() == current.as_ref(),
+                    _ => false,
+                };
+                if same_definition {
+                    continue;
+                }
 
                 let mut skip_adding_type = false;
                 if stored_debug_type.ty != debug_type.ty {
@@ -619,19 +752,20 @@ impl DebugInfoBuilder {
 
             // TODO : Components
             // If it's a typedef resolve one layer down since we'd technically be defining it as a typedef to itself otherwise
-            if let Some(ntr) = debug_type.get_type().get_named_type_reference() {
+            if let Some(ntr) = debug_type.ty.get_named_type_reference() {
                 if let Some(target_uid) = debug_type.target_type_uid {
                     if let Some(target_type) = self.get_type(target_uid) {
                         debug_info.add_type(&debug_type_name, &target_type.get_type(), &[]);
+                        type_uids_by_name.insert(debug_type_name, *debug_type_uid);
                     } else {
-                        error!(
+                        tracing::error!(
                             "Failed to find typedef {} target for uid {}",
                             debug_type_name,
                             ntr.name()
                         );
                     }
                 } else {
-                    error!(
+                    tracing::error!(
                         "Failed to find typedef {} target uid for {}",
                         debug_type_name,
                         ntr.name()
@@ -639,8 +773,8 @@ impl DebugInfoBuilder {
                 }
             } else {
                 debug_info.add_type(&debug_type_name, &debug_type.ty, &[]);
+                type_uids_by_name.insert(debug_type_name, *debug_type_uid);
             }
-            type_uids_by_name.insert(debug_type_name, *debug_type_uid);
         }
     }
 
@@ -648,15 +782,15 @@ impl DebugInfoBuilder {
     fn commit_data_variables(&self, debug_info: &mut DebugInfo) {
         for (&address, (name, type_uid)) in &self.data_variables {
             let data_var_type = match self.get_type(*type_uid) {
-                Some(x) => &x.ty,
+                Some(x) => x.get_type(),
                 None => {
-                    log::error!("Failed to find type for data variable at {:#x}", address);
+                    tracing::error!("Failed to find type for data variable at {:#x}", address);
                     continue;
                 }
             };
             assert!(debug_info.add_data_variable(
                 address,
-                data_var_type,
+                &data_var_type,
                 name.as_deref(),
                 &[] // TODO : Components
             ));
@@ -667,7 +801,8 @@ impl DebugInfoBuilder {
         let return_type = function
             .return_type
             .and_then(|return_type_id| self.get_type(return_type_id))
-            .map(|t| Conf::new(t.ty.clone(), 128))
+            // Have to bump to max confidence or (wrong) auto analysis will take precedence
+            .map(|t| Conf::new(t.get_type(), MAX_CONFIDENCE))
             .unwrap_or_else(|| Conf::new(Type::void(), 0));
 
         let parameters: Vec<FunctionParameter> = function
@@ -679,7 +814,7 @@ impl DebugInfoBuilder {
                         0 => Type::void(),
                         uid => self
                             .get_type(*uid)
-                            .map(|t| t.ty.clone())
+                            .map(|t| t.get_type())
                             .unwrap_or_else(Type::void),
                     };
                     FunctionParameter::new(ty, name.clone(), None)
@@ -720,7 +855,11 @@ impl DebugInfoBuilder {
                     // Link mangled names without addresses to existing symbols in the binary
                     if func.address.is_none() && func.raw_name.is_some() {
                         // DWARF doesn't contain GOT info, so remove any entries there...they will be wrong (relying on Binja's mechanisms for the GOT is good )
-                        if symbol.sym_type() != SymbolType::ImportAddress {
+                        // Also ignore externs since we don't want to try and create functions not backed by the file
+                        let symbol_type = symbol.sym_type();
+                        if symbol_type != SymbolType::ImportAddress
+                            && symbol_type != SymbolType::External
+                        {
                             func.address = Some(symbol.address() - bv.start());
                         }
                     }
@@ -730,9 +869,8 @@ impl DebugInfoBuilder {
                         let symbol_full_name = symbol.full_name();
 
                         // If our name has fewer namespaces than the existing name, assume we lost the namespace info
-                        if simplify_str_to_fqn(func_full_name, true).items.len()
-                            < simplify_str_to_fqn(symbol_full_name.clone(), true)
-                                .items
+                        if simplify_demangled_template_name(func_full_name).len()
+                            < simplify_demangled_template_name(symbol_full_name.to_string_lossy())
                                 .len()
                         {
                             func.full_name = Some(symbol_full_name.to_string_lossy().to_string());
@@ -748,7 +886,7 @@ impl DebugInfoBuilder {
                     let existing_functions = bv.functions_at(*address);
                     match existing_functions.len().cmp(&1) {
                         Ordering::Greater => {
-                            warn!("Multiple existing functions at address {address:08x}. One or more functions at this address may have the wrong platform information. Please report this binary.");
+                            tracing::warn!("Multiple existing functions at address {address:08x}. One or more functions at this address may have the wrong platform information. Please report this binary.");
                         }
                         Ordering::Equal => {
                             func.platform = Some(existing_functions.get(0).platform())

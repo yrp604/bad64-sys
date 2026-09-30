@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -413,11 +413,11 @@ where
         let full_raw_id = RegisterId(self.op.operands[0] as u32);
         let version = self.op.operands[1] as u32;
         let partial_raw_id = RegisterId(self.op.operands[2] as u32);
-        let full_reg =
-            CoreRegister::new(self.function.arch(), full_raw_id).expect("Bad register ID");
+        let full_reg_kind = LowLevelILRegisterKind::from_raw(&self.function.arch(), full_raw_id)
+            .expect("Bad register ID");
         let partial_reg =
             CoreRegister::new(self.function.arch(), partial_raw_id).expect("Bad register ID");
-        LowLevelILSSARegisterKind::new_partial(full_reg, partial_reg, version)
+        LowLevelILSSARegisterKind::new_partial(full_reg_kind, version, partial_reg)
     }
 
     pub fn source_expr(&self) -> LowLevelILExpression<'func, M, F, ValueExpr> {
@@ -868,11 +868,11 @@ where
         let full_raw_id = RegisterId(self.op.operands[0] as u32);
         let version = self.op.operands[1] as u32;
         let partial_raw_id = RegisterId(self.op.operands[2] as u32);
-        let full_reg =
-            CoreRegister::new(self.function.arch(), full_raw_id).expect("Bad register ID");
+        let full_reg_kind = LowLevelILRegisterKind::from_raw(&self.function.arch(), full_raw_id)
+            .expect("Bad register ID");
         let partial_reg =
             CoreRegister::new(self.function.arch(), partial_raw_id).expect("Bad register ID");
-        LowLevelILSSARegisterKind::new_partial(full_reg, partial_reg, version)
+        LowLevelILSSARegisterKind::new_partial(full_reg_kind, version, partial_reg)
     }
 }
 
@@ -1745,7 +1745,7 @@ where
             };
 
             if !is_safe {
-                log::error!(
+                tracing::error!(
                     "il expr @ {:x} contains constant 0x{:x} as {} byte value (doesn't fit!)",
                     self.op.address,
                     self.op.operands[0],
@@ -1754,12 +1754,14 @@ where
             }
         }
 
-        let mut mask = -1i64 as u64;
-
-        if self.op.size < mem::size_of::<u64>() {
-            mask <<= self.op.size * 8;
-            mask = !mask;
-        }
+        let mask: u64 = if self.op.size == 0 {
+            1
+        } else if self.op.size < mem::size_of::<u64>() {
+            let m = -1i64 << (self.op.size * 8);
+            !m as u64
+        } else {
+            (-1i64) as u64
+        };
 
         self.op.operands[0] & mask
     }
@@ -1808,7 +1810,7 @@ where
             }
             _ => {
                 // Log error for unexpected sizes
-                log::error!(
+                tracing::error!(
                     "il expr @ {:x} has invalid float size {} (expected 4 or 8 bytes)",
                     self.op.address,
                     self.op.size
@@ -1856,7 +1858,7 @@ where
             };
 
             if !is_safe {
-                log::error!(
+                tracing::error!(
                     "il expr @ {:x} contains extern 0x{:x} as {} byte value (doesn't fit!)",
                     self.op.address,
                     self.op.operands[0],

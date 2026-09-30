@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,18 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
-use std::{ops::Deref, str::FromStr, sync::mpsc};
+use std::path::PathBuf;
+use std::{str::FromStr, sync::mpsc};
 
 use crate::{DebugInfoBuilderContext, ReaderType};
 use binaryninja::binary_view::BinaryViewBase;
-use binaryninja::file_metadata::FileMetadata;
 use binaryninja::Endianness;
 use binaryninja::{
-    binary_view::{BinaryView, BinaryViewExt},
+    binary_view::BinaryView,
     download::{DownloadInstanceInputOutputCallbacks, DownloadProvider},
-    rc::Ref,
     settings::Settings,
 };
 use gimli::Dwarf;
@@ -34,7 +31,6 @@ use gimli::{
 };
 
 use binaryninja::settings::QueryOptions;
-use log::warn;
 
 pub(crate) fn get_uid<R: ReaderType>(
     dwarf: &Dwarf<R>,
@@ -113,14 +109,16 @@ pub(crate) fn get_attr_die<'a, R: ReaderType>(
                     let sup: &Dwarf<R> = match dwarf.sup() {
                         Some(x) => x,
                         None => {
-                            log::error!("Trying to get offset in supplmentary dwarf info, but none is present");
+                            tracing::error!("Trying to get offset in supplmentary dwarf info, but none is present");
                             return None;
                         }
                     };
                     return Some(DieReference::UnitAndOffset((sup, source_unit, new_offset)));
                 }
             }
-            warn!("Failed to fetch DIE. Supplementary debug information may be incomplete.");
+            tracing::warn!(
+                "Failed to fetch DIE. Supplementary debug information may be incomplete."
+            );
             None
         }
         _ => None,
@@ -145,7 +143,7 @@ pub(crate) fn resolve_specification<'a, R: ReaderType>(
                 if let Ok(entry) = entry_unit.entry(entry_offset) {
                     resolve_specification(dwarf, entry_unit, &entry, debug_info_builder_context)
                 } else {
-                    warn!("Failed to fetch DIE for attr DW_AT_specification. Debug information may be incomplete.");
+                    tracing::warn!("Failed to fetch DIE for attr DW_AT_specification. Debug information may be incomplete.");
                     DieReference::Err
                 }
             }
@@ -163,12 +161,12 @@ pub(crate) fn resolve_specification<'a, R: ReaderType>(
                 if entry_offset == entry.offset()
                     && unit.header.offset() == entry_unit.header.offset()
                 {
-                    warn!("DWARF information is invalid (infinite abstract origin reference cycle). Debug information may be incomplete.");
+                    tracing::warn!("DWARF information is invalid (infinite abstract origin reference cycle). Debug information may be incomplete.");
                     DieReference::Err
                 } else if let Ok(new_entry) = entry_unit.entry(entry_offset) {
                     resolve_specification(dwarf, entry_unit, &new_entry, debug_info_builder_context)
                 } else {
-                    warn!("Failed to fetch DIE for attr DW_AT_abstract_origin. Debug information may be incomplete.");
+                    tracing::warn!("Failed to fetch DIE for attr DW_AT_abstract_origin. Debug information may be incomplete.");
                     DieReference::Err
                 }
             }
@@ -191,7 +189,7 @@ pub(crate) fn get_name<R: ReaderType>(
             let resolved_entry = match entry_unit.entry(entry_offset) {
                 Ok(x) => x,
                 Err(_) => {
-                    log::error!(
+                    tracing::error!(
                         "Failed to get entry in unit at {:?} at offset {:#x} (get_name)",
                         entry_unit.header.offset(),
                         entry_offset.0
@@ -238,7 +236,7 @@ pub(crate) fn get_raw_name<R: ReaderType>(
             let resolved_entry = match entry_unit.entry(entry_offset) {
                 Ok(x) => x,
                 Err(_) => {
-                    log::error!(
+                    tracing::error!(
                         "Failed to get entry in unit at {:?} at offset {:#x} (get_raw_name)",
                         entry_unit.header.offset(),
                         entry_offset.0
@@ -381,8 +379,8 @@ pub(crate) fn get_expr_value<R: ReaderType>(unit: &Unit<R>, attr: Attribute<R>) 
     }
 }
 
-pub(crate) fn get_build_id(view: &BinaryView) -> Result<String, String> {
-    let mut build_id: Option<String> = None;
+pub(crate) fn get_build_id(view: &BinaryView) -> Result<Option<Vec<u8>>, String> {
+    let mut build_id: Option<Vec<u8>> = None;
 
     if let Some(raw_view) = view.raw_view() {
         if let Some(build_id_section) = raw_view.section_by_name(".note.gnu.build-id") {
@@ -432,28 +430,29 @@ pub(crate) fn get_build_id(view: &BinaryView) -> Result<String, String> {
             }
 
             let desc: &[u8] = &build_id_bytes[(12 + name_len as usize)..expected_len];
-            build_id = Some(desc.iter().map(|b| format!("{:02x}", b)).collect());
+            build_id = Some(desc.to_vec());
         }
     }
 
-    if let Some(x) = build_id {
-        Ok(x)
-    } else {
-        Err("Failed to get build id".to_string())
-    }
+    Ok(build_id)
 }
 
 pub(crate) fn download_debug_info(
-    build_id: &str,
+    build_id: &[u8],
     view: &BinaryView,
-) -> Result<Ref<BinaryView>, String> {
+) -> Result<Option<Vec<u8>>, String> {
+    let build_id_hex: String = build_id.iter().map(|x| format!("{:02x}", x)).collect();
     let mut settings_query_opts = QueryOptions::new_with_view(view);
-    let settings = Settings::new();
+    let settings = Settings::global();
     let debug_server_urls =
         settings.get_string_list_with_opts("network.debuginfodServers", &mut settings_query_opts);
 
     for debug_server_url in debug_server_urls.iter() {
-        let artifact_url = format!("{}/buildid/{}/debuginfo", debug_server_url, build_id);
+        let artifact_url = format!(
+            "{}/buildid/{}/debuginfo",
+            debug_server_url.trim_end_matches("/"),
+            build_id_hex
+        );
 
         // Download from remote
         let (tx, rx) = mpsc::channel();
@@ -506,23 +505,23 @@ pub(crate) fn download_debug_info(
                 ));
             }
         }
-
-        let options = "{\"analysis.debugInfo.internal\": false}";
-        let bv = BinaryView::from_data(FileMetadata::new().deref(), &data)
-            .map_err(|_| "Unable to create binary view from downloaded data".to_string())?;
-
-        return binaryninja::load_view(bv.deref(), false, Some(options))
-            .ok_or("Unable to load binary view from downloaded data".to_string());
+        return Ok(Some(data));
     }
-    Err("Could not find a server with debug info for this file".to_string())
+    Ok(None)
 }
 
-pub(crate) fn find_local_debug_file_for_build_id(
-    build_id: &str,
-    view: &BinaryView,
-) -> Option<String> {
+pub(crate) fn find_local_debug_file_from_path(path: &PathBuf, view: &BinaryView) -> Option<String> {
+    // Search debug directories for path (or None if setting disabled/empty), return the first one that exists
+    // TODO: put absolute paths behind setting?
+    if path.is_absolute() {
+        if !path.exists() {
+            return None;
+        }
+        return path.to_str().map(|s| s.to_string());
+    }
+
     let mut settings_query_opts = QueryOptions::new_with_view(view);
-    let settings = Settings::new();
+    let settings = Settings::global();
     let debug_dirs_enabled = settings.get_bool_with_opts(
         "analysis.debugInfo.enableDebugDirectories",
         &mut settings_query_opts,
@@ -537,55 +536,50 @@ pub(crate) fn find_local_debug_file_for_build_id(
         &mut settings_query_opts,
     );
 
-    if debug_info_paths.is_empty() {
-        return None;
-    }
-
     for debug_info_path in debug_info_paths.into_iter() {
-        let path = PathBuf::from(debug_info_path);
-        let elf_path = path.join(&build_id[..2]).join(&build_id[2..]).join("elf");
-
-        let debug_ext_path = path
-            .join(&build_id[..2])
-            .join(format!("{}.debug", &build_id[2..]));
-
-        let final_path = if debug_ext_path.exists() {
-            debug_ext_path
-        } else if elf_path.exists() {
-            elf_path
-        } else {
-            // No paths exist in this dir, try the next one
-            continue;
-        };
-        return final_path.to_str().and_then(|x| Some(x.to_string()));
+        let final_path = PathBuf::from(debug_info_path).join(path);
+        if final_path.exists() {
+            return final_path.to_str().map(|s| s.to_string());
+        }
     }
     None
 }
 
-pub(crate) fn load_debug_info_for_build_id(
-    build_id: &str,
+pub(crate) fn find_local_debug_file_for_build_id(
+    build_id: &[u8],
     view: &BinaryView,
-) -> (Option<Ref<BinaryView>>, bool) {
+) -> Option<String> {
+    let build_id_hex: String = build_id.iter().map(|x| format!("{:02x}", x)).collect();
+    let debug_ext_path =
+        PathBuf::from(&build_id_hex[..2]).join(format!("{}.debug", &build_id_hex[2..]));
+
+    let elf_path = PathBuf::from(&build_id_hex[..2])
+        .join(&build_id_hex[2..])
+        .join("elf");
+
+    find_local_debug_file_from_path(&debug_ext_path, view)
+        .or_else(|| find_local_debug_file_from_path(&elf_path, view))
+}
+
+pub(crate) fn load_debug_info_for_build_id(
+    build_id: &[u8],
+    view: &BinaryView,
+) -> Result<Option<Vec<u8>>, String> {
     let mut settings_query_opts = QueryOptions::new_with_view(view);
-    let settings = Settings::new();
+    let settings = Settings::global();
     if let Some(debug_file_path) = find_local_debug_file_for_build_id(build_id, view) {
-        return (
-            binaryninja::load_with_options(
-                debug_file_path,
-                false,
-                Some("{\"analysis.debugInfo.internal\": false}"),
-            ),
-            false,
-        );
+        return std::fs::read(&debug_file_path)
+            .map(|x| Some(x))
+            .map_err(|e| format!("Failed to read local debug file {}: {}", debug_file_path, e));
     } else if settings.get_bool_with_opts("network.enableDebuginfod", &mut settings_query_opts) {
-        return (download_debug_info(build_id, view).ok(), true);
+        return download_debug_info(build_id, view);
     }
-    (None, false)
+    Ok(None)
 }
 
 pub(crate) fn find_sibling_debug_file(view: &BinaryView) -> Option<String> {
     let mut settings_query_opts = QueryOptions::new_with_view(view);
-    let settings = Settings::new();
+    let settings = Settings::global();
     let load_sibling_debug = settings.get_bool_with_opts(
         "analysis.debugInfo.loadSiblingDebugFiles",
         &mut settings_query_opts,
@@ -595,10 +589,8 @@ pub(crate) fn find_sibling_debug_file(view: &BinaryView) -> Option<String> {
         return None;
     }
 
-    let full_file_path = view.file().filename().to_string();
-
-    let debug_file = PathBuf::from(format!("{}.debug", full_file_path));
-    let dsym_folder = PathBuf::from(format!("{}.dSYM", full_file_path));
+    let debug_file = view.file().file_path().with_extension("debug");
+    let dsym_folder = view.file().file_path().with_extension("dSYM");
 
     // Find sibling debug file
     if debug_file.exists() && debug_file.is_file() {
@@ -629,34 +621,24 @@ pub(crate) fn find_sibling_debug_file(view: &BinaryView) -> Option<String> {
     // Look for dSYM
     // TODO: look for dSYM in project
     if dsym_folder.exists() && dsym_folder.is_dir() {
-        let filename = Path::new(&full_file_path)
-            .file_name()
-            .unwrap_or(OsStr::new(""));
-
-        let dsym_file = dsym_folder.join("Contents/Resources/DWARF/").join(filename); // TODO: should this just pull any file out? Can there be multiple files?
-        if dsym_file.exists() {
-            return Some(dsym_file.to_string_lossy().to_string());
+        if let Some(filename) = view.file().file_path().file_name() {
+            // TODO: should this just pull any file out? Can there be multiple files?
+            let dsym_file = dsym_folder.join("Contents/Resources/DWARF/").join(filename);
+            if dsym_file.exists() {
+                return Some(dsym_file.to_string_lossy().to_string());
+            }
         }
     }
 
     None
 }
 
-pub(crate) fn load_sibling_debug_file(view: &BinaryView) -> (Option<Ref<BinaryView>>, bool) {
+pub(crate) fn load_sibling_debug_file(view: &BinaryView) -> Result<Option<Vec<u8>>, String> {
     let Some(debug_file) = find_sibling_debug_file(view) else {
-        return (None, false);
+        return Ok(None);
     };
 
-    let load_settings = match view.default_platform() {
-        Some(plat) => format!(
-            "{{\"analysis.debugInfo.internal\": false, \"loader.platform\": \"{}\"}}",
-            plat.name()
-        ),
-        None => "{\"analysis.debugInfo.internal\": false}".to_string(),
-    };
-
-    (
-        binaryninja::load_with_options(debug_file, false, Some(load_settings)),
-        true,
-    )
+    std::fs::read(&debug_file)
+        .map(|x| Some(x))
+        .map_err(|e| format!("Failed to read sibling debug file {}: {}", debug_file, e))
 }

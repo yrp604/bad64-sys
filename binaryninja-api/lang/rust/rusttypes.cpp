@@ -147,12 +147,13 @@ vector<InstructionTextToken> RustTypePrinter::GetTypeTokensAfterNameInternal(
 			vector<InstructionTextToken> paramTokens = GetTypeTokensAfterName(params[i].type.GetValue(), platform,
 				params[i].type.GetCombinedConfidence(baseConfidence), type, escaping);
 
-			if (functionHeader)
+			auto var = params[i].location.GetVariableForParameter(i);
+			if (functionHeader && var.has_value())
 			{
 				for (auto& token : paramTokens)
 				{
 					token.context = LocalVariableTokenContext;
-					token.address = params[i].location.ToIdentifier();
+					token.address = var->ToIdentifier();
 				}
 			}
 
@@ -164,40 +165,51 @@ vector<InstructionTextToken> RustTypePrinter::GetTypeTokensAfterNameInternal(
 			else
 			{
 				nameToken = InstructionTextToken(ArgumentNameToken, NameList::EscapeTypeName(params[i].name, escaping), i);
-				if (functionHeader)
+				if (functionHeader && var.has_value())
 				{
 					nameToken.context = LocalVariableTokenContext;
-					nameToken.address = params[i].location.ToIdentifier();
+					nameToken.address = var->ToIdentifier();
 				}
 			}
 			tokens.push_back(nameToken);
 			tokens.emplace_back(TextToken, ": ");
+
+			if (params[i].locationSource == PassByReferenceLocationSource || params[i].location.indirect)
+				tokens.emplace_back(baseConfidence, OperationToken, "&");
+
 			tokens.insert(tokens.end(), paramTokens.begin(), paramTokens.end());
 
-			if (!params[i].defaultLocation && platform)
+			if (params[i].locationSource == CustomLocationSource && platform && var.has_value())
 			{
-				switch (params[i].location.type)
+				switch (var->type)
 				{
 				case RegisterVariableSourceType:
 				{
-					string registerName = platform->GetArchitecture()->GetRegisterName((uint32_t)params[i].location.storage);
+					string registerName = platform->GetArchitecture()->GetRegisterName((uint32_t)var->storage);
 					tokens.emplace_back(TextToken, " @ ");
-					tokens.emplace_back(RegisterToken, NameList::EscapeTypeName(registerName, escaping), params[i].location.storage);
+					tokens.emplace_back(RegisterToken, NameList::EscapeTypeName(registerName, escaping), var->storage);
 					break;
 				}
 				case FlagVariableSourceType:
 				{
-					string flagName = platform->GetArchitecture()->GetFlagName((uint32_t)params[i].location.storage);
+					string flagName = platform->GetArchitecture()->GetFlagName((uint32_t)var->storage);
 					tokens.emplace_back(TextToken, " @ ");
-					tokens.emplace_back(AnnotationToken, NameList::EscapeTypeName(flagName, escaping), params[i].location.storage);
+					tokens.emplace_back(AnnotationToken, NameList::EscapeTypeName(flagName, escaping), var->storage);
 					break;
 				}
 				case StackVariableSourceType:
 				{
 					tokens.emplace_back(TextToken, " @ ");
 					char storageStr[32];
-					snprintf(storageStr, sizeof(storageStr), "%" PRIi64, params[i].location.storage);
-					tokens.emplace_back(IntegerToken, storageStr, params[i].location.storage);
+					snprintf(storageStr, sizeof(storageStr), "%" PRIi64, var->storage);
+					tokens.emplace_back(IntegerToken, storageStr, var->storage);
+					break;
+				}
+				default:
+				{
+					string locationStr = params[i].location.ToString(platform->GetArchitecture());
+					tokens.emplace_back(TextToken, " @ ");
+					tokens.emplace_back(ValueLocationToken, locationStr);
 					break;
 				}
 				}
@@ -230,6 +242,13 @@ vector<InstructionTextToken> RustTypePrinter::GetTypeTokensAfterNameInternal(
 					i.context = FunctionReturnTokenContext;
 			}
 			tokens.insert(tokens.end(), retn.begin(), retn.end());
+			if (!type->GetReturnValue().defaultLocation)
+			{
+				auto location = type->GetReturnValue().location;
+				string locationStr = location->ToString(platform->GetArchitecture());
+				tokens.emplace_back(TextToken, " @ ");
+				tokens.emplace_back(location.GetCombinedConfidence(baseConfidence), ValueLocationToken, locationStr);
+			}
 		}
 		break;
 	}

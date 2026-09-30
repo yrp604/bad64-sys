@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2025 Vector 35 Inc
+// Copyright (c) 2020-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -24,35 +24,42 @@ using namespace std;
 using namespace BinaryNinja;
 
 
-BNLinearDisassemblyLine LinearDisassemblyLine::GetAPIObject() const
+BNLinearDisassemblyLine LinearDisassemblyLine::ToAPIStruct() const
 {
 	BNLinearDisassemblyLine result;
 	result.type = this->type;
+	Ref<BinaryView> binaryView = this->view;
+	if (!binaryView && this->function)
+		binaryView = this->function->GetView();
+	result.view = binaryView ? BNNewViewReference(binaryView->GetObject()) : nullptr;
 	result.function = this->function ? BNNewFunctionReference(this->function->GetObject()) : nullptr;
 	result.block = this->block ? BNNewBasicBlockReference(this->block->GetObject()) : nullptr;
-	result.contents = this->contents.GetAPIObject();
+	result.contents = this->contents.ToAPIStruct();
 	return result;
 }
 
 
-LinearDisassemblyLine LinearDisassemblyLine::FromAPIObject(const BNLinearDisassemblyLine* line)
+LinearDisassemblyLine LinearDisassemblyLine::FromAPIStruct(const BNLinearDisassemblyLine* line)
 {
 	LinearDisassemblyLine result;
 	result.type = line->type;
+	result.view = line->view ? new BinaryView(BNNewViewReference(line->view)) : nullptr;
 	result.function = line->function ? new Function(BNNewFunctionReference(line->function)) : nullptr;
 	result.block = line->block ? new BasicBlock(BNNewBasicBlockReference(line->block)) : nullptr;
-	result.contents = DisassemblyTextLine::FromAPIObject(&line->contents);
+	result.contents = DisassemblyTextLine::FromAPIStruct(&line->contents);
 	return result;
 }
 
 
-void LinearDisassemblyLine::FreeAPIObject(BNLinearDisassemblyLine* line)
+void LinearDisassemblyLine::FreeAPIStruct(BNLinearDisassemblyLine* line)
 {
+	if (line->view)
+		BNFreeBinaryView(line->view);
 	if (line->function)
 		BNFreeFunction(line->function);
 	if (line->block)
 		BNFreeBasicBlock(line->block);
-	DisassemblyTextLine::FreeAPIObject(&line->contents);
+	DisassemblyTextLine::FreeAPIStruct(&line->contents);
 }
 
 
@@ -160,7 +167,7 @@ vector<LinearDisassemblyLine> LinearViewObject::GetLines(LinearViewObject* prev,
 	vector<LinearDisassemblyLine> result;
 	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
-		result.push_back(LinearDisassemblyLine::FromAPIObject(&lines[i]));
+		result.push_back(LinearDisassemblyLine::FromAPIStruct(&lines[i]));
 
 	BNFreeLinearDisassemblyLines(lines, count);
 	return result;

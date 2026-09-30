@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -46,8 +46,8 @@ void TypeArchiveNotification::OnTypeRenamedCallback(void* ctx, BNTypeArchive* ar
 {
 	TypeArchiveNotification* notify = reinterpret_cast<TypeArchiveNotification*>(ctx);
 	Ref<TypeArchive> cppArchive = new TypeArchive(BNNewTypeArchiveReference(archive));
-	QualifiedName appOldName = QualifiedName::FromAPIObject(oldName);
-	QualifiedName appNewName = QualifiedName::FromAPIObject(newName);
+	QualifiedName appOldName = QualifiedName::FromAPIStruct(oldName);
+	QualifiedName appNewName = QualifiedName::FromAPIStruct(newName);
 	notify->OnTypeRenamed(cppArchive, id, oldName, newName);
 }
 
@@ -177,6 +177,7 @@ std::vector<std::string> TypeArchive::GetAllSnapshotIds() const
 		throw ExceptionWithStackTrace("BNGetTypeArchiveAllSnapshotIds");
 
 	std::vector<std::string> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i ++)
 	{
 		result.push_back(ids[i]);
@@ -195,6 +196,7 @@ std::vector<std::string> TypeArchive::GetSnapshotParentIds(const std::string& id
 		throw ExceptionWithStackTrace("BNGetTypeArchiveSnapshotParentIds");
 
 	std::vector<std::string> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i ++)
 	{
 		result.push_back(ids[i]);
@@ -213,6 +215,7 @@ std::vector<std::string> TypeArchive::GetSnapshotChildIds(const std::string& id)
 		throw ExceptionWithStackTrace("BNGetTypeArchiveSnapshotChildIds");
 
 	std::vector<std::string> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i ++)
 	{
 		result.push_back(ids[i]);
@@ -232,17 +235,18 @@ TypeContainer TypeArchive::GetTypeContainer() const
 bool TypeArchive::AddTypes(const std::vector<QualifiedNameAndType>& types)
 {
 	std::vector<BNQualifiedNameAndType> apiTypes;
+	apiTypes.reserve(types.size());
 	for (auto& type : types)
 	{
 		BNQualifiedNameAndType qnat;
-		qnat.name = type.name.GetAPIObject();
+		qnat.name = type.name.ToAPIStruct();
 		qnat.type = type.type->GetObject();
 		apiTypes.push_back(qnat);
 	}
 	bool result = BNAddTypeArchiveTypes(m_object, apiTypes.data(), apiTypes.size());
 	for (auto& type: apiTypes)
 	{
-		QualifiedName::FreeAPIObject(&type.name);
+		QualifiedName::FreeAPIStruct(&type.name);
 	}
 	return result;
 }
@@ -250,9 +254,9 @@ bool TypeArchive::AddTypes(const std::vector<QualifiedNameAndType>& types)
 
 bool TypeArchive::RenameType(const std::string& id, const QualifiedName& newName)
 {
-	BNQualifiedName qname = newName.GetAPIObject();
+	BNQualifiedName qname = newName.ToAPIStruct();
 	bool result = BNRenameTypeArchiveType(m_object, id.c_str(), &qname);
-	QualifiedName::FreeAPIObject(&qname);
+	QualifiedName::FreeAPIStruct(&qname);
 	return result;
 }
 
@@ -278,9 +282,9 @@ Ref<Type> TypeArchive::GetTypeByName(const QualifiedName& name, std::string snap
 {
 	if (snapshot.empty())
 		snapshot = GetCurrentSnapshotId();
-	BNQualifiedName qname = name.GetAPIObject();
+	BNQualifiedName qname = name.ToAPIStruct();
 	BNType* type = BNGetTypeArchiveTypeByName(m_object, &qname, snapshot.c_str());
-	QualifiedName::FreeAPIObject(&qname);
+	QualifiedName::FreeAPIStruct(&qname);
 	if (!type)
 		return nullptr;
 	return new Type(type);
@@ -291,9 +295,9 @@ std::string TypeArchive::GetTypeId(const QualifiedName& name, std::string snapsh
 {
 	if (snapshot.empty())
 		snapshot = GetCurrentSnapshotId();
-	BNQualifiedName qname = name.GetAPIObject();
+	BNQualifiedName qname = name.ToAPIStruct();
 	char* id = BNGetTypeArchiveTypeId(m_object, &qname, snapshot.c_str());
-	QualifiedName::FreeAPIObject(&qname);
+	QualifiedName::FreeAPIStruct(&qname);
 	if (!id)
 		return "";
 	std::string result = id;
@@ -308,7 +312,7 @@ QualifiedName TypeArchive::GetTypeName(const std::string& id, std::string snapsh
 	if (snapshot.empty())
 		snapshot = GetCurrentSnapshotId();
 	BNQualifiedName qname = BNGetTypeArchiveTypeName(m_object, id.c_str(), snapshot.c_str());
-	QualifiedName result = QualifiedName::FromAPIObject(&qname);
+	QualifiedName result = QualifiedName::FromAPIStruct(&qname);
 	BNFreeQualifiedName(&qname);
 	return result;
 }
@@ -328,7 +332,7 @@ std::unordered_map<std::string, QualifiedNameAndType> TypeArchive::GetTypes(std:
 	{
 		std::string id = types[i].id;
 		QualifiedNameAndType qnat;
-		qnat.name = QualifiedName::FromAPIObject(&types[i].name);
+		qnat.name = QualifiedName::FromAPIStruct(&types[i].name);
 		qnat.type = new Type(BNNewTypeReference(types[i].type));
 		result.emplace(id, qnat);
 	}
@@ -347,6 +351,7 @@ std::vector<std::string> TypeArchive::GetTypeIds(std::string snapshot) const
 		throw ExceptionWithStackTrace("BNGetTypeArchiveTypeIds");
 
 	std::vector<std::string> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		result.push_back(ids[i]);
@@ -366,9 +371,10 @@ std::vector<QualifiedName> TypeArchive::GetTypeNames(std::string snapshot) const
 		throw ExceptionWithStackTrace("BNGetTypeArchiveTypeNames");
 
 	std::vector<QualifiedName> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
-		result.push_back(QualifiedName::FromAPIObject(&names[i]));
+		result.push_back(QualifiedName::FromAPIStruct(&names[i]));
 	}
 	BNFreeTypeNameList(names, count);
 	return result;
@@ -388,7 +394,7 @@ std::unordered_map<std::string, QualifiedName> TypeArchive::GetTypeNamesAndIds(s
 	std::unordered_map<std::string, QualifiedName> result;
 	for (size_t i = 0; i < count; ++i)
 	{
-		result.emplace(ids[i], QualifiedName::FromAPIObject(&names[i]));
+		result.emplace(ids[i], QualifiedName::FromAPIStruct(&names[i]));
 	}
 	BNFreeTypeNameList(names, count);
 	BNFreeStringList(ids, count);
@@ -499,6 +505,7 @@ std::string TypeArchive::NewSnapshotTransaction(std::function<void(const std::st
 	ctxt.func = func;
 
 	std::vector<const char*> apiParents;
+	apiParents.reserve(parents.size());
 	for (const auto& parent: parents)
 	{
 		apiParents.push_back(parent.c_str());

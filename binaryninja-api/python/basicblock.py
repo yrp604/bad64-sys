@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -505,35 +505,6 @@ class BasicBlock:
 		"""
 		core.BNClearBasicBlockPendingOutgoingEdges(self.handle)
 
-	def get_instruction_data(self, addr: int) -> bytes:
-		"""
-		Returns the raw instruction data for the basic block at the specified address.
-
-		.. note:: This method is intended for use by architecture plugins only.
-
-		:return: Raw instruction data as bytes.
-		"""
-
-		size = ctypes.c_ulonglong(0)
-		data = core.BNBasicBlockGetInstructionData(self.handle, addr, ctypes.byref(size))
-		if data is None:
-			return b''
-
-		return ctypes.string_at(data, size.value)
-
-	def add_instruction_data(self, data: bytes) -> None:
-		"""
-		Adds raw instruction data to the basic block.
-
-		.. note:: This method is intended for use by architecture plugins only.
-
-		:param bytes data: Raw instruction data to add to the basic block.
-		"""
-		if not isinstance(data, bytes):
-			raise TypeError("data must be of type bytes")
-
-		core.BNBasicBlockAddInstructionData(self.handle, data, len(data))
-
 	@property
 	def fallthrough_to_function(self) -> bool:
 		"""Whether the basic block has a fallthrough edge to a function."""
@@ -703,6 +674,14 @@ class BasicBlock:
 			raise ValueError("Attempting to call BasicBlock.annotations when Function is None")
 
 		return self.function.get_block_annotations(self.start, self.arch)
+
+	@property
+	def sort_hint(self) -> Optional[int]:
+		"""Graph edge sorting hint for this block (read-only)"""
+		if self.function is None:
+			raise ValueError("Attempting to call BasicBlock.sort_hint when Function is None")
+
+		return self.function.get_block_sort_hint(self.start, self.arch)
 
 	@property
 	def disassembly_text(self) -> List['_function.DisassemblyTextLine']:

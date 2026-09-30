@@ -11,7 +11,10 @@
 #include <QtWidgets/QListView>
 #include <QtCore/QAbstractListModel>
 #include <QtCore/QMimeData>
+#include <QTextBrowser>
+#include <atomic>
 #include <mutex>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -79,6 +82,33 @@ class BINARYNINJAUIAPI ScriptingCompletionPopup : public QDialog
 };
 
 /*!
+	Argument display popup.
+
+	\ingroup scriptingconsole
+*/
+class BINARYNINJAUIAPI ScriptingArgumentAssistPopup : public QDialog
+{
+	Q_OBJECT
+
+	QTextBrowser* m_textDisplay;
+	QString m_text;
+
+	Q_PROPERTY(QString text READ getText WRITE setText RESET unsetText)
+
+	void updateText();
+
+public:
+	ScriptingArgumentAssistPopup(QWidget* parent);
+	virtual ~ScriptingArgumentAssistPopup();
+	void setText(const QString& text) { m_text = text; updateText(); }
+	QString getText() const { return m_text; }
+	void unsetText() { m_text.clear(); updateText(); }
+
+protected:
+	virtual bool eventFilter(QObject* obj, QEvent* event) override;
+};
+
+/*!
     \ingroup scriptingconsole
 */
 class BINARYNINJAUIAPI ScriptingConsoleEdit : public QTextEdit
@@ -87,8 +117,17 @@ class BINARYNINJAUIAPI ScriptingConsoleEdit : public QTextEdit
 
   public:
 	typedef std::function<std::vector<std::string>(const std::string&)> CompletionCallback;
+	typedef std::function<bool(const std::string&)> CanDoCompleteArgumentsCallback;
+	typedef std::function<std::pair<std::string, uint64_t>(const std::string&)> CompleteArgumentsCallback;
 
   private:
+	struct ArgumentAssistRequestState
+	{
+		std::atomic<uint64_t> latestRequest {0};
+		std::mutex callbackMutex;
+	};
+	static constexpr int ArgumentAssistDebounceInterval = 100;
+
 	ScriptingConsole* m_console;
 	int m_charHeight;
 	bool m_continuation;
@@ -97,15 +136,33 @@ class BINARYNINJAUIAPI ScriptingConsoleEdit : public QTextEdit
 	CompletionCallback m_completionCallback;
 	ScriptingCompletionPopup* m_popup;
 
+	CanDoCompleteArgumentsCallback m_canDoArgumentCompletionCallback;
+	CompleteArgumentsCallback m_completeArgumentsCallback;
+
+	ScriptingArgumentAssistPopup* m_argumentAssistPopup;
+	QTimer* m_argumentAssistUpdateTimer;
+	std::shared_ptr<ArgumentAssistRequestState> m_argumentAssistState;
+	bool m_argumentAssistRequestRunning;
+	bool m_argumentAssistRequestPending;
+	uint64_t m_argumentAssistPopupPosition;
+
 	uint64_t m_completionRegionStart;
 	uint64_t m_completionRegionInitialStop;
 	uint64_t m_completionRegionStop;
+
+	bool canShowArgumentAssistPopup() const;
+	void hideArgumentAssistPopup();
+	void scheduleArgumentAssistPopupUpdate();
+	void updateArgumentAssistPopup();
+	void applyArgumentAssistPopup(const QString& text, uint64_t popupPosition);
 
   public:
 	ScriptingConsoleEdit(ScriptingConsole* parent);
 	void setCharHeight(int height);
 	void setContinuation(bool cont);
 	void setCompletionCallback(CompletionCallback callback) { m_completionCallback = callback; }
+	void setCanDoCompleteArgumentsCallback(CanDoCompleteArgumentsCallback callback) { m_canDoArgumentCompletionCallback = callback; }
+	void setCompleteArgumentsCallback(CompleteArgumentsCallback callback) { m_completeArgumentsCallback = callback; }
 	void insertFromMimeData(const QMimeData* source) override;
 
 
@@ -114,6 +171,11 @@ class BINARYNINJAUIAPI ScriptingConsoleEdit : public QTextEdit
 
   protected:
 	virtual void keyPressEvent(QKeyEvent* event) override;
+	virtual void resizeEvent(QResizeEvent* event) override;
+	virtual void scrollContentsBy(int dx, int dy) override;
+	virtual void focusOutEvent(QFocusEvent* event) override;
+	virtual void hideEvent(QHideEvent* event) override;
+	virtual void changeEvent(QEvent* event) override;
 };
 
 /*!

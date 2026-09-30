@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -23,7 +23,8 @@ import os
 import ctypes
 from typing import Optional, Union, Literal
 from dataclasses import dataclass
-from .enums import BaseAddressDetectionPOIType, BaseAddressDetectionConfidence, BaseAddressDetectionPOISetting
+from .enums import BaseAddressDetectionPOIType, BaseAddressDetectionConfidence, BaseAddressDetectionPOISetting, \
+    BaseAddressDetectionAnalysisMode
 from .binaryview import BinaryView
 from . import _binaryninjacore as core
 from . import architecture
@@ -159,68 +160,16 @@ class BaseAddressDetection:
 
         return core.BNIsBaseAddressDetectionAborted(self._handle)
 
-    def detect_base_address(
-        self,
-        arch: Optional[Union['architecture.Architecture', str]] = None,
-        analysis: Literal["basic", "controlFlow", "full"] = "full",
-        min_strlen: int = 10,
-        alignment: int = 1024,
-        low_boundary: int = 0,
-        high_boundary: int = 0xFFFFFFFFFFFFFFFF,
-        poi_analysis: BaseAddressDetectionPOISetting = BaseAddressDetectionPOISetting.POIAnalysisAll,
-        max_pointers: int = 128,
-    ) -> bool:
-        """
-        ``detect_base_address`` runs initial analysis and attempts to identify candidate base addresses
-
-        .. note:: This operation can take a long time to complete depending on the size and complexity of the binary \
-        and the settings used
-
-        :param Architecture arch: CPU architecture of the binary (defaults to using auto-detection)
-        :param str analysis: analysis mode (``basic``, ``controlFlow``, or ``full``)
-        :param int min_strlen: minimum length of a string to be considered a point-of-interest
-        :param int alignment: byte boundary to align the base address to while brute-forcing
-        :param int low_boundary: lower boundary of the base address range to test
-        :param int high_boundary: upper boundary of the base address range to test
-        :param BaseAddressDetectionPOISetting poi_analysis: specifies types of points-of-interest to use for analysis
-        :param int max_pointers: maximum number of candidate pointers to collect per pointer cluster
-        :return: True if initial analysis completed with results, False otherwise
-        :rtype: bool
-        """
-
+    def _resolve_arch(self, arch: Optional[Union['architecture.Architecture', str]]) -> Optional['architecture.Architecture']:
         if isinstance(arch, str):
             arch = architecture.Architecture[arch]
 
         if not arch and self._view_arch:
             arch = self._view_arch
 
-        if analysis not in ["basic", "controlFlow", "full"]:
-            raise ValueError("invalid analysis setting")
+        return arch
 
-        if alignment <= 0:
-            raise ValueError("alignment must be greater than 0")
-
-        if max_pointers < 2:
-            raise ValueError("max pointers must be at least 2")
-
-        if high_boundary < low_boundary:
-            raise ValueError("upper boundary must be greater than lower boundary")
-
-        archname = arch.name if arch else ""
-        settings = core.BNBaseAddressDetectionSettings(
-            archname.encode(),
-            analysis.encode(),
-            min_strlen,
-            alignment,
-            low_boundary,
-            high_boundary,
-            poi_analysis,
-            max_pointers,
-        )
-
-        if not core.BNDetectBaseAddress(self._handle, settings):
-            return False
-
+    def _collect_results(self) -> bool:
         max_candidates = 10
         scores = (core.BNBaseAddressDetectionScore * max_candidates)()
         confidence = core.BaseAddressDetectionConfidenceEnum()
@@ -239,6 +188,124 @@ class BaseAddressDetection:
         self._confidence = confidence.value
         self._last_tested_base_address = last_base.value
         return True
+
+    def detect_base_address_with_instruction_analysis(
+        self,
+        arch: Optional[Union['architecture.Architecture', str]] = None,
+        analysis: Literal["basic", "controlFlow", "full"] = "full",
+        min_strlen: int = 10,
+        alignment: int = 1024,
+        low_boundary: int = 0,
+        high_boundary: int = 0xFFFFFFFFFFFFFFFF,
+        poi_analysis: BaseAddressDetectionPOISetting = BaseAddressDetectionPOISetting.POIAnalysisAll,
+        max_pointers: int = 128,
+    ) -> bool:
+        """
+        ``detect_base_address_with_instruction_analysis`` uses instruction analysis to identify candidate base addresses.
+        """
+
+        arch = self._resolve_arch(arch)
+
+        if analysis not in ["basic", "controlFlow", "full"]:
+            raise ValueError("invalid analysis setting")
+
+        if alignment <= 0:
+            raise ValueError("alignment must be greater than 0")
+
+        if max_pointers < 2:
+            raise ValueError("max pointers must be at least 2")
+
+        if high_boundary < low_boundary:
+            raise ValueError("upper boundary must be greater than lower boundary")
+
+        archname = arch.name if arch else "auto detect"
+        settings = core.BNBaseAddressDetectionSettings(
+            archname.encode(),
+            analysis.encode(),
+            min_strlen,
+            alignment,
+            low_boundary,
+            high_boundary,
+            poi_analysis,
+            max_pointers,
+            BaseAddressDetectionAnalysisMode.InstructionAnalysisBaseAddressDetection,
+        )
+
+        if not core.BNDetectBaseAddress(self._handle, settings):
+            return False
+
+        return self._collect_results()
+
+    def detect_base_address_with_sampling(
+        self,
+        arch: Optional[Union['architecture.Architecture', str]] = None,
+        min_strlen: int = 10,
+        low_boundary: int = 0,
+        high_boundary: int = 0xFFFFFFFFFFFFFFFF,
+    ) -> bool:
+        """
+        ``detect_base_address_with_sampling`` samples raw binary contents to identify candidate base addresses.
+        """
+
+        arch = self._resolve_arch(arch)
+
+        if high_boundary < low_boundary:
+            raise ValueError("upper boundary must be greater than lower boundary")
+
+        archname = arch.name if arch else "auto detect"
+        settings = core.BNBaseAddressDetectionSettings(
+            archname.encode(),
+            b"full",
+            min_strlen,
+            0,
+            low_boundary,
+            high_boundary,
+            BaseAddressDetectionPOISetting.POIAnalysisStringsOnly,
+            0,
+            BaseAddressDetectionAnalysisMode.SamplingBaseAddressDetection,
+        )
+
+        if not core.BNDetectBaseAddress(self._handle, settings):
+            return False
+
+        return self._collect_results()
+
+    def detect_base_address(
+        self,
+        arch: Optional[Union['architecture.Architecture', str]] = None,
+        analysis: Literal["basic", "controlFlow", "full"] = "full",
+        min_strlen: int = 10,
+        alignment: int = 1024,
+        low_boundary: int = 0,
+        high_boundary: int = 0xFFFFFFFFFFFFFFFF,
+        poi_analysis: BaseAddressDetectionPOISetting = BaseAddressDetectionPOISetting.POIAnalysisAll,
+        max_pointers: int = 128,
+        analysis_mode: BaseAddressDetectionAnalysisMode = BaseAddressDetectionAnalysisMode.InstructionAnalysisBaseAddressDetection,
+    ) -> bool:
+        """
+        ``detect_base_address`` runs initial analysis and attempts to identify candidate base addresses
+
+        .. note:: This operation can take a long time to complete depending on the size and complexity of the binary \
+        and the settings used
+
+        :param Architecture arch: CPU architecture of the binary (defaults to using auto-detection)
+        :param str analysis: analysis mode (``basic``, ``controlFlow``, or ``full``)
+        :param int min_strlen: minimum length of a string to be considered a point-of-interest
+        :param int alignment: byte boundary to align the base address to while brute-forcing
+        :param int low_boundary: lower boundary of the base address range to test
+        :param int high_boundary: upper boundary of the base address range to test
+        :param BaseAddressDetectionPOISetting poi_analysis: specifies types of points-of-interest to use for analysis
+        :param int max_pointers: maximum number of candidate pointers to collect per pointer cluster
+        :param BaseAddressDetectionAnalysisMode analysis_mode: base address detection algorithm to use
+        :return: True if initial analysis completed with results, False otherwise
+        :rtype: bool
+        """
+
+        if analysis_mode == BaseAddressDetectionAnalysisMode.InstructionAnalysisBaseAddressDetection:
+            return self.detect_base_address_with_instruction_analysis(
+                arch, analysis, min_strlen, alignment, low_boundary, high_boundary, poi_analysis, max_pointers)
+
+        return self.detect_base_address_with_sampling(arch, min_strlen, low_boundary, high_boundary)
 
     def abort(self) -> None:
         """

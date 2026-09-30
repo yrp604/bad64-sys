@@ -152,6 +152,219 @@ bool AnalysisContext::Inform(const string& request)
 }
 
 
+// Template specializations for GetSetting<T>
+template<>
+bool AnalysisContext::GetSetting<bool>(const string& key)
+{
+	return BNAnalysisContextGetSettingBool(m_object, key.c_str());
+}
+
+
+template<>
+double AnalysisContext::GetSetting<double>(const string& key)
+{
+	return BNAnalysisContextGetSettingDouble(m_object, key.c_str());
+}
+
+
+template<>
+int64_t AnalysisContext::GetSetting<int64_t>(const string& key)
+{
+	return BNAnalysisContextGetSettingInt64(m_object, key.c_str());
+}
+
+
+template<>
+uint64_t AnalysisContext::GetSetting<uint64_t>(const string& key)
+{
+	return BNAnalysisContextGetSettingUInt64(m_object, key.c_str());
+}
+
+
+template<>
+string AnalysisContext::GetSetting<string>(const string& key)
+{
+	char* str = BNAnalysisContextGetSettingString(m_object, key.c_str());
+	string result = str;
+	BNFreeString(str);
+	return result;
+}
+
+
+template<>
+vector<string> AnalysisContext::GetSetting<vector<string>>(const string& key)
+{
+	size_t count = 0;
+	char** list = BNAnalysisContextGetSettingStringList(m_object, key.c_str(), &count);
+	vector<string> result;
+	result.reserve(count);
+	for (size_t i = 0; i < count; i++)
+		result.push_back(list[i]);
+	BNFreeStringList(list, count);
+	return result;
+}
+
+
+bool AnalysisContext::IsValidOffset(uint64_t offset)
+{
+	return BNAnalysisContextIsValidOffset(m_object, offset);
+}
+
+
+bool AnalysisContext::IsOffsetReadable(uint64_t offset)
+{
+	return BNAnalysisContextIsOffsetReadable(m_object, offset);
+}
+
+
+bool AnalysisContext::IsOffsetWritable(uint64_t offset)
+{
+	return BNAnalysisContextIsOffsetWritable(m_object, offset);
+}
+
+
+bool AnalysisContext::IsOffsetExecutable(uint64_t offset)
+{
+	return BNAnalysisContextIsOffsetExecutable(m_object, offset);
+}
+
+
+bool AnalysisContext::IsOffsetBackedByFile(uint64_t offset)
+{
+	return BNAnalysisContextIsOffsetBackedByFile(m_object, offset);
+}
+
+
+bool AnalysisContext::IsOffsetCodeSemantics(uint64_t offset)
+{
+	return BNAnalysisContextIsOffsetCodeSemantics(m_object, offset);
+}
+
+
+bool AnalysisContext::IsOffsetExternSemantics(uint64_t offset)
+{
+	return BNAnalysisContextIsOffsetExternSemantics(m_object, offset);
+}
+
+
+bool AnalysisContext::IsOffsetWritableSemantics(uint64_t offset)
+{
+	return BNAnalysisContextIsOffsetWritableSemantics(m_object, offset);
+}
+
+
+bool AnalysisContext::IsOffsetReadOnlySemantics(uint64_t offset)
+{
+	return BNAnalysisContextIsOffsetReadOnlySemantics(m_object, offset);
+}
+
+
+vector<Ref<Section>> AnalysisContext::GetSections()
+{
+	size_t count;
+	BNSection** sections = BNAnalysisContextGetSections(m_object, &count);
+	vector<Ref<Section>> result;
+	result.reserve(count);
+	for (size_t i = 0; i < count; i++)
+		result.push_back(new Section(BNNewSectionReference(sections[i])));
+	BNFreeSectionList(sections, count);
+	return result;
+}
+
+
+Ref<Section> AnalysisContext::GetSectionByName(const string& name)
+{
+	BNSection* section = BNAnalysisContextGetSectionByName(m_object, name.c_str());
+	if (!section)
+		return nullptr;
+	return new Section(section);
+}
+
+
+vector<Ref<Section>> AnalysisContext::GetSectionsAt(uint64_t addr)
+{
+	size_t count;
+	BNSection** sections = BNAnalysisContextGetSectionsAt(m_object, addr, &count);
+	vector<Ref<Section>> result;
+	result.reserve(count);
+	for (size_t i = 0; i < count; i++)
+		result.push_back(new Section(BNNewSectionReference(sections[i])));
+	BNFreeSectionList(sections, count);
+	return result;
+}
+
+
+uint64_t AnalysisContext::GetStart()
+{
+	return BNAnalysisContextGetStart(m_object);
+}
+
+
+uint64_t AnalysisContext::GetEnd()
+{
+	return BNAnalysisContextGetEnd(m_object);
+}
+
+
+uint64_t AnalysisContext::GetLength()
+{
+	return BNAnalysisContextGetLength(m_object);
+}
+
+
+uint64_t AnalysisContext::GetNextValidOffset(uint64_t offset)
+{
+	return BNAnalysisContextGetNextValidOffset(m_object, offset);
+}
+
+
+uint64_t AnalysisContext::GetNextMappedAddress(uint64_t addr, uint32_t flags)
+{
+	return BNAnalysisContextGetNextMappedAddress(m_object, addr, flags);
+}
+
+
+uint64_t AnalysisContext::GetNextBackedAddress(uint64_t addr, uint32_t flags)
+{
+	return BNAnalysisContextGetNextBackedAddress(m_object, addr, flags);
+}
+
+
+Ref<Segment> AnalysisContext::GetSegmentAt(uint64_t addr)
+{
+	BNSegment* segment = BNAnalysisContextGetSegmentAt(m_object, addr);
+	if (!segment)
+		return nullptr;
+	return new Segment(segment);
+}
+
+
+vector<BNAddressRange> AnalysisContext::GetMappedAddressRanges()
+{
+	size_t count = 0;
+	BNAddressRange* ranges = BNAnalysisContextGetMappedAddressRanges(m_object, &count);
+	vector<BNAddressRange> result;
+	result.reserve(count);
+	for (size_t i = 0; i < count; i++)
+		result.push_back(ranges[i]);
+	BNFreeAddressRanges(ranges);
+	return result;
+}
+
+
+vector<BNAddressRange> AnalysisContext::GetBackedAddressRanges()
+{
+	size_t count = 0;
+	BNAddressRange* ranges = BNAnalysisContextGetBackedAddressRanges(m_object, &count);
+	vector<BNAddressRange> result;
+	result.reserve(count);
+	for (size_t i = 0; i < count; i++)
+		result.push_back(ranges[i]);
+	BNFreeAddressRanges(ranges);
+	return result;
+}
+
+
 bool WorkflowMachine::PostRequest(const std::string& command)
 {
 	rapidjson::Document request(rapidjson::kObjectType);
@@ -162,11 +375,7 @@ bool WorkflowMachine::PostRequest(const std::string& command)
 	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
 	request.Accept(writer);
 
-	string jsonResult;
-	if (m_function)
-		jsonResult = BNPostWorkflowRequestForFunction(m_function->GetObject(), buffer.GetString());
-	else
-		jsonResult = BNPostWorkflowRequestForBinaryView(m_view->GetObject(), buffer.GetString());
+	string jsonResult = PostRawRequest(buffer.GetString());
 
 	rapidjson::Document response(rapidjson::kObjectType);
 	response.Parse(jsonResult.c_str());
@@ -189,13 +398,23 @@ WorkflowMachine::WorkflowMachine(Ref<Function> function): m_function(function)
 }
 
 
+string WorkflowMachine::PostRawRequest(const char* request)
+{
+	char* result;
+	if (m_function)
+		result = BNPostWorkflowRequestForFunction(m_function->GetObject(), request);
+	else
+		result = BNPostWorkflowRequestForBinaryView(m_view->GetObject(), request);
+
+	string jsonResult(result);
+	BNFreeString(result);
+	return jsonResult;
+}
+
+
 bool WorkflowMachine::PostJsonRequest(const std::string& request)
 {
-	string jsonResult;
-	if (m_function)
-		jsonResult = BNPostWorkflowRequestForFunction(m_function->GetObject(), request.c_str());
-	else
-		jsonResult = BNPostWorkflowRequestForBinaryView(m_view->GetObject(), request.c_str());
+	string jsonResult = PostRawRequest(request.c_str());
 
 	rapidjson::Document response(rapidjson::kObjectType);
 	response.Parse(jsonResult.c_str());
@@ -237,11 +456,7 @@ WorkflowMachine::Status WorkflowMachine::GetStatus()
 	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
 	request.Accept(writer);
 
-	string jsonResult;
-	if (m_function)
-		jsonResult = BNPostWorkflowRequestForFunction(m_function->GetObject(), buffer.GetString());
-	else
-		jsonResult = BNPostWorkflowRequestForBinaryView(m_view->GetObject(), buffer.GetString());
+	string jsonResult = PostRawRequest(buffer.GetString());
 
 	rapidjson::Document response(rapidjson::kObjectType);
 	response.Parse(jsonResult.c_str());
@@ -319,11 +534,7 @@ bool WorkflowMachine::SetLogEnabled(bool enable, bool global)
 	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
 	request.Accept(writer);
 
-	string jsonResult;
-	if (m_function)
-		jsonResult = BNPostWorkflowRequestForFunction(m_function->GetObject(), buffer.GetString());
-	else
-		jsonResult = BNPostWorkflowRequestForBinaryView(m_view->GetObject(), buffer.GetString());
+	string jsonResult = PostRawRequest(buffer.GetString());
 
 	rapidjson::Document response(rapidjson::kObjectType);
 	response.Parse(jsonResult.c_str());
@@ -345,11 +556,7 @@ std::optional<bool> WorkflowMachine::QueryOverride(const string& activity)
 	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
 	request.Accept(writer);
 
-	string jsonResult;
-	if (m_function)
-		jsonResult = BNPostWorkflowRequestForFunction(m_function->GetObject(), buffer.GetString());
-	else
-		jsonResult = BNPostWorkflowRequestForBinaryView(m_view->GetObject(), buffer.GetString());
+	string jsonResult = PostRawRequest(buffer.GetString());
 
 	rapidjson::Document response(rapidjson::kObjectType);
 	response.Parse(jsonResult.c_str());
@@ -372,11 +579,7 @@ bool WorkflowMachine::SetOverride(const string& activity, bool enable)
 	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
 	request.Accept(writer);
 
-	string jsonResult;
-	if (m_function)
-		jsonResult = BNPostWorkflowRequestForFunction(m_function->GetObject(), buffer.GetString());
-	else
-		jsonResult = BNPostWorkflowRequestForBinaryView(m_view->GetObject(), buffer.GetString());
+	string jsonResult = PostRawRequest(buffer.GetString());
 
 	rapidjson::Document response(rapidjson::kObjectType);
 	response.Parse(jsonResult.c_str());
@@ -398,11 +601,7 @@ bool WorkflowMachine::ClearOverride(const string& activity)
 	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
 	request.Accept(writer);
 
-	string jsonResult;
-	if (m_function)
-		jsonResult = BNPostWorkflowRequestForFunction(m_function->GetObject(), buffer.GetString());
-	else
-		jsonResult = BNPostWorkflowRequestForBinaryView(m_view->GetObject(), buffer.GetString());
+	string jsonResult = PostRawRequest(buffer.GetString());
 
 	rapidjson::Document response(rapidjson::kObjectType);
 	response.Parse(jsonResult.c_str());
@@ -507,7 +706,7 @@ Ref<Activity> Workflow::RegisterActivity(Ref<Activity> activity, const vector<st
 	if (!activityObject)
 		return nullptr;
 
-	return new Activity(BNNewActivityReference(activityObject));
+	return new Activity(activityObject);
 }
 
 
@@ -550,7 +749,7 @@ size_t Workflow::Size() const
 Ref<Activity> Workflow::GetActivity(const string& activity)
 {
 	BNActivity* activityObject = BNWorkflowGetActivity(m_object, activity.c_str());
-	return new Activity(BNNewActivityReference(activityObject));
+	return new Activity(activityObject);
 }
 
 

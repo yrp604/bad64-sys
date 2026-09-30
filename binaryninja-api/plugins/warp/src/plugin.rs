@@ -7,30 +7,24 @@ use crate::container::network::{NetworkClient, NetworkContainer};
 use crate::matcher::MatcherSettings;
 use crate::plugin::render_layer::HighlightRenderLayer;
 use crate::plugin::settings::PluginSettings;
+use crate::plugin::similarity::WarpSimilarityProviderType;
 use crate::{core_signature_dir, user_signature_dir};
 use binaryninja::background_task::BackgroundTask;
-use binaryninja::command::{
-    register_command, register_command_for_function, register_command_for_project,
-};
+use binaryninja::command::{register_command, register_command_for_function};
 use binaryninja::is_ui_enabled;
-use binaryninja::logger::Logger;
 use binaryninja::settings::{QueryOptions, Settings};
-use log::LevelFilter;
+use binaryninja::similarity::register_similarity_provider;
 
-mod commit;
-mod create;
-mod debug;
 mod ffi;
-mod file;
 mod function;
 mod load;
-mod project;
 mod render_layer;
-mod settings;
+pub(crate) mod settings;
+mod similarity;
 mod workflow;
 
 fn load_bundled_signatures() {
-    let global_bn_settings = Settings::new();
+    let global_bn_settings = Settings::global();
     let plugin_settings =
         PluginSettings::from_settings(&global_bn_settings, &mut QueryOptions::new());
     // We want to load all the bundled directories into the container cache.
@@ -40,27 +34,27 @@ fn load_bundled_signatures() {
         let mut core_disk_container = DiskContainer::new_from_dir(core_signature_dir());
         core_disk_container.name = "Bundled".to_string();
         core_disk_container.writable = false;
-        log::debug!("{:#?}", core_disk_container);
+        tracing::debug!("{:#?}", core_disk_container);
         add_cached_container(core_disk_container);
     }
     if plugin_settings.load_user_files {
         let mut user_disk_container = DiskContainer::new_from_dir(user_signature_dir());
         user_disk_container.name = "User".to_string();
-        log::debug!("{:#?}", user_disk_container);
+        tracing::debug!("{:#?}", user_disk_container);
         add_cached_container(user_disk_container);
     }
-    log::info!("Loading bundled files took {:?}", start.elapsed());
+    tracing::info!("Loading files took {:?}", start.elapsed());
     background_task.finish();
 }
 
 fn load_network_container() {
-    let global_bn_settings = Settings::new();
+    let global_bn_settings = Settings::global();
 
     let add_network_container = |url: String, api_key: Option<String>| {
         let network_client = NetworkClient::new(url.clone(), api_key.clone());
         // Before constructing the container, let's make sure that the server is OK.
         if let Err(e) = network_client.status() {
-            log::error!("Server '{}' failed to connect: {}", url, e);
+            tracing::warn!("Server '{}' failed to connect: {}", url, e);
             return;
         }
 
@@ -68,7 +62,7 @@ fn load_network_container() {
         let mut writable_sources = Vec::new();
         match network_client.current_user() {
             Ok((id, username)) => {
-                log::info!(
+                tracing::info!(
                     "Server '{}' connected, logged in as user '{}'",
                     url,
                     username
@@ -78,19 +72,19 @@ fn load_network_container() {
                         writable_sources = sources;
                     }
                     Err(e) => {
-                        log::error!("Server '{}' failed to get sources for user: {}", url, e);
+                        tracing::error!("Server '{}' failed to get sources for user: {}", url, e);
                     }
                 }
             }
             Err(e) if api_key.is_some() => {
-                log::error!(
+                tracing::error!(
                     "Server '{}' failed to authenticate with provided API key: {}",
                     url,
                     e
                 );
             }
             Err(_) => {
-                log::info!("Server '{}' connected, logged in as guest", url);
+                tracing::info!("Server '{}' connected, logged in as guest", url);
             }
         }
 
@@ -98,7 +92,7 @@ fn load_network_container() {
         let main_cache_path = NetworkContainer::root_cache_location().join("main");
         let network_container =
             NetworkContainer::new(network_client, main_cache_path, &writable_sources);
-        log::debug!("{:#?}", network_container);
+        tracing::debug!("{:#?}", network_container);
         add_cached_container(network_container);
     };
 
@@ -112,15 +106,22 @@ fn load_network_container() {
             add_network_container(second_server_url, plugin_settings.second_server_api_key);
         }
     }
-    log::debug!("Initializing warp server took {:?}", start.elapsed());
+    tracing::debug!("Initializing warp server took {:?}", start.elapsed());
     background_task.finish();
 }
 
 fn plugin_init() -> bool {
-    Logger::new("WARP").with_level(LevelFilter::Debug).init();
+    binaryninja::tracing_init!("WARP");
+
+    // Create the user signature directory if it does not exist, otherwise we will not be able to write to it.
+    if !user_signature_dir().exists() {
+        if let Err(e) = std::fs::create_dir_all(&user_signature_dir()) {
+            tracing::error!("Failed to create user signature directory: {}", e);
+        }
+    }
 
     // Register our matcher and plugin settings globally.
-    let mut global_bn_settings = Settings::new();
+    let mut global_bn_settings = Settings::global();
     global_bn_settings.register_group("warp", "WARP");
     MatcherSettings::register(&mut global_bn_settings);
     PluginSettings::register(&mut global_bn_settings);
@@ -132,7 +133,7 @@ fn plugin_init() -> bool {
     HighlightRenderLayer::register();
 
     if workflow::insert_workflow().is_err() {
-        log::error!("Failed to register WARP workflow");
+        tracing::error!("Failed to register WARP workflow");
         return false;
     }
 
@@ -158,37 +159,10 @@ fn plugin_init() -> bool {
         workflow::RunMatcher {},
     );
 
-    #[cfg(debug_assertions)]
-    register_command(
-        "WARP\\Debug\\Cache",
-        "Debug cache sizes... because...",
-        debug::DebugCache {},
-    );
-
-    #[cfg(debug_assertions)]
-    register_command(
-        "WARP\\Debug\\Invalidate Caches",
-        "Invalidate all WARP caches",
-        debug::DebugInvalidateCache {},
-    );
-
-    #[cfg(debug_assertions)]
-    register_command_for_function(
-        "WARP\\Debug\\Function Signature",
-        "Print the entire signature for the function",
-        debug::DebugFunction {},
-    );
-
     register_command(
         "WARP\\Load File",
-        "Load file into the matcher, this does NOT kick off matcher analysis",
+        "Load WARP file",
         load::LoadSignatureFile {},
-    );
-
-    register_command(
-        "WARP\\Commit File",
-        "Commit file to a source",
-        commit::CommitFile {},
     );
 
     register_command_for_function(
@@ -209,41 +183,7 @@ fn plugin_init() -> bool {
         function::RemoveFunction {},
     );
 
-    register_command_for_function(
-        "WARP\\Copy GUID",
-        "Copy the computed GUID for the function",
-        function::CopyFunctionGUID {},
-    );
-
-    register_command(
-        "WARP\\Find GUID",
-        "Locate the function in the view using a GUID",
-        function::FindFunctionFromGUID {},
-    );
-
-    register_command(
-        "WARP\\Create\\From Current View",
-        "Creates a signature file containing all selected functions",
-        create::CreateFromCurrentView {},
-    );
-
-    register_command(
-        "WARP\\Create\\From File(s)",
-        "Creates a signature file containing all selected functions",
-        create::CreateFromFiles {},
-    );
-
-    register_command(
-        "WARP\\Show Report",
-        "Creates a report for the selected file, displaying info on functions and types",
-        file::ShowFileReport {},
-    );
-
-    register_command_for_project(
-        "WARP\\Create\\From Project",
-        "Create signature files from select project files",
-        project::CreateSignatures {},
-    );
+    register_similarity_provider(WarpSimilarityProviderType);
 
     true
 }

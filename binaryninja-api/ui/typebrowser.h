@@ -46,7 +46,7 @@ protected:
 	class TypeBrowserModelData* m_model;
 	std::optional<std::weak_ptr<TypeBrowserTreeNode>> m_parent;
 	std::vector<std::shared_ptr<TypeBrowserTreeNode>> m_children;
-	std::map<const TypeBrowserTreeNode*, size_t> m_childIndices;
+	std::unordered_map<const TypeBrowserTreeNode*, size_t> m_childIndices;
 	bool m_hasGeneratedChildren;
 
 	TypeBrowserTreeNode(class TypeBrowserModelData* model, std::optional<std::weak_ptr<TypeBrowserTreeNode>> parent);
@@ -65,7 +65,7 @@ public:
 
 	virtual std::string text(int column) const = 0;
 	virtual bool lessThan(const TypeBrowserTreeNode& other, int column) const = 0;
-	virtual bool filter(const std::string& filter, TypeBrowserFilterMode mode) const = 0;
+	virtual bool filter(const std::string& filter, TypeBrowserFilterMode mode, bool caseSensitive) const = 0;
 	virtual void updateChildren(bool recursive, UpdateNodeCallback update);
 };
 
@@ -78,7 +78,7 @@ public:
 
 	virtual std::string text(int column) const override;
 	virtual bool lessThan(const TypeBrowserTreeNode& other, int column) const override;
-	virtual bool filter(const std::string& filter, TypeBrowserFilterMode mode) const override;
+	virtual bool filter(const std::string& filter, TypeBrowserFilterMode mode, bool caseSensitive) const override;
 
 protected:
 	virtual void generateChildren() override;
@@ -96,7 +96,7 @@ public:
 
 	virtual std::string text(int column) const override;
 	virtual bool lessThan(const TypeBrowserTreeNode& other, int column) const override;
-	virtual bool filter(const std::string& filter, TypeBrowserFilterMode mode) const override;
+	virtual bool filter(const std::string& filter, TypeBrowserFilterMode mode, bool caseSensitive) const override;
 
 protected:
 	virtual void generateChildren() override;
@@ -148,7 +148,7 @@ public:
 
 	virtual std::string text(int column) const override;
 	virtual bool lessThan(const TypeBrowserTreeNode& other, int column) const override;
-	virtual bool filter(const std::string& filter, TypeBrowserFilterMode mode) const override;
+	virtual bool filter(const std::string& filter, TypeBrowserFilterMode mode, bool caseSensitive) const override;
 
 protected:
 	virtual void generateChildren() override;
@@ -166,7 +166,7 @@ public:
 	virtual ~TypeContainerTreeNode();
 
 	virtual std::string text(int column) const override;
-	virtual bool filter(const std::string& filter, TypeBrowserFilterMode mode) const override;
+	virtual bool filter(const std::string& filter, TypeBrowserFilterMode mode, bool caseSensitive) const override;
 	virtual bool lessThan(const TypeBrowserTreeNode& other, int column) const override;
 
 	const std::string& containerId() const { return m_containerId; }
@@ -293,7 +293,7 @@ public:
 	std::shared_ptr<TypeBrowserTreeNode> nodeForIndex(const QModelIndex& index) const;
 	QModelIndex indexForNode(std::shared_ptr<TypeBrowserTreeNode> node, int column = 0) const;
 
-	bool filter(const QModelIndex& index, const std::string& filter, TypeBrowserFilterMode mode) const;
+	bool filter(const QModelIndex& index, const std::string& filter, TypeBrowserFilterMode mode, bool caseSensitive) const;
 	bool lessThan(const QModelIndex& left, const QModelIndex& right) const;
 
 	void OnTypeDefined(BinaryNinja::BinaryView* data, const BinaryNinja::QualifiedName& name, BinaryNinja::Type* type) override;
@@ -326,7 +326,9 @@ class BINARYNINJAUIAPI TypeBrowserFilterModel : public QSortFilterProxyModel
 	Q_OBJECT
 	BinaryViewRef m_data;
 	TypeBrowserModel* m_model;
+	std::string m_originalFilter;
 	std::string m_filter;
+	bool m_filterCaseSensitive = false;
 	TypeBrowserFilterMode m_filterMode;
 	bool m_exactOnTop;
 
@@ -337,7 +339,7 @@ protected:
 public:
 	TypeBrowserFilterModel(BinaryViewRef data, TypeBrowserModel* model, QObject* parent);
 
-	void setFilter(const std::string& filter);
+	void setFilter(const std::string& filter, FilterOptions options);
 	TypeBrowserFilterMode filterMode() const { return m_filterMode; }
 	void setFilterMode(TypeBrowserFilterMode newMode) { m_filterMode = newMode; }
 
@@ -369,6 +371,9 @@ class BINARYNINJAUIAPI TypeBrowserTreeView : public QTreeView
 {
 	Q_OBJECT
 	UIActionHandler m_actionHandler;
+
+protected:
+	virtual void scrollContentsBy(int dx, int dy) override;
 
 public:
 	explicit TypeBrowserTreeView(class TypeBrowserView* parent);
@@ -435,11 +440,11 @@ public:
 	virtual StatusBarWidget* getStatusBarWidget() override;
 	virtual QWidget* getHeaderOptionsWidget() override;
 
-	virtual void setFilter(const std::string& filter) override;
+	virtual void setFilter(const std::string& filter, FilterOptions options) override;
 	virtual void scrollToFirstItem() override;
 	virtual void scrollToCurrentItem() override;
-	virtual void selectFirstItem() override;
-	virtual void activateFirstItem() override;
+	virtual void ensureSelection() override;
+	virtual void activateSelection() override;
 
 	virtual void notifyRefresh() override;
 
@@ -546,6 +551,8 @@ public:
 	void deleteTypes();
 	bool canChangeTypes();
 	void changeTypes();
+	bool canCreateStructureMemberAtOffset();
+	void createStructureMemberAtOffset();
 	bool canImportType();
 	void importType();
 	bool canImportTypeByGUID(BinaryViewRef view);
@@ -558,6 +565,8 @@ public:
 	void collapseAll();
 	bool canSwitchLayout();
 	void switchLayout();
+	bool canToggleDetailsVisibility();
+	void toggleDetailsVisibility();
 
 Q_SIGNALS:
 	void typeNameNavigated(const std::string& typeName, bool newSelection);

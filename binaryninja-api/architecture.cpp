@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -120,7 +120,7 @@ InstructionTextToken InstructionTextToken::WithConfidence(uint8_t conf)
 }
 
 
-BNInstructionTextToken InstructionTextToken::GetAPIObject() const
+BNInstructionTextToken InstructionTextToken::ToAPIStruct() const
 {
 	BNInstructionTextToken result;
 	ConvertInstructionTextToken(*this, &result);
@@ -128,13 +128,13 @@ BNInstructionTextToken InstructionTextToken::GetAPIObject() const
 }
 
 
-InstructionTextToken InstructionTextToken::FromAPIObject(const BNInstructionTextToken* token)
+InstructionTextToken InstructionTextToken::FromAPIStruct(const BNInstructionTextToken* token)
 {
 	return InstructionTextToken(*token);
 }
 
 
-void InstructionTextToken::FreeAPIObject(BNInstructionTextToken* token)
+void InstructionTextToken::FreeAPIStruct(BNInstructionTextToken* token)
 {
 	FreeInstructionTextToken(token);
 }
@@ -204,9 +204,42 @@ vector<InstructionTextToken> InstructionTextToken::ConvertInstructionTextTokenLi
 	return result;
 }
 
+LifterInstructionData::LifterInstructionData(BNLifterInstructionData* instrData)
+{
+	m_object = instrData;
+}
+
+
+void LifterInstructionData::Append(BasicBlock* block, std::span<const uint8_t> data)
+{
+	BNLifterInstructionDataAppend(m_object, block->GetObject(), data.data(), data.size());
+}
+
+
+std::span<const uint8_t> LifterInstructionData::Get(BasicBlock* block, uint64_t addr)
+{
+	size_t len = 0;
+	const uint8_t* opcode = BNLifterInstructionDataGet(m_object, block->GetObject(), addr, &len);
+	if (!opcode)
+		return {};
+	return std::span<const uint8_t>(opcode, len);
+}
+
+
 BasicBlockAnalysisContext::BasicBlockAnalysisContext(BNBasicBlockAnalysisContext* context)
 {
 	m_context = context;
+	if (context->lifterInstructionData)
+	{
+		m_lifterInstructionData =
+			new LifterInstructionData(BNNewLifterInstructionDataReference(context->lifterInstructionData));
+	}
+}
+
+
+Ref<LifterInstructionData> BasicBlockAnalysisContext::GetLifterInstructionData()
+{
+	return m_lifterInstructionData;
 }
 
 const std::map<ArchAndAddr, std::set<ArchAndAddr>> BasicBlockAnalysisContext::GetIndirectBranches()
@@ -304,6 +337,15 @@ std::map<ArchAndAddr, ArchAndAddr>& BasicBlockAnalysisContext::GetInlinedUnresol
 		m_inlinedUnresolvedIndirectBranches.emplace();
 
 	return *m_inlinedUnresolvedIndirectBranches;
+}
+
+
+bool BasicBlockAnalysisContext::SetFunctionArchContextRaw(void* p)
+{
+	if (m_context->functionArchContext)
+		return false;
+	m_context->functionArchContext = p;
+	return true;
 }
 
 
@@ -461,8 +503,180 @@ void BasicBlockAnalysisContext::Finalize()
 			delete[] values;
 		}
 	}
+}
 
-	BNAnalyzeBasicBlocksContextFinalize(m_context);
+
+FunctionLifterContext::FunctionLifterContext(LowLevelILFunction* func, BNFunctionLifterContext* context)
+{
+	m_context = context;
+	m_view = func->GetFunction()->GetView();
+	m_function = new LowLevelILFunction(BNNewLowLevelILFunctionReference(func->GetObject()));
+	m_platform = new Platform(BNNewPlatformReference(context->platform));
+	m_logger = new Logger(BNNewLoggerReference(context->logger));
+	m_blocks.reserve(context->basicBlockCount);
+	for (size_t i = 0; i < context->basicBlockCount; i++)
+	{
+		m_blocks.emplace_back(new BasicBlock(BNNewBasicBlockReference(context->basicBlocks[i])));
+	}
+
+	for (size_t i = 0; i < context->noReturnCallsCount; i++)
+	{
+		ArchAndAddr addr(new CoreArchitecture(context->noReturnCalls[i].arch), context->noReturnCalls[i].address);
+		m_noReturnCalls.insert(addr);
+	}
+
+	for (size_t i = 0; i < context->contextualFunctionReturnCount; i++)
+	{
+		ArchAndAddr addr(new CoreArchitecture(context->contextualFunctionReturnLocations[i].arch),
+			context->contextualFunctionReturnLocations[i].address);
+		m_contextualReturns[addr] = context->contextualFunctionReturnValues[i];
+	}
+
+	for (size_t i = 0; i < context->inlinedRemappingEntryCount; i++)
+	{
+		ArchAndAddr key(
+			new CoreArchitecture(context->inlinedRemappingKeys[i].arch), context->inlinedRemappingKeys[i].address);
+		ArchAndAddr value(
+			new CoreArchitecture(context->inlinedRemappingValues[i].arch), context->inlinedRemappingValues[i].address);
+		m_inlinedRemapping[key] = value;
+	}
+
+	for (size_t i = 0; i < context->indirectBranchesCount; i++)
+	{
+		ArchAndAddr src(
+			new CoreArchitecture(context->indirectBranches[i].sourceArch), context->indirectBranches[i].sourceAddr);
+		ArchAndAddr dest(
+			new CoreArchitecture(context->indirectBranches[i].destArch), context->indirectBranches[i].destAddr);
+		if (context->indirectBranches[i].autoDefined)
+			m_autoIndirectBranches[src].insert(dest);
+		else
+			m_userIndirectBranches[src].insert(dest);
+	}
+
+	for (size_t i = 0; i < context->inlinedCallsCount; i++)
+	{
+		m_inlinedCalls.insert(context->inlinedCalls[i]);
+	}
+
+	m_functionArchContext = context->functionArchContext;
+	if (context->lifterInstructionData)
+	{
+		m_lifterInstructionData =
+			new LifterInstructionData(BNNewLifterInstructionDataReference(context->lifterInstructionData));
+	}
+	m_containsInlinedFunctions = context->containsInlinedFunctions;
+}
+
+
+Ref<BinaryView>& FunctionLifterContext::GetView()
+{
+	return m_view;
+}
+
+
+Ref<Platform>& FunctionLifterContext::GetPlatform()
+{
+	return m_platform;
+}
+
+
+std::map<ArchAndAddr, ArchAndAddr>& FunctionLifterContext::GetInlinedRemapping()
+{
+	return m_inlinedRemapping;
+}
+
+
+std::map<ArchAndAddr, std::set<ArchAndAddr>>& FunctionLifterContext::GetUserIndirectBranches()
+{
+	return m_userIndirectBranches;
+}
+
+
+std::map<ArchAndAddr, std::set<ArchAndAddr>>& FunctionLifterContext::GetAutoIndirectBranches()
+{
+	return m_autoIndirectBranches;
+}
+
+
+Ref<Logger>& FunctionLifterContext::GetLogger()
+{
+	return m_logger;
+}
+
+
+vector<Ref<BasicBlock>>& FunctionLifterContext::GetBasicBlocks()
+{
+	return m_blocks;
+}
+
+
+std::set<ArchAndAddr>& FunctionLifterContext::GetNoReturnCalls()
+{
+	return m_noReturnCalls;
+}
+
+
+std::map<ArchAndAddr, bool>& FunctionLifterContext::GetContextualReturns()
+{
+	return m_contextualReturns;
+}
+
+
+std::set<uint64_t>& FunctionLifterContext::GetInlinedCalls()
+{
+	return m_inlinedCalls;
+}
+
+
+void FunctionLifterContext::SetContainsInlinedFunctions(bool value)
+{
+	*m_containsInlinedFunctions = value;
+}
+
+
+void FunctionLifterContext::PrepareBlockTranslation(LowLevelILFunction* function, Architecture* arch, uint64_t addr)
+{
+	BNPrepareBlockTranslation(function->GetObject(), arch->GetObject(), addr);
+}
+
+
+std::vector<Ref<BasicBlock>> FunctionLifterContext::PrepareToCopyForeignFunction(LowLevelILFunction* function)
+{
+	size_t blockCount = 0;
+	BNBasicBlock** bnBlocks =
+		BNPrepareToCopyForeignFunction(m_function->GetObject(), function->GetObject(), &blockCount);
+	std::vector<Ref<BasicBlock>> blocks;
+	blocks.reserve(blockCount);
+	for (size_t i = 0; i < blockCount; i++)
+		blocks.emplace_back(new BasicBlock(BNNewBasicBlockReference(bnBlocks[i])));
+
+	BNFreeBasicBlockList(bnBlocks, blockCount);
+	return blocks;
+}
+
+
+Ref<LowLevelILFunction> FunctionLifterContext::GetForeignFunctionLiftedIL(Ref<Function> func)
+{
+	size_t inlinedCallsCount = m_inlinedCalls.size();
+	uint64_t* inlinedCalls = nullptr;
+	if (inlinedCallsCount)
+	{
+		inlinedCalls = new uint64_t[inlinedCallsCount];
+		size_t i = 0;
+		for (uint64_t addr : m_inlinedCalls)
+			inlinedCalls[i++] = addr;
+	}
+
+	BNLowLevelILFunction* il =
+		BNGetForeignFunctionLiftedIL(func->GetObject(), m_logger->GetObject(), inlinedCallsCount, inlinedCalls);
+
+	if (inlinedCalls)
+		delete[] inlinedCalls;
+
+	if (!il)
+		return nullptr;
+
+	return new LowLevelILFunction(il);
 }
 
 
@@ -510,6 +724,20 @@ size_t Architecture::GetInstructionAlignmentCallback(void* ctxt)
 {
 	CallbackRef<Architecture> arch(ctxt);
 	return arch->GetInstructionAlignment();
+}
+
+
+size_t Architecture::GetLinearSweepInitialAlignmentCallback(void* ctxt)
+{
+	CallbackRef<Architecture> arch(ctxt);
+	return arch->GetLinearSweepInitialAlignment();
+}
+
+
+uint32_t Architecture::GetLinearSweepAnalysisCapabilitiesCallback(void* ctxt)
+{
+	CallbackRef<Architecture> arch(ctxt);
+	return arch->GetLinearSweepAnalysisCapabilities();
 }
 
 
@@ -567,6 +795,26 @@ bool Architecture::GetInstructionTextCallback(
 }
 
 
+bool Architecture::GetInstructionTextWithContextCallback(void* ctxt, const uint8_t* data, uint64_t addr, size_t* len,
+	void* context, BNInstructionTextToken** result, size_t* count)
+{
+	CallbackRef<Architecture> arch(ctxt);
+
+	vector<InstructionTextToken> tokens;
+	bool ok = arch->GetInstructionTextWithContext(data, addr, *len, context, tokens);
+	if (!ok)
+	{
+		*result = nullptr;
+		*count = 0;
+		return false;
+	}
+
+	*count = tokens.size();
+	*result = InstructionTextToken::CreateInstructionTextTokenList(tokens);
+	return true;
+}
+
+
 void Architecture::FreeInstructionTextCallback(BNInstructionTextToken* tokens, size_t count)
 {
 	for (size_t i = 0; i < count; i++)
@@ -597,6 +845,22 @@ void Architecture::AnalyzeBasicBlocksCallback(void *ctxt, BNFunction* function,
 	Ref<Function> func(new Function(BNNewFunctionReference(function)));
 
 	arch->AnalyzeBasicBlocks(func, abbc);
+}
+
+
+bool Architecture::LiftFunctionCallback(void* ctxt, BNLowLevelILFunction* function, BNFunctionLifterContext* context)
+{
+	CallbackRef<Architecture> arch(ctxt);
+	Ref func(new LowLevelILFunction(BNNewLowLevelILFunctionReference(function)));
+	FunctionLifterContext flc(func, context);
+	return arch->LiftFunction(func, flc);
+}
+
+
+void Architecture::FreeFunctionArchContextCallback(void* ctxt, void* context)
+{
+	CallbackRef<Architecture> arch(ctxt);
+	arch->FreeFunctionArchContext(context);
 }
 
 
@@ -1076,7 +1340,7 @@ void Architecture::Register(BNCustomArchitecture* callbacks)
 
 void Architecture::Register(Architecture* arch)
 {
-	BNCustomArchitecture callbacks;
+	BNCustomArchitecture callbacks{};
 	callbacks.context = arch;
 	callbacks.init = InitCallback;
 	callbacks.getEndianness = GetEndiannessCallback;
@@ -1088,9 +1352,12 @@ void Architecture::Register(Architecture* arch)
 	callbacks.getAssociatedArchitectureByAddress = GetAssociatedArchitectureByAddressCallback;
 	callbacks.getInstructionInfo = GetInstructionInfoCallback;
 	callbacks.getInstructionText = GetInstructionTextCallback;
+	callbacks.getInstructionTextWithContext = GetInstructionTextWithContextCallback;
 	callbacks.freeInstructionText = FreeInstructionTextCallback;
 	callbacks.getInstructionLowLevelIL = GetInstructionLowLevelILCallback;
 	callbacks.analyzeBasicBlocks = AnalyzeBasicBlocksCallback;
+	callbacks.liftFunction = LiftFunctionCallback;
+	callbacks.freeFunctionArchContext = FreeFunctionArchContextCallback;
 	callbacks.getRegisterName = GetRegisterNameCallback;
 	callbacks.getFlagName = GetFlagNameCallback;
 	callbacks.getFlagWriteTypeName = GetFlagWriteTypeNameCallback;
@@ -1139,6 +1406,8 @@ void Architecture::Register(Architecture* arch)
 	callbacks.alwaysBranch = AlwaysBranchCallback;
 	callbacks.invertBranch = InvertBranchCallback;
 	callbacks.skipAndReturnValue = SkipAndReturnValueCallback;
+	callbacks.getLinearSweepInitialAlignment = GetLinearSweepInitialAlignmentCallback;
+	callbacks.getLinearSweepAnalysisCapabilities = GetLinearSweepAnalysisCapabilitiesCallback;
 	arch->Register(&callbacks);
 }
 
@@ -1191,6 +1460,18 @@ size_t Architecture::GetInstructionAlignment() const
 }
 
 
+size_t Architecture::GetLinearSweepInitialAlignment() const
+{
+	return GetInstructionAlignment();
+}
+
+
+uint32_t Architecture::GetLinearSweepAnalysisCapabilities() const
+{
+	return BNLinearSweepCallTargetAnalysis | BNLinearSweepGenericControlFlowAnalysis;
+}
+
+
 size_t Architecture::GetMaxInstructionLength() const
 {
 	return BN_DEFAULT_INSTRUCTION_LENGTH;
@@ -1223,6 +1504,22 @@ void Architecture::AnalyzeBasicBlocks(Function* function, BasicBlockAnalysisCont
 {
 	DefaultAnalyzeBasicBlocks(function, context);
 }
+
+
+bool Architecture::LiftFunction(LowLevelILFunction* function, FunctionLifterContext& context)
+{
+	return DefaultLiftFunction(function, context);
+}
+
+
+bool Architecture::GetInstructionTextWithContext(
+	const uint8_t* data, uint64_t addr, size_t& len, void* context, std::vector<InstructionTextToken>& result)
+{
+	return GetInstructionText(data, addr, len, result);
+}
+
+
+void Architecture::FreeFunctionArchContext(void* context) {}
 
 
 string Architecture::GetRegisterName(uint32_t reg)
@@ -1699,6 +1996,7 @@ vector<Ref<TypeLibrary>> Architecture::GetTypeLibraries()
 	BNTypeLibrary** libs = BNGetArchitectureTypeLibraries(m_object, &count);
 
 	vector<Ref<TypeLibrary>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		result.push_back(new TypeLibrary(BNNewTypeLibraryReference(libs[i])));
@@ -1742,6 +2040,18 @@ size_t CoreArchitecture::GetInstructionAlignment() const
 }
 
 
+size_t CoreArchitecture::GetLinearSweepInitialAlignment() const
+{
+	return BNGetArchitectureLinearSweepInitialAlignment(m_object);
+}
+
+
+uint32_t CoreArchitecture::GetLinearSweepAnalysisCapabilities() const
+{
+	return BNGetArchitectureLinearSweepAnalysisCapabilities(m_object);
+}
+
+
 size_t CoreArchitecture::GetMaxInstructionLength() const
 {
 	return BNGetArchitectureMaxInstructionLength(m_object);
@@ -1779,6 +2089,19 @@ bool CoreArchitecture::GetInstructionText(
 }
 
 
+bool CoreArchitecture::GetInstructionTextWithContext(
+	const uint8_t* data, uint64_t addr, size_t& len, void* context, std::vector<InstructionTextToken>& result)
+{
+	BNInstructionTextToken* tokens = nullptr;
+	size_t count = 0;
+	if (!BNGetInstructionTextWithContext(m_object, data, addr, &len, context, &tokens, &count))
+		return false;
+
+	result = InstructionTextToken::ConvertAndFreeInstructionTextTokenList(tokens, count);
+	return true;
+}
+
+
 bool CoreArchitecture::GetInstructionLowLevelIL(const uint8_t* data, uint64_t addr, size_t& len, LowLevelILFunction& il)
 {
 	return BNGetInstructionLowLevelIL(m_object, data, addr, &len, il.GetObject());
@@ -1788,6 +2111,18 @@ bool CoreArchitecture::GetInstructionLowLevelIL(const uint8_t* data, uint64_t ad
 void CoreArchitecture::AnalyzeBasicBlocks(Function* function, BasicBlockAnalysisContext& context)
 {
 	BNArchitectureAnalyzeBasicBlocks(m_object, function->GetObject(), context.m_context);
+}
+
+
+bool CoreArchitecture::LiftFunction(LowLevelILFunction* function, FunctionLifterContext& context)
+{
+	return BNArchitectureLiftFunction(m_object, function->GetObject(), context.m_context);
+}
+
+
+void CoreArchitecture::FreeFunctionArchContext(void* context)
+{
+	BNArchitectureFreeFunctionArchContext(m_object, context);
 }
 
 
@@ -1902,6 +2237,7 @@ vector<uint32_t> CoreArchitecture::GetAllSemanticFlagClasses()
 	uint32_t* regs = BNGetAllArchitectureSemanticFlagClasses(m_object, &count);
 
 	vector<uint32_t> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(regs[i]);
 
@@ -1916,6 +2252,7 @@ vector<uint32_t> CoreArchitecture::GetAllSemanticFlagGroups()
 	uint32_t* regs = BNGetAllArchitectureSemanticFlagGroups(m_object, &count);
 
 	vector<uint32_t> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(regs[i]);
 
@@ -1936,6 +2273,7 @@ vector<uint32_t> CoreArchitecture::GetFlagsRequiredForFlagCondition(BNLowLevelIL
 	uint32_t* flags = BNGetArchitectureFlagsRequiredForFlagCondition(m_object, cond, semClass, &count);
 
 	vector<uint32_t> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(flags[i]);
 
@@ -2079,6 +2417,7 @@ vector<uint32_t> CoreArchitecture::GetAllRegisterStacks()
 	uint32_t* regs = BNGetAllArchitectureRegisterStacks(m_object, &count);
 
 	vector<uint32_t> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(regs[i]);
 
@@ -2114,6 +2453,7 @@ vector<uint32_t> CoreArchitecture::GetAllIntrinsics()
 	uint32_t* regs = BNGetAllArchitectureIntrinsics(m_object, &count);
 
 	vector<uint32_t> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(regs[i]);
 
@@ -2128,6 +2468,7 @@ vector<NameAndType> CoreArchitecture::GetIntrinsicInputs(uint32_t intrinsic)
 	BNNameAndType* inputs = BNGetArchitectureIntrinsicInputs(m_object, intrinsic, &count);
 
 	vector<NameAndType> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		result.push_back(NameAndType(inputs[i].name,
@@ -2145,6 +2486,7 @@ vector<Confidence<Ref<Type>>> CoreArchitecture::GetIntrinsicOutputs(uint32_t int
 	BNTypeWithConfidence* outputs = BNGetArchitectureIntrinsicOutputs(m_object, intrinsic, &count);
 
 	vector<Confidence<Ref<Type>>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(Confidence<Ref<Type>>(new Type(BNNewTypeReference(outputs[i].type)), outputs[i].confidence));
 
@@ -2259,6 +2601,18 @@ size_t ArchitectureExtension::GetInstructionAlignment() const
 }
 
 
+size_t ArchitectureExtension::GetLinearSweepInitialAlignment() const
+{
+	return m_base->GetLinearSweepInitialAlignment();
+}
+
+
+uint32_t ArchitectureExtension::GetLinearSweepAnalysisCapabilities() const
+{
+	return m_base->GetLinearSweepAnalysisCapabilities();
+}
+
+
 size_t ArchitectureExtension::GetMaxInstructionLength() const
 {
 	return m_base->GetMaxInstructionLength();
@@ -2291,6 +2645,13 @@ bool ArchitectureExtension::GetInstructionText(
     const uint8_t* data, uint64_t addr, size_t& len, vector<InstructionTextToken>& result)
 {
 	return m_base->GetInstructionText(data, addr, len, result);
+}
+
+
+bool ArchitectureExtension::GetInstructionTextWithContext(
+	const uint8_t* data, uint64_t addr, size_t& len, void* context, vector<InstructionTextToken>& result)
+{
+	return m_base->GetInstructionTextWithContext(data, addr, len, context, result);
 }
 
 
@@ -2748,7 +3109,7 @@ bool DisassemblyTextRenderer::GetInstructionText(uint64_t addr, size_t& len, vec
 	if (!BNGetDisassemblyTextRendererInstructionText(m_object, addr, &len, &result, &count))
 		return false;
 
-	lines = ParseAPIObjectList<DisassemblyTextLine>(result, count);
+	lines = ParseAPIStructList<DisassemblyTextLine>(result, count);
 	BNFreeDisassemblyTextLines(result, count);
 	return true;
 }
@@ -2758,14 +3119,14 @@ vector<DisassemblyTextLine> DisassemblyTextRenderer::PostProcessInstructionTextL
     uint64_t addr, size_t len, const vector<DisassemblyTextLine>& lines, const string& indentSpaces)
 {
 	size_t inCount = 0;
-	BNDisassemblyTextLine* inLines = AllocAPIObjectList<DisassemblyTextLine>(lines, &inCount);
+	BNDisassemblyTextLine* inLines = AllocAPIStructList<DisassemblyTextLine>(lines, &inCount);
 	BNDisassemblyTextLine* result = nullptr;
 	size_t count = 0;
 	result = BNPostProcessDisassemblyTextRendererLines(
 	    m_object, addr, len, inLines, inCount, &count, indentSpaces.c_str());
 
-	vector<DisassemblyTextLine> outLines = ParseAPIObjectList<DisassemblyTextLine>(result, count);
-	FreeAPIObjectList<DisassemblyTextLine>(inLines, inCount);
+	vector<DisassemblyTextLine> outLines = ParseAPIStructList<DisassemblyTextLine>(result, count);
+	FreeAPIStructList<DisassemblyTextLine>(inLines, inCount);
 	BNFreeDisassemblyTextLines(result, count);
 	return outLines;
 }
@@ -2778,7 +3139,7 @@ bool DisassemblyTextRenderer::GetDisassemblyText(uint64_t addr, size_t& len, vec
 	if (!BNGetDisassemblyTextRendererLines(m_object, addr, &len, &result, &count))
 		return false;
 
-	lines = ParseAPIObjectList<DisassemblyTextLine>(result, count);
+	lines = ParseAPIStructList<DisassemblyTextLine>(result, count);
 	BNFreeDisassemblyTextLines(result, count);
 	return true;
 }
@@ -2875,14 +3236,14 @@ void DisassemblyTextRenderer::AddIntegerToken(
 void DisassemblyTextRenderer::WrapComment(DisassemblyTextLine& line, vector<DisassemblyTextLine>& lines,
     const string& comment, bool hasAutoAnnotations, const string& leadingSpaces, const string& indentSpaces)
 {
-	BNDisassemblyTextLine inLine = line.GetAPIObject();
+	BNDisassemblyTextLine inLine = line.ToAPIStruct();
 	size_t count = 0;
 	BNDisassemblyTextLine* result = BNDisassemblyTextRendererWrapComment(
 	    m_object, &inLine, &count, comment.c_str(), hasAutoAnnotations, leadingSpaces.c_str(), indentSpaces.c_str());
 
-	lines = ParseAPIObjectList<DisassemblyTextLine>(result, count);
+	lines = ParseAPIStructList<DisassemblyTextLine>(result, count);
 	BNFreeDisassemblyTextLines(result, count);
-	DisassemblyTextLine::FreeAPIObject(&inLine);
+	DisassemblyTextLine::FreeAPIStruct(&inLine);
 }
 
 
@@ -2914,7 +3275,7 @@ FunctionViewType::FunctionViewType(const BNFunctionViewType& viewType) : type(vi
 }
 
 
-BNFunctionViewType FunctionViewType::ToAPIObject() const
+BNFunctionViewType FunctionViewType::ToAPIStruct() const
 {
 	BNFunctionViewType result;
 	result.type = type;

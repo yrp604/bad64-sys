@@ -22,7 +22,7 @@ bool TypePrinter::GetTypeTokensCallback(void* ctxt, BNType* type, BNPlatform* pl
 	TypePrinter* printer = (TypePrinter*)ctxt;
 	vector<InstructionTextToken> tokens = printer->GetTypeTokens(
 		new Type(BNNewTypeReference(type)), platform ? new Platform(BNNewPlatformReference(platform)) : nullptr,
-		QualifiedName::FromAPIObject(name), baseConfidence, escaping);
+		QualifiedName::FromAPIStruct(name), baseConfidence, escaping);
 
 	*resultCount = tokens.size();
 	*result = InstructionTextToken::CreateInstructionTextTokenList(tokens);
@@ -68,7 +68,7 @@ bool TypePrinter::GetTypeStringCallback(void* ctxt, BNType* type, BNPlatform* pl
 	TypePrinter* printer = (TypePrinter*)ctxt;
 	string text = printer->GetTypeString(
 		new Type(BNNewTypeReference(type)), platform ? new Platform(BNNewPlatformReference(platform)) : nullptr,
-		QualifiedName::FromAPIObject(name), escaping);
+		QualifiedName::FromAPIStruct(name), escaping);
 
 	*result = BNAllocString(text.c_str());
 	return true;
@@ -108,7 +108,7 @@ bool TypePrinter::GetTypeLinesCallback(void* ctxt, BNType* type, BNTypeContainer
 	TypePrinter* printer = (TypePrinter*)ctxt;
 	vector<TypeDefinitionLine> lines = printer->GetTypeLines(
 		new Type(BNNewTypeReference(type)), TypeContainer(types),
-		QualifiedName::FromAPIObject(name), paddingCols, collapsed, escaping);
+		QualifiedName::FromAPIStruct(name), paddingCols, collapsed, escaping);
 
 	*resultCount = lines.size();
 	*result = TypeDefinitionLine::CreateTypeDefinitionLineList(lines);
@@ -121,9 +121,10 @@ bool TypePrinter::PrintAllTypesCallback(void* ctxt, BNQualifiedName* names, BNTy
 {
 	TypePrinter* printer = (TypePrinter*)ctxt;
 	vector<pair<QualifiedName, Ref<Type>>> apiTypes;
+	apiTypes.reserve(typeCount);
 	for (size_t i = 0; i < typeCount; ++i)
 	{
-		apiTypes.push_back({QualifiedName::FromAPIObject(&names[i]), new Type(types[i])});
+		apiTypes.push_back({QualifiedName::FromAPIStruct(&names[i]), new Type(types[i])});
 	}
 
 	string resultStr = printer->PrintAllTypes(apiTypes, new BinaryView(data), paddingCols, escaping);
@@ -173,6 +174,7 @@ std::vector<Ref<TypePrinter>> TypePrinter::GetList()
 	size_t count;
 	BNTypePrinter** list = BNGetTypePrinterList(&count);
 	vector<Ref<TypePrinter>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(new CoreTypePrinter(list[i]));
 	BNFreeTypePrinterList(list);
@@ -285,7 +287,7 @@ std::string TypePrinter::DefaultPrintAllTypes(
 
 	for (size_t i = 0; i < types.size(); i ++)
 	{
-		apiNames[i] = types[i].first.GetAPIObject();
+		apiNames[i] = types[i].first.ToAPIStruct();
 		apiTypes[i] = types[i].second->GetObject();
 	}
 
@@ -295,7 +297,7 @@ std::string TypePrinter::DefaultPrintAllTypes(
 
 	for (size_t i = 0; i < types.size(); i ++)
 	{
-		QualifiedName::FreeAPIObject(&apiNames[i]);
+		QualifiedName::FreeAPIStruct(&apiNames[i]);
 	}
 	delete[] apiTypes;
 	delete[] apiNames;
@@ -316,7 +318,7 @@ std::vector<InstructionTextToken> CoreTypePrinter::GetTypeTokens(Ref<Type> type,
 	Ref<Platform> platform, const QualifiedName& name,
 	uint8_t baseConfidence, BNTokenEscapingType escaping)
 {
-	BNQualifiedName qname = name.GetAPIObject();
+	BNQualifiedName qname = name.ToAPIStruct();
 
 	BNInstructionTextToken* tokens;
 	size_t tokenCount;
@@ -324,7 +326,7 @@ std::vector<InstructionTextToken> CoreTypePrinter::GetTypeTokens(Ref<Type> type,
 	bool success = BNGetTypePrinterTypeTokens(GetObject(), type->GetObject(),
 		platform ? platform->GetObject() : nullptr, &qname, baseConfidence, escaping, &tokens, &tokenCount);
 
-	QualifiedName::FreeAPIObject(&qname);
+	QualifiedName::FreeAPIStruct(&qname);
 	if (!success)
 		return {};
 
@@ -383,12 +385,12 @@ std::vector<InstructionTextToken> CoreTypePrinter::GetTypeTokensAfterName(Ref<Ty
 std::string CoreTypePrinter::GetTypeString(Ref<Type> type, Ref<Platform> platform,
 	const QualifiedName& name, BNTokenEscapingType escaping)
 {
-	BNQualifiedName qname = name.GetAPIObject();
+	BNQualifiedName qname = name.ToAPIStruct();
 
 	char* result;
 	bool success = BNGetTypePrinterTypeString(GetObject(), type->GetObject(), platform ? platform->GetObject() : nullptr, &qname, escaping, &result);
 
-	QualifiedName::FreeAPIObject(&qname);
+	QualifiedName::FreeAPIStruct(&qname);
 	if (!success)
 		return {};
 
@@ -439,20 +441,20 @@ std::vector<TypeDefinitionLine> CoreTypePrinter::GetTypeLines(Ref<Type> type,
 	BNTypeDefinitionLine* lines;
 	size_t lineCount;
 
-	BNQualifiedName qname = name.GetAPIObject();
+	BNQualifiedName qname = name.ToAPIStruct();
 
 	bool success = BNGetTypePrinterTypeLines(GetObject(), type->GetObject(), types.GetObject(), &qname,
 		paddingCols, collapsed, escaping, &lines, &lineCount);
 
-	QualifiedName::FreeAPIObject(&qname);
+	QualifiedName::FreeAPIStruct(&qname);
 	if (!success)
 		return {};
 
 	vector<TypeDefinitionLine> cppLines;
-
+	cppLines.reserve(lineCount);
 	for (size_t i = 0; i < lineCount; ++i)
 	{
-		cppLines.push_back(TypeDefinitionLine::FromAPIObject(&lines[i]));
+		cppLines.push_back(TypeDefinitionLine::FromAPIStruct(&lines[i]));
 	}
 	BNFreeTypeDefinitionLineList(lines, lineCount);
 
@@ -473,7 +475,7 @@ std::string CoreTypePrinter::PrintAllTypes(
 
 	for (size_t i = 0; i < types.size(); i ++)
 	{
-		apiNames[i] = types[i].first.GetAPIObject();
+		apiNames[i] = types[i].first.ToAPIStruct();
 		apiTypes[i] = types[i].second->GetObject();
 	}
 
@@ -483,7 +485,7 @@ std::string CoreTypePrinter::PrintAllTypes(
 
 	for (size_t i = 0; i < types.size(); i ++)
 	{
-		QualifiedName::FreeAPIObject(&apiNames[i]);
+		QualifiedName::FreeAPIStruct(&apiNames[i]);
 	}
 	delete[] apiTypes;
 	delete[] apiNames;

@@ -19,7 +19,9 @@ jobs:
   # Check that code compiles and tests pass
   test:
     # Using the testing environment gives us the needed secrets, it also requires a maintainer to approve it to run.
-    environment: testing
+    environment:
+      name: testing
+      deployment: false
     name: cargo test
     runs-on: ubuntu-latest
     permissions:

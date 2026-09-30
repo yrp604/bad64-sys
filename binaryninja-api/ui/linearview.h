@@ -16,6 +16,7 @@
 #include "instructionedit.h"
 #include "ilchooser.h"
 #include "commands.h"
+#include "tokennavigation.h"
 #include <assembledialog.h>
 
 #define LINEAR_VIEW_UPDATE_CHECK_INTERVAL 200
@@ -111,6 +112,7 @@ public:
 	void setInFunction(bool inFunc) { m_inFunc = inFunc; }
 	void setHighlightTokenState(const HighlightTokenState& state) { m_highlight = state; }
 
+	virtual QString getDescription() const override;
 	virtual Json::Value serialize() const override;
 	virtual bool deserialize(const Json::Value& value) override;
 };
@@ -155,7 +157,11 @@ public:
 
     \ingroup linearview
 */
-class BINARYNINJAUIAPI LinearView : public QAbstractScrollArea, public View, public BinaryNinja::BinaryDataNotification
+class BINARYNINJAUIAPI LinearView :
+	public QAbstractScrollArea,
+	public View,
+	public TokenNavigationHandler,
+	public BinaryNinja::BinaryDataNotification
 {
 	Q_OBJECT
 
@@ -232,6 +238,7 @@ class BINARYNINJAUIAPI LinearView : public QAbstractScrollArea, public View, pub
 	BinaryNinja::FunctionViewType m_ilViewType, m_prevILViewType = InvalidILViewType;
 	HexEditorHighlightState m_highlightState;
 	bool m_singleFunctionView = false;
+	bool m_simplifyTemplates = false;
 
 	InstructionEdit* m_instrEdit = nullptr;
 
@@ -277,7 +284,22 @@ class BINARYNINJAUIAPI LinearView : public QAbstractScrollArea, public View, pub
 		FunctionRef func, uint64_t offset, size_t instrIndex, bool center, bool updateHighlight, bool navByRef = false);
 	bool navigateToGotoLabel(uint64_t label);
 	bool navigateToMatchingBrace();
-	bool navigateToExternalLink(uint64_t linkSourceAddr);
+
+	bool getLineForCursorPosition(LinearViewLine& result);
+
+	BinaryViewRef getBinaryViewForTokenActivation() override;
+	QWidget* getWidgetForTokenActivation() override;
+	View* getViewForTokenActivation() override;
+	ViewFrame* getViewFrameForTokenActivation() override;
+	FunctionRef getFunctionForTokenActivation() override;
+	std::optional<std::vector<BinaryNinja::InstructionTextToken>> getTokensForLineWithSelection() override;
+	TokenActivationAction getActionForLineWithSelection() override;
+	void navigateToTokenTarget(uint64_t addr) override;
+	bool navigateToTokenGotoLabel(uint64_t label) override;
+	bool navigateToTokenMatchingBrace() override;
+	void defineNameForSelectedToken() override;
+	void editCommentForSelectedToken() override;
+
 	void setSelectionOffsetsInternal(BNAddressRange range, bool navigateToStart = true);
 	void viewData();
 
@@ -310,7 +332,7 @@ class BINARYNINJAUIAPI LinearView : public QAbstractScrollArea, public View, pub
 	StructureRef defineInnerName(TypeRef type, uint64_t offset, uint64_t size, std::set<TypeRef>& seen);
 	StructureRef defineInnerIntegerSize(TypeRef type, uint64_t offset, uint64_t size, std::set<TypeRef>& seen);
 	StructureRef defineInnerSign(TypeRef type, uint64_t offset, uint64_t size, std::set<TypeRef>& seen);
-	TypeRef getPointerTypeAndName(ArchitectureRef arch, uint64_t addr, std::string& name);
+	TypeRef getPointerTypeAndName(uint64_t addr, std::string& name);
 	std::string getVariableName(uint64_t addr);
 
 	BinaryNinja::Ref<BinaryNinja::LinearViewObject> createLinearViewObject();
@@ -340,6 +362,8 @@ class BINARYNINJAUIAPI LinearView : public QAbstractScrollArea, public View, pub
 	BNEarlyReturn getCurrentEarlyReturn();
 	std::optional<uint64_t> getCurrentSwitchRecoveryAddress();
 	BNSwitchRecovery getCurrentSwitchRecovery();
+	std::vector<BinaryNinja::TagReference> getTagsAtCurrentLocation(bool includeBookmarks);
+	void removeTagAtCurrentLocation();
 
 	void setDataButtonVisible(bool visible);
 	std::optional<std::pair<BinaryNinja::Variable, BinaryNinja::Variable>> getMergeVariablesAtCurrentLocation();
@@ -389,14 +413,16 @@ private Q_SLOTS:
 	void makeInt32();
 	void makeInt64();
 	void toggleIntSize();
-	void toggleIntSign();
+	void toggleIntSign(const UIActionContext& context);
 	void makeFloat32();
 	void makeFloat64();
 	void toggleFloatSize();
 	void makePtr();
+	bool canMakeString(size_t charSize);
 	void makeString(size_t charSize = 1);
 	void changeType(const UIActionContext& context);
 	void undefineInRange();
+	BNIntegerDisplayType getCurrentDisplayAs(const UIActionContext& context) override;
 	void displayAs(const UIActionContext& context, BNIntegerDisplayType displayType) override;
 	void createStructOrInferStructureType();
 	bool autoCreateArray();
@@ -409,11 +435,11 @@ private Q_SLOTS:
 
 	//! Get the length of of the string (if there is one) starting at the
 	//! given address. String type is assumed to be UTF-8 by default, but the
-	//! `charSize` parameter can be set to 2 or 4 to look for UTF-16 or
+	//! \c charSize parameter can be set to 2 or 4 to look for UTF-16 or
 	//! UTF-32 string, respectively.
 	//!
 	//! Returns the length of the string in bytes, NOT the number of characters.
-	size_t getStringLength(uint64_t startAddr, size_t charSize = 1);
+	size_t getStringLength(uint64_t startAddr, size_t charSize = 1, size_t minRequired = MAX_STRING_TYPE_LENGTH);
 
 	void setInstructionHighlight(BNHighlightColor color);
 	void setBlockHighlight(BNHighlightColor color);
@@ -510,9 +536,12 @@ public:
 	virtual void followPointer();
 
 	virtual bool canCopyWithTransform() override;
+	virtual bool canCut() override;
+	virtual bool canCopy() override;
 	virtual void cut() override;
 	virtual void copy(TransformRef xform = nullptr) override;
 	virtual void paste(TransformRef xform = nullptr) override;
+	virtual bool canPaste() override;
 	virtual void copyAddress() override;
 
 	virtual HighlightTokenState getHighlightTokenState() override { return m_highlight; }
@@ -569,7 +598,7 @@ protected:
 	void moveToEndOfView();
 	void selectNone();
 	void selectAll();
-	void navigateToHighlightedToken();
+	void activateHighlightedToken();
 	void splitToNewTabAndNavigateFromCursorPosition();
 	void splitToNewWindowAndNavigateFromCursorPosition();
 	void splitToNewPaneAndNavigateFromCursorPosition();
@@ -593,6 +622,9 @@ protected:
 	bool canExtendSelectionToEndOfSegment();
 	bool canExtendSelectionToStartOfDataVariable();
 	bool canExtendSelectionToEndOfDataVariable();
+
+	virtual bool shouldShowCopyAsActions();
+	virtual bool shouldShowTransformActions();
 };
 
 /*!

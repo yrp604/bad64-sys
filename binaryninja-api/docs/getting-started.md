@@ -10,7 +10,7 @@ The download links you receive after purchasing expire after 72 hours but as lon
 
 ### Linux
 
-Because Linux install locations can vary widely, we do not assume that Binary Ninja has been installed in any particular folder on Linux. Instead, first unzip the installation zip wherever you wish to install Binary Ninja. Next, for paid versions, run `./binaryninja/scripts/linux-setup.sh`. This sets up file associations, icons, and adds Binary Ninja's Python library to your Python path. Adding the library to your path is most helpful for headless functionality in the Commercial and Ultimate editions, but even on the Non-Commercial edition it can help your IDE find the api sources to make plugin development easier. Run the script with `-h` to see customization options.
+Because Linux install locations can vary widely, we do not assume that Binary Ninja has been installed in any particular folder on Linux. Instead, first unzip the installation zip wherever you wish to install Binary Ninja. Next, for paid versions, run `./binaryninja/scripts/linux-setup.sh`. This sets up file associations, icons, and adds Binary Ninja's Python library to your Python path. Adding the library to your path is most helpful for headless functionality in the Commercial and Ultimate editions, but even on the Non-Commercial edition it can help your IDE find the API sources to make plugin development easier. Run the script with `-h` to see customization options.
 
 ### macOS
 
@@ -78,7 +78,7 @@ Many of the IL behaviors and views are customizable via settings. If you prefer 
 
 ## Using Plugins
 
-Plugins can be installed by one of two methods, either automatically by using the [Plugin Manager](./guide/plugins.md#plugin-manager), or manually by copying the plugin to the appropriate [folder](./guide/index.md#user-folder).
+Plugins can be installed by one of two methods, either automatically by using the [Extension Manager](./guide/plugins.md#extension-manager), or manually by copying the plugin to the appropriate [folder](./guide/index.md#user-folder).
 
 ## Debugger
 

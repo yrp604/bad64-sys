@@ -1,15 +1,7 @@
-extern crate binaryninja;
-extern crate log;
-extern crate msp430_asm;
-
 use binaryninja::{
-    add_optional_plugin_dependency,
-    architecture::ArchitectureExt,
-    calling_convention,
-    custom_binary_view::{BinaryViewType, BinaryViewTypeExt},
-    Endianness,
+    add_optional_plugin_dependency, architecture::ArchitectureExt, binary_view::BinaryViewType,
+    calling_convention, Endianness,
 };
-use log::LevelFilter;
 
 mod architecture;
 mod flag;
@@ -17,12 +9,12 @@ mod lift;
 mod register;
 
 use architecture::Msp430;
-use binaryninja::logger::Logger;
 
 #[no_mangle]
 #[allow(non_snake_case)]
 pub extern "C" fn CorePluginInit() -> bool {
-    Logger::new("MSP430").with_level(LevelFilter::Info).init();
+    binaryninja::tracing_init!("MSP430");
+
     let arch =
         binaryninja::architecture::register_architecture("msp430", |custom_handle, handle| {
             Msp430::new(handle, custom_handle)
@@ -38,19 +30,19 @@ pub extern "C" fn CorePluginInit() -> bool {
     // standardized one that is compatible with TI's compiler
     let default = calling_convention::ConventionBuilder::new(arch)
         .is_eligible_for_heuristics(true)
-        .int_arg_registers(&["r15", "r14", "r13", "r12"])
-        .return_int_reg("r15")
-        .return_hi_int_reg("r14")
+        .int_arg_registers(&["r12", "r13", "r14", "r15"])
+        .return_int_reg("r12")
+        .return_hi_int_reg("r13")
         .register("default");
     calling_convention::ConventionBuilder::new(arch)
         .is_eligible_for_heuristics(true)
-        .return_int_reg("r15")
-        .return_hi_int_reg("r14")
+        .return_int_reg("r12")
+        .return_hi_int_reg("r13")
         .register("stack");
 
     arch.set_default_calling_convention(&default);
 
-    if let Ok(bvt) = BinaryViewType::by_name("ELF") {
+    if let Some(bvt) = BinaryViewType::by_name("ELF") {
         bvt.register_arch(105, Endianness::LittleEndian, arch);
     }
 

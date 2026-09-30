@@ -5,6 +5,7 @@
 #include <sstream>
 #include "binaryninjaapi.h"
 #include "il.h"
+#include "lowlevelilinstruction.h"
 extern "C" {
     #include "xed-interface.h"
 }
@@ -87,11 +88,11 @@ enum Elfx64RelocationType : uint32_t
 	R_X86_64_PC64            = 24,
 	R_X86_64_GOTOFF64        = 25,
 	R_X86_64_GOTPC32         = 26,
-	R_X86_64_UNKNOWN27       = 27,
-	R_X86_64_UNKNOWN28       = 28,
-	R_X86_64_UNKNOWN29       = 29,
-	R_X86_64_UNKNOWN30       = 30,
-	R_X86_64_UNKNOWN31       = 31,
+	R_X86_64_GOT64           = 27,
+	R_X86_64_GOTPCREL64      = 28,
+	R_X86_64_GOTPC64         = 29,
+	R_X86_64_GOTPLT64        = 30,
+	R_X86_64_PLTOFF64        = 31,
 	R_X86_64_SIZE32          = 32,
 	R_X86_64_SIZE64          = 33,
 	R_X86_64_GOTPC32_TLSDESC = 34,
@@ -195,20 +196,18 @@ static const char* GetRelocationString(PeRelocationType relocType)
 {
 	static const char* relocTable[] =
 	{
-		"PE_IMAGE_REL_BASED_ABSOLUTE",
-		"PE_IMAGE_REL_BASED_HIGH",
-		"PE_IMAGE_REL_BASED_LOW",
-		"PE_IMAGE_REL_BASED_HIGHLOW",
-		"PE_IMAGE_REL_BASED_HIGHADJ",
-		"PE_IMAGE_REL_BASED_MIPS_JMPADDR",
-		"PE_IMAGE_REL_BASED_ARM_MOV32",
-		"PE_IMAGE_REL_BASED_RISCV_HIGH20",
-		"PE_IMAGE_REL_BASE_RESERVED",
-		"PE_IMAGE_REL_BASED_THUMB_MOV32",
-		"PE_IMAGE_REL_BASED_RISCV_LOW12I",
-		"PE_IMAGE_REL_BASED_RISCV_LOW12S",
-		"PE_IMAGE_REL_BASED_MIPS_JMPADDR16",
-		"PE_IMAGE_REL_BASED_DIR64"
+		/*  0 */ "PE_IMAGE_REL_BASED_ABSOLUTE",
+		/*  1 */ "PE_IMAGE_REL_BASED_HIGH",
+		/*  2 */ "PE_IMAGE_REL_BASED_LOW",
+		/*  3 */ "PE_IMAGE_REL_BASED_HIGHLOW",
+		/*  4 */ "PE_IMAGE_REL_BASED_HIGHADJ",
+		// These are the same value
+		/*  5 */ "PE_IMAGE_REL_BASED_MIPS_JMPADDR/ARM_MOV32/RISCV_HIGH20",
+		/*  6 */ "PE_IMAGE_REL_BASE_RESERVED",
+		/*  7 */ "PE_IMAGE_REL_BASED_THUMB_MOV32/RISCV_LOW12I",
+		/*  8 */ "PE_IMAGE_REL_BASED_RISCV_LOW12S",
+		/*  9 */ "PE_IMAGE_REL_BASED_MIPS_JMPADDR16",
+		/* 10 */ "PE_IMAGE_REL_BASED_DIR64"
 	};
 
 	if (relocType < MAX_PE_RELOCATION)
@@ -355,11 +354,11 @@ static const char* GetRelocationString(Elfx64RelocationType relocType)
 		"R_X86_64_PC64",
 		"R_X86_64_GOTOFF64",
 		"R_X86_64_GOTPC32",
-		"R_X86_64_UNKNOWN27",
-		"R_X86_64_UNKNOWN28",
-		"R_X86_64_UNKNOWN29",
-		"R_X86_64_UNKNOWN30",
-		"R_X86_64_UNKNOWN31",
+		"R_X86_64_GOT64",
+		"R_X86_64_GOTPCREL64",
+		"R_X86_64_GOTPC64",
+		"R_X86_64_GOTPLT64",
+		"R_X86_64_PLTOFF64",
 		"R_X86_64_SIZE32",
 		"R_X86_64_SIZE64",
 		"R_X86_64_GOTPC32_TLSDESC",
@@ -1423,6 +1422,7 @@ void X86CommonArchitecture::GetOperandTextBNIntel(const xed_decoded_inst_t* cons
 			break;
 		}
 		case XED_OPERAND_PTR:
+		case XED_OPERAND_ABSBR:
 		{
 			stringstream sstream;
 			sstream << "0x" << hex;
@@ -2104,6 +2104,69 @@ bool X86CommonArchitecture::GetInstructionLowLevelIL(const uint8_t* data, uint64
 size_t X86CommonArchitecture::GetFlagWriteLowLevelIL(BNLowLevelILOperation op, size_t size, uint32_t flagWriteType,
 	uint32_t flag, BNRegisterOrConstant* operands, size_t operandCount, LowLevelILFunction& il)
 {
+	auto undefinedFlag = [&il]() {
+		return il.Unknown();
+	};
+	auto boolChoice = [&il](ExprId condition, ExprId inverseCondition, ExprId trueValue, ExprId falseValue) {
+		return il.Or(0,
+			il.And(0, condition, trueValue),
+			il.And(0, inverseCondition, falseValue));
+	};
+	auto rotateCarryCount = [](size_t operandSize, uint64_t maskedCount) {
+		switch (operandSize)
+		{
+		case 1:
+			return maskedCount % 9;
+		case 2:
+			return maskedCount % 17;
+		default:
+			return maskedCount;
+		}
+	};
+
+	if ((flag == IL_FLAG_O) && (flagWriteType == IL_FLAGWRITE_SHRD1))
+	{
+		size_t bitWidth = size * 8;
+		ExprId result = il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount);
+		return il.CompareNotEqual(size,
+			il.And(size,
+				il.Xor(size,
+					il.LogicalShiftRight(size, result, il.Const(size, bitWidth - 1)),
+					il.LogicalShiftRight(size, result, il.Const(size, bitWidth - 2))),
+				il.Const(size, 1)),
+			il.Const(size, 0));
+	}
+
+	if (flagWriteType == IL_FLAGWRITE_PTEST)
+	{
+		switch (flag)
+		{
+		case IL_FLAG_Z:
+			if (operandCount < 2)
+				return undefinedFlag();
+			return il.CompareEqual(size,
+				il.And(size,
+					il.GetExprForRegisterOrConstant(operands[0], size),
+					il.GetExprForRegisterOrConstant(operands[1], size)),
+				il.Const(size, 0));
+		case IL_FLAG_C:
+			if (operandCount < 2)
+				return undefinedFlag();
+			return il.CompareEqual(size,
+				il.And(size,
+					il.GetExprForRegisterOrConstant(operands[1], size),
+					il.Not(size, il.GetExprForRegisterOrConstant(operands[0], size))),
+				il.Const(size, 0));
+		case IL_FLAG_O:
+		case IL_FLAG_S:
+		case IL_FLAG_A:
+		case IL_FLAG_P:
+			return il.Const(0, 0);
+		default:
+			break;
+		}
+	}
+
 	switch (op)
 	{
 	case LLIL_NEG:
@@ -2123,7 +2186,478 @@ size_t X86CommonArchitecture::GetFlagWriteLowLevelIL(BNLowLevelILOperation op, s
 		case IL_FLAG_O:
 			return il.Const(0, 0);
 		case IL_FLAG_A:
-			return il.Undefined();
+			return undefinedFlag();
+		}
+		break;
+	case LLIL_ROL:
+		if ((flagWriteType == IL_FLAGWRITE_CO) && ((flag == IL_FLAG_C) || (flag == IL_FLAG_O)))
+		{
+			if (operandCount < 2)
+				return undefinedFlag();
+
+			size_t bitWidth = size * 8;
+			uint64_t countMask = (size == 8) ? 0x3f : 0x1f;
+			if (operands[1].constant)
+			{
+				uint64_t maskedCount = operands[1].value & countMask;
+				uint64_t effectiveCount = maskedCount % bitWidth;
+				if (maskedCount == 0)
+					return il.Flag(flag);
+
+				BNRegisterOrConstant effectiveOperands[2] = {operands[0], operands[1]};
+				effectiveOperands[1].value = effectiveCount;
+				ExprId result = il.GetExprForRegisterOrConstantOperation(op, size, effectiveOperands, 2);
+				ExprId carry = il.CompareNotEqual(size,
+					il.And(size, result, il.Const(size, 1)), il.Const(size, 0));
+				if (flag == IL_FLAG_C)
+					return carry;
+
+				if (maskedCount == 1)
+				{
+					ExprId sign = il.CompareNotEqual(size,
+						il.And(size, result, il.Const(size, 1ULL << (bitWidth - 1))), il.Const(size, 0));
+					return il.Xor(0, sign, carry);
+				}
+
+				return undefinedFlag();
+			}
+
+			ExprId result = il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount);
+			ExprId carry = il.CompareNotEqual(size,
+				il.And(size, result, il.Const(size, 1)), il.Const(size, 0));
+			ExprId count = il.GetExprForRegisterOrConstant(operands[1], size);
+			ExprId countIsZero = il.CompareEqual(size, count, il.Const(size, 0));
+			ExprId countNotZero = il.CompareNotEqual(size, count, il.Const(size, 0));
+			if (flag == IL_FLAG_C)
+				return boolChoice(countIsZero, countNotZero, il.Flag(flag), carry);
+
+			ExprId countIsOne = il.CompareEqual(size, count, il.Const(size, 1));
+			ExprId countGreaterThanOne = il.And(0, countNotZero, il.Not(0, countIsOne));
+			ExprId sign = il.CompareNotEqual(size,
+				il.And(size, result, il.Const(size, 1ULL << (bitWidth - 1))), il.Const(size, 0));
+			return il.Or(0,
+				il.And(0, countIsZero, il.Flag(flag)),
+				il.Or(0,
+					il.And(0, countIsOne, il.Xor(0, sign, carry)),
+					il.And(0, countGreaterThanOne, undefinedFlag())));
+		}
+		break;
+	case LLIL_ROR:
+		if ((flagWriteType == IL_FLAGWRITE_CO) && ((flag == IL_FLAG_C) || (flag == IL_FLAG_O)))
+		{
+			if (operandCount < 2)
+				return undefinedFlag();
+
+			size_t bitWidth = size * 8;
+			uint64_t countMask = (size == 8) ? 0x3f : 0x1f;
+			if (operands[1].constant)
+			{
+				uint64_t maskedCount = operands[1].value & countMask;
+				uint64_t effectiveCount = maskedCount % bitWidth;
+				if (maskedCount == 0)
+					return il.Flag(flag);
+
+				BNRegisterOrConstant effectiveOperands[2] = {operands[0], operands[1]};
+				effectiveOperands[1].value = effectiveCount;
+				ExprId result = il.GetExprForRegisterOrConstantOperation(op, size, effectiveOperands, 2);
+				if (flag == IL_FLAG_C)
+					return il.AddExpr(LLIL_CMP_SLT, size, 0, result, il.Const(size, 0));
+
+				if (maskedCount == 1)
+					return il.CompareNotEqual(size,
+						il.And(size,
+							il.Xor(size,
+								il.LogicalShiftRight(size, result, il.Const(size, bitWidth - 1)),
+								il.LogicalShiftRight(size, result, il.Const(size, bitWidth - 2))),
+							il.Const(size, 1)),
+						il.Const(size, 0));
+
+				return undefinedFlag();
+			}
+
+			ExprId result = il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount);
+			ExprId carry = il.AddExpr(LLIL_CMP_SLT, size, 0, result, il.Const(size, 0));
+			ExprId count = il.GetExprForRegisterOrConstant(operands[1], size);
+			ExprId countIsZero = il.CompareEqual(size, count, il.Const(size, 0));
+			ExprId countNotZero = il.CompareNotEqual(size, count, il.Const(size, 0));
+			if (flag == IL_FLAG_C)
+				return boolChoice(countIsZero, countNotZero, il.Flag(flag), carry);
+
+			ExprId countIsOne = il.CompareEqual(size, count, il.Const(size, 1));
+			ExprId countGreaterThanOne = il.And(0, countNotZero, il.Not(0, countIsOne));
+			ExprId overflow = il.CompareNotEqual(size,
+				il.And(size,
+					il.Xor(size,
+						il.LogicalShiftRight(size, result, il.Const(size, bitWidth - 1)),
+						il.LogicalShiftRight(size, result, il.Const(size, bitWidth - 2))),
+					il.Const(size, 1)),
+				il.Const(size, 0));
+			return il.Or(0,
+				il.And(0, countIsZero, il.Flag(flag)),
+				il.Or(0,
+					il.And(0, countIsOne, overflow),
+					il.And(0, countGreaterThanOne, undefinedFlag())));
+		}
+		break;
+	case LLIL_RLC:
+		if (((flagWriteType == IL_FLAGWRITE_CO) || (flagWriteType == IL_FLAGWRITE_CUO)) &&
+			((flag == IL_FLAG_C) || (flag == IL_FLAG_O)))
+		{
+			if (operandCount < 3)
+				return undefinedFlag();
+
+			size_t bitWidth = size * 8;
+			uint64_t countMask = (size == 8) ? 0x3f : 0x1f;
+			ExprId count = il.GetExprForRegisterOrConstant(operands[1], size);
+			uint64_t maskedCount = 0;
+			if (operands[1].constant)
+			{
+				maskedCount = operands[1].value & countMask;
+				uint64_t effectiveCount = rotateCarryCount(size, maskedCount);
+				if (effectiveCount == 0)
+					return il.Flag(flag);
+				count = il.Const(size, effectiveCount);
+			}
+
+			if ((flag == IL_FLAG_O) && (flagWriteType == IL_FLAGWRITE_CUO))
+				return undefinedFlag();
+
+			ExprId left = il.GetExprForRegisterOrConstant(operands[0], size);
+			ExprId carry = il.CompareNotEqual(size,
+				il.And(size,
+					il.LogicalShiftRight(size, left, il.Sub(size, il.Const(size, bitWidth), count)),
+					il.Const(size, 1)),
+				il.Const(size, 0));
+			if (flag == IL_FLAG_C)
+				return carry;
+
+			if (!operands[1].constant)
+				return undefinedFlag();
+
+			uint64_t effectiveCount = rotateCarryCount(size, maskedCount);
+			if (maskedCount != 1)
+				return undefinedFlag();
+
+			BNRegisterOrConstant effectiveOperands[3] = {operands[0], operands[1], operands[2]};
+			effectiveOperands[1].value = effectiveCount;
+			ExprId result = il.GetExprForRegisterOrConstantOperation(op, size, effectiveOperands, 3);
+			ExprId sign = il.CompareNotEqual(size,
+				il.And(size, result, il.Const(size, 1ULL << (bitWidth - 1))),
+				il.Const(size, 0));
+			return il.Xor(0, sign, carry);
+		}
+		break;
+	case LLIL_RRC:
+		if (((flagWriteType == IL_FLAGWRITE_CO) || (flagWriteType == IL_FLAGWRITE_CUO)) &&
+			((flag == IL_FLAG_C) || (flag == IL_FLAG_O)))
+		{
+			if (operandCount < 3)
+				return undefinedFlag();
+
+			size_t bitWidth = size * 8;
+			uint64_t countMask = (size == 8) ? 0x3f : 0x1f;
+			ExprId count = il.GetExprForRegisterOrConstant(operands[1], size);
+			uint64_t maskedCount = 0;
+			if (operands[1].constant)
+			{
+				maskedCount = operands[1].value & countMask;
+				uint64_t effectiveCount = rotateCarryCount(size, maskedCount);
+				if (effectiveCount == 0)
+					return il.Flag(flag);
+				count = il.Const(size, effectiveCount);
+			}
+
+			if ((flag == IL_FLAG_O) && (flagWriteType == IL_FLAGWRITE_CUO))
+				return undefinedFlag();
+
+			if (flag == IL_FLAG_C)
+			{
+				ExprId left = il.GetExprForRegisterOrConstant(operands[0], size);
+				return il.CompareNotEqual(size,
+					il.And(size,
+						il.LogicalShiftRight(size, left, il.Sub(size, count, il.Const(size, 1))),
+						il.Const(size, 1)),
+					il.Const(size, 0));
+			}
+
+			if (!operands[1].constant)
+				return undefinedFlag();
+
+			uint64_t effectiveCount = rotateCarryCount(size, maskedCount);
+			if (maskedCount != 1)
+				return undefinedFlag();
+
+			BNRegisterOrConstant effectiveOperands[3] = {operands[0], operands[1], operands[2]};
+			effectiveOperands[1].value = effectiveCount;
+			ExprId result = il.GetExprForRegisterOrConstantOperation(op, size, effectiveOperands, operandCount);
+			return il.CompareNotEqual(size,
+				il.And(size,
+					il.Xor(size,
+						il.LogicalShiftRight(size, result, il.Const(size, bitWidth - 1)),
+						il.LogicalShiftRight(size, result, il.Const(size, bitWidth - 2))),
+					il.Const(size, 1)),
+				il.Const(size, 0));
+		}
+		break;
+	case LLIL_ADC:
+		if ((flag == IL_FLAG_O) && (flagWriteType == IL_FLAGWRITE_ALL) && (operandCount >= 3))
+		{
+			ExprId left = il.GetExprForRegisterOrConstant(operands[0], size);
+			ExprId right = il.GetExprForRegisterOrConstant(operands[1], size);
+			ExprId result = il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount);
+			return il.CompareNotEqual(size,
+				il.And(size,
+					il.And(size, il.Xor(size, left, result), il.Xor(size, right, result)),
+					il.Const(size, 1ULL << ((size * 8) - 1))),
+				il.Const(size, 0));
+		}
+		break;
+	case LLIL_SBB:
+		if ((flagWriteType == IL_FLAGWRITE_ALL) && (operandCount >= 3))
+		{
+			ExprId left = il.GetExprForRegisterOrConstant(operands[0], size);
+			ExprId right = il.GetExprForRegisterOrConstant(operands[1], size);
+			ExprId carry = il.GetExprForFlagOrConstant(operands[2]);
+			switch (flag)
+			{
+			case IL_FLAG_C:
+				return il.Or(0,
+					il.CompareUnsignedLessThan(size, left, right),
+					il.And(0, carry, il.CompareEqual(size, left, right)));
+			case IL_FLAG_O:
+			{
+				ExprId result = il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount);
+				return il.CompareNotEqual(size,
+					il.And(size,
+						il.And(size, il.Xor(size, left, right), il.Xor(size, left, result)),
+						il.Const(size, 1ULL << ((size * 8) - 1))),
+					il.Const(size, 0));
+			}
+			default:
+				break;
+			}
+		}
+		break;
+	case LLIL_MUL:
+		if ((flagWriteType == IL_FLAGWRITE_CO) && ((flag == IL_FLAG_C) || (flag == IL_FLAG_O)) && (operandCount >= 2))
+		{
+			if ((operands[0].constant && (operands[0].value == 0)) ||
+				(operands[1].constant && (operands[1].value == 0)))
+				return il.Const(0, 0);
+
+			ExprId left = il.GetExprForRegisterOrConstant(operands[0], size);
+			ExprId right = il.GetExprForRegisterOrConstant(operands[1], size);
+			ExprId result = il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount);
+			size_t fullSize = size * 2;
+			ExprId fullResult = il.Mult(fullSize, il.SignExtend(fullSize, left), il.SignExtend(fullSize, right));
+			return il.CompareNotEqual(fullSize, fullResult, il.SignExtend(fullSize, result));
+		}
+		break;
+	case LLIL_LSL:
+		if (((flagWriteType == IL_FLAGWRITE_ALL) || (flagWriteType == IL_FLAGWRITE_NOCARRY) ||
+			(flagWriteType == IL_FLAGWRITE_CO) || (flagWriteType == IL_FLAGWRITE_C)) && (operandCount >= 2))
+		{
+			size_t bitWidth = size * 8;
+			uint64_t resultMask = (size == 8) ? UINT64_MAX : ((1ULL << bitWidth) - 1);
+			uint64_t signBit = 1ULL << (bitWidth - 1);
+			ExprId left = il.GetExprForRegisterOrConstant(operands[0], size);
+			ExprId result = il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount);
+			ExprId maskedResult = il.And(size, result, il.Const(size, resultMask));
+			ExprId count = il.GetExprForRegisterOrConstant(operands[1], size);
+			ExprId countIsZero = il.CompareEqual(size, count, il.Const(size, 0));
+			ExprId countNotZero = il.CompareNotEqual(size, count, il.Const(size, 0));
+
+			switch (flag)
+			{
+			case IL_FLAG_C:
+			{
+				if (!operands[1].constant)
+				{
+					ExprId carry = il.CompareNotEqual(size,
+						il.And(size,
+							il.LogicalShiftRight(size, left, il.Sub(size, il.Const(size, bitWidth), count)),
+							il.Const(size, 1)),
+						il.Const(size, 0));
+					return boolChoice(countIsZero, countNotZero, il.Flag(flag), carry);
+				}
+
+				uint64_t countMask = (size == 8) ? 0x3f : 0x1f;
+				uint64_t maskedCount = operands[1].value & countMask;
+				if (maskedCount == 0)
+					return il.Flag(flag);
+				if (maskedCount >= bitWidth)
+					return undefinedFlag();
+				if (maskedCount == 1)
+					return il.CompareNotEqual(size, il.And(size, left, il.Const(size, signBit)), il.Const(size, 0));
+				return il.CompareNotEqual(size,
+					il.And(size,
+						il.LogicalShiftRight(size, left, il.Const(size, bitWidth - maskedCount)),
+						il.Const(size, 1)),
+					il.Const(size, 0));
+			}
+			case IL_FLAG_P:
+			{
+				ExprId lowByte = il.LowPart(1, maskedResult);
+				ExprId parity = il.And(1, il.PopulationCount(1, lowByte), il.Const(1, 1));
+				ExprId computed = il.CompareEqual(1, parity, il.Const(1, 0));
+				if (!operands[1].constant)
+					return boolChoice(countIsZero, countNotZero, il.Flag(flag), computed);
+				return computed;
+			}
+			case IL_FLAG_Z:
+			{
+				ExprId computed = il.CompareEqual(size, maskedResult, il.Const(size, 0));
+				if (!operands[1].constant)
+					return boolChoice(countIsZero, countNotZero, il.Flag(flag), computed);
+				return computed;
+			}
+			case IL_FLAG_S:
+			{
+				ExprId computed = il.CompareNotEqual(size, il.And(size, maskedResult, il.Const(size, signBit)), il.Const(size, 0));
+				if (!operands[1].constant)
+					return boolChoice(countIsZero, countNotZero, il.Flag(flag), computed);
+				return computed;
+			}
+			case IL_FLAG_O:
+			{
+				if (!operands[1].constant)
+				{
+					ExprId countIsOne = il.CompareEqual(size, count, il.Const(size, 1));
+					ExprId countGreaterThanOne = il.And(0, countNotZero, il.Not(0, countIsOne));
+					ExprId computed = il.CompareNotEqual(size,
+						il.And(size, il.Xor(size, left, maskedResult), il.Const(size, signBit)),
+						il.Const(size, 0));
+					return il.Or(0,
+						il.And(0, countIsZero, il.Flag(flag)),
+						il.Or(0,
+							il.And(0, countIsOne, computed),
+							il.And(0, countGreaterThanOne, undefinedFlag())));
+				}
+
+				uint64_t countMask = (size == 8) ? 0x3f : 0x1f;
+				uint64_t maskedCount = operands[1].value & countMask;
+				if (maskedCount == 0)
+					return il.Flag(flag);
+				if (maskedCount != 1)
+					return undefinedFlag();
+
+				return il.CompareNotEqual(size,
+					il.And(size, il.Xor(size, left, maskedResult), il.Const(size, signBit)),
+					il.Const(size, 0));
+			}
+			case IL_FLAG_A:
+				if (!operands[1].constant)
+					return boolChoice(countIsZero, countNotZero, il.Flag(flag), undefinedFlag());
+				break;
+			default:
+				break;
+			}
+		}
+		break;
+	case LLIL_LSR:
+	case LLIL_ASR:
+		if (((flag == IL_FLAG_C) || (flag == IL_FLAG_O) || (flag == IL_FLAG_P) || (flag == IL_FLAG_A) ||
+			(flag == IL_FLAG_Z) || (flag == IL_FLAG_S)) &&
+			((flagWriteType == IL_FLAGWRITE_ALL) || (flagWriteType == IL_FLAGWRITE_NOCARRY) ||
+				(flagWriteType == IL_FLAGWRITE_CO) || (flagWriteType == IL_FLAGWRITE_C)))
+		{
+			if (operandCount < 2)
+				return undefinedFlag();
+
+			uint64_t countMask = (size == 8) ? 0x3f : 0x1f;
+			ExprId left = il.GetExprForRegisterOrConstant(operands[0], size);
+			ExprId count = il.GetExprForRegisterOrConstant(operands[1], size);
+			ExprId countIsZero = il.CompareEqual(size, count, il.Const(size, 0));
+			ExprId countNotZero = il.CompareNotEqual(size, count, il.Const(size, 0));
+			ExprId result = il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount);
+			ExprId sign = il.And(size, left, il.Const(size, 1ULL << ((size * 8) - 1)));
+			if (operands[1].constant)
+			{
+				uint64_t effectiveCount = operands[1].value & countMask;
+				if (effectiveCount == 0)
+					return il.Flag(flag);
+				count = il.Const(size, effectiveCount);
+				if ((flag == IL_FLAG_O) && (effectiveCount != 1))
+					return undefinedFlag();
+			}
+
+			if (flag == IL_FLAG_C)
+			{
+				ExprId carry = il.CompareNotEqual(size,
+					il.And(size,
+						il.LogicalShiftRight(size, left, il.Sub(size, count, il.Const(size, 1))),
+						il.Const(size, 1)),
+					il.Const(size, 0));
+				if (!operands[1].constant)
+					return boolChoice(countIsZero, countNotZero, il.Flag(flag), carry);
+				return carry;
+			}
+
+			switch (op)
+			{
+			case LLIL_LSR:
+				if (flag == IL_FLAG_O)
+				{
+					ExprId overflow = il.CompareNotEqual(size, sign, il.Const(size, 0));
+					if (!operands[1].constant)
+					{
+						ExprId countIsOne = il.CompareEqual(size, count, il.Const(size, 1));
+						ExprId countGreaterThanOne = il.And(0, countNotZero, il.Not(0, countIsOne));
+						return il.Or(0,
+							il.And(0, countIsZero, il.Flag(flag)),
+							il.Or(0,
+								il.And(0, countIsOne, overflow),
+								il.And(0, countGreaterThanOne, undefinedFlag())));
+					}
+					return overflow;
+				}
+				break;
+			case LLIL_ASR:
+				if (flag == IL_FLAG_O)
+				{
+					ExprId overflow = il.Const(0, 0);
+					if (!operands[1].constant)
+					{
+						ExprId countIsOne = il.CompareEqual(size, count, il.Const(size, 1));
+						ExprId countGreaterThanOne = il.And(0, countNotZero, il.Not(0, countIsOne));
+						return il.Or(0,
+							il.And(0, countIsZero, il.Flag(flag)),
+							il.Or(0,
+								il.And(0, countIsOne, overflow),
+								il.And(0, countGreaterThanOne, undefinedFlag())));
+					}
+					return overflow;
+				}
+				break;
+			default:
+				break;
+			}
+
+			if (!operands[1].constant)
+			{
+				switch (flag)
+				{
+				case IL_FLAG_P:
+				{
+					ExprId lowByte = il.LowPart(1, result);
+					ExprId parity = il.And(1, il.PopulationCount(1, lowByte), il.Const(1, 1));
+					return boolChoice(countIsZero, countNotZero, il.Flag(flag),
+						il.CompareEqual(1, parity, il.Const(1, 0)));
+				}
+				case IL_FLAG_Z:
+					return boolChoice(countIsZero, countNotZero, il.Flag(flag),
+						il.CompareEqual(size, result, il.Const(size, 0)));
+				case IL_FLAG_S:
+					return boolChoice(countIsZero, countNotZero, il.Flag(flag),
+						il.CompareNotEqual(size,
+							il.And(size, result, il.Const(size, 1ULL << ((size * 8) - 1))),
+							il.Const(size, 0)));
+				case IL_FLAG_A:
+					return boolChoice(countIsZero, countNotZero, il.Flag(flag), undefinedFlag());
+				default:
+					break;
+				}
+			}
 		}
 		break;
 	case LLIL_MULU_DP:
@@ -2134,6 +2668,19 @@ size_t X86CommonArchitecture::GetFlagWriteLowLevelIL(BNLowLevelILOperation op, s
 			return il.AddExpr(LLIL_CMP_NE, size * 2, 0, il.AddExpr(LLIL_LSR, size * 2, 0,
 				il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount),
 				il.AddExpr(LLIL_CONST, 1, 0, size * 8)), il.AddExpr(LLIL_CONST, size * 2, 0, 0));
+		}
+		break;
+	case LLIL_MULS_DP:
+		switch (flag)
+		{
+		case IL_FLAG_C:
+		case IL_FLAG_O:
+		{
+			size_t fullSize = size * 2;
+			ExprId fullResult = il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount);
+			return il.CompareNotEqual(fullSize, fullResult,
+				il.SignExtend(fullSize, il.LowPart(size, fullResult)));
+		}
 		}
 	default:
 		break;
@@ -2151,6 +2698,67 @@ size_t X86CommonArchitecture::GetFlagWriteLowLevelIL(BNLowLevelILOperation op, s
 			break;
 		}
 	}
+
+	if ((flag == IL_FLAG_A) && ((flagWriteType == IL_FLAGWRITE_ALL) || (flagWriteType == IL_FLAGWRITE_NOCARRY)))
+	{
+		switch (op)
+		{
+		case LLIL_ADD:
+		case LLIL_ADC:
+		case LLIL_SUB:
+		case LLIL_SBB:
+			if (operandCount < 2)
+				break;
+			return il.AddExpr(LLIL_CMP_NE, size, 0,
+				il.And(size,
+					il.Xor(size,
+						il.Xor(size, il.GetExprForRegisterOrConstant(operands[0], size),
+							il.GetExprForRegisterOrConstant(operands[1], size)),
+						il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount)),
+					il.Const(size, 0x10)),
+				il.Const(size, 0));
+		case LLIL_NEG:
+			if (operandCount < 1)
+				break;
+			return il.AddExpr(LLIL_CMP_NE, size, 0,
+				il.And(size,
+					il.Xor(size, il.GetExprForRegisterOrConstant(operands[0], size),
+						il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount)),
+					il.Const(size, 0x10)),
+				il.Const(size, 0));
+		default:
+			break;
+		}
+
+		return undefinedFlag();
+	}
+	if ((flag == IL_FLAG_A) && (flagWriteType == IL_FLAGWRITE_PAZS))
+		return undefinedFlag();
+	if ((flag == IL_FLAG_A) && (flagWriteType == IL_FLAGWRITE_SHRD1))
+		return undefinedFlag();
+
+	if ((flag == IL_FLAG_P) && ((flagWriteType == IL_FLAGWRITE_ALL) || (flagWriteType == IL_FLAGWRITE_NOCARRY) ||
+		(flagWriteType == IL_FLAGWRITE_PAZS) || (flagWriteType == IL_FLAGWRITE_SHRD1)))
+	{
+		ExprId lowByte = il.LowPart(1, il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount));
+		ExprId parity = il.And(1, il.PopulationCount(1, lowByte), il.Const(1, 1));
+		return il.AddExpr(LLIL_CMP_E, 1, 0, parity, il.Const(1, 0));
+	}
+
+	// POPCNT sets ZF from the result and clears every other flag. ZF falls through to the default
+	// (result == 0) handling below.
+	if (flagWriteType == IL_FLAGWRITE_POPCNT && flag != IL_FLAG_Z)
+		return il.Const(0, 0);
+
+	// LZCNT/TZCNT set CF when the source is zero and ZF from the result. The remaining flags are
+	// undefined and are not written. ZF falls through to the default (result == 0) handling below.
+	if (flagWriteType == IL_FLAGWRITE_LZTZCNT && flag == IL_FLAG_C && operandCount >= 1)
+		return il.AddExpr(LLIL_CMP_E, size, 0,
+			il.GetExprForRegisterOrConstant(operands[0], size), il.AddExpr(LLIL_CONST, size, 0, 0));
+
+	if (flagWriteType == IL_FLAGWRITE_X87RND && flag == IL_FLAG_C1)
+		return il.Unknown();
+
 	if (((flagWriteType == IL_FLAGWRITE_X87COM) || (flagWriteType == IL_FLAGWRITE_X87C1Z)) && (flag == IL_FLAG_C1))
 		return il.Const(0, 0);
 	return Architecture::GetFlagWriteLowLevelIL(op, size, flagWriteType, flag, operands, operandCount, il);
@@ -2313,6 +2921,20 @@ string X86CommonArchitecture::GetFlagWriteTypeName(uint32_t flags)
 		return "x87rnd";
 	case IL_FLAGWRITE_VCOMI:
 		return "vcomi";
+	case IL_FLAGWRITE_POPCNT:
+		return "popcnt";
+	case IL_FLAGWRITE_LZTZCNT:
+		return "lztzcnt";
+	case IL_FLAGWRITE_PAZS:
+		return "pazs";
+	case IL_FLAGWRITE_C:
+		return "c";
+	case IL_FLAGWRITE_SHRD1:
+		return "shrd1";
+	case IL_FLAGWRITE_CUO:
+		return "cuo";
+	case IL_FLAGWRITE_PTEST:
+		return "ptest";
 	default:
 		return "";
 	}
@@ -2339,7 +2961,8 @@ vector<uint32_t> X86CommonArchitecture::GetAllFlagWriteTypes()
 {
 	return vector<uint32_t> {IL_FLAGWRITE_ALL, IL_FLAGWRITE_NOCARRY, IL_FLAGWRITE_CO,
 		IL_FLAGWRITE_X87COM, IL_FLAGWRITE_X87COMI, IL_FLAGWRITE_X87C1Z, IL_FLAGWRITE_X87RND,
-		IL_FLAGWRITE_VCOMI};
+		IL_FLAGWRITE_VCOMI, IL_FLAGWRITE_POPCNT, IL_FLAGWRITE_LZTZCNT, IL_FLAGWRITE_PAZS,
+		IL_FLAGWRITE_C, IL_FLAGWRITE_SHRD1, IL_FLAGWRITE_CUO, IL_FLAGWRITE_PTEST};
 }
 
 BNFlagRole X86CommonArchitecture::GetFlagRole(uint32_t flag, uint32_t semClass)
@@ -2552,6 +3175,20 @@ vector<uint32_t> X86CommonArchitecture::GetFlagsWrittenByFlagWriteType(uint32_t 
 	case IL_FLAGWRITE_X87RND:
 		return vector<uint32_t>{ IL_FLAG_C1 };
 	case IL_FLAGWRITE_VCOMI:
+		return vector<uint32_t>{ IL_FLAG_C, IL_FLAG_P, IL_FLAG_A, IL_FLAG_Z, IL_FLAG_S, IL_FLAG_O };
+	case IL_FLAGWRITE_POPCNT:
+		return vector<uint32_t>{ IL_FLAG_C, IL_FLAG_P, IL_FLAG_A, IL_FLAG_Z, IL_FLAG_S, IL_FLAG_O };
+	case IL_FLAGWRITE_LZTZCNT:
+		return vector<uint32_t>{ IL_FLAG_C, IL_FLAG_Z };
+	case IL_FLAGWRITE_PAZS:
+		return vector<uint32_t>{ IL_FLAG_P, IL_FLAG_A, IL_FLAG_Z, IL_FLAG_S };
+	case IL_FLAGWRITE_C:
+		return vector<uint32_t>{ IL_FLAG_C };
+	case IL_FLAGWRITE_SHRD1:
+		return vector<uint32_t>{ IL_FLAG_P, IL_FLAG_A, IL_FLAG_Z, IL_FLAG_S, IL_FLAG_O };
+	case IL_FLAGWRITE_CUO:
+		return vector<uint32_t>{ IL_FLAG_C, IL_FLAG_O };
+	case IL_FLAGWRITE_PTEST:
 		return vector<uint32_t>{ IL_FLAG_C, IL_FLAG_P, IL_FLAG_A, IL_FLAG_Z, IL_FLAG_S, IL_FLAG_O };
 	default:
 		return vector<uint32_t>();
@@ -3282,6 +3919,8 @@ public:
 
 			XED_REG_RAX, XED_REG_RCX, XED_REG_RDX, XED_REG_RBX,  // 64+
 			XED_REG_R8, XED_REG_R9, XED_REG_R10, XED_REG_R11, XED_REG_R12, XED_REG_R13, XED_REG_R14, XED_REG_R15,  // 64+
+			XED_REG_R16, XED_REG_R17, XED_REG_R18, XED_REG_R19, XED_REG_R20, XED_REG_R21, XED_REG_R22, XED_REG_R23,  // APX
+			XED_REG_R24, XED_REG_R25, XED_REG_R26, XED_REG_R27, XED_REG_R28, XED_REG_R29, XED_REG_R30, XED_REG_R31,  // APX
 
 			XED_REG_BNDCFGU, XED_REG_BNDSTATUS,  // 64 briefly. MPX control registers
 			XED_REG_K0, XED_REG_K1, XED_REG_K2, XED_REG_K3, XED_REG_K4, XED_REG_K5, XED_REG_K6, XED_REG_K7,  // 64+ AVX bit-masking registers (also not confident in size)
@@ -3310,6 +3949,8 @@ public:
 			XED_REG_AH, XED_REG_CH, XED_REG_DH, XED_REG_BH, XED_REG_AL, XED_REG_CL, XED_REG_DL, XED_REG_BL,  // 16+
 			XED_REG_SPL, XED_REG_BPL, XED_REG_SIL, XED_REG_DIL,  // 64+
 			XED_REG_R8B, XED_REG_R9B, XED_REG_R10B, XED_REG_R11B, XED_REG_R12B, XED_REG_R13B, XED_REG_R14B, XED_REG_R15B,  // 64+
+			XED_REG_R16B, XED_REG_R17B, XED_REG_R18B, XED_REG_R19B, XED_REG_R20B, XED_REG_R21B, XED_REG_R22B, XED_REG_R23B,  // APX
+			XED_REG_R24B, XED_REG_R25B, XED_REG_R26B, XED_REG_R27B, XED_REG_R28B, XED_REG_R29B, XED_REG_R30B, XED_REG_R31B,  // APX
 
 			// 16-Bit
 			XED_REG_IP,  // 16+
@@ -3323,6 +3964,8 @@ public:
 
 			XED_REG_AX, XED_REG_CX, XED_REG_DX, XED_REG_BX,  // 16+
 			XED_REG_R8W, XED_REG_R9W, XED_REG_R10W, XED_REG_R11W, XED_REG_R12W, XED_REG_R13W, XED_REG_R14W, XED_REG_R15W,  // 64+
+			XED_REG_R16W, XED_REG_R17W, XED_REG_R18W, XED_REG_R19W, XED_REG_R20W, XED_REG_R21W, XED_REG_R22W, XED_REG_R23W,  // APX
+			XED_REG_R24W, XED_REG_R25W, XED_REG_R26W, XED_REG_R27W, XED_REG_R28W, XED_REG_R29W, XED_REG_R30W, XED_REG_R31W,  // APX
 
 			// 32-Bit
 			XED_REG_EIP,  // 32+
@@ -3331,6 +3974,8 @@ public:
 
 			XED_REG_EAX, XED_REG_ECX, XED_REG_EDX, XED_REG_EBX,  // 32+
 			XED_REG_R8D, XED_REG_R9D, XED_REG_R10D, XED_REG_R11D, XED_REG_R12D, XED_REG_R13D, XED_REG_R14D, XED_REG_R15D,  // 64+
+			XED_REG_R16D, XED_REG_R17D, XED_REG_R18D, XED_REG_R19D, XED_REG_R20D, XED_REG_R21D, XED_REG_R22D, XED_REG_R23D,  // APX
+			XED_REG_R24D, XED_REG_R25D, XED_REG_R26D, XED_REG_R27D, XED_REG_R28D, XED_REG_R29D, XED_REG_R30D, XED_REG_R31D,  // APX
 
 			// 48-Bit (All 32+)
 			XED_REG_GDTR,  // Global Descriptor Table Register
@@ -3350,6 +3995,8 @@ public:
 
 			XED_REG_RAX, XED_REG_RCX, XED_REG_RDX, XED_REG_RBX,  // 64+
 			XED_REG_R8, XED_REG_R9, XED_REG_R10, XED_REG_R11, XED_REG_R12, XED_REG_R13, XED_REG_R14, XED_REG_R15,  // 64+
+			XED_REG_R16, XED_REG_R17, XED_REG_R18, XED_REG_R19, XED_REG_R20, XED_REG_R21, XED_REG_R22, XED_REG_R23,  // APX
+			XED_REG_R24, XED_REG_R25, XED_REG_R26, XED_REG_R27, XED_REG_R28, XED_REG_R29, XED_REG_R30, XED_REG_R31,  // APX
 
 			XED_REG_BNDCFGU, XED_REG_BNDSTATUS,  // 64 briefly. MPX control registers
 			XED_REG_K0, XED_REG_K1, XED_REG_K2, XED_REG_K3, XED_REG_K4, XED_REG_K5, XED_REG_K6, XED_REG_K7,  // 64+ AVX bit-masking registers (also not confident in size)
@@ -3405,6 +4052,23 @@ public:
 		case XED_REG_R14B:      return RegisterInfo(XED_REG_R14, 0, 1);
 		case XED_REG_R15B:      return RegisterInfo(XED_REG_R15, 0, 1);
 
+		case XED_REG_R16B:      return RegisterInfo(XED_REG_R16, 0, 1);
+		case XED_REG_R17B:      return RegisterInfo(XED_REG_R17, 0, 1);
+		case XED_REG_R18B:      return RegisterInfo(XED_REG_R18, 0, 1);
+		case XED_REG_R19B:      return RegisterInfo(XED_REG_R19, 0, 1);
+		case XED_REG_R20B:      return RegisterInfo(XED_REG_R20, 0, 1);
+		case XED_REG_R21B:      return RegisterInfo(XED_REG_R21, 0, 1);
+		case XED_REG_R22B:      return RegisterInfo(XED_REG_R22, 0, 1);
+		case XED_REG_R23B:      return RegisterInfo(XED_REG_R23, 0, 1);
+		case XED_REG_R24B:      return RegisterInfo(XED_REG_R24, 0, 1);
+		case XED_REG_R25B:      return RegisterInfo(XED_REG_R25, 0, 1);
+		case XED_REG_R26B:      return RegisterInfo(XED_REG_R26, 0, 1);
+		case XED_REG_R27B:      return RegisterInfo(XED_REG_R27, 0, 1);
+		case XED_REG_R28B:      return RegisterInfo(XED_REG_R28, 0, 1);
+		case XED_REG_R29B:      return RegisterInfo(XED_REG_R29, 0, 1);
+		case XED_REG_R30B:      return RegisterInfo(XED_REG_R30, 0, 1);
+		case XED_REG_R31B:      return RegisterInfo(XED_REG_R31, 0, 1);
+
 		// 16-Bit
 		case XED_REG_IP:        return RegisterInfo(XED_REG_RIP, 0, 2);
 
@@ -3434,6 +4098,23 @@ public:
 		case XED_REG_R13W:      return RegisterInfo(XED_REG_R13, 0, 2);
 		case XED_REG_R14W:      return RegisterInfo(XED_REG_R14, 0, 2);
 		case XED_REG_R15W:      return RegisterInfo(XED_REG_R15, 0, 2);
+
+		case XED_REG_R16W:      return RegisterInfo(XED_REG_R16, 0, 2);
+		case XED_REG_R17W:      return RegisterInfo(XED_REG_R17, 0, 2);
+		case XED_REG_R18W:      return RegisterInfo(XED_REG_R18, 0, 2);
+		case XED_REG_R19W:      return RegisterInfo(XED_REG_R19, 0, 2);
+		case XED_REG_R20W:      return RegisterInfo(XED_REG_R20, 0, 2);
+		case XED_REG_R21W:      return RegisterInfo(XED_REG_R21, 0, 2);
+		case XED_REG_R22W:      return RegisterInfo(XED_REG_R22, 0, 2);
+		case XED_REG_R23W:      return RegisterInfo(XED_REG_R23, 0, 2);
+		case XED_REG_R24W:      return RegisterInfo(XED_REG_R24, 0, 2);
+		case XED_REG_R25W:      return RegisterInfo(XED_REG_R25, 0, 2);
+		case XED_REG_R26W:      return RegisterInfo(XED_REG_R26, 0, 2);
+		case XED_REG_R27W:      return RegisterInfo(XED_REG_R27, 0, 2);
+		case XED_REG_R28W:      return RegisterInfo(XED_REG_R28, 0, 2);
+		case XED_REG_R29W:      return RegisterInfo(XED_REG_R29, 0, 2);
+		case XED_REG_R30W:      return RegisterInfo(XED_REG_R30, 0, 2);
+		case XED_REG_R31W:      return RegisterInfo(XED_REG_R31, 0, 2);
 
 		// 32-Bit
 		case XED_REG_EIP:       return RegisterInfo(XED_REG_RIP, 0, 4);
@@ -3471,6 +4152,23 @@ public:
 		case XED_REG_R13D:      return RegisterInfo(XED_REG_R13, 0, 4, true);
 		case XED_REG_R14D:      return RegisterInfo(XED_REG_R14, 0, 4, true);
 		case XED_REG_R15D:      return RegisterInfo(XED_REG_R15, 0, 4, true);
+
+		case XED_REG_R16D:      return RegisterInfo(XED_REG_R16, 0, 4, true);
+		case XED_REG_R17D:      return RegisterInfo(XED_REG_R17, 0, 4, true);
+		case XED_REG_R18D:      return RegisterInfo(XED_REG_R18, 0, 4, true);
+		case XED_REG_R19D:      return RegisterInfo(XED_REG_R19, 0, 4, true);
+		case XED_REG_R20D:      return RegisterInfo(XED_REG_R20, 0, 4, true);
+		case XED_REG_R21D:      return RegisterInfo(XED_REG_R21, 0, 4, true);
+		case XED_REG_R22D:      return RegisterInfo(XED_REG_R22, 0, 4, true);
+		case XED_REG_R23D:      return RegisterInfo(XED_REG_R23, 0, 4, true);
+		case XED_REG_R24D:      return RegisterInfo(XED_REG_R24, 0, 4, true);
+		case XED_REG_R25D:      return RegisterInfo(XED_REG_R25, 0, 4, true);
+		case XED_REG_R26D:      return RegisterInfo(XED_REG_R26, 0, 4, true);
+		case XED_REG_R27D:      return RegisterInfo(XED_REG_R27, 0, 4, true);
+		case XED_REG_R28D:      return RegisterInfo(XED_REG_R28, 0, 4, true);
+		case XED_REG_R29D:      return RegisterInfo(XED_REG_R29, 0, 4, true);
+		case XED_REG_R30D:      return RegisterInfo(XED_REG_R30, 0, 4, true);
+		case XED_REG_R31D:      return RegisterInfo(XED_REG_R31, 0, 4, true);
 
 		// 48-Bit
 		case XED_REG_GDTR:      return RegisterInfo(XED_REG_GDTR, 0, 6);
@@ -3518,6 +4216,24 @@ public:
 		case XED_REG_R13:       return RegisterInfo(XED_REG_R13, 0, 8);
 		case XED_REG_R14:       return RegisterInfo(XED_REG_R14, 0, 8);
 		case XED_REG_R15:       return RegisterInfo(XED_REG_R15, 0, 8);
+
+		case XED_REG_R16:       return RegisterInfo(XED_REG_R16, 0, 8);
+		case XED_REG_R17:       return RegisterInfo(XED_REG_R17, 0, 8);
+		case XED_REG_R18:       return RegisterInfo(XED_REG_R18, 0, 8);
+		case XED_REG_R19:       return RegisterInfo(XED_REG_R19, 0, 8);
+		case XED_REG_R20:       return RegisterInfo(XED_REG_R20, 0, 8);
+		case XED_REG_R21:       return RegisterInfo(XED_REG_R21, 0, 8);
+		case XED_REG_R22:       return RegisterInfo(XED_REG_R22, 0, 8);
+		case XED_REG_R23:       return RegisterInfo(XED_REG_R23, 0, 8);
+		case XED_REG_R24:       return RegisterInfo(XED_REG_R24, 0, 8);
+		case XED_REG_R25:       return RegisterInfo(XED_REG_R25, 0, 8);
+		case XED_REG_R26:       return RegisterInfo(XED_REG_R26, 0, 8);
+		case XED_REG_R27:       return RegisterInfo(XED_REG_R27, 0, 8);
+		case XED_REG_R28:       return RegisterInfo(XED_REG_R28, 0, 8);
+		case XED_REG_R29:       return RegisterInfo(XED_REG_R29, 0, 8);
+		case XED_REG_R30:       return RegisterInfo(XED_REG_R30, 0, 8);
+		case XED_REG_R31:       return RegisterInfo(XED_REG_R31, 0, 8);
+
 
 		case XED_REG_BNDCFGU:   return RegisterInfo(XED_REG_BNDCFGU, 0, 8);
 		case XED_REG_BNDSTATUS: return RegisterInfo(XED_REG_BNDSTATUS, 0, 8);
@@ -3743,6 +4459,69 @@ public:
 		}
 		return result;
 	}
+
+	bool IsReturnTypeRegisterCompatible(BinaryView*, Type* type) override
+	{
+		if (!type)
+			return false;
+		if (type->IsFloat())
+			return true;
+		if (type->GetWidth() == 0 || type->GetWidth() == 1 || type->GetWidth() == 2 || type->GetWidth() == 4
+			|| type->GetWidth() == 8)
+			return true;
+		return false;
+	}
+
+	std::optional<Variable> GetReturnedIndirectReturnValuePointer() override
+	{
+		return Variable::Register(XED_REG_EAX);
+	}
+};
+
+
+class X86SystemVCallingConvention: public X86BaseCallingConvention
+{
+public:
+	X86SystemVCallingConvention(Architecture* arch): X86BaseCallingConvention(arch, "sysv")
+	{
+	}
+
+	bool IsReturnTypeRegisterCompatible(BinaryView*, Type* type) override
+	{
+		if (!type)
+			return false;
+		if (type->IsFloat())
+			return true;
+		if (type->IsStructure() || type->IsArray())
+			return false;
+
+		// If we have an unresolved NTR, we don't actually know what the type is. But it is more likely to
+		// be a structure than anything else, so use the same logic as an identified structure.
+		if (type->IsNamedTypeRefer())
+			return false;
+
+		if (type->GetWidth() == 0 || type->GetWidth() == 1 || type->GetWidth() == 2 || type->GetWidth() == 4
+			|| type->GetWidth() == 8)
+			return true;
+		return false;
+	}
+
+	bool IsStackAdjustedOnReturn() override
+	{
+		// Only for indirect returns, see GetStackAdjustmentForLocations below
+		return true;
+	}
+
+	int64_t GetStackAdjustmentForLocations(BinaryView*, const std::optional<ValueLocation>& returnValue,
+		const vector<ValueLocation>&, const vector<Ref<Type>>&) override
+	{
+		if (!returnValue.has_value())
+			return 0;
+		// Indirect return values have the pointer popped off the stack by the called function
+		if (returnValue->indirect)
+			return 4;
+		return 0;
+	}
 };
 
 
@@ -3769,6 +4548,34 @@ public:
 };
 
 
+class X86SystemVStdcallCallingConvention: public X86BaseCallingConvention
+{
+public:
+	X86SystemVStdcallCallingConvention(Architecture* arch): X86BaseCallingConvention(arch, "sysv-stdcall")
+	{
+	}
+
+	bool IsStackAdjustedOnReturn() override
+	{
+		return true;
+	}
+
+	bool IsReturnTypeRegisterCompatible(BinaryView*, Type* type) override
+	{
+		if (!type)
+			return false;
+		if (type->IsFloat())
+			return true;
+		if (type->IsStructure() || type->IsArray())
+			return false;
+		if (type->GetWidth() == 0 || type->GetWidth() == 1 || type->GetWidth() == 2 || type->GetWidth() == 4
+			|| type->GetWidth() == 8)
+			return true;
+		return false;
+	}
+};
+
+
 class X86RegParmCallingConvention: public X86BaseCallingConvention
 {
 public:
@@ -3776,9 +4583,32 @@ public:
 	{
 	}
 
-	virtual vector<uint32_t> GetIntegerArgumentRegisters() override
+	vector<uint32_t> GetIntegerArgumentRegisters() override
 	{
 		return vector<uint32_t>{ XED_REG_EAX, XED_REG_EDX, XED_REG_ECX };
+	}
+
+	bool IsReturnTypeRegisterCompatible(BinaryView*, Type* type) override
+	{
+		if (!type)
+			return false;
+		if (type->IsFloat())
+			return true;
+		if (type->IsStructure() || type->IsArray())
+			return false;
+		if (type->GetWidth() == 0 || type->GetWidth() == 1 || type->GetWidth() == 2 || type->GetWidth() == 4
+			|| type->GetWidth() == 8)
+			return true;
+		return false;
+	}
+
+	bool IsArgumentTypeRegisterCompatible(BinaryView*, Type* type) override
+	{
+		if (!type)
+			return false;
+		if (type->IsFloat())
+			return true;
+		return type->GetWidth() <= 12;
 	}
 };
 
@@ -3802,6 +4632,82 @@ public:
 };
 
 
+class X86GCCFastcallCallingConvention: public X86BaseCallingConvention
+{
+public:
+	X86GCCFastcallCallingConvention(Architecture* arch): X86BaseCallingConvention(arch, "gcc-fastcall")
+	{
+	}
+
+	vector<uint32_t> GetIntegerArgumentRegisters() override
+	{
+		return vector<uint32_t>{ XED_REG_ECX, XED_REG_EDX };
+	}
+
+	bool IsStackAdjustedOnReturn() override
+	{
+		return true;
+	}
+
+	bool IsReturnTypeRegisterCompatible(BinaryView*, Type* type) override
+	{
+		if (!type)
+			return false;
+		if (type->IsFloat())
+			return true;
+		if (type->IsStructure() || type->IsArray())
+			return false;
+		if (type->GetWidth() == 0 || type->GetWidth() == 1 || type->GetWidth() == 2 || type->GetWidth() == 4
+			|| type->GetWidth() == 8)
+			return true;
+		return false;
+	}
+
+	Variable GetIndirectReturnValueLocation() override
+	{
+		return Variable::Register(XED_REG_ECX);
+	}
+};
+
+
+class X86ClangFastcallCallingConvention: public X86BaseCallingConvention
+{
+public:
+	X86ClangFastcallCallingConvention(Architecture* arch): X86BaseCallingConvention(arch, "clang-fastcall")
+	{
+	}
+
+	vector<uint32_t> GetIntegerArgumentRegisters() override
+	{
+		return vector<uint32_t>{ XED_REG_ECX, XED_REG_EDX };
+	}
+
+	bool IsStackAdjustedOnReturn() override
+	{
+		return true;
+	}
+
+	bool IsReturnTypeRegisterCompatible(BinaryView*, Type* type) override
+	{
+		if (!type)
+			return false;
+		if (type->IsFloat())
+			return true;
+		if (type->IsStructure() || type->IsArray())
+			return false;
+		if (type->GetWidth() == 0 || type->GetWidth() == 1 || type->GetWidth() == 2 || type->GetWidth() == 4
+			|| type->GetWidth() == 8)
+			return true;
+		return false;
+	}
+
+	Variable GetIndirectReturnValueLocation() override
+	{
+		return Variable::StackOffset(4);
+	}
+};
+
+
 class X86ThiscallCallingConvention: public X86BaseCallingConvention
 {
 public:
@@ -3814,9 +4720,100 @@ public:
 		return vector<uint32_t>{ XED_REG_ECX };
 	}
 
+	virtual vector<uint32_t> GetRequiredArgumentRegisters() override
+	{
+		return vector<uint32_t>{ XED_REG_ECX };
+	}
+
 	virtual bool IsStackAdjustedOnReturn() override
 	{
 		return true;
+	}
+};
+
+
+class X86GCCThiscallCallingConvention: public X86BaseCallingConvention
+{
+public:
+	X86GCCThiscallCallingConvention(Architecture* arch): X86BaseCallingConvention(arch, "gcc-thiscall")
+	{
+	}
+
+	vector<uint32_t> GetIntegerArgumentRegisters() override
+	{
+		return vector<uint32_t>{ XED_REG_ECX };
+	}
+
+	vector<uint32_t> GetRequiredArgumentRegisters() override
+	{
+		return vector<uint32_t>{ XED_REG_ECX };
+	}
+
+	bool IsStackAdjustedOnReturn() override
+	{
+		return true;
+	}
+
+	bool IsReturnTypeRegisterCompatible(BinaryView*, Type* type) override
+	{
+		if (!type)
+			return false;
+		if (type->IsFloat())
+			return true;
+		if (type->IsStructure() || type->IsArray())
+			return false;
+		if (type->GetWidth() == 0 || type->GetWidth() == 1 || type->GetWidth() == 2 || type->GetWidth() == 4
+			|| type->GetWidth() == 8)
+			return true;
+		return false;
+	}
+
+	Variable GetIndirectReturnValueLocation() override
+	{
+		return Variable::Register(XED_REG_ECX);
+	}
+};
+
+
+class X86ClangThiscallCallingConvention: public X86BaseCallingConvention
+{
+public:
+	X86ClangThiscallCallingConvention(Architecture* arch): X86BaseCallingConvention(arch, "clang-thiscall")
+	{
+	}
+
+	vector<uint32_t> GetIntegerArgumentRegisters() override
+	{
+		return vector<uint32_t>{ XED_REG_ECX };
+	}
+
+	vector<uint32_t> GetRequiredArgumentRegisters() override
+	{
+		return vector<uint32_t>{ XED_REG_ECX };
+	}
+
+	bool IsStackAdjustedOnReturn() override
+	{
+		return true;
+	}
+
+	bool IsReturnTypeRegisterCompatible(BinaryView*, Type* type) override
+	{
+		if (!type)
+			return false;
+		if (type->IsFloat())
+			return true;
+		if (type->IsStructure() || type->IsArray())
+			return false;
+		if (type->GetWidth() == 0 || type->GetWidth() == 1 || type->GetWidth() == 2 || type->GetWidth() == 4
+			|| type->GetWidth() == 8)
+			return true;
+		return false;
+	}
+
+	Variable GetIndirectReturnValueLocation() override
+	{
+		return Variable::StackOffset(4);
 	}
 };
 
@@ -3865,6 +4862,170 @@ public:
 };
 
 
+class X86PascalCallingConvention : public X86BaseCallingConvention
+{
+public:
+	X86PascalCallingConvention(Architecture* arch) : X86BaseCallingConvention(arch, "pascal") {}
+
+	bool IsNonRegisterArgumentIndirect(BinaryView*, Type* type) override
+	{
+		return type && !type->IsFloat() && type->GetWidth() > 4;
+	}
+
+	bool IsStackAdjustedOnReturn() override
+	{
+		return true;
+	}
+
+	bool AreStackArgumentsPushedLeftToRight() override
+	{
+		return true;
+	}
+
+	Variable GetIndirectReturnValueLocation() override
+	{
+		// Return value pointer is always at the top of the stack (effectively the last parameter
+		// in a left-to-right convention)
+		return Variable::StackOffset(4);
+	}
+
+	std::optional<Variable> GetReturnedIndirectReturnValuePointer() override
+	{
+		return std::nullopt;
+	}
+};
+
+
+class X86PascalRegisterCallingConvention : public X86BaseCallingConvention
+{
+public:
+	X86PascalRegisterCallingConvention(Architecture* arch) : X86BaseCallingConvention(arch, "register") {}
+
+	vector<uint32_t> GetIntegerArgumentRegisters() override
+	{
+		return { XED_REG_EAX, XED_REG_EDX, XED_REG_ECX };
+	}
+
+	bool IsNonRegisterArgumentIndirect(BinaryView*, Type* type) override
+	{
+		return type && !type->IsFloat() && type->GetWidth() > 4;
+	}
+
+	bool AreStackArgumentsPushedLeftToRight() override
+	{
+		return true;
+	}
+
+	std::optional<Variable> GetReturnedIndirectReturnValuePointer() override
+	{
+		return std::nullopt;
+	}
+};
+
+
+class X86GoStackCallingConvention: public CallingConvention
+{
+public:
+	X86GoStackCallingConvention(Architecture* arch): CallingConvention(arch, "go-stack")
+	{
+	}
+
+	bool IsEligibleForHeuristics() override
+	{
+		// This convention cannot be detected by heuristics at this time and will cause issues
+		// with non-Go code.
+		return false;
+	}
+
+	uint32_t GetIntegerReturnValueRegister() override
+	{
+		return BN_INVALID_REGISTER;
+	}
+
+	vector<uint32_t> GetCallerSavedRegisters() override
+	{
+		return vector<uint32_t> { XED_REG_EAX, XED_REG_ECX, XED_REG_EDX, XED_REG_EBX, XED_REG_EBP };
+	}
+
+	RegisterValue GetIncomingFlagValue(uint32_t flag, Function*) override
+	{
+		RegisterValue result;
+		if (flag == IL_FLAG_D)
+		{
+			result.state = ConstantValue;
+			result.value = 0;
+		}
+		return result;
+	}
+
+	ValueLocation GetReturnValueLocation(BinaryView*, const ReturnValue&) override
+	{
+		// It is not possible for this API to determine the return value location on the stack at
+		// this point, return an invalid location and fall back to GetCallLayout.
+		return ValueLocation();
+	}
+
+	CallLayout GetCallLayout(BinaryView* view, const ReturnValue& returnValue, const vector<FunctionParameter>& params,
+		const std::optional<set<uint32_t>>& permittedRegs) override
+	{
+		CallLayout result;
+		result.parameters = GetParameterLocations(view, result.returnValue, params, permittedRegs);
+
+		if (returnValue.type.GetValue() && returnValue.type->GetClass() != VoidTypeClass)
+		{
+			if (returnValue.defaultLocation)
+			{
+				int64_t stackOffset = 4;
+				size_t i = 0;
+				for (auto it = result.parameters.begin(); it != result.parameters.end(); ++i, ++it)
+				{
+					std::optional<int64_t> varStorage;
+					std::optional<uint64_t> varSize;
+					for (auto& component: it->components)
+					{
+						if (component.variable.type != StackVariableSourceType)
+							continue;
+						if (!varStorage.has_value() || component.variable.storage > varStorage.value())
+						{
+							varStorage = component.variable.storage;
+							if (!it->indirect)
+								varSize = component.size;
+						}
+					}
+
+					if (!varStorage.has_value() || varStorage.value() < stackOffset)
+						continue;
+					if (it->indirect)
+						varSize = 4;
+
+					size_t width = 4;
+					if (varSize.has_value())
+						width = varSize.value();
+					else if (i < params.size() && params[i].type.GetValue())
+						width = params[i].type->GetWidth();
+
+					if (width < 4)
+						width = 4;
+					else if ((width % 4) != 0)
+						width += 4 - (width % 4);
+
+					stackOffset = varStorage.value() + width;
+				}
+
+				result.returnValue = Variable::StackOffset(stackOffset);
+			}
+			else
+			{
+				result.returnValue = returnValue.location.GetValue();
+			}
+		}
+
+		result.registerStackAdjustments = GetRegisterStackAdjustments(view, result.returnValue, result.parameters);
+		return result;
+	}
+};
+
+
 class X64BaseCallingConvention: public CallingConvention
 {
 public:
@@ -3897,6 +5058,276 @@ public:
 
 class X64SystemVCallingConvention: public X64BaseCallingConvention
 {
+	enum ValueClass
+	{
+		NoClass,
+		Integer,
+		SSE,
+		SSEUpper,
+		X87,
+		X87Upper,
+		X87Complex
+	};
+
+	struct Component
+	{
+		ValueClass valueClass;
+		uint64_t offset;
+		uint64_t size;
+	};
+
+	std::optional<vector<Component>> GetTypeFields(BinaryView* view, Type* type, std::set<std::string>& visitedTypes)
+	{
+		vector<Component> result;
+		if (!type || type->GetWidth() > 64)
+			return std::nullopt;
+
+		if (type->GetWidth() == 0)
+			return result;
+
+		switch (type->GetClass())
+		{
+		case VoidTypeClass:
+			break;
+		case BoolTypeClass:
+		case IntegerTypeClass:
+		case EnumerationTypeClass:
+		case PointerTypeClass:
+		case WideCharTypeClass:
+			for (uint64_t offset = 0; offset < type->GetWidth(); offset += 8)
+			{
+				if (offset + 8 > type->GetWidth())
+					result.emplace_back(Integer, offset, type->GetWidth() - offset);
+				else
+					result.emplace_back(Integer, offset, 8);
+			}
+			break;
+		case FloatTypeClass:
+			if (type->GetWidth() == 10)
+			{
+				result.emplace_back(X87, 0, 8);
+				result.emplace_back(X87Upper, 8, 2);
+			}
+			else
+			{
+				for (uint64_t offset = 0; offset < type->GetWidth(); offset += 8)
+				{
+					ValueClass valueClass;
+					if (offset == 0)
+						valueClass = SSE;
+					else
+						valueClass = SSEUpper;
+					if (offset + 8 > type->GetWidth())
+						result.emplace_back(valueClass, offset, type->GetWidth() - offset);
+					else
+						result.emplace_back(valueClass, offset, 8);
+				}
+			}
+			break;
+		case StructureTypeClass:
+		{
+			Ref<Structure> structure = type->GetStructure();
+			if (!structure || !view)
+				return std::nullopt;
+			for (auto& member : structure->GetMembersIncludingInherited(view->GetTypeContainer()))
+			{
+				// Ensure that everything is aligned on natural boundaries. If it is not, it is stored in memory.
+				uint64_t alignment = 1;
+				if (member.member.type.GetValue() && member.member.type->GetAlignment() != 0)
+					alignment = member.member.type->GetAlignment();
+				if (member.member.offset % alignment != 0)
+					return std::nullopt;
+
+				std::set<std::string> fieldVisitedTypes = visitedTypes;
+				std::optional<vector<Component>> fieldComponents =
+					GetTypeFields(view, member.member.type.GetValue(), fieldVisitedTypes);
+				if (!fieldComponents.has_value())
+					return std::nullopt;
+				for (auto& component : fieldComponents.value())
+					result.emplace_back(component.valueClass, member.member.offset + component.offset, component.size);
+			}
+			break;
+		}
+		case ArrayTypeClass:
+		{
+			Ref<Type> elementType = type->GetChildType().GetValue();
+			std::optional<std::vector<Component>> elementComponents = GetTypeFields(view, elementType, visitedTypes);
+			if (!elementComponents.has_value() || elementComponents->empty())
+				return std::nullopt;
+			if (type->GetElementCount() > 64)
+				return std::nullopt;
+			for (uint64_t i = 0; i < type->GetElementCount(); i++)
+			{
+				uint64_t offset = i * elementType->GetWidth();
+				for (auto& component : elementComponents.value())
+					result.emplace_back(component.valueClass, offset + component.offset, component.size);
+			}
+			break;
+		}
+		case NamedTypeReferenceClass:
+		{
+			auto ntr = type->GetNamedTypeReference();
+			if (!view || visitedTypes.contains(ntr->GetTypeId()))
+				return std::nullopt;
+			visitedTypes.insert(ntr->GetTypeId());
+			return GetTypeFields(view, view->GetTypeByRef(ntr), visitedTypes);
+		}
+		default:
+			return std::nullopt;
+		}
+		return result;
+	}
+
+	std::optional<std::vector<Component>> GetValueClassificationForType(BinaryView* view, Type* type)
+	{
+		if (!type)
+			return std::nullopt;
+		if (type->GetWidth() > 64)
+			return std::nullopt;
+
+		// Split the component up into fields, with each field split into 8 byte components
+		std::optional<std::vector<Component>> fields;
+		std::set<std::string> visitedTypes;
+		fields = GetTypeFields(view, type, visitedTypes);
+		if (!fields.has_value() || fields->empty())
+			return fields;
+
+		// Initialize components for each 8 bytes of the type. The last component may be smaller than 8 bytes,
+		// but will be padded to fit in an 8-byte component.
+		vector<Component> result;
+		for (uint64_t offset = 0; offset < type->GetWidth(); offset += 8)
+		{
+			if (offset + 8 > type->GetWidth())
+				result.emplace_back(NoClass, offset, type->GetWidth() - offset);
+			else
+				result.emplace_back(NoClass, offset, 8);
+		}
+
+		// Resolve the classes of each component based on the fields
+		for (auto& field : fields.value())
+		{
+			size_t componentIndex = (size_t)(field.offset / 8);
+			if (componentIndex >= result.size())
+				return std::nullopt;
+
+			auto& component = result[componentIndex];
+			if (component.valueClass == field.valueClass)
+			{
+				continue;
+			}
+			if (component.valueClass == NoClass)
+			{
+				component.valueClass = field.valueClass;
+				continue;
+			}
+
+			switch (field.valueClass)
+			{
+			case NoClass:
+				break;
+			case Integer:
+				component.valueClass = Integer;
+				break;
+			case X87:
+			case X87Upper:
+			case X87Complex:
+				return std::nullopt;
+			default:
+				if (component.valueClass != Integer)
+					component.valueClass = SSE;
+				break;
+			}
+		}
+
+		// Any components that are still assigned to NoClass are converted to Integer as a default. This
+		// usually happens when there are chunks of a structure that have no fields defined yet. This is
+		// the most likely class by far, and there isn't any information available to know for sure.
+		for (auto& component : result)
+		{
+			if (component.valueClass == NoClass)
+				component.valueClass = Integer;
+		}
+
+		// The X87Upper class is only valid if preceded by X87 and is only valid for a 16-byte result
+		if (result.size() == 2 && result[0].valueClass == X87 && result[1].valueClass == X87Upper)
+			return result;
+		if (std::ranges::any_of(result, [](const Component& component) { return component.valueClass == X87Upper; }))
+			return std::nullopt;
+
+		// If the result is larger than 16 bytes, it is passed in memory unless it is all SSE, with SSEUpper
+		// as the class for all but the first component.
+		if (result.size() > 2)
+		{
+			if (result[0].valueClass != SSE)
+				return std::nullopt;
+			if (std::any_of(result.begin() + 1, result.end(), [](const Component& component) {
+					return component.valueClass != SSEUpper;
+				}))
+				return std::nullopt;
+			return result;
+		}
+
+		// Clean up SSEUpper components that aren't preceded by an SSE component
+		for (size_t i = 0; i < result.size(); i++)
+		{
+			if (result[i].valueClass != SSEUpper)
+				continue;
+			if (i == 0 || (result[i - 1].valueClass != SSE && result[i - 1].valueClass != SSEUpper))
+				result[i].valueClass = SSE;
+		}
+
+		return result;
+	}
+
+	bool IsTypeRegisterCompatible(BinaryView* view, Type* type, size_t maxIntegerRegs, size_t maxSSERegs,
+		size_t maxX87Regs, size_t maxX87ComplexRegs)
+	{
+		auto components = GetValueClassificationForType(view, type);
+		if (!components.has_value())
+			return false;
+
+		size_t integerCount = 0;
+		size_t sseCount = 0;
+		size_t x87Count = 0;
+		size_t x87ComplexCount = 0;
+		for (auto& component : components.value())
+		{
+			switch (component.valueClass)
+			{
+			case NoClass:
+				return false;
+			case Integer:
+				integerCount++;
+				break;
+			case SSE:
+				sseCount++;
+				break;
+			case X87:
+				x87Count++;
+				break;
+			case X87Complex:
+				x87ComplexCount++;
+				break;
+			case SSEUpper:
+			case X87Upper:
+				break;
+			}
+		}
+
+		if (integerCount > maxIntegerRegs)
+			return false;
+		if (sseCount > maxSSERegs)
+			return false;
+		if (x87Count > maxX87Regs)
+			return false;
+		if (x87ComplexCount % 4 != 0)
+			return false;
+		x87Count += x87ComplexCount / 2;
+		if (x87Count > maxX87ComplexRegs)
+			return false;
+		return true;
+	}
+
 public:
 	X64SystemVCallingConvention(Architecture* arch): X64BaseCallingConvention(arch, "sysv")
 	{
@@ -3926,6 +5357,305 @@ public:
 		return vector<uint32_t> {
 			XED_REG_RBX, XED_REG_RBP,
 			XED_REG_R12, XED_REG_R13, XED_REG_R14, XED_REG_R15 };
+	}
+
+	bool IsReturnTypeRegisterCompatible(BinaryView* view, Type* type) override
+	{
+		// If we have an unresolved NTR, use the default handling. We can't really know what
+		// this type is, so just preserve the old behavior.
+		if (type && type->GetClass() == NamedTypeReferenceClass && type->GetWidth() == 0)
+			return DefaultIsReturnTypeRegisterCompatible(type);
+
+		return IsTypeRegisterCompatible(view, type, 2, 2, 1, 2);
+	}
+
+	bool IsArgumentTypeRegisterCompatible(BinaryView* view, Type* type) override
+	{
+		// If we have an unresolved NTR, use the default handling. We can't really know what
+		// this type is, so just preserve the old behavior.
+		if (type && type->GetClass() == NamedTypeReferenceClass && type->GetWidth() == 0)
+			return DefaultIsArgumentTypeRegisterCompatible(type);
+
+		return IsTypeRegisterCompatible(view, type, 6, 8, 0, 0);
+	}
+
+	ValueLocation GetReturnValueLocation(BinaryView* view, const ReturnValue& returnValue) override
+	{
+		Ref<Type> type = returnValue.type.GetValue();
+		if (!type || type->IsVoid())
+			return ValueLocation();
+
+		// If we have an unresolved NTR, use the default handling. We can't really know what
+		// this type is, so just preserve the old behavior.
+		if (type->GetClass() == NamedTypeReferenceClass && type->GetWidth() == 0)
+			return GetDefaultReturnValueLocation(view, returnValue);
+
+		auto components = GetValueClassificationForType(view, type);
+		if (!components.has_value())
+		{
+			// Value doesn't work in a register, return through an indirect pointer
+			return ValueLocation({GetIndirectReturnValueLocation()}, true, GetReturnedIndirectReturnValuePointer());
+		}
+
+		ValueLocation result;
+		size_t integerCount = 0;
+		static constexpr uint32_t integerRegs[2] = {XED_REG_RAX, XED_REG_RDX};
+		size_t sseCount = 0;
+		static constexpr uint32_t sseRegs[2] = {XED_REG_ZMM0, XED_REG_ZMM1};
+		size_t x87Count = 0;
+		static constexpr uint32_t x87Regs[2] = {XED_REG_ST0, XED_REG_ST1};
+		bool valid = true;
+		for (auto& component : components.value())
+		{
+			switch (component.valueClass)
+			{
+			case NoClass:
+				valid = false;
+				break;
+			case Integer:
+				if (integerCount >= 2)
+				{
+					valid = false;
+					break;
+				}
+				result.components.emplace_back(
+					Variable::Register(integerRegs[integerCount++]), component.offset, component.size);
+				break;
+			case SSE:
+				if (sseCount >= 2)
+				{
+					valid = false;
+					break;
+				}
+				result.components.emplace_back(
+					Variable::Register(sseRegs[sseCount++]), component.offset, component.size);
+				break;
+			case X87:
+				if (x87Count >= 1)
+				{
+					valid = false;
+					break;
+				}
+				result.components.emplace_back(
+					Variable::Register(x87Regs[x87Count++]), component.offset, component.size);
+				break;
+			case SSEUpper:
+			case X87Upper:
+				if (result.components.empty())
+				{
+					valid = false;
+					break;
+				}
+				result.components.back().size = result.components.back().size.value_or(0) + component.size;
+				break;
+			case X87Complex:
+				if (result.components.empty() || result.components.back().size.value_or(0) > 8)
+				{
+					if (x87Count >= 2)
+					{
+						valid = false;
+						break;
+					}
+					result.components.emplace_back(
+						Variable::Register(x87Regs[x87Count++]), component.offset, component.size);
+				}
+				else
+				{
+					result.components.back().size = result.components.back().size.value_or(0) + component.size;
+				}
+				break;
+			}
+		}
+
+		// Single component values shouldn't have the size set, otherwise heuristically determined locations
+		// will not match.
+		if (result.components.size() == 1)
+			result.components[0].size.reset();
+
+		if (valid)
+			return result;
+
+		// Value doesn't work in a register, return through an indirect pointer
+		return ValueLocation({GetIndirectReturnValueLocation()}, true, GetReturnedIndirectReturnValuePointer());
+	}
+
+	Variable GetIndirectReturnValueLocation() override { return Variable::Register(XED_REG_RDI); }
+	std::optional<Variable> GetReturnedIndirectReturnValuePointer() override { return Variable::Register(XED_REG_RAX); }
+
+	std::vector<ValueLocation> GetParameterLocations(BinaryView* view, const std::optional<ValueLocation>& returnValue,
+		const std::vector<FunctionParameter>& params,
+		const std::optional<std::set<uint32_t>>& permittedRegs = std::nullopt) override
+	{
+		vector<ValueLocation> result;
+		result.reserve(params.size());
+
+		vector<uint32_t> intArgs = GetIntegerArgumentRegisters();
+		vector<uint32_t> sseArgs = GetFloatArgumentRegisters();
+
+		auto intArgIter = intArgs.begin();
+		auto sseArgIter = sseArgs.begin();
+		size_t addrSize = GetArchitecture()->GetAddressSize();
+		int64_t stackOffset = addrSize;
+
+		if (returnValue.has_value() && returnValue->indirect)
+		{
+			// If the return value is stored as an indirect location parameter, ensure that the normal parameters
+			// don't overlap with it.
+			for (auto& component : returnValue->components)
+			{
+				if (component.variable.type == RegisterVariableSourceType)
+				{
+					if (intArgIter != intArgs.end() && *intArgIter == component.variable.storage)
+						intArgIter++;
+					if (sseArgIter != sseArgs.end() && *sseArgIter == component.variable.storage)
+						sseArgIter++;
+				}
+				else if (component.variable.type == StackVariableSourceType
+					&& component.variable.storage >= stackOffset)
+				{
+					// Adjust the next automatic stack location to after this one
+					stackOffset = component.variable.storage;
+					stackOffset += 8;
+				}
+			}
+		}
+
+		for (auto& param : params)
+		{
+			if (param.locationSource == CustomLocationSource)
+			{
+				// Parameter is not stored in a normal location, use custom variable
+				result.push_back(param.location);
+				for (auto& component : param.location.components)
+				{
+					if (component.variable.type == RegisterVariableSourceType)
+					{
+						// If the non-default location matches the next register in the register parameter
+						// lists, advance the iterators. It may just be a type mismatch, and we still
+						// want to maintain the state for future parameters.
+						if (intArgIter != intArgs.end() && *intArgIter == component.variable.storage)
+							intArgIter++;
+						if (sseArgIter != sseArgs.end() && *sseArgIter == component.variable.storage)
+							sseArgIter++;
+					}
+					else if (component.variable.type == StackVariableSourceType
+						&& component.variable.storage >= stackOffset)
+					{
+						// Adjust the next automatic stack location to after this one
+						stackOffset = component.variable.storage;
+						stackOffset += 8;
+					}
+				}
+				continue;
+			}
+
+			Ref<Type> type = param.type.GetValue();
+			size_t width = type->GetWidth();
+			bool indirect = false;
+
+			if ((type->GetClass() == ArrayTypeClass || param.locationSource == PassByReferenceLocationSource)
+				&& param.locationSource != PassByValueLocationSource)
+			{
+				type = Type::PointerType(GetArchitecture(), type);
+				indirect = true;
+				width = type->GetWidth();
+			}
+
+			if (IsArgumentTypeRegisterCompatible(view, type))
+			{
+				auto components = GetValueClassificationForType(view, type);
+				if (components.has_value() && !components->empty())
+				{
+					// Save off the current register iterators. If we fail to find enough registers, we
+					// need to revert the register allocations.
+					auto savedIntArgIter = intArgIter;
+					auto savedSseArgIter = sseArgIter;
+
+					ValueLocation location;
+					bool valid = true;
+					for (auto& component : components.value())
+					{
+						switch (component.valueClass)
+						{
+						case Integer:
+							if (intArgIter == intArgs.end()
+								|| (permittedRegs.has_value() && !permittedRegs->contains(*intArgIter)))
+							{
+								valid = false;
+								break;
+							}
+							location.components.emplace_back(
+								Variable::Register(*intArgIter), component.offset, component.size);
+							++intArgIter;
+							break;
+						case SSE:
+							if (sseArgIter == sseArgs.end()
+								|| (permittedRegs.has_value() && !permittedRegs->contains(*sseArgIter)))
+							{
+								valid = false;
+								break;
+							}
+							location.components.emplace_back(
+								Variable::Register(*sseArgIter), component.offset, component.size);
+							++sseArgIter;
+							break;
+						case SSEUpper:
+							if (location.components.empty())
+							{
+								valid = false;
+								break;
+							}
+							location.components.back().size =
+								location.components.back().size.value_or(0) + component.size;
+							break;
+						default:
+							valid = false;
+							break;
+						}
+					}
+
+					if (indirect)
+					{
+						location.indirect = true;
+						std::ranges::for_each(location.components, [&](auto& component) {
+							component.size = param.type->GetWidth();
+						});
+					}
+
+					// Single component values shouldn't have the size set, otherwise heuristically determined locations
+					// will not match.
+					if (location.components.size() == 1)
+						location.components[0].size.reset();
+
+					if (valid)
+					{
+						// Value fit in registers
+						result.emplace_back(location);
+						continue;
+					}
+
+					// Value does not fit in available registers, revert to prior available registers
+					intArgIter = savedIntArgIter;
+					sseArgIter = savedSseArgIter;
+				}
+			}
+
+			// Value must be placed on the stack
+			if (width % addrSize != 0)
+				width += addrSize - width % addrSize;
+
+			// Stack offset must be naturally aligned. Alignment is performed on the offset before the
+			// return address is pushed (using caller's stack alignment).
+			int64_t alignment = type->GetAlignment();
+			int64_t afterRetOffset = stackOffset - addrSize;
+			if (alignment != 0 && afterRetOffset % alignment != 0)
+				stackOffset += alignment - afterRetOffset % alignment;
+
+			result.emplace_back(ValueLocation({{Variable::StackOffset(stackOffset), 0}}, indirect));
+			stackOffset += width;
+		}
+
+		return result;
 	}
 };
 
@@ -3971,6 +5701,36 @@ public:
 	{
 		return true;
 	}
+
+	bool IsReturnTypeRegisterCompatible(BinaryView*, Type* type) override
+	{
+		if (!type)
+			return false;
+		if (type->IsFloat())
+			return true;
+		return type->GetWidth() == 0 || type->GetWidth() == 1 || type->GetWidth() == 2 || type->GetWidth() == 4
+			|| type->GetWidth() == 8;
+	}
+
+	std::optional<Variable> GetReturnedIndirectReturnValuePointer() override
+	{
+		return Variable::Register(XED_REG_RAX);
+	}
+
+	bool IsArgumentTypeRegisterCompatible(BinaryView*, Type* type) override
+	{
+		if (!type)
+			return false;
+		if (type->IsFloat())
+			return true;
+		return type->GetWidth() == 0 || type->GetWidth() == 1 || type->GetWidth() == 2 || type->GetWidth() == 4
+			|| type->GetWidth() == 8;
+	}
+
+	bool IsNonRegisterArgumentIndirect(BinaryView*, Type*) override
+	{
+		return true;
+	}
 };
 
 
@@ -4009,6 +5769,111 @@ public:
 };
 
 
+class X64GoStackCallingConvention: public CallingConvention
+{
+public:
+	X64GoStackCallingConvention(Architecture* arch): CallingConvention(arch, "go-stack")
+	{
+	}
+
+	bool IsEligibleForHeuristics() override
+	{
+		// This convention cannot be detected by heuristics at this time and will cause issues
+		// with non-Go code.
+		return false;
+	}
+
+	uint32_t GetIntegerReturnValueRegister() override
+	{
+		return BN_INVALID_REGISTER;
+	}
+
+	vector<uint32_t> GetCallerSavedRegisters() override
+	{
+		return vector<uint32_t> { XED_REG_RAX, XED_REG_RCX, XED_REG_RDX, XED_REG_RBX, XED_REG_RBP,
+			XED_REG_R8, XED_REG_R9, XED_REG_R10, XED_REG_R11, XED_REG_R12, XED_REG_R13, XED_REG_R14,
+			XED_REG_R15 };
+	}
+
+	RegisterValue GetIncomingFlagValue(uint32_t flag, Function*) override
+	{
+		RegisterValue result;
+		if (flag == IL_FLAG_D)
+		{
+			result.state = ConstantValue;
+			result.value = 0;
+		}
+		return result;
+	}
+
+	ValueLocation GetReturnValueLocation(BinaryView*, const ReturnValue&) override
+	{
+		// It is not possible for this API to determine the return value location on the stack at
+		// this point, return an invalid location and fall back to GetCallLayout.
+		return ValueLocation();
+	}
+
+	CallLayout GetCallLayout(BinaryView* view, const ReturnValue& returnValue, const vector<FunctionParameter>& params,
+		const std::optional<set<uint32_t>>& permittedRegs) override
+	{
+		CallLayout result;
+		result.parameters = GetParameterLocations(view, result.returnValue, params, permittedRegs);
+
+		if (returnValue.type.GetValue() && returnValue.type->GetClass() != VoidTypeClass)
+		{
+			if (returnValue.defaultLocation)
+			{
+				int64_t stackOffset = 8;
+				size_t i = 0;
+				for (auto it = result.parameters.begin(); it != result.parameters.end(); ++i, ++it)
+				{
+					std::optional<int64_t> varStorage;
+					std::optional<uint64_t> varSize;
+					for (auto& component: it->components)
+					{
+						if (component.variable.type != StackVariableSourceType)
+							continue;
+						if (!varStorage.has_value() || component.variable.storage > varStorage.value())
+						{
+							varStorage = component.variable.storage;
+							if (!it->indirect)
+								varSize = component.size;
+						}
+					}
+
+					if (!varStorage.has_value() || varStorage.value() < stackOffset)
+						continue;
+					if (it->indirect)
+						varSize = 8;
+
+					size_t width = 8;
+					if (varSize.has_value())
+						width = varSize.value();
+					else if (i < params.size() && params[i].type.GetValue())
+						width = params[i].type->GetWidth();
+
+					if (width < 8)
+						width = 8;
+					else if ((width % 8) != 0)
+						width += 8 - (width % 8);
+
+					stackOffset = varStorage.value() + width;
+				}
+
+				result.returnValue = Variable::StackOffset(stackOffset);
+			}
+			else
+			{
+				result.returnValue = returnValue.location.GetValue();
+			}
+		}
+
+		result.registerStackAdjustments = GetRegisterStackAdjustments(view, result.returnValue, result.parameters);
+		return result;
+	}
+};
+
+
 class x86MachoRelocationHandler: public RelocationHandler
 {
 public:
@@ -4032,10 +5897,10 @@ public:
 		case (uint64_t)-1: // Magic number defined in MachOView.cpp
 			// We need to write a jump absolute `jmp target`
 			dest[0] = '\xe9';
-			((uint32_t*)&dest[1])[0] = target - (uint32_t)reloc->GetAddress() - 5;
+			((uint32_t*)&dest[1])[0] = target + (uint32_t)info.addend - (uint32_t)reloc->GetAddress() - 5;
 			break;
 		case (uint64_t)-2: // Magic number defined in MachOView.cpp
-			dest32[0] = target;
+			dest32[0] = target + (uint32_t)info.addend;
 			break;
 		case GENERIC_RELOC_VANILLA:
 			switch (info.size)
@@ -4058,7 +5923,8 @@ public:
 
 	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
 	{
-		(void)view; (void)arch;
+		(void)arch;
+		Ref<Logger> logger = view->CreateLogger("X86MachoReloc");
 		set<uint64_t> relocTypes;
 		for (size_t i = 0; i < result.size(); i++)
 		{
@@ -4080,7 +5946,7 @@ public:
 		}
 
 		for (auto& reloc : relocTypes)
-			LogWarn("Unsupported Mach-O relocation type: %s", GetRelocationString((Machox86RelocationType)reloc));
+			logger->LogWarn("Unsupported Mach-O relocation type: %s", GetRelocationString((Machox86RelocationType)reloc));
 		return true;
 	}
 };
@@ -4090,7 +5956,8 @@ class x86ElfRelocationHandler: public RelocationHandler
 public:
 	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
 	{
-		(void)view; (void)arch;
+		(void)arch;
+		Ref<Logger> logger = view->CreateLogger("X86ElfReloc");
 		set<uint64_t> relocTypes;
 		for (auto& reloc : result)
 		{
@@ -4148,13 +6015,21 @@ public:
 				reloc.truncateSize = 4;
 				reloc.implicitAddend = false;
 				break;
+			case R_386_IRELATIVE:
+				reloc.pcRelative = false;
+				reloc.baseRelative = false;
+				reloc.hasSign = false;
+				reloc.size = 4;
+				reloc.truncateSize = 4;
+				reloc.implicitAddend = true;
+				break;
 			default:
 				reloc.type = UnhandledRelocation;
 				relocTypes.insert(reloc.nativeType);
 			}
 		}
 		for (auto& reloc : relocTypes)
-			LogWarn("Unsupported ELF relocation type: %s", GetRelocationString((Elfx86RelocationType)reloc));
+			logger->LogWarn("Unsupported ELF relocation type: %s", GetRelocationString((Elfx86RelocationType)reloc));
 		return true;
 	}
 };
@@ -4212,7 +6087,7 @@ public:
 			dest64[0] = dest64[0] + info.next->target - target;
 			break;
 		case (uint64_t) -2:
-			dest64[0] = reloc->GetTarget();
+			dest64[0] = info.target + info.addend;
 			break;
 		}
 		return true;
@@ -4221,7 +6096,8 @@ public:
 
 	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
 	{
-		(void)view; (void)arch;
+		(void)arch;
+		Ref<Logger> logger = view->CreateLogger("X86MachoReloc");
 		set<uint64_t> relocTypes;
 		for (size_t i = 0; i < result.size(); i++)
 		{
@@ -4286,7 +6162,7 @@ public:
 		}
 
 		for (auto& reloc : relocTypes)
-			LogWarn("Unsupported Mach-O relocation: %s", GetRelocationString((Machox64RelocationType)reloc));
+			logger->LogWarn("Unsupported Mach-O relocation: %s", GetRelocationString((Machox64RelocationType)reloc));
 		return true;
 	}
 };
@@ -4320,6 +6196,16 @@ public:
 			memcpy(dest, (uint8_t*)&write, sizeof(uint64_t));
 			return true;
 		}
+		case R_X86_64_DTPMOD64: {
+			uint64_t write = 0;
+			memcpy(dest, (uint8_t*)&write, sizeof(uint64_t));
+			return true;
+		}
+		case R_X86_64_DTPOFF64: {
+			uint64_t write = reloc->GetTarget() + info.addend;
+			memcpy(dest, (uint8_t*)&write, sizeof(uint64_t));
+			return true;
+		}
 		default:
 			return RelocationHandler::ApplyRelocation(view, arch, reloc, dest, len);
 		}
@@ -4345,7 +6231,8 @@ public:
 		The AMD64 ILP32 ABI architecture uses only Elf32_Rela relocation entries in relocatable files. Relocations
 			contained within executable files or shared objects may use either Elf32_Rela relocation or Elf32_Rel relocation.
 		*/
-		(void)view; (void)arch;
+		(void)arch;
+		Ref<Logger> logger = view->CreateLogger("X86ElfReloc");
 		set<uint64_t> relocTypes;
 		for (auto& reloc : result)
 		{
@@ -4412,6 +6299,31 @@ public:
 				reloc.size = 8;
 				reloc.truncateSize = 8;
 				break;
+			case R_X86_64_DTPMOD64:
+				reloc.pcRelative = false;
+				reloc.baseRelative = false;
+				reloc.hasSign = false;
+				reloc.size = 8;
+				reloc.truncateSize = 8;
+				reloc.symbolIndex = 0;
+				break;
+			case R_X86_64_DTPOFF64:
+				reloc.pcRelative = false;
+				reloc.baseRelative = false;
+				reloc.hasSign = false;
+				reloc.size = 8;
+				reloc.truncateSize = 8;
+				break;
+			case R_X86_64_GOTOFF64:
+			case R_X86_64_GOT64:
+			case R_X86_64_GOTPLT64:
+			case R_X86_64_PLTOFF64:
+				reloc.pcRelative = false;
+				reloc.baseRelative = false;
+				reloc.hasSign = false;
+				reloc.size = 8;
+				reloc.truncateSize = 8;
+				break;
 			case R_X86_64_PC32:
 			case R_X86_64_PLT32:
 			case R_X86_64_GOTPCREL:
@@ -4425,6 +6337,14 @@ public:
 				reloc.truncateSize = 4;
 				break;
 			case R_X86_64_PC64:
+				reloc.pcRelative = true;
+				reloc.baseRelative = false;
+				reloc.hasSign = false;
+				reloc.size = 8;
+				reloc.truncateSize = 8;
+				break;
+			case R_X86_64_GOTPCREL64:
+			case R_X86_64_GOTPC64:
 				reloc.pcRelative = true;
 				reloc.baseRelative = false;
 				reloc.hasSign = false;
@@ -4477,7 +6397,7 @@ public:
 			}
 		}
 		for (auto& reloc : relocTypes)
-			LogWarn("Unsupported ELF relocation: %s", GetRelocationString((Elfx64RelocationType)reloc));
+			logger->LogWarn("Unsupported ELF relocation: %s", GetRelocationString((Elfx64RelocationType)reloc));
 		return true;
 	}
 };
@@ -4547,7 +6467,8 @@ public:
 
 	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
 	{
-		(void)view; (void)arch;
+		(void)arch;
+		Ref<Logger> logger = view->CreateLogger("X86CoffReloc");
 		set<uint64_t> relocTypes;
 		for (auto& reloc : result)
 		{
@@ -4608,7 +6529,7 @@ public:
 					relocTypes.insert(reloc.nativeType);
 				}
 				for (auto& reloc : relocTypes)
-					LogWarn("Unsupported COFF relocation: %s", GetRelocationString((COFFx64RelocationType)reloc));
+					logger->LogWarn("Unsupported COFF relocation: %s", GetRelocationString((COFFx64RelocationType)reloc));
 			}
 			else if (arch->GetName() == "x86")
 			{
@@ -4652,7 +6573,7 @@ public:
 					relocTypes.insert(reloc.nativeType);
 				}
 				for (auto& reloc : relocTypes)
-					LogWarn("Unsupported COFF relocation: %s", GetRelocationString((COFFx86RelocationType)reloc));
+					logger->LogWarn("Unsupported COFF relocation: %s", GetRelocationString((COFFx86RelocationType)reloc));
 			}
 		}
 
@@ -4668,50 +6589,73 @@ public:
 		// Note: info.base contains preferred base address and the base where the image is actually loaded
 		(void)view;
 		(void)arch;
-		(void)len;
 		uint64_t* data64 = (uint64_t*)dest;
 		uint32_t* data32 = (uint32_t*)dest;
 		uint16_t* data16 = (uint16_t*)dest;
 		auto info = reloc->GetInfo();
-		if ((uint32_t)info.nativeType == PE_IMAGE_USER_DEFINED)
+		switch (info.nativeType)
 		{
+		case PE_IMAGE_USER_DEFINED:
 			if (info.size == 8)
 			{
+				if (len < 8)
+					return false;
 				data64[0] = info.target;
 			}
 			else if (info.size == 4)
 			{
+				if (len < 4)
+					return false;
 				data32[0] = (uint32_t)info.target;
 			}
-		}
-		else if (info.size == 8)
-		{
+			break;
+		case PE_IMAGE_REL_BASED_DIR64:
+			if (len < 8)
+				return false;
 			data64[0] += info.base;
-		}
-		else if (info.size == 4)
-		{
+			break;
+		case PE_IMAGE_REL_BASED_HIGHLOW:
+			if (len < 4)
+				return false;
 			data32[0] += (uint32_t)info.base;
-		}
-		else if (info.size == 2)
+			break;
+		case PE_IMAGE_REL_BASED_HIGH:
+			if (len < 2)
+				return false;
+			data16[0] = data16[0] + (uint16_t)(info.base >> 16);
+			break;
+		case PE_IMAGE_REL_BASED_LOW:
+			if (len < 2)
+				return false;
+			data16[0] = data16[0] + (uint16_t)(info.base & 0xffff);
+			break;
+		case PE_IMAGE_REL_BASED_HIGHADJ:
 		{
-			if (info.nativeType == PE_IMAGE_REL_BASED_HIGH)
-			{
-				data16[0] = data16[0] + (uint16_t)(info.base >> 16);
-			}
-			else if (info.nativeType == PE_IMAGE_REL_BASED_LOW)
-			{
-				data16[0] = data16[0] + (uint16_t)(info.base & 0xffff);
-			}
+			if (len < 2)
+				return false;
+			uint64_t value = ((uint64_t)data16[0] << 16) + (int16_t)info.addend + info.base + 0x8000;
+			data16[0] = (uint16_t)(value >> 16);
+			break;
+		}
+		// Fun fact: the windows x64 emulation on an arm64 host ALSO applies these
+		// relocations if they are contained within x64 binaries, causing a divergence
+		// in loader behavior when emulating. We're not handling that nuance, though.
+		// case PE_IMAGE_REL_BASED_THUMB_MOV32:
+		default:
+			return RelocationHandler::ApplyRelocation(view, arch, reloc, dest, len);
 		}
 		return true;
 	}
 
 	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
 	{
-		(void)view; (void)arch;
+		(void)arch;
+		Ref<Logger> logger = view->CreateLogger("X86PeReloc");
 		set<uint64_t> relocTypes;
 		for (auto& reloc : result)
 		{
+			reloc.type = StandardRelocationType;
+			reloc.pcRelative = false;
 			switch (reloc.nativeType)
 			{
 			case PE_IMAGE_REL_BASED_ABSOLUTE:
@@ -4729,6 +6673,9 @@ public:
 			case PE_IMAGE_REL_BASED_LOW:
 				reloc.size = 2;
 				break;
+			case PE_IMAGE_REL_BASED_HIGHADJ:
+				reloc.size = 2;
+				break;
 			case PE_IMAGE_USER_DEFINED:
 				reloc.type = StandardRelocationType;
 				break;
@@ -4741,8 +6688,8 @@ public:
 		}
 
 		for (auto& reloc : relocTypes)
-			LogWarn("Unsupported PE relocation: %s", GetRelocationString((PeRelocationType)reloc));
-		return false;
+			logger->LogWarn("Unsupported PE relocation: %s", GetRelocationString((PeRelocationType)reloc));
+		return true;
 	}
 
 	virtual size_t GetOperandForExternalRelocation(const uint8_t* data, uint64_t addr, size_t length,
@@ -4848,16 +6795,34 @@ extern "C"
 		x86->RegisterCallingConvention(conv);
 		x86->SetDefaultCallingConvention(conv);
 		x86->SetCdeclCallingConvention(conv);
+		conv = new X86SystemVCallingConvention(x86);
+		x86->RegisterCallingConvention(conv);
 		conv = new X86StdcallCallingConvention(x86);
 		x86->RegisterCallingConvention(conv);
 		x86->SetStdcallCallingConvention(conv);
+		conv = new X86SystemVStdcallCallingConvention(x86);
+		x86->RegisterCallingConvention(conv);
 		conv = new X86RegParmCallingConvention(x86);
 		x86->RegisterCallingConvention(conv);
 		conv = new X86FastcallCallingConvention(x86);
 		x86->RegisterCallingConvention(conv);
+		conv = new X86GCCFastcallCallingConvention(x86);
+		x86->RegisterCallingConvention(conv);
+		conv = new X86ClangFastcallCallingConvention(x86);
+		x86->RegisterCallingConvention(conv);
 		conv = new X86ThiscallCallingConvention(x86);
 		x86->RegisterCallingConvention(conv);
+		conv = new X86GCCThiscallCallingConvention(x86);
+		x86->RegisterCallingConvention(conv);
+		conv = new X86ClangThiscallCallingConvention(x86);
+		x86->RegisterCallingConvention(conv);
 		conv = new X86LinuxSystemCallConvention(x86);
+		x86->RegisterCallingConvention(conv);
+		conv = new X86PascalCallingConvention(x86);
+		x86->RegisterCallingConvention(conv);
+		conv = new X86PascalRegisterCallingConvention(x86);
+		x86->RegisterCallingConvention(conv);
+		conv = new X86GoStackCallingConvention(x86);
 		x86->RegisterCallingConvention(conv);
 
 		x86->RegisterRelocationHandler("Mach-O", new x86MachoRelocationHandler());
@@ -4875,6 +6840,8 @@ extern "C"
 		conv = new X64WindowsCallingConvention(x64);
 		x64->RegisterCallingConvention(conv);
 		conv = new X64LinuxSystemCallConvention(x64);
+		x64->RegisterCallingConvention(conv);
+		conv = new X64GoStackCallingConvention(x64);
 		x64->RegisterCallingConvention(conv);
 
 		x64->RegisterRelocationHandler("Mach-O", new x64MachoRelocationHandler());

@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -107,7 +107,7 @@ def main():
 				with TqdmProgress(desc="", leave=False) as t:
 					with binaryninja.load(file, update_analysis=False, progress_func=lambda cur, max: t.progress(cur, max)) as bv:
 						project.upload_new_file(bv.file, folder, progress=lambda cur, max: t.progress(cur, max))
-			except:
+			except Exception:
 				tqdm.write(traceback.format_exc())
 
 

@@ -1,7 +1,10 @@
 #pragma once
 
+#include <memory>
 #include <regex>
+#include <shared_mutex>
 
+#include "CacheStringScanner.h"
 #include "SharedCache.h"
 #include "refcountobject.h"
 #include "ffi_global.h"
@@ -11,10 +14,6 @@ DECLARE_DSC_API_OBJECT(BNSharedCacheController, SharedCacheController);
 void RegisterSharedCacheControllerDestructor();
 
 namespace BinaryNinja::DSC {
-	static const char* METADATA_KEY = "shared_cache";
-	static const char* OLD_METADATA_KEY_COUNT = "SHAREDCACHE-ModifiedState-Count";
-	static const char* OLD_METADATA_KEY_PREFIX = "SHAREDCACHE-ModifiedState-";
-
 	// Represents the view state for a given `DSCache`
 	class SharedCacheController : public DSCRefCountObject
 	{
@@ -66,5 +65,11 @@ namespace BinaryNinja::DSC {
 		Ref<Metadata> GetMetadata() const;
 
 		void LoadMetadata(const Metadata& metadata);
+
+		// Run Obj-C processing for previously-loaded images iff their persisted metadata is
+		// missing or out-of-date (older databases, or databases from before a processor change).
+		void ProcessObjCForLoadedImagesIfNeeded(BinaryView& view);
+
+		std::unique_ptr<CacheStringScanner> CreateStringScanner();
 	};
 }  // namespace BinaryNinja::DSC

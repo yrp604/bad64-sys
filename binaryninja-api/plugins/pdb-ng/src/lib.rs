@@ -1,4 +1,4 @@
-// Copyright 2022-2025 Vector 35 Inc.
+// Copyright 2022-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,14 +21,12 @@ use std::sync::mpsc;
 use std::{env, fs};
 
 use anyhow::{anyhow, Result};
-use log::{debug, error, info};
 use pdb::PDB;
 
-use binaryninja::binary_view::{BinaryView, BinaryViewBase, BinaryViewExt};
+use binaryninja::binary_view::{BinaryView, BinaryViewBase};
 use binaryninja::debuginfo::{CustomDebugInfoParser, DebugInfo, DebugInfoParser};
 use binaryninja::download::{DownloadInstanceInputOutputCallbacks, DownloadProvider};
 use binaryninja::interaction::{MessageBoxButtonResult, MessageBoxButtonSet};
-use binaryninja::logger::Logger;
 use binaryninja::settings::{QueryOptions, Settings};
 use binaryninja::{interaction, user_directory};
 use parser::PDBParserInstance;
@@ -86,7 +84,7 @@ fn default_local_cache() -> Result<String> {
 fn active_local_cache(view: Option<&BinaryView>) -> Result<String> {
     // Check the local symbol store
     let mut settings_query_options = view.map(QueryOptions::new_with_view).unwrap_or_default();
-    let settings = Settings::new();
+    let settings = Settings::global();
     let mut local_store_path = settings
         .get_string_with_opts("pdb.files.localStoreAbsolute", &mut settings_query_options)
         .to_string();
@@ -163,13 +161,13 @@ fn parse_sym_srv(symbol_path: &str, default_store: String) -> Result<impl Iterat
 fn read_from_sym_store(bv: &BinaryView, path: &str) -> Result<(bool, Vec<u8>)> {
     if !path.contains("://") {
         // Local file
-        info!("Read local file: {}", path);
+        tracing::info!("Read local file: {}", path);
         let conts = fs::read(path)?;
         return Ok((false, conts));
     }
 
     let mut query_options = QueryOptions::new_with_view(bv);
-    if !Settings::new().get_bool_with_opts("network.pdbAutoDownload", &mut query_options) {
+    if !Settings::global().get_bool_with_opts("network.pdbAutoDownload", &mut query_options) {
         return Err(anyhow!("Auto download disabled"));
     }
 
@@ -183,7 +181,7 @@ fn read_from_sym_store(bv: &BinaryView, path: &str) -> Result<(bool, Vec<u8>)> {
         }
     };
 
-    info!("GET: {}", path);
+    tracing::info!("GET: {}", path);
 
     let dp =
         DownloadProvider::try_default().map_err(|_| anyhow!("No default download provider"))?;
@@ -277,23 +275,14 @@ fn search_sym_store(
 
 fn parse_pdb_info(view: &BinaryView) -> Option<PDBInfo> {
     match view.get_metadata::<u64>("DEBUG_INFO_TYPE") {
-        Some(Ok(0x53445352 /* 'SDSR' */)) => {}
+        Some(0x53445352 /* 'SDSR' */) => {}
         _ => return None,
     }
 
     // This is stored in the BV by the PE loader
-    let file_path = match view.get_metadata::<String>("PDB_FILENAME") {
-        Some(Ok(md)) => md,
-        _ => return None,
-    };
-    let mut guid = match view.get_metadata::<Vec<u8>>("PDB_GUID") {
-        Some(Ok(md)) => md,
-        _ => return None,
-    };
-    let age = match view.get_metadata::<u64>("PDB_AGE") {
-        Some(Ok(md)) => md as u32,
-        _ => return None,
-    };
+    let file_path = view.get_metadata::<String>("PDB_FILENAME")?;
+    let mut guid = view.get_metadata::<Vec<u8>>("PDB_GUID")?;
+    let age = view.get_metadata::<u64>("PDB_AGE")? as u32;
 
     if guid.len() != 16 {
         return None;
@@ -360,7 +349,7 @@ impl PDBParser {
     ) -> Result<()> {
         let mut pdb = PDB::open(Cursor::new(&conts))?;
 
-        let settings = Settings::new();
+        let settings = Settings::global();
         let mut settings_query_opts = QueryOptions::new_with_view(view);
 
         if let Some(info) = parse_pdb_info(view) {
@@ -398,9 +387,9 @@ impl PDBParser {
             if info.age != pdb_info.age {
                 if info.age > pdb_info.age {
                     // Have not seen this case, so I'm not sure if this is fatal
-                    info!("PDB age is older than our binary! Loading it anyway, but there may be missing information.");
+                    tracing::info!("PDB age is older than our binary! Loading it anyway, but there may be missing information.");
                 } else {
-                    info!("PDB age is newer than our binary! Loading it anyway, there probably shouldn't be any issues.");
+                    tracing::info!("PDB age is newer than our binary! Loading it anyway, there probably shouldn't be any issues.");
                 }
             }
 
@@ -425,7 +414,7 @@ impl PDBParser {
                             match fs::create_dir_all(&cab_path) {
                                 Ok(_) => true,
                                 Err(e) => {
-                                    error!("Could not create PDB cache dir: {}", e);
+                                    tracing::error!("Could not create PDB cache dir: {}", e);
                                     false
                                 }
                             }
@@ -434,9 +423,11 @@ impl PDBParser {
                             cab_path.push(&info.file_name);
                             match fs::write(&cab_path, conts) {
                                 Ok(_) => {
-                                    info!("Downloaded to: {}", cab_path.to_string_lossy());
+                                    tracing::info!("Downloaded to: {}", cab_path.to_string_lossy());
                                 }
-                                Err(e) => error!("Could not write PDB to cache: {}", e),
+                                Err(e) => {
+                                    tracing::error!("Could not write PDB to cache: {}", e)
+                                }
                             }
                         }
 
@@ -460,7 +451,7 @@ impl PDBParser {
                                 match fs::create_dir_all(&cab_path) {
                                     Ok(_) => true,
                                     Err(e) => {
-                                        error!("Could not create PDB cache dir: {}", e);
+                                        tracing::error!("Could not create PDB cache dir: {}", e);
                                         false
                                     }
                                 }
@@ -469,14 +460,19 @@ impl PDBParser {
                                 cab_path.push(&info.file_name);
                                 match fs::write(&cab_path, conts) {
                                     Ok(_) => {
-                                        info!("Downloaded to: {}", cab_path.to_string_lossy());
+                                        tracing::info!(
+                                            "Downloaded to: {}",
+                                            cab_path.to_string_lossy()
+                                        );
                                     }
-                                    Err(e) => error!("Could not write PDB to cache: {}", e),
+                                    Err(e) => {
+                                        tracing::error!("Could not write PDB to cache: {}", e)
+                                    }
                                 }
                             }
                         }
                     }
-                    Err(e) => error!("Could not get local cache for writing: {}", e),
+                    Err(e) => tracing::error!("Could not get local cache for writing: {}", e),
                 }
             }
         } else {
@@ -490,12 +486,12 @@ impl PDBParser {
 
                 match ask.as_str() {
                     "true" => {},
-                    "ask" => {
+                    "ask" if binaryninja::is_ui_enabled() => {
                         if interaction::show_message_box(
                             "No PDB Information",
                             "This file does not look like it was compiled with a PDB, so your PDB might not correctly apply to the analysis. Do you want to load it anyway?",
                             MessageBoxButtonSet::YesNoButtonSet,
-                            binaryninja::interaction::MessageBoxIcon::QuestionIcon
+                            interaction::MessageBoxIcon::QuestionIcon
                         ) == MessageBoxButtonResult::NoButton {
                             return Err(anyhow!("User cancelled missing info load"));
                         }
@@ -509,11 +505,11 @@ impl PDBParser {
 
         let mut inst = match PDBParserInstance::new(debug_info, view, pdb) {
             Ok(inst) => {
-                info!("Loaded PDB, parsing...");
+                tracing::info!("Loaded PDB, parsing...");
                 inst
             }
             Err(e) => {
-                error!("Could not open PDB: {}", e);
+                tracing::error!("Could not open PDB: {}", e);
                 return Err(e);
             }
         };
@@ -521,11 +517,11 @@ impl PDBParser {
             (*progress)(cur, max).map_err(|_| anyhow!("Cancelled"))
         })) {
             Ok(()) => {
-                info!("Parsed pdb");
+                tracing::info!("Parsed pdb");
                 Ok(())
             }
             Err(e) => {
-                error!("Could not parse PDB: {}", e);
+                tracing::error!("Could not parse PDB: {}", e);
                 if e.to_string() == "Todo" {
                     Ok(())
                 } else {
@@ -560,7 +556,7 @@ impl CustomDebugInfoParser for PDBParser {
                 Ok(_) => return true,
                 Err(e) if e.to_string() == "Cancelled" => return false,
                 Err(_) => {
-                    error!("Chosen PDB file failed to load");
+                    tracing::error!("Chosen PDB file failed to load");
                     return false;
                 }
             }
@@ -584,17 +580,20 @@ impl CustomDebugInfoParser for PDBParser {
                                 {
                                     Ok(_) => return true,
                                     Err(e) if e.to_string() == "Cancelled" => return false,
-                                    Err(e) => debug!("Skipping, {}", e.to_string()),
+                                    Err(e) => tracing::debug!("Skipping, {}", e.to_string()),
                                 }
                             }
                             Ok(None) => {}
-                            e => error!("Error searching symbol store {}: {:?}", store, e),
+                            e => {
+                                tracing::error!("Error searching symbol store {}: {:?}", store, e)
+                            }
                         }
                     }
                 }
             }
 
             // Does the raw path just exist?
+            tracing::info!("Try read local: {}", info.path);
             if PathBuf::from(&info.path).exists() {
                 match fs::read(&info.path) {
                     Ok(conts) => match self
@@ -602,37 +601,59 @@ impl CustomDebugInfoParser for PDBParser {
                     {
                         Ok(_) => return true,
                         Err(e) if e.to_string() == "Cancelled" => return false,
-                        Err(e) => debug!("Skipping, {}", e.to_string()),
+                        Err(e) => tracing::debug!("Skipping, {}", e.to_string()),
                     },
                     Err(e) if e.to_string() == "Cancelled" => return false,
-                    Err(e) => debug!("Could not read pdb: {}", e.to_string()),
+                    Err(e) => tracing::debug!("Could not read pdb: {}", e.to_string()),
                 }
             }
 
-            // Try in the same directory as the file
-            let mut potential_path = PathBuf::from(view.file().filename().to_string());
+            // Try both the embedded PDB name and the binary's current name beside the file.
+            let binary_path = view.file().file_path();
+            let mut potential_path = binary_path.clone();
             potential_path.pop();
             potential_path.push(&info.file_name);
-            if potential_path.exists() {
-                match fs::read(potential_path) {
-                    Ok(conts) => match self
-                        .load_from_file(&conts, debug_info, view, &progress, true, false)
-                    {
-                        Ok(_) => return true,
+            let mut potential_paths = vec![potential_path];
+            let renamed_path = binary_path.with_extension("pdb");
+            if !potential_paths.contains(&renamed_path) {
+                potential_paths.push(renamed_path);
+            }
+            for potential_path in potential_paths {
+                tracing::info!("Try read local: {}", potential_path.display());
+                if potential_path.exists() {
+                    match fs::read(potential_path) {
+                        Ok(conts) => match self
+                            .load_from_file(&conts, debug_info, view, &progress, true, false)
+                        {
+                            Ok(_) => return true,
+                            Err(e) if e.to_string() == "Cancelled" => return false,
+                            Err(e) => tracing::debug!("Skipping, {}", e.to_string()),
+                        },
                         Err(e) if e.to_string() == "Cancelled" => return false,
-                        Err(e) => debug!("Skipping, {}", e.to_string()),
-                    },
-                    Err(e) if e.to_string() == "Cancelled" => return false,
-                    Err(e) => debug!("Could not read pdb: {}", e.to_string()),
+                        Err(e) => tracing::debug!("Could not read pdb: {}", e.to_string()),
+                    }
                 }
             }
 
-            // Try in the same folder in the project
+            // Try both names in the same project folder, using the project's name for the binary.
             if let Some(project_file) = view.file().project_file() {
                 let project_file_folder_id = project_file.folder().map(|x| x.id());
-                for file in project_file.project().files().iter() {
-                    let file_folder_id = file.folder().map(|x| x.id());
-                    if file.name() == info.file_name && file_folder_id == project_file_folder_id {
+                let mut potential_names = vec![info.file_name.clone()];
+                let renamed_name = PathBuf::from(project_file.name())
+                    .with_extension("pdb")
+                    .to_string_lossy()
+                    .into_owned();
+                if !potential_names.contains(&renamed_name) {
+                    potential_names.push(renamed_name);
+                }
+                let files = project_file.project().files();
+                for potential_name in potential_names {
+                    for file in files.iter() {
+                        let file_folder_id = file.folder().map(|x| x.id());
+                        if file.name() != potential_name || file_folder_id != project_file_folder_id
+                        {
+                            continue;
+                        }
                         if !file.exists_on_disk() {
                             // If the file doesn't exist, don't consider it
                             // TODO: if we're connected to a remote project, offer to download the file
@@ -640,16 +661,24 @@ impl CustomDebugInfoParser for PDBParser {
                         }
 
                         if let Some(path_on_disk) = file.path_on_disk() {
+                            tracing::info!(
+                                "Try project file: {} / {}",
+                                file.path_in_project().display(),
+                                path_on_disk.display()
+                            );
+
                             match fs::read(path_on_disk) {
                                 Ok(conts) => match self.load_from_file(
                                     &conts, debug_info, view, &progress, true, false,
                                 ) {
                                     Ok(_) => return true,
                                     Err(e) if e.to_string() == "Cancelled" => return false,
-                                    Err(e) => debug!("Skipping, {}", e.to_string()),
+                                    Err(e) => tracing::debug!("Skipping, {}", e.to_string()),
                                 },
                                 Err(e) if e.to_string() == "Cancelled" => return false,
-                                Err(e) => debug!("Could not read pdb: {}", e.to_string()),
+                                Err(e) => {
+                                    tracing::debug!("Could not read pdb: {}", e.to_string())
+                                }
                             }
                         }
                     }
@@ -664,20 +693,21 @@ impl CustomDebugInfoParser for PDBParser {
                         {
                             Ok(_) => return true,
                             Err(e) if e.to_string() == "Cancelled" => return false,
-                            Err(e) => debug!("Skipping, {}", e.to_string()),
+                            Err(e) => tracing::debug!("Skipping, {}", e.to_string()),
                         }
                     }
                     Ok(None) => {}
-                    e => error!(
+                    e => tracing::error!(
                         "Error searching local symbol store {}: {:?}",
-                        local_store_path, e
+                        local_store_path,
+                        e
                     ),
                 }
             }
 
             // Next, try downloading from all symbol servers in the server list
             let mut query_options = QueryOptions::new_with_view(view);
-            let server_list = Settings::new()
+            let server_list = Settings::global()
                 .get_string_list_with_opts("pdb.files.symbolServerList", &mut query_options);
 
             for server in server_list.iter() {
@@ -686,11 +716,13 @@ impl CustomDebugInfoParser for PDBParser {
                         match self.load_from_file(&conts, debug_info, view, &progress, true, true) {
                             Ok(_) => return true,
                             Err(e) if e.to_string() == "Cancelled" => return false,
-                            Err(e) => debug!("Skipping, {}", e.to_string()),
+                            Err(e) => tracing::debug!("Skipping, {}", e.to_string()),
                         }
                     }
                     Ok(None) => {}
-                    e => error!("Error searching remote symbol server {}: {:?}", server, e),
+                    e => {
+                        tracing::error!("Error searching remote symbol server {}: {:?}", server, e)
+                    }
                 }
             }
         }
@@ -718,10 +750,10 @@ pub extern "C" fn PDBPluginInit() -> bool {
 }
 
 fn init_plugin() -> bool {
-    Logger::new("PDB").init();
+    binaryninja::tracing_init!("PDB Import");
     DebugInfoParser::register("PDB", PDBParser {});
 
-    let settings = Settings::new();
+    let settings = Settings::global();
     settings.register_group("pdb", "PDB Loader");
     settings.register_setting_json(
         "pdb.files.localStoreAbsolute",
@@ -882,6 +914,18 @@ fn init_plugin() -> bool {
             "default" : true,
             "aliases" : [],
             "description" : "Parse Symbol names and types. If you turn this off, you will only load Types.",
+            "ignore" : []
+        }"#,
+    );
+
+    settings.register_setting_json(
+        "pdb.features.passStructuresByValue",
+        r#"{
+            "title" : "Always Pass Structures By Value",
+            "type" : "boolean",
+            "default" : false,
+            "aliases" : [],
+            "description" : "Always pass structures by value even if they are implicitly passed by pointer in the calling convention (experimental). This more closely matches the original source code.",
             "ignore" : []
         }"#,
     );

@@ -1,6 +1,7 @@
 #include <binaryninjaapi.h>
 #include "KernelCacheView.h"
 #include "transformers/KernelCacheTransforms.h"
+#include "workflow/KernelCacheWorkflow.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,6 +18,7 @@ extern "C"
 	{
 		KernelCacheViewType::Register();
 		RegisterTransformers();
+		RegisterKernelCacheWorkflow();
 		return true;
 	}
 }

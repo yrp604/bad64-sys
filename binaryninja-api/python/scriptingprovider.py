@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -49,14 +49,18 @@ from . import binaryview
 from . import basicblock
 from . import function
 from . import log
-from .pluginmanager import RepositoryManager
+from .extensionmanager import RepositoryManager
+from .requirementcheck import (pip_dependency_conflicts, pip_requirements_excluding_packages,
+	pip_requirements_from_dependency_metadata, pip_requirements_satisfied)
 from .enums import ScriptingProviderExecuteResult, ScriptingProviderInputReadyState
 from .settings import Settings
 from .enums import SettingsScope
+import json
 
 _WARNING_REGEX = re.compile(r'^\S+:\d+: \w+Warning: ')
 
 logger = log.Logger(0, "ScriptingProvider")
+dependency_installer_logger = log.Logger(0, "DependencyInstaller")
 
 class _ThreadActionContext:
 	_actions = []
@@ -97,26 +101,26 @@ class ScriptingOutputListener:
 	def _output(self, ctxt, text):
 		try:
 			self.notify_output(text)
-		except:
+		except Exception:
 			logger.log_error_for_exception("Unhandled Python exception in ScriptingOutputListener._output")
 
 	def _warning(self, ctxt, text):
 		try:
 			self.notify_warning(text)
-		except:
+		except Exception:
 			logger.log_error_for_exception("Unhandled Python exception in ScriptingOutputListener._warning")
 
 
 	def _error(self, ctxt, text):
 		try:
 			self.notify_error(text)
-		except:
+		except Exception:
 			logger.log_error_for_exception("Unhandled Python exception in ScriptingOutputListener._error")
 
 	def _input_ready_state_changed(self, ctxt, state):
 		try:
 			self.notify_input_ready_state_changed(state)
-		except:
+		except Exception:
 			logger.log_error_for_exception("Unhandled Python exception in ScriptingOutputListener._input_ready_state_changed")
 
 	def notify_output(self, text):
@@ -151,6 +155,8 @@ class ScriptingInstance:
 			self._cb.setCurrentAddress = self._cb.setCurrentAddress.__class__(self._set_current_address)
 			self._cb.setCurrentSelection = self._cb.setCurrentSelection.__class__(self._set_current_selection)
 			self._cb.completeInput = self._cb.completeInput.__class__(self._complete_input)
+			self._cb.canCompleteArguments = self._cb.canCompleteArguments.__class__(self._can_complete_arguments)
+			self._cb.completeArguments = self._cb.completeArguments.__class__(self._complete_arguments)
 			self._cb.stop = self._cb.stop.__class__(self._stop)
 			self._completed_input = None
 			self.handle = core.BNInitScriptingInstance(provider.handle, self._cb)
@@ -166,40 +172,40 @@ class ScriptingInstance:
 	def _external_ref_taken(self, ctxt):
 		try:
 			self.__class__._registered_instances.append(self)
-		except:
+		except Exception:
 			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._external_ref_taken")
 
 	def _external_ref_released(self, ctxt):
 		try:
 			self.__class__._registered_instances.remove(self)
-		except:
+		except Exception:
 			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._external_ref_released")
 
 	def _execute_script_input(self, ctxt, text):
 		try:
 			return self.perform_execute_script_input(text)
-		except:
+		except Exception:
 			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._execute_script_input")
 			return ScriptingProviderExecuteResult.InvalidScriptInput
 
 	def _execute_script_input_from_filename(self, ctxt, filename):
 		try:
 			return self.perform_execute_script_input_from_filename(filename)
-		except:
+		except Exception:
 			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._execute_script_input_from_filename")
 			return ScriptingProviderExecuteResult.InvalidScriptInput
 
 	def _cancel_script_input(self, ctxt):
 		try:
 			return self.perform_cancel_script_input()
-		except:
+		except Exception:
 			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._cancel_script_input")
 			return ScriptingProviderExecuteResult.ScriptExecutionCancelled
 
 	def _release_binary_view(self, ctxt, view):
 		try:
 			binaryview.BinaryView._cache_remove(view)
-		except:
+		except Exception:
 			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._release_binary_view")
 
 	def _set_current_binary_view(self, ctxt, view):
@@ -210,7 +216,7 @@ class ScriptingInstance:
 			else:
 				view = None
 			self.perform_set_current_binary_view(view)
-		except:
+		except Exception:
 			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._set_current_binary_view")
 
 	def _set_current_function(self, ctxt, func):
@@ -220,7 +226,7 @@ class ScriptingInstance:
 			else:
 				func = None
 			self.perform_set_current_function(func)
-		except:
+		except Exception:
 			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._set_current_function")
 
 	def _set_current_basic_block(self, ctxt, block):
@@ -239,19 +245,19 @@ class ScriptingInstance:
 			else:
 				block = None
 			self.perform_set_current_basic_block(block)
-		except:
+		except Exception:
 			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._set_current_basic_block")
 
 	def _set_current_address(self, ctxt, addr):
 		try:
 			self.perform_set_current_address(addr)
-		except:
+		except Exception:
 			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._set_current_address")
 
 	def _set_current_selection(self, ctxt, begin, end):
 		try:
 			self.perform_set_current_selection(begin, end)
-		except:
+		except Exception:
 			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._set_current_selection")
 
 	def _complete_input(self, ctxt, text, state):
@@ -259,14 +265,37 @@ class ScriptingInstance:
 			if not isinstance(text, str):
 				text = text.decode("utf-8")
 			return core.BNAllocString(self.perform_complete_input(text, state))
-		except:
+		except Exception:
 			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._complete_input")
 			return core.BNAllocString("")
+
+	def _can_complete_arguments(self, ctx, text):
+		try:
+			if not isinstance(text, str):
+				text = text.decode("utf-8")
+			return self.perform_can_complete_arguments(text)
+		except Exception:
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._can_complete_arguments")
+			return False
+
+	def _complete_arguments(self, ctx, text, argument_start):
+		try:
+			if not isinstance(text, str):
+				text = text.decode("utf-8")
+			result, start = self.perform_complete_arguments(text)
+			argument_start[0] = start
+			if result is None:
+				return None
+			return core.BNAllocString(result)
+		except Exception:
+			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._complete_arguments")
+			argument_start[0] = 0
+			return None
 
 	def _stop(self, ctxt):
 		try:
 			self.perform_stop()
-		except:
+		except Exception:
 			logger.log_error_for_exception("Unhandled Python exception in ScriptingInstance._stop")
 
 	@abc.abstractmethod
@@ -303,6 +332,14 @@ class ScriptingInstance:
 
 	@abc.abstractmethod
 	def perform_complete_input(self, text: str, state) -> str:
+		return NotImplemented
+
+	@abc.abstractmethod
+	def perform_can_complete_arguments(self, text: str) -> bool:
+		return NotImplemented
+
+	@abc.abstractmethod
+	def perform_complete_arguments(self, text: str) -> Tuple[Optional[str], int]:
 		return NotImplemented
 
 	@abc.abstractmethod
@@ -359,6 +396,14 @@ class ScriptingInstance:
 	def complete_input(self, text, state):
 		return core.BNScriptingInstanceCompleteInput(self.handle, text, state)
 
+	def can_complete_arguments(self, text):
+		return core.BNScriptingInstanceCanCompleteArguments(self.handle, text)
+
+	def complete_arguments(self, text):
+		argument_start = ctypes.c_ulonglong()
+		result = core.BNScriptingInstanceCompleteArguments(self.handle, text, argument_start)
+		return result, argument_start.value
+
 	def stop(self):
 		core.BNStopScriptingInstance(self.handle)
 
@@ -399,6 +444,23 @@ class _ScriptingProviderMetaclass(type):
 			raise KeyError("'%s' is not a valid scripting provider" % str(value))
 		return ScriptingProvider(provider)
 
+	def __contains__(cls: '_ScriptingProviderMetaclass', name: object) -> bool:
+		if not isinstance(name, str):
+			return False
+		try:
+			cls[name]
+			return True
+		except KeyError:
+			return False
+
+	def get(cls: '_ScriptingProviderMetaclass', name: str, default: Any = None) -> Optional['ScriptingProvider']:
+		try:
+			return cls[name]
+		except KeyError:
+			if default is not None:
+				return default
+			return None
+
 
 class ScriptingProvider(metaclass=_ScriptingProviderMetaclass):
 	_registered_providers = []
@@ -416,9 +478,23 @@ class ScriptingProvider(metaclass=_ScriptingProviderMetaclass):
 		self._cb.context = 0
 		self._cb.createInstance = self._cb.createInstance.__class__(self._create_instance)
 		self._cb.loadModule = self._cb.loadModule.__class__(self._load_module)
-		self._cb.installModules = self._cb.installModules.__class__(self._install_modules)
-		self._cb.moduleInstalled = self._cb.installModules.__class__(self._module_installed)
+		self._cb.installModules = self._cb.installModules.__class__(self._install_modules_for_callback)
 		self.handle = core.BNRegisterScriptingProvider(self.__class__.name, self.__class__.apiName, self._cb)
+		self._module_installed_cb = core.BNScriptingProviderModuleInstalledCallbacks()
+		self._module_installed_cb.context = None
+		self._module_installed_cb.moduleInstalled = self._module_installed_cb.moduleInstalled.__class__(self._module_installed)
+		core.BNSetScriptingProviderModuleInstalledCallback(self.handle, self._module_installed_cb)
+		self._install_modules_with_exclusions_cb = core.BNScriptingProviderInstallModulesWithExclusionsCallbacks()
+		self._install_modules_with_exclusions_cb.context = None
+		self._install_modules_with_exclusions_cb.installModulesWithExclusions = \
+			self._install_modules_with_exclusions_cb.installModulesWithExclusions.__class__(
+				self._install_modules_with_exclusions_for_callback)
+		core.BNSetScriptingProviderInstallModulesWithExclusionsCallback(
+			self.handle, self._install_modules_with_exclusions_cb)
+		self._dependency_conflict_cb = core.BNScriptingProviderDependencyConflictCallbacks()
+		self._dependency_conflict_cb.context = None
+		self._dependency_conflict_cb.getDependencyConflicts = self._dependency_conflict_cb.getDependencyConflicts.__class__(self._dependency_conflicts)
+		core.BNSetScriptingProviderDependencyConflictCallback(self.handle, self._dependency_conflict_cb)
 		self.__class__._registered_providers.append(self)
 
 	def _create_instance(self, ctxt):
@@ -430,7 +506,7 @@ class ScriptingProvider(metaclass=_ScriptingProviderMetaclass):
 			script_instance = core.BNNewScriptingInstanceReference(result.handle)
 			assert script_instance is not None, "core.BNNewScriptingInstanceReference returned None"
 			return ctypes.cast(script_instance, ctypes.c_void_p).value
-		except:
+		except Exception:
 			logger.log_error_for_exception("Unhandled Python exception in ScriptingProvider._create_instance")
 			return None
 
@@ -446,8 +522,33 @@ class ScriptingProvider(metaclass=_ScriptingProviderMetaclass):
 	def _install_modules(self, ctx, modules: bytes) -> bool:
 		return False
 
-	def _module_installed(self, ctx, module: str) -> bool:
+	def _install_modules_with_exclusions(self, ctx, modules: bytes, excluded_package_names, excluded_package_name_count: int) -> bool:
+		exclusions = {
+			excluded_package_names[i].decode("utf-8") for i in range(excluded_package_name_count)
+			if excluded_package_names[i] is not None
+		}
+		filtered_modules = pip_requirements_excluding_packages(modules, exclusions)
+		return self._install_modules(ctx, "\n".join(filtered_modules).encode("utf-8"))
+
+	def _install_modules_with_exclusions_for_callback(
+			self, ctx, modules: bytes, excluded_package_names, excluded_package_name_count: int) -> bool:
+		try:
+			return self._install_modules_with_exclusions(
+				ctx, modules, excluded_package_names, excluded_package_name_count)
+		except Exception:
+			dependency_installer_logger.log_error_for_exception("Dependency installation failed")
+			return False
+
+	def _module_installed(self, ctx, modules: bytes) -> bool:
 		return False
+
+	def _dependency_conflicts(self, ctx, candidate, installed_plugins, installed_plugin_count):
+		return core.BNAllocString(json.dumps([{
+			"status": "unknown_compatibility",
+			"package_name": "<unknown>",
+			"candidate_requirements": [],
+			"installed_requirements": [],
+		}]))
 
 
 class _PythonScriptingInstanceOutput:
@@ -579,7 +680,7 @@ class _PythonScriptingInstanceInput:
 
 class BlacklistedDict(dict):
 	def __init__(self, blacklist, *args):
-		super(BlacklistedDict, self).__init__(*args)
+		super().__init__(*args)
 		self.__blacklist = set(blacklist)
 		self._blacklist_enabled = True
 
@@ -589,7 +690,7 @@ class BlacklistedDict(dict):
 			    'Setting variable "{}" will have no affect as it is automatically controlled by the ScriptingProvider.\n'.
 			    format(k)
 			)
-		super(BlacklistedDict, self).__setitem__(k, v)
+		super().__setitem__(k, v)
 
 	def enable_blacklist(self, enabled):
 		self.__enable_blacklist = enabled
@@ -642,7 +743,7 @@ def bninspect(code_, globals_, locals_):
 				else:
 					print(doc)
 					return
-		except:
+		except Exception:
 			pass
 
 		doc = inspect.getdoc(value)
@@ -658,7 +759,7 @@ def bninspect(code_, globals_, locals_):
 			return
 
 		print(f"No documentation found for {code_}")
-	except:
+	except Exception:
 		# Hide exceptions so the normal execution can report them
 		pass
 
@@ -689,7 +790,6 @@ class PythonScriptingInstance(ScriptingInstance):
 			self.current_addr = 0
 			self.current_selection_begin = 0
 			self.current_selection_end = 0
-			self.current_dbg = None
 
 			# Selections that were current as of last issued command
 			self.active_view = None
@@ -699,7 +799,6 @@ class PythonScriptingInstance(ScriptingInstance):
 			self.active_selection_begin = 0
 			self.active_selection_end = 0
 			self.active_file_offset = None
-			self.active_dbg = None
 			self.active_il_index = 0
 			self.selection_start_il_index = 0
 			self.active_il_function = None
@@ -779,7 +878,7 @@ from binaryninja import *
 					try:
 						try:
 							self.update_locals()
-						except:
+						except Exception:
 							traceback.print_exc()
 
 						if isinstance(_code, (lambda: 0).__code__.__class__):
@@ -804,7 +903,7 @@ from binaryninja import *
 							value, scope = Settings().get_bool_with_scope("python.updateAnalysisAfterCommand")
 							if scope == SettingsScope.SettingsInvalidScope or value:
 								self.active_view.update_analysis()
-					except:
+					except Exception:
 						traceback.print_exc()
 					finally:
 						PythonScriptingInstance._interpreter.value = None
@@ -817,7 +916,6 @@ from binaryninja import *
 			self.active_addr = self.current_addr
 			self.active_selection_begin = self.current_selection_begin
 			self.active_selection_end = self.current_selection_end
-			self.active_dbg = self.current_dbg
 
 			self.locals.blacklist_enabled = False
 
@@ -848,7 +946,7 @@ from binaryninja import *
 
 				try:
 					value = var.get_value(self.instance)
-				except:
+				except Exception:
 					value = None
 				self.locals[name] = value
 				self.cached_locals[name] = value
@@ -868,7 +966,7 @@ from binaryninja import *
 
 				try:
 					var.set_value(self.instance, old_value, new_value)
-				except:
+				except Exception:
 					sys.stderr.write(f"Exception thrown trying to update variable:\n")
 					traceback.print_exc(file=sys.stderr)
 
@@ -891,7 +989,7 @@ from binaryninja import *
 				return self.active_view.insert(self.active_selection_begin, data)
 
 	def __init__(self, provider):
-		super(PythonScriptingInstance, self).__init__(provider)
+		super().__init__(provider)
 		self.interpreter = PythonScriptingInstance.InterpreterThread(self)
 		self.interpreter.start()
 		self.queued_input = ""
@@ -908,13 +1006,11 @@ from binaryninja import *
 			# So `from debugger import DebuggerController` would not work.
 			from debugger import DebuggerController
 			self.DebuggerController = DebuggerController
-			self.debugger_imported = True
 		else:
 			if settings.contains('corePlugins.debugger') and settings.get_bool('corePlugins.debugger') and \
 				(os.environ.get('BN_DISABLE_CORE_DEBUGGER') is None):
 				from .debugger import DebuggerController
 				self.DebuggerController = DebuggerController
-				self.debugger_imported = True
 
 	@abc.abstractmethod
 	def perform_stop(self):
@@ -937,7 +1033,7 @@ from binaryninja import *
 				result = code.compile_command(text)
 			else:
 				result = code.compile_command(text.decode("utf-8"))
-		except:
+		except Exception:
 			result = False
 
 		if result is None:
@@ -984,12 +1080,6 @@ from binaryninja import *
 	@abc.abstractmethod
 	def perform_set_current_binary_view(self, view):
 		self.interpreter.current_view = view
-		if view is not None:
-			if self.debugger_imported:
-				self.interpreter.current_dbg = self.DebuggerController(view)
-
-		else:
-			self.interpreter.current_dbg = None
 
 		# This is a workaround that allows BN to properly free up resources when the last tab of a binary view is closed.
 		# Without this update, the interpreter local variables will NOT be updated until the user interacts with the
@@ -1001,7 +1091,7 @@ from binaryninja import *
 		if view is None:
 			try:
 				self.interpreter.update_locals()
-			except:
+			except Exception:
 				traceback.print_exc()
 
 	@abc.abstractmethod
@@ -1025,13 +1115,31 @@ from binaryninja import *
 	def perform_complete_input(self, text, state):
 		try:
 			self.interpreter.update_locals()
-		except:
+		except Exception:
 			traceback.print_exc()
 		result = self.interpreter.completer.complete(text, state)
 		if result is None:
 			return ""
 		return result
 
+	@abc.abstractmethod
+	def perform_can_complete_arguments(self, text: str) -> bool:
+		try:
+			self.interpreter.update_locals()
+		except Exception:
+			traceback.print_exc()
+		return self.interpreter.completer.can_complete_arguments(text)
+
+	@abc.abstractmethod
+	def perform_complete_arguments(self, text: str) -> Tuple[Optional[str], int]:
+		try:
+			self.interpreter.update_locals()
+		except Exception:
+			traceback.print_exc()
+		result = self.interpreter.completer.complete_arguments(text)
+		if result[0] is None:
+			return None, 0
+		return result
 
 class PythonScriptingProvider(ScriptingProvider):
 	name = "Python"
@@ -1080,12 +1188,8 @@ class PythonScriptingProvider(ScriptingProvider):
 			plugin = repo[module]
 
 			if not force and self.apiName not in plugin.api:
-				raise ValueError(f"Plugin API name is not {self.name}")
+				raise ValueError(f"Plugin '{plugin.name}' API name '{plugin.api}' is not {self.name}")
 
-			if not force and core.core_platform not in plugin.install_platforms:
-				raise ValueError(
-				    f"Current platform {core.core_platform} isn't in list of valid platforms for this plugin {plugin.install_platforms}"
-				)
 			if not plugin.installed:
 				plugin.installed = True
 
@@ -1108,15 +1212,41 @@ class PythonScriptingProvider(ScriptingProvider):
 			logger.log_info(f"Ignored python UI plugin: {repo_path}/{module}")
 		return False
 
-	# This function can only be used to execute commands that return ASCII-only output, otherwise the decoding will fail
-	def _run_args(self, args, env: Optional[Dict]=None):
+	def _run_args(self, args, env: Optional[Dict]=None, output_logger=None):
 		si = None
 		if sys.platform == "win32":
 			si = subprocess.STARTUPINFO()
 			si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 
 		try:
+			if output_logger is not None:
+				with subprocess.Popen(
+				    args,
+				    startupinfo=si,
+				    stdout=subprocess.PIPE,
+				    stderr=subprocess.STDOUT,
+				    env=env,
+				    text=True,
+				    encoding="utf-8",
+				    errors="replace",
+				    bufsize=1,
+				) as process:
+					output_lines = []
+					assert process.stdout is not None
+					for line in process.stdout:
+						output_lines.append(line)
+						output_logger.log_debug(line.rstrip("\r\n"))
+					result = "".join(output_lines)
+					return_code = process.wait()
+					if return_code == 0:
+						return (True, result)
+					error = subprocess.CalledProcessError(return_code, args)
+					output_logger.log_debug(str(error))
+					return (False, f"{error}\n{result}" if result else str(error))
 			return (True, subprocess.check_output(args, startupinfo=si, stderr=subprocess.STDOUT, env=env).decode("utf-8"))
+		except subprocess.CalledProcessError as se:
+			output = se.output.decode("utf-8", errors="replace") if se.output else ""
+			return (False, f"{se}\n{output}" if output else str(se))
 		except subprocess.SubprocessError as se:
 			return (False, str(se))
 
@@ -1154,7 +1284,7 @@ class PythonScriptingProvider(ScriptingProvider):
 
 		if sys.platform == "darwin":
 			if using_bundled_python:
-				python_bin = Path(binaryninja.get_install_directory()).parent / f"Frameworks/Python.framework/Versions/Current/bin/python3"
+				python_bin = Path(binaryninja.get_install_directory()).parent / "Frameworks" / "Python.framework" / "Versions" / "Current" / "bin" / "python3"
 			else:
 				python_bin = str(Path(python_lib).parent / f"bin/python{python_lib_version}")
 		elif sys.platform == "linux":
@@ -1176,27 +1306,25 @@ class PythonScriptingProvider(ScriptingProvider):
 				return os.path.realpath(dlinfo.dli_fname.decode())
 
 			if using_bundled_python:
-				python_lib = _linked_libpython()
-				if python_lib is None:
-					return (
-					    None,
-					    "Failed: No python specified. Specify a full python installation in your 'Python Interpreter' and try again"
-					)
+				python_home = Path(binaryninja.get_install_directory()) / "plugins" / "python"
+				python_lib = python_home / "lib" / f"libpython{python_lib_version}.so.1.0"
+				python_bin = python_home / "bin" / f"python{python_lib_version}"
 
-			if python_lib == os.path.realpath(sys.executable):
-				python_bin = python_lib
-			else:
-				python_path = Path(python_lib)
-				for path in python_path.parents:
-					if path.name in ["lib", "lib64"]:
-						break
+			if python_bin is None or python_bin == "":
+				if os.path.realpath(str(python_lib)) == os.path.realpath(sys.executable):
+					python_bin = python_lib
 				else:
-					return (None, f"Failed to find python binary from {python_lib}")
+					python_path = Path(python_lib)
+					for path in python_path.parents:
+						if path.name in ["lib", "lib64"]:
+							break
+					else:
+						return (None, f"Failed to find python binary from {python_lib}")
 
-				python_bin = path.parent / f"bin/python{python_lib_version}"
+					python_bin = path.parent / f"bin/python{python_lib_version}"
 		else:
 			if using_bundled_python:
-				python_bin = Path(binaryninja.get_install_directory()) / "plugins\\python\\python.exe"
+				python_bin = Path(binaryninja.get_install_directory()) / "plugins" / "python" / "python.exe"
 			else:
 				python_bin = Path(python_lib).parent / "python.exe"
 		python_bin_version = self._bin_version(python_bin, python_env=python_env)
@@ -1206,27 +1334,50 @@ class PythonScriptingProvider(ScriptingProvider):
 		return (python_bin, "Success")
 
 	def _get_python_environment(self, using_bundled_python: bool=False) -> Optional[Dict]:
-		if using_bundled_python and sys.platform == "darwin":
-			return {"PYTHONHOME": Path(binaryninja.get_install_directory()).parent / f"Resources/bundled-python3"}
-		return None
+		if not using_bundled_python:
+			return None
+
+		env = os.environ.copy()
+		env.pop("PYTHONPATH", None)
+		env.pop("PYTHONSTARTUP", None)
+
+		if sys.platform == "darwin":
+			env["PYTHONHOME"] = str(Path(binaryninja.get_install_directory()).parent / "Resources" / "bundled-python3")
+		elif sys.platform == "linux":
+			python_home = Path(binaryninja.get_install_directory()) / "plugins" / "python"
+			env["PYTHONHOME"] = str(python_home / "bundled-python3")
+			env.pop("LD_LIBRARY_PATH", None)
+		elif sys.platform == "win32":
+			python_home = Path(binaryninja.get_install_directory()) / "plugins" / "python"
+			env["PYTHONHOME"] = str(python_home)
+			env["PATH"] = str(python_home) + os.pathsep + env["PATH"] if env.get("PATH") else str(python_home)
+
+		return env
+
+	def _install_modules_for_callback(self, ctx, modules: bytes) -> bool:
+		try:
+			return self._install_modules(ctx, modules)
+		except Exception:
+			dependency_installer_logger.log_error_for_exception("Dependency installation failed")
+			return False
 
 	def _install_modules(self, ctx, _modules: bytes) -> bool:
 		# This callback should not be called directly
-		modules = _modules.decode("utf-8")
-		if len(modules.strip()) == 0:
+		modules = pip_requirements_from_dependency_metadata(_modules)
+		if len(modules) == 0:
 			return True
 		python_lib = settings.Settings().get_string("python.interpreter")
 		python_bin_override = settings.Settings().get_string("python.binaryOverride")
 		python_env = self._get_python_environment(using_bundled_python=not python_lib)
 		python_bin, status = self._get_executable_for_libpython(python_lib, python_bin_override, python_env=python_env)
 		if python_bin is not None and not self._pip_exists(str(python_bin), python_env=python_env):
-			logger.log_error(
+			dependency_installer_logger.log_error(
 			    f"Pip not installed for configured python: {python_bin}.\n"
 			    "Please install pip or switch python versions."
 			)
 			return False
 		if python_bin is None:
-			logger.log_error(
+			dependency_installer_logger.log_error(
 			    f"Unable to discover python executable required for installing python modules: {status}\n"
 			    "Please specify a path to a python binary in the 'Python Path Override'"
 			)
@@ -1237,7 +1388,7 @@ class PythonScriptingProvider(ScriptingProvider):
 		], env=python_env).decode("utf-8")
 		python_lib_version = f"{sys.version_info.major}.{sys.version_info.minor}"
 		if (python_bin_version != python_lib_version):
-			logger.log_error(
+			dependency_installer_logger.log_error(
 			    f"Python Binary Setting {python_bin_version} incompatible with python library {python_lib_version}"
 			)
 			return False
@@ -1249,8 +1400,9 @@ class PythonScriptingProvider(ScriptingProvider):
 
 		args.extend(["install", "--upgrade", "--upgrade-strategy", "only-if-needed"])
 		venv = settings.Settings().get_string("python.virtualenv")
+		venv_path = Path(os.path.normpath(venv)) if venv is not None else None
 		in_virtual_env = 'VIRTUAL_ENV' in os.environ
-		if venv is not None and venv.endswith("site-packages") and Path(venv).is_dir() and not in_virtual_env:
+		if venv_path is not None and venv_path.name == "site-packages" and venv_path.is_dir() and not in_virtual_env:
 			args.extend(["--target", venv])
 		else:
 			user_dir = binaryninja.user_directory()
@@ -1261,19 +1413,57 @@ class PythonScriptingProvider(ScriptingProvider):
 			) / f"python{sys.version_info.major}{sys.version_info.minor}" / "site-packages"
 			site_package_dir.mkdir(parents=True, exist_ok=True)
 			args.extend(["--target", str(site_package_dir)])
-		args.extend(list(filter(len, modules.split("\n"))))
+		args.extend(list(filter(len, modules)))
 		logger.log_info(f"Running pip {args}")
-		status, result = self._run_args(args, env=python_env)
+		status, result = self._run_args(args, env=python_env, output_logger=dependency_installer_logger)
 		if status:
+			logger.log_debug(f"pip output: {result}")
 			importlib.invalidate_caches()
 		else:
-			logger.log_error(f"Error while attempting to install requirements {result}")
+			logger.log_error_with_traceback(
+			    "Failed to install requirements. Click (Details...) for pip output.",
+			    stack_trace=result,
+			)
 		return status
 
-	def _module_installed(self, ctx, module: str) -> bool:
-		if self._python_bin is None:
+	def _module_installed(self, ctx, _modules: bytes) -> bool:
+		try:
+			modules = pip_requirements_from_dependency_metadata(_modules)
+		except Exception:
+			logger.log_error_for_exception("Failed to parse plugin dependency metadata")
 			return False
-		return re.split('>|=|,', module.strip(), 1)[0] in self._satisfied_dependencies(self._python_bin)
+
+		if len(modules) == 0:
+			return True
+
+		try:
+			return pip_requirements_satisfied(modules)
+		except Exception:
+			logger.log_error_for_exception("Failed to check plugin dependency requirements")
+			return False
+
+	def _dependency_conflicts(self, ctx, candidate, installed_plugins, installed_plugin_count):
+		try:
+			candidate_info = candidate.contents
+			installed = [(installed_plugins[i].name, installed_plugins[i].dependencies.encode("utf-8"))
+				for i in range(installed_plugin_count)]
+			result = pip_dependency_conflicts(
+				candidate_info.name, candidate_info.dependencies.encode("utf-8"), installed)
+			serialized = [{
+				"status": conflict.status,
+				"package_name": conflict.package_name,
+				"candidate_requirements": [requirement.__dict__ for requirement in conflict.candidate_requirements],
+				"installed_requirements": [requirement.__dict__ for requirement in conflict.installed_requirements],
+			} for conflict in result]
+			return core.BNAllocString(json.dumps(serialized))
+		except Exception:
+			logger.log_error_for_exception("Failed to check plugin dependency conflicts")
+			return core.BNAllocString(json.dumps([{
+				"status": "unknown_compatibility",
+				"package_name": "<unknown>",
+				"candidate_requirements": [],
+				"installed_requirements": [],
+			}]))
 
 	@classmethod
 	def register_magic_variable(
@@ -1528,11 +1718,6 @@ PythonScriptingProvider.register_magic_variable(
 	"current_basic_block",
 	lambda instance: instance.interpreter.active_block
 )
-# todo: this is the debugger's responsibility
-PythonScriptingProvider.register_magic_variable(
-	"dbg",
-	lambda instance: instance.interpreter.active_dbg
-)
 
 
 def _get_current_llil(instance: PythonScriptingInstance):
@@ -1688,6 +1873,19 @@ def _get_current_ui_context(instance: PythonScriptingInstance):
 
 
 PythonScriptingProvider.register_magic_variable("current_ui_context", _get_current_ui_context)
+
+
+def _get_current_similarity_session(instance: PythonScriptingInstance):
+	if instance.interpreter.locals["current_ui_context"] is not None:
+		return instance.interpreter.locals["current_ui_context"].getCurrentSimilaritySession()
+	return None
+
+
+PythonScriptingProvider.register_magic_variable(
+	"current_similarity_session",
+	_get_current_similarity_session,
+	depends_on=["current_ui_context"],
+)
 
 
 def _get_current_ui_action_handler(instance: PythonScriptingInstance):

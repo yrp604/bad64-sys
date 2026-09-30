@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -22,7 +22,7 @@ import abc
 import ctypes
 import dataclasses
 from json import dumps
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Any
 
 import sys
 import traceback
@@ -200,6 +200,23 @@ class _TypeParserMetaclass(type):
 			raise KeyError(f"'{value}' is not a valid TypeParser")
 		return CoreTypeParser(handle)
 
+	def __contains__(cls: '_TypeParserMetaclass', name: object) -> bool:
+		if not isinstance(name, str):
+			return False
+		try:
+			cls[name]
+			return True
+		except KeyError:
+			return False
+
+	def get(cls: '_TypeParserMetaclass', name: str, default: Any = None) -> Optional['TypeParser']:
+		try:
+			return cls[name]
+		except KeyError:
+			if default is not None:
+				return default
+			return None
+
 	@property
 	def default(self):
 		"""
@@ -254,7 +271,7 @@ class TypeParser(metaclass=_TypeParserMetaclass):
 			TypeParser._cached_string = core.cstr(result_py)
 			result[0] = TypeParser._cached_string
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in TypeParser._get_option_text")
 			return False
 
@@ -297,7 +314,7 @@ class TypeParser(metaclass=_TypeParserMetaclass):
 				errors[0] = errors_out
 
 			return output_py is not None
-		except:
+		except Exception:
 			errorCount[0] = 0
 			log_error_for_exception("Unhandled Python exception in TypeParser._preprocess_source")
 			return False
@@ -324,7 +341,7 @@ class TypeParser(metaclass=_TypeParserMetaclass):
 			for i in range(includeDirCount):
 				include_dirs_py.append(core.pyNativeStr(includeDirs[i]))
 
-			auto_type_source = core.pyNativeStr(autoTypeSource)
+			auto_type_source = core.pyNativeStr(autoTypeSource) or ""
 
 			(result_py, errors_py) = self.parse_types_from_source(
 				source_py, file_name_py, platform_py, existing_types_py, options_py,
@@ -345,7 +362,7 @@ class TypeParser(metaclass=_TypeParserMetaclass):
 				errors[0] = errors_out
 
 			return result_py is not None
-		except:
+		except Exception:
 			result[0].typeCount = 0
 			result[0].variableCount = 0
 			result[0].functionCount = 0
@@ -382,7 +399,7 @@ class TypeParser(metaclass=_TypeParserMetaclass):
 				errors[0] = errors_out
 
 			return result_py is not None
-		except:
+		except Exception:
 			errorCount[0] = 0
 			log_error_for_exception("Unhandled Python exception in TypeParser._parse_type_string")
 			return False
@@ -393,7 +410,7 @@ class TypeParser(metaclass=_TypeParserMetaclass):
 		try:
 			TypeParser._cached_string = None
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in TypeParser._free_string")
 			return False
 
@@ -410,7 +427,7 @@ class TypeParser(metaclass=_TypeParserMetaclass):
 					core.BNFreeType(TypeParser._cached_result.functions[i].type)
 			TypeParser._cached_result = None
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in TypeParser._free_result")
 			return False
 
@@ -420,7 +437,7 @@ class TypeParser(metaclass=_TypeParserMetaclass):
 		try:
 			TypeParser._cached_error = None
 			return True
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in TypeParser._free_error_list")
 			return False
 
@@ -632,9 +649,9 @@ class CoreTypeParser(TypeParser):
 				types.QualifiedName._from_core_struct(result_cpp.name),
 				types.Type.create(handle=core.BNNewTypeReference(result_cpp.type))
 			)
-			core.BNFreeQualifiedNameAndType(result_cpp)
 		else:
 			result = None
+		core.BNFreeQualifiedNameAndType(result_cpp)
 
 		errors = []
 		for i in range(error_count.value):

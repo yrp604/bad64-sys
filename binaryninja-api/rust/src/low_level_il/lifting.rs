@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,8 +14,10 @@
 
 use std::marker::PhantomData;
 
-use binaryninjacore_sys::{BNAddLowLevelILLabelForAddress, BNLowLevelILOperation};
-use binaryninjacore_sys::{BNLowLevelILLabel, BNRegisterOrConstant};
+use binaryninjacore_sys::{
+    BNAddLowLevelILLabelForAddress, BNLowLevelILClearIndirectBranches, BNLowLevelILLabel,
+    BNLowLevelILOperation, BNRegisterOrConstant, BNSetLowLevelILExprAttributes,
+};
 
 use super::*;
 use crate::architecture::{Architecture, FlagWriteId, RegisterId};
@@ -23,7 +25,8 @@ use crate::architecture::{CoreRegister, Register as ArchReg};
 use crate::architecture::{
     Flag, FlagClass, FlagCondition, FlagGroup, FlagRole, FlagWrite, Intrinsic,
 };
-use crate::function::Location;
+use crate::basic_block::BasicBlock;
+use crate::function::{Location, NativeBlock};
 
 pub trait LiftableLowLevelIL<'func> {
     type Result: ExpressionResultType;
@@ -91,6 +94,13 @@ pub enum LowLevelILFlagWriteOp<R: ArchReg> {
     Push(usize, LowLevelILRegisterOrConstant<R>),
     Neg(usize, LowLevelILRegisterOrConstant<R>),
     Not(usize, LowLevelILRegisterOrConstant<R>),
+    Bswap(usize, LowLevelILRegisterOrConstant<R>),
+    Popcnt(usize, LowLevelILRegisterOrConstant<R>),
+    Clz(usize, LowLevelILRegisterOrConstant<R>),
+    Ctz(usize, LowLevelILRegisterOrConstant<R>),
+    Rbit(usize, LowLevelILRegisterOrConstant<R>),
+    Cls(usize, LowLevelILRegisterOrConstant<R>),
+    Abs(usize, LowLevelILRegisterOrConstant<R>),
     Sx(usize, LowLevelILRegisterOrConstant<R>),
     Zx(usize, LowLevelILRegisterOrConstant<R>),
     LowPart(usize, LowLevelILRegisterOrConstant<R>),
@@ -174,6 +184,26 @@ pub enum LowLevelILFlagWriteOp<R: ArchReg> {
         LowLevelILRegisterOrConstant<R>,
     ),
     Mods(
+        usize,
+        LowLevelILRegisterOrConstant<R>,
+        LowLevelILRegisterOrConstant<R>,
+    ),
+    MinSigned(
+        usize,
+        LowLevelILRegisterOrConstant<R>,
+        LowLevelILRegisterOrConstant<R>,
+    ),
+    MaxSigned(
+        usize,
+        LowLevelILRegisterOrConstant<R>,
+        LowLevelILRegisterOrConstant<R>,
+    ),
+    MinUnsigned(
+        usize,
+        LowLevelILRegisterOrConstant<R>,
+        LowLevelILRegisterOrConstant<R>,
+    ),
+    MaxUnsigned(
         usize,
         LowLevelILRegisterOrConstant<R>,
         LowLevelILRegisterOrConstant<R>,
@@ -290,6 +320,13 @@ impl<R: ArchReg> LowLevelILFlagWriteOp<R> {
             (1, LLIL_PUSH) => op!(Push, 0),
             (1, LLIL_NEG) => op!(Neg, 0),
             (1, LLIL_NOT) => op!(Not, 0),
+            (1, LLIL_BSWAP) => op!(Bswap, 0),
+            (1, LLIL_POPCNT) => op!(Popcnt, 0),
+            (1, LLIL_CLZ) => op!(Clz, 0),
+            (1, LLIL_CTZ) => op!(Ctz, 0),
+            (1, LLIL_RBIT) => op!(Rbit, 0),
+            (1, LLIL_CLS) => op!(Cls, 0),
+            (1, LLIL_ABS) => op!(Abs, 0),
             (1, LLIL_SX) => op!(Sx, 0),
             (1, LLIL_ZX) => op!(Zx, 0),
             (1, LLIL_LOW_PART) => op!(LowPart, 0),
@@ -313,6 +350,10 @@ impl<R: ArchReg> LowLevelILFlagWriteOp<R> {
             (2, LLIL_DIVS) => op!(Divs, 0, 1),
             (2, LLIL_MODU) => op!(Modu, 0, 1),
             (2, LLIL_MODS) => op!(Mods, 0, 1),
+            (2, LLIL_MINS) => op!(MinSigned, 0, 1),
+            (2, LLIL_MAXS) => op!(MaxSigned, 0, 1),
+            (2, LLIL_MINU) => op!(MinUnsigned, 0, 1),
+            (2, LLIL_MAXU) => op!(MaxUnsigned, 0, 1),
             (2, LLIL_DIVU_DP) => op!(DivuDp, 0, 1),
             (2, LLIL_DIVS_DP) => op!(DivsDp, 0, 1),
             (2, LLIL_MODU_DP) => op!(ModuDp, 0, 1),
@@ -348,6 +389,13 @@ impl<R: ArchReg> LowLevelILFlagWriteOp<R> {
             Push(size, ..) => (size, LLIL_PUSH),
             Neg(size, ..) => (size, LLIL_NEG),
             Not(size, ..) => (size, LLIL_NOT),
+            Bswap(size, ..) => (size, LLIL_BSWAP),
+            Popcnt(size, ..) => (size, LLIL_POPCNT),
+            Clz(size, ..) => (size, LLIL_CLZ),
+            Ctz(size, ..) => (size, LLIL_CTZ),
+            Rbit(size, ..) => (size, LLIL_RBIT),
+            Cls(size, ..) => (size, LLIL_CLS),
+            Abs(size, ..) => (size, LLIL_ABS),
             Sx(size, ..) => (size, LLIL_SX),
             Zx(size, ..) => (size, LLIL_ZX),
             LowPart(size, ..) => (size, LLIL_LOW_PART),
@@ -371,6 +419,10 @@ impl<R: ArchReg> LowLevelILFlagWriteOp<R> {
             Divs(size, ..) => (size, LLIL_DIVS),
             Modu(size, ..) => (size, LLIL_MODU),
             Mods(size, ..) => (size, LLIL_MODS),
+            MinSigned(size, ..) => (size, LLIL_MINS),
+            MaxSigned(size, ..) => (size, LLIL_MAXS),
+            MinUnsigned(size, ..) => (size, LLIL_MINU),
+            MaxUnsigned(size, ..) => (size, LLIL_MAXU),
             DivuDp(size, ..) => (size, LLIL_DIVU_DP),
             DivsDp(size, ..) => (size, LLIL_DIVS_DP),
             ModuDp(size, ..) => (size, LLIL_MODU_DP),
@@ -401,6 +453,13 @@ impl<R: ArchReg> LowLevelILFlagWriteOp<R> {
             | Push(_, op0)
             | Neg(_, op0)
             | Not(_, op0)
+            | Bswap(_, op0)
+            | Popcnt(_, op0)
+            | Clz(_, op0)
+            | Ctz(_, op0)
+            | Rbit(_, op0)
+            | Cls(_, op0)
+            | Abs(_, op0)
             | Sx(_, op0)
             | Zx(_, op0)
             | LowPart(_, op0)
@@ -429,6 +488,10 @@ impl<R: ArchReg> LowLevelILFlagWriteOp<R> {
             | Divs(_, op0, op1)
             | Modu(_, op0, op1)
             | Mods(_, op0, op1)
+            | MinSigned(_, op0, op1)
+            | MaxSigned(_, op0, op1)
+            | MinUnsigned(_, op0, op1)
+            | MaxUnsigned(_, op0, op1)
             | DivuDp(_, op0, op1)
             | DivsDp(_, op0, op1)
             | ModuDp(_, op0, op1)
@@ -533,7 +596,7 @@ macro_rules! prim_int_lifter {
                     };
 
                     if !is_safe {
-                        log::error!("il @ {:x} attempted to lift constant 0x{:x} as {} byte expr (won't fit!)",
+                        tracing::error!("il @ {:x} attempted to lift constant 0x{:x} as {} byte expr (won't fit!)",
                                il.current_address(), val, size);
                     }
                 }
@@ -660,7 +723,7 @@ impl<'a> LiftableLowLevelILWithSize<'a> for LowLevelILExpression<'a, Mutable, No
             use crate::low_level_il::ExpressionHandler;
             if let Some(expr_size) = expr.kind().size() {
                 if expr_size != _size {
-                    log::warn!(
+                    tracing::warn!(
                         "il @ {:x} attempted to lift {} byte expression as {} bytes",
                         il.current_address(),
                         expr_size,
@@ -788,7 +851,7 @@ impl<'a> LiftableLowLevelILWithSize<'a> for ExpressionBuilder<'a, ValueExpr> {
             use binaryninjacore_sys::BNLowLevelILOperation::{LLIL_UNIMPL, LLIL_UNIMPL_MEM};
 
             if expr.size != _size && ![LLIL_UNIMPL, LLIL_UNIMPL_MEM].contains(&expr.op) {
-                log::warn!(
+                tracing::warn!(
                     "il @ {:x} attempted to lift {} byte expression builder as {} bytes",
                     il.current_address(),
                     expr.size,
@@ -1044,6 +1107,15 @@ impl LowLevelILMutableFunction {
     }
 
     no_arg_lifter!(unimplemented, LLIL_UNIMPL, ValueExpr);
+
+    pub fn unknown(&self) -> LowLevelILExpression<'_, Mutable, NonSSA, ValueExpr> {
+        use binaryninjacore_sys::BNLowLevelILAddExpr;
+        use binaryninjacore_sys::BNLowLevelILOperation::LLIL_UNIMPL;
+
+        let expr_idx = unsafe { BNLowLevelILAddExpr(self.handle, LLIL_UNIMPL, 0, 0, 1, 0, 0, 0) };
+
+        LowLevelILExpression::new(self, LowLevelExpressionIndex(expr_idx))
+    }
     no_arg_lifter!(undefined, LLIL_UNDEF, ValueExpr);
     no_arg_lifter!(nop, LLIL_NOP, VoidExpr);
 
@@ -1417,8 +1489,36 @@ impl LowLevelILMutableFunction {
 
     size_changing_unary_op_lifter!(unimplemented_mem, LLIL_UNIMPL_MEM, ValueExpr);
 
+    pub fn unknown_mem<'a, E>(&'a self, size: usize, expr: E) -> ExpressionBuilder<'a, ValueExpr>
+    where
+        E: LiftableLowLevelILWithSize<'a>,
+    {
+        use binaryninjacore_sys::BNLowLevelILOperation::LLIL_UNIMPL_MEM;
+
+        let expr = E::lift(self, expr);
+
+        ExpressionBuilder {
+            function: self,
+            op: LLIL_UNIMPL_MEM,
+            size,
+            flag_write: FlagWriteId(0),
+            op1: expr.index.0 as u64,
+            op2: 1,
+            op3: 0,
+            op4: 0,
+            _ty: PhantomData,
+        }
+    }
+
     sized_unary_op_lifter!(neg, LLIL_NEG, ValueExpr);
     sized_unary_op_lifter!(not, LLIL_NOT, ValueExpr);
+    sized_unary_op_lifter!(bswap, LLIL_BSWAP, ValueExpr);
+    sized_unary_op_lifter!(popcnt, LLIL_POPCNT, ValueExpr);
+    sized_unary_op_lifter!(clz, LLIL_CLZ, ValueExpr);
+    sized_unary_op_lifter!(ctz, LLIL_CTZ, ValueExpr);
+    sized_unary_op_lifter!(rbit, LLIL_RBIT, ValueExpr);
+    sized_unary_op_lifter!(cls, LLIL_CLS, ValueExpr);
+    sized_unary_op_lifter!(abs, LLIL_ABS, ValueExpr);
 
     size_changing_unary_op_lifter!(sx, LLIL_SX, ValueExpr);
     size_changing_unary_op_lifter!(zx, LLIL_ZX, ValueExpr);
@@ -1445,6 +1545,10 @@ impl LowLevelILMutableFunction {
     binary_op_lifter!(divu, LLIL_DIVU);
     binary_op_lifter!(mods, LLIL_MODS);
     binary_op_lifter!(modu, LLIL_MODU);
+    binary_op_lifter!(min_signed, LLIL_MINS);
+    binary_op_lifter!(max_signed, LLIL_MAXS);
+    binary_op_lifter!(min_unsigned, LLIL_MINU);
+    binary_op_lifter!(max_unsigned, LLIL_MAXU);
 
     binary_op_carry_lifter!(adc, LLIL_ADC);
     binary_op_carry_lifter!(sbb, LLIL_SBB);
@@ -1512,6 +1616,13 @@ impl LowLevelILMutableFunction {
         }
     }
 
+    pub fn set_current_source_block(&self, source: &BasicBlock<NativeBlock>) {
+        use binaryninjacore_sys::BNLowLevelILSetCurrentSourceBlock;
+        unsafe {
+            BNLowLevelILSetCurrentSourceBlock(self.handle, source.handle);
+        }
+    }
+
     pub fn label_for_address<L: Into<Location>>(&self, loc: L) -> Option<LowLevelILLabel> {
         use binaryninjacore_sys::BNGetLowLevelILLabelForAddress;
 
@@ -1560,6 +1671,25 @@ impl LowLevelILMutableFunction {
             self.update_label_map_for_label(&new_label);
         }
         *label = new_label;
+    }
+
+    pub fn set_expr_attributes(
+        &self,
+        expr: LowLevelExpressionIndex,
+        value: &ILInstructionAttributeSet,
+    ) {
+        let mut result = 0u32;
+        for flag in value {
+            result |= flag.value();
+        }
+
+        unsafe {
+            BNSetLowLevelILExprAttributes(self.handle, expr.0, result);
+        }
+    }
+
+    pub fn clear_indirect_branches(&self) {
+        unsafe { BNLowLevelILClearIndirectBranches(self.handle) };
     }
 }
 

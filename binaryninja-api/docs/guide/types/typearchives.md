@@ -8,7 +8,7 @@ Type Archives are files you can use to share types between analysis databases. Y
 
 Using the context menu in the [Type List](basictypes.md#the-type-list) in Types View, you can create Type Archives using **Create Type Archive**. Simply pick a file location, and one will be created and attached to your analysis. Once you have done this, you can attach that Type Archive to other analyses in the same menu, by instead using **Attach Type Archive**. If you don't want to use a specific Type Archive in your analysis, you can right-click it in the Type List and use **Detach Type Archive**, which will remove any associations made to types it contains, but will not remove any types in your analysis.
 
-???+ Tip "Tip"
+!!! Tip "Tip"
     Type Archives have an associated Platform (e.g. windows-x86_64), which will determine
     various Platform-specific type details, like pointer width. You may attach a
     Type Archive to files with a different Platform, but note that these details may
@@ -16,7 +16,7 @@ Using the context menu in the [Type List](basictypes.md#the-type-list) in Types 
 
 Attached Type Archives are remembered in saved analysis databases, and will be attached on reopen, provided the file still exists. If the Type Archive file is moved (or deleted), then the Type List will report the Type Archive as Disconnected (but still attached). You can reconnect the Type Archive by using **Connect Type Archive** and pointing Binary Ninja at the new location of the Type Archive file.
 
-Ultimate users working with an Enterprise server can create Type Archives in Remote Projects in the same manner, and all changes made to Type Archives in Remote Projects will be automatically synced with the Collaboration Server. Updates made by you are sent immediately, whereas updates made by other users on your server are fetched periodically in the background every 30 seconds (configurable by the `collaboration.autoPollInterval` setting). Once changes have been fetched, you can pull them into your analysis in the same way as described below. You may also attach Type Archives created outside your Remote Project, but note they will not be synced to the Collaboration Server.
+With the collaboration add-on, users working with an Enterprise Server can create Type Archives in Remote Projects in the same manner, and all changes made to Type Archives in Remote Projects will be automatically synced with the server. Updates made by you are sent immediately, whereas updates made by other users on your server are fetched periodically in the background every 30 seconds (configurable by the `collaboration.autoPollInterval` setting). Once changes have been fetched, you can pull them into your analysis in the same way as described below. You may also attach Type Archives created outside your Remote Project, but note they will not be synced to the server.
 
 ## Managing Types
 

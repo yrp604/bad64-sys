@@ -4,6 +4,12 @@
 using namespace BinaryNinja;
 using namespace BinaryNinja::DSC;
 
+struct BNSharedCacheStringScanner
+{
+	DSCRef<SharedCacheController> controller;
+	std::unique_ptr<CacheStringScanner> scanner;
+};
+
 BNSharedCacheImage ImageToApi(const CacheImage& image)
 {
 	BNSharedCacheImage apiImage;
@@ -82,6 +88,9 @@ CacheRegion RegionFromApi(const BNSharedCacheRegion& apiRegion)
 	region.size = apiRegion.size;
 	region.flags = apiRegion.flags;
 	region.type = RegionTypeFromApi(apiRegion.regionType);
+	// A zeroed imageStart means the region is not associated with an image.
+	if (apiRegion.imageStart != 0)
+		region.imageStart = apiRegion.imageStart;
 	return region;
 }
 
@@ -91,6 +100,7 @@ BNSharedCacheSymbol SymbolToApi(const CacheSymbol& symbol)
 	apiSymbol.name = BNAllocStringWithLength(symbol.name.data(), symbol.name.size());
 	apiSymbol.address = symbol.address;
 	apiSymbol.symbolType = symbol.type;
+	apiSymbol.symbolBinding = symbol.binding;
 	return apiSymbol;
 }
 
@@ -100,7 +110,20 @@ CacheSymbol SymbolFromApi(const BNSharedCacheSymbol& apiSymbol)
 	symbol.name = apiSymbol.name;
 	symbol.address = apiSymbol.address;
 	symbol.type = apiSymbol.symbolType;
+	symbol.binding = apiSymbol.symbolBinding;
 	return symbol;
+}
+
+BNSharedCacheString StringToApi(const CacheString& string)
+{
+	BNSharedCacheString apiString;
+	apiString.stringType = string.type;
+	apiString.address = string.address;
+	apiString.rawLength = string.rawLength;
+	apiString.text = BNAllocStringWithLength(string.text.c_str(), string.text.size());
+	apiString.regionStart = string.regionStart;
+	apiString.imageStart = string.imageStart;
+	return apiString;
 }
 
 BNSharedCacheEntryType EntryTypeToApi(const CacheEntryType& entryType)
@@ -428,5 +451,58 @@ extern "C"
 		for (size_t i = 0; i < count; i++)
 			BNSharedCacheFreeEntry(entries[i]);
 		delete[] entries;
+	}
+
+	BNSharedCacheStringScanner* BNSharedCacheControllerCreateStringScanner(BNSharedCacheController* controller)
+	{
+		return new BNSharedCacheStringScanner {controller->object, controller->object->CreateStringScanner()};
+	}
+
+	void BNFreeSharedCacheStringScanner(BNSharedCacheStringScanner* scanner)
+	{
+		delete scanner;
+	}
+
+	bool BNSharedCacheStringScannerStart(BNSharedCacheStringScanner* scanner)
+	{
+		return scanner->scanner->Start();
+	}
+
+	bool BNSharedCacheStringScannerIsComplete(BNSharedCacheStringScanner* scanner)
+	{
+		return scanner->scanner->IsScanComplete();
+	}
+
+	void BNSharedCacheStringScannerGetProgress(BNSharedCacheStringScanner* scanner, uint64_t* current, uint64_t* total)
+	{
+		scanner->scanner->GetProgress(*current, *total);
+	}
+
+	uint64_t BNSharedCacheStringScannerGetStringCount(BNSharedCacheStringScanner* scanner)
+	{
+		return scanner->scanner->GetStringCount();
+	}
+
+	BNSharedCacheString* BNSharedCacheStringScannerTakeStrings(
+		BNSharedCacheStringScanner* scanner, uint64_t maxCount, size_t* count)
+	{
+		const auto strings = scanner->scanner->TakeStrings(maxCount);
+		*count = strings.size();
+		BNSharedCacheString* apiStrings = new BNSharedCacheString[*count];
+		for (size_t i = 0; i < *count; i++)
+			apiStrings[i] = StringToApi(strings[i]);
+		return apiStrings;
+	}
+
+	void BNSharedCacheFreeString(BNSharedCacheString string)
+	{
+		BNFreeString(string.text);
+	}
+
+	void BNSharedCacheFreeStringList(BNSharedCacheString* strings, size_t count)
+	{
+		for (size_t i = 0; i < count; i++)
+			BNSharedCacheFreeString(strings[i]);
+		delete[] strings;
 	}
 };

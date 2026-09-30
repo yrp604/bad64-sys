@@ -1,4 +1,4 @@
-use binaryninja::binary_view::{BinaryView, BinaryViewExt};
+use binaryninja::binary_view::{BinaryView, MetadataStoreFlags};
 use binaryninja::file_metadata::FileMetadata;
 use binaryninja::headless::Session;
 use binaryninja::platform::Platform;
@@ -14,9 +14,9 @@ fn store_and_query_function_metadata() {
         .expect("Failed to get entry point function");
 
     // Store key/value pairs to user and auto metadata
-    func.store_metadata("one", "one", false);
-    func.store_metadata("two", 2u64, true);
-    func.store_metadata("three", "three", true);
+    func.store_metadata("one", "one", MetadataStoreFlags::PERSISTENT);
+    func.store_metadata("two", 2u64, MetadataStoreFlags::EPHEMERAL);
+    func.store_metadata("three", "three", MetadataStoreFlags::EPHEMERAL);
     func.remove_metadata("three");
 
     // Assert that we can query from both user and auto metadata
@@ -116,7 +116,7 @@ fn add_function() {
 
     // Make sure you cannot add a function without a default platform.
     let code = &[0xa1, 0xfa, 0xf8, 0xf0, 0x99, 0x83, 0xc0, 0x37, 0xc3];
-    let view = BinaryView::from_data(&FileMetadata::new(), code).expect("Failed to create view");
+    let view = BinaryView::from_data(&FileMetadata::new(), code);
     assert!(view.add_user_function(0).is_none());
     assert!(view.add_auto_function(0).is_none());
 

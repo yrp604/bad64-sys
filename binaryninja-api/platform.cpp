@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -124,11 +124,14 @@ void Platform::AdjustTypeParserInputCallback(
 	Ref<TypeParser> parserCpp = new CoreTypeParser(parser);
 
 	vector<string> arguments;
+	arguments.reserve(argumentsLenIn);
 	for (size_t i = 0; i < argumentsLenIn; i ++)
 	{
 		arguments.push_back(argumentsIn[i]);
 	}
+
 	vector<pair<string, string>> sourceFiles;
+	sourceFiles.reserve(sourceFilesLenIn);
 	for (size_t i = 0; i < sourceFilesLenIn; i ++)
 	{
 		sourceFiles.push_back(make_pair(sourceFileNamesIn[i], sourceFileValuesIn[i]));
@@ -141,6 +144,7 @@ void Platform::AdjustTypeParserInputCallback(
 	);
 
 	vector<const char*> argumentsPtrs;
+	argumentsPtrs.reserve(arguments.size());
 	for (auto& argument : arguments)
 	{
 		argumentsPtrs.push_back(argument.c_str());
@@ -446,6 +450,7 @@ std::vector<uint32_t> CorePlatform::GetGlobalRegisters()
 	uint32_t* regs = BNGetPlatformGlobalRegisters(m_object, &count);
 
 	std::vector<uint32_t> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(regs[i]);
 
@@ -489,6 +494,7 @@ void CorePlatform::AdjustTypeParserInput(
 )
 {
 	vector<const char*> argumentsIn;
+	argumentsIn.reserve(arguments.size());
 	for (size_t i = 0; i < arguments.size(); i ++)
 	{
 		argumentsIn.push_back(arguments[i].c_str());
@@ -560,6 +566,7 @@ std::vector<Ref<Platform>> Platform::GetRelatedPlatforms()
 	BNPlatform** related = BNGetRelatedPlatforms(m_object, &count);
 
 	std::vector<Ref<Platform>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 	{
 		result.push_back(new CorePlatform(BNNewPlatformReference(related[i])));
@@ -587,7 +594,7 @@ map<QualifiedName, Ref<Type>> Platform::GetTypes()
 	map<QualifiedName, Ref<Type>> result;
 	for (size_t i = 0; i < count; i++)
 	{
-		QualifiedName name = QualifiedName::FromAPIObject(&types[i].name);
+		QualifiedName name = QualifiedName::FromAPIStruct(&types[i].name);
 		result[name] = new Type(BNNewTypeReference(types[i].type));
 	}
 
@@ -604,7 +611,7 @@ map<QualifiedName, Ref<Type>> Platform::GetVariables()
 	map<QualifiedName, Ref<Type>> result;
 	for (size_t i = 0; i < count; i++)
 	{
-		QualifiedName name = QualifiedName::FromAPIObject(&types[i].name);
+		QualifiedName name = QualifiedName::FromAPIStruct(&types[i].name);
 		result[name] = new Type(BNNewTypeReference(types[i].type));
 	}
 
@@ -621,7 +628,7 @@ map<QualifiedName, Ref<Type>> Platform::GetFunctions()
 	map<QualifiedName, Ref<Type>> result;
 	for (size_t i = 0; i < count; i++)
 	{
-		QualifiedName name = QualifiedName::FromAPIObject(&types[i].name);
+		QualifiedName name = QualifiedName::FromAPIStruct(&types[i].name);
 		result[name] = new Type(BNNewTypeReference(types[i].type));
 	}
 
@@ -639,7 +646,7 @@ map<uint32_t, QualifiedNameAndType> Platform::GetSystemCalls()
 	for (size_t i = 0; i < count; i++)
 	{
 		QualifiedNameAndType nt;
-		nt.name = QualifiedName::FromAPIObject(&calls[i].name);
+		nt.name = QualifiedName::FromAPIStruct(&calls[i].name);
 		nt.type = new Type(BNNewTypeReference(calls[i].type));
 		result[calls[i].number] = nt;
 	}
@@ -655,6 +662,7 @@ vector<Ref<TypeLibrary>> Platform::GetTypeLibraries()
 	BNTypeLibrary** libs = BNGetPlatformTypeLibraries(m_object, &count);
 
 	vector<Ref<TypeLibrary>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		result.push_back(new TypeLibrary(BNNewTypeLibraryReference(libs[i])));
@@ -671,6 +679,7 @@ vector<Ref<TypeLibrary>> Platform::GetTypeLibrariesByName(const std::string& nam
 	BNTypeLibrary** libs = BNGetPlatformTypeLibrariesByName(m_object, name.c_str(), &count);
 
 	vector<Ref<TypeLibrary>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
 		result.push_back(new TypeLibrary(BNNewTypeLibraryReference(libs[i])));
@@ -689,9 +698,9 @@ TypeContainer Platform::GetTypeContainer()
 
 Ref<Type> Platform::GetTypeByName(const QualifiedName& name)
 {
-	BNQualifiedName nameObj = name.GetAPIObject();
+	BNQualifiedName nameObj = name.ToAPIStruct();
 	BNType* type = BNGetPlatformTypeByName(m_object, &nameObj);
-	QualifiedName::FreeAPIObject(&nameObj);
+	QualifiedName::FreeAPIStruct(&nameObj);
 	if (!type)
 		return nullptr;
 	return new Type(type);
@@ -700,9 +709,9 @@ Ref<Type> Platform::GetTypeByName(const QualifiedName& name)
 
 Ref<Type> Platform::GetVariableByName(const QualifiedName& name)
 {
-	BNQualifiedName nameObj = name.GetAPIObject();
+	BNQualifiedName nameObj = name.ToAPIStruct();
 	BNType* type = BNGetPlatformVariableByName(m_object, &nameObj);
-	QualifiedName::FreeAPIObject(&nameObj);
+	QualifiedName::FreeAPIStruct(&nameObj);
 	if (!type)
 		return nullptr;
 	return new Type(type);
@@ -711,9 +720,9 @@ Ref<Type> Platform::GetVariableByName(const QualifiedName& name)
 
 Ref<Type> Platform::GetFunctionByName(const QualifiedName& name, bool exactMatch)
 {
-	BNQualifiedName nameObj = name.GetAPIObject();
+	BNQualifiedName nameObj = name.ToAPIStruct();
 	BNType* type = BNGetPlatformFunctionByName(m_object, &nameObj, exactMatch);
-	QualifiedName::FreeAPIObject(&nameObj);
+	QualifiedName::FreeAPIStruct(&nameObj);
 	if (!type)
 		return nullptr;
 	return new Type(type);
@@ -740,10 +749,10 @@ Ref<Type> Platform::GetSystemCallType(uint32_t n)
 
 string Platform::GenerateAutoPlatformTypeId(const QualifiedName& name)
 {
-	BNQualifiedName nameObj = name.GetAPIObject();
+	BNQualifiedName nameObj = name.ToAPIStruct();
 	char* str = BNGenerateAutoPlatformTypeId(m_object, &nameObj);
 	string result = str;
-	QualifiedName::FreeAPIObject(&nameObj);
+	QualifiedName::FreeAPIStruct(&nameObj);
 	BNFreeString(str);
 	return result;
 }
@@ -791,17 +800,17 @@ bool Platform::ParseTypesFromSource(const string& source, const string& fileName
 
 	for (size_t i = 0; i < result.typeCount; i++)
 	{
-		QualifiedName name = QualifiedName::FromAPIObject(&result.types[i].name);
+		QualifiedName name = QualifiedName::FromAPIStruct(&result.types[i].name);
 		types[name] = new Type(BNNewTypeReference(result.types[i].type));
 	}
 	for (size_t i = 0; i < result.variableCount; i++)
 	{
-		QualifiedName name = QualifiedName::FromAPIObject(&result.variables[i].name);
+		QualifiedName name = QualifiedName::FromAPIStruct(&result.variables[i].name);
 		variables[name] = new Type(BNNewTypeReference(result.variables[i].type));
 	}
 	for (size_t i = 0; i < result.functionCount; i++)
 	{
-		QualifiedName name = QualifiedName::FromAPIObject(&result.functions[i].name);
+		QualifiedName name = QualifiedName::FromAPIStruct(&result.functions[i].name);
 		functions[name] = new Type(BNNewTypeReference(result.functions[i].type));
 	}
 	BNFreeTypeParserResult(&result);
@@ -834,17 +843,17 @@ bool Platform::ParseTypesFromSourceFile(const string& fileName, map<QualifiedNam
 
 	for (size_t i = 0; i < result.typeCount; i++)
 	{
-		QualifiedName name = QualifiedName::FromAPIObject(&result.types[i].name);
+		QualifiedName name = QualifiedName::FromAPIStruct(&result.types[i].name);
 		types[name] = new Type(BNNewTypeReference(result.types[i].type));
 	}
 	for (size_t i = 0; i < result.variableCount; i++)
 	{
-		QualifiedName name = QualifiedName::FromAPIObject(&result.variables[i].name);
+		QualifiedName name = QualifiedName::FromAPIStruct(&result.variables[i].name);
 		variables[name] = new Type(BNNewTypeReference(result.variables[i].type));
 	}
 	for (size_t i = 0; i < result.functionCount; i++)
 	{
-		QualifiedName name = QualifiedName::FromAPIObject(&result.functions[i].name);
+		QualifiedName name = QualifiedName::FromAPIStruct(&result.functions[i].name);
 		functions[name] = new Type(BNNewTypeReference(result.functions[i].type));
 	}
 	BNFreeTypeParserResult(&result);

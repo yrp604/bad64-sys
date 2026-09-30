@@ -1,5 +1,5 @@
 /*
-Copyright 2020-2025 Vector 35 Inc.
+Copyright 2020-2026 Vector 35 Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -319,6 +319,11 @@ int main(int argc, char* argv[])
 		if (name == "BNType")
 		{
 			fprintf(out, "from binaryninja._binaryninjacore import BNType, BNTypeHandle\n");
+			continue;
+		}
+		if (name == "BNDataBuffer")
+		{
+			fprintf(out, "from binaryninja._binaryninjacore import BNDataBuffer, BNDataBufferHandle\n");
 			continue;
 		}
 		if (i.second->GetClass() == StructureTypeClass)

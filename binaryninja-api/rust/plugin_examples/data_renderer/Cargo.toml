@@ -2,6 +2,8 @@
 name = "example_data_renderer"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
+publish = false
 
 [lib]
 crate-type = ["cdylib"]
@@ -10,4 +12,4 @@ crate-type = ["cdylib"]
 binaryninjacore-sys = { path = "../../binaryninjacore-sys" }
 binaryninja = { path = "../.." }
 uuid = "1.18.1"
-log = "0.4.27"
+tracing = "0.1"

@@ -20,6 +20,55 @@ using namespace std;
 #define snprintf _snprintf
 #endif
 
+static bool IsConditionalBranch(const decomp_result& decomp)
+{
+	return (decomp.mnem == ARMV7_B) && (decomp.format->operationFlags & INSTR_FORMAT_FLAG_CONDITIONAL)
+		&& (decomp.fields[FIELD_cond] != COND_AL);
+}
+
+static bool IsSameOrInvertedCondition(uint32_t lhs, uint32_t rhs)
+{
+	return (lhs == rhs) || ((lhs < COND_AL) && (rhs < COND_AL) && ((lhs ^ 1) == rhs));
+}
+
+static bool ThumbITInstructionWritesAPSR(const decomp_result& decomp)
+{
+	switch (decomp.mnem)
+	{
+	case ARMV7_CMN:
+	case ARMV7_CMP:
+	case ARMV7_TEQ:
+	case ARMV7_TST:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static uint32_t GetConditionalBranchTarget(const decomp_result& decomp)
+{
+	return decomp.pc + decomp.fields[decomp.format->operands[0].field0];
+}
+
+static void EmitDirectThumbJump(Architecture* arch, LowLevelILFunction& il, uint32_t target)
+{
+	BNLowLevelILLabel* label = il.GetLabelForAddress(arch, target);
+	if (label)
+		il.AddInstruction(il.Goto(*label));
+	else
+		il.AddInstruction(il.Jump(il.ConstPointer(4, target)));
+}
+
+struct ThumbITSlot
+{
+	uint32_t addr = 0;
+	decomp_result decomp = {};
+	bool thenSlot = false;
+	bool lift = false;
+	bool directBranch = false;
+	uint32_t branchTarget = 0;
+};
+
 static Ref<Enumeration> get_msr_op_enum()
 {
 	EnumerationBuilder builder;
@@ -86,6 +135,21 @@ static Ref<Enumeration> get_msr_op_enum()
 	return _enum;
 }
 
+static Ref<Enumeration> GetVfpStatusRegisterEnum()
+{
+	EnumerationBuilder builder;
+	builder.AddMemberWithValue("fpsid", REGS_FPSID);
+	builder.AddMemberWithValue("fpscr", REGS_FPSCR);
+	builder.AddMemberWithValue("mvfr2", REGS_MVFR2);
+	builder.AddMemberWithValue("mvfr1", REGS_MVFR1);
+	builder.AddMemberWithValue("mvfr0", REGS_MVFR0);
+	builder.AddMemberWithValue("fpexc", REGS_FPEXC);
+	builder.AddMemberWithValue("fpinst", REGS_FPINST);
+	builder.AddMemberWithValue("fpinst2", REGS_FPINST2);
+	Ref<Enumeration> _enum = builder.Finalize();
+	return _enum;
+}
+
 /* class Architecture from binaryninjaapi.h */
 class Thumb2Architecture: public ArmCommonArchitecture
 {
@@ -98,9 +162,11 @@ protected:
 		return "thumbv7-none-none";
 	}
 
-	void populateDecomposeRequest(decomp_request *req, const uint8_t *data, size_t len,
+	bool populateDecomposeRequest(decomp_request *req, const uint8_t *data, size_t len,
 		uint64_t addr, int inIfThen, int inIfThenLast)
 	{
+		if (!data || len < 2)
+			return false;
 		req->instr_word16 = 0;
 		req->instr_word32 = 0;
 		if(m_endian == LittleEndian) {
@@ -122,6 +188,7 @@ protected:
 		req->inIfThenLast = inIfThenLast;
 		req->carry_in = 0;
 		req->addr = (uint32_t)addr;
+		return true;
 	}
 
 	virtual bool Disassemble(const uint8_t* data, uint64_t addr, size_t maxLen, decomp_result& result)
@@ -129,7 +196,9 @@ protected:
 		(void)addr;
 		(void)maxLen;
 		decomp_request request;
-		populateDecomposeRequest(&request, data, maxLen, addr, IFTHEN_UNKNOWN, IFTHENLAST_UNKNOWN);
+
+		if (!populateDecomposeRequest(&request, data, maxLen, addr, IFTHEN_UNKNOWN, IFTHENLAST_UNKNOWN))
+			return false;
 
 		memset(&result, 0, sizeof(result));
 		if (thumb_decompose(&request, &result) != STATUS_OK)
@@ -147,7 +216,9 @@ public:
 
 	virtual size_t GetMaxInstructionLength() const override
 	{
-		return 18; // IT blocks can have up to four following associated instructions
+		// IT blocks can have up to four following associated instructions, and
+		// may be coalesced with a following conditional branch.
+		return 22;
 	}
 
 	virtual size_t GetInstructionAlignment() const override
@@ -176,7 +247,8 @@ public:
 		decomp_request request;
 		decomp_result decomp;
 
-		populateDecomposeRequest(&request, data, maxLen, addr, IFTHEN_UNKNOWN, IFTHENLAST_UNKNOWN);
+		if (!populateDecomposeRequest(&request, data, maxLen, addr, IFTHEN_UNKNOWN, IFTHENLAST_UNKNOWN))
+			return false;
 
 		if (thumb_decompose(&request, &decomp) != STATUS_OK)
 			return false;
@@ -186,6 +258,159 @@ public:
 			return false;
 
 		result.length = decomp.instrSize / 8;
+
+		if ((decomp.mnem == armv7::ARMV7_IT) && (decomp.fields[FIELD_mask] != 0))
+		{
+			// IT block: consume all instructions and handle contained branches
+			uint32_t offset = decomp.instrSize / 8;
+			uint32_t mask = decomp.fields[FIELD_mask];
+			uint32_t cond = decomp.fields[FIELD_firstcond];
+
+			size_t instrCount;
+			if (mask & 1)
+				instrCount = 4;
+			else if (mask & 2)
+				instrCount = 3;
+			else if (mask & 4)
+				instrCount = 2;
+			else
+				instrCount = 1;
+
+			// First branch/return in each condition path
+			bool trueTerminated = false;
+			bool falseTerminated = false;
+			bool trueBranched = false;
+			bool falseBranched = false;
+			bool trueReturned = false;
+			bool falseReturned = false;
+			bool trueWroteFlags = false;
+			bool falseWroteFlags = false;
+
+			uint64_t trueBranchTargetAddr = 0;
+			uint64_t falseBranchTargetAddr = 0;
+
+			for (size_t i = 0; i < instrCount; i++)
+			{
+				bool isTrue = (i == 0) || (((mask >> (4 - i)) & 1) == (cond & 1));
+
+				if (offset >= maxLen || (maxLen - offset) < 2)
+					break;
+
+				decomp_result innerDecomp;
+				size_t remainingLen = maxLen - offset;
+				bool decoded = populateDecomposeRequest(&request, data + offset, remainingLen, addr + offset,
+					IFTHEN_YES, ((i + 1) >= instrCount) ? IFTHENLAST_YES : IFTHENLAST_NO)
+					&& (thumb_decompose(&request, &innerDecomp) == STATUS_OK)
+					&& !(innerDecomp.status & STATUS_UNDEFINED) && innerDecomp.format;
+				if (!decoded)
+					break;
+				size_t innerLen = innerDecomp.instrSize / 8;
+				if ((innerLen == 0) || (innerLen > remainingLen))
+					break;
+
+				bool& terminated = isTrue ? trueTerminated : falseTerminated;
+				bool& branched = isTrue ? trueBranched : falseBranched;
+				bool& returned = isTrue ? trueReturned : falseReturned;
+				bool& wroteFlags = isTrue ? trueWroteFlags : falseWroteFlags;
+				uint64_t& branchTarget = isTrue ? trueBranchTargetAddr : falseBranchTargetAddr;
+
+				// Only process if the conditional branch we're following isn't terminated
+				// Otherwise, just track if the arch is switching and the offset
+				if (!terminated)
+				{
+					wroteFlags |= ThumbITInstructionWritesAPSR(innerDecomp);
+
+					InstructionInfo innerResult;
+					if (GetInstructionInfo(data + offset, addr + offset, remainingLen, innerResult))
+					{
+						for (size_t j = 0; j < innerResult.branchCount; j++)
+						{
+							switch (innerResult.branchType[j])
+							{
+							case UnconditionalBranch:
+							case TrueBranch:
+							case FalseBranch:
+								branched = true;
+								terminated = true;
+								branchTarget = innerResult.branchTarget[j];
+								break;
+							case FunctionReturn:
+								returned = true;
+								terminated = true;
+								break;
+							case CallDestination:
+								result.AddBranch(CallDestination, innerResult.branchTarget[j],
+									innerResult.branchArch[j] ? m_armArch : this);
+								wroteFlags = true;
+								break;
+							case UnresolvedBranch:
+							case IndirectBranch:
+							case ExceptionBranch:
+								// We don't know the branch target so just set terminated
+								terminated = true;
+								break;
+							default:
+								break;
+							}
+						}
+
+						if (innerResult.archTransitionByTargetAddr)
+							result.archTransitionByTargetAddr = true;
+					}
+				}
+
+				offset += innerLen;
+			}
+
+			decomp_result branchDecomp;
+			if ((offset < maxLen) && ((maxLen - offset) >= 2)
+				&& populateDecomposeRequest(&request, data + offset, maxLen - offset, addr + offset, IFTHEN_NO, IFTHENLAST_NO)
+				&& (thumb_decompose(&request, &branchDecomp) == STATUS_OK)
+				&& ((offset + (branchDecomp.instrSize / 8)) <= maxLen)
+				&& !(branchDecomp.status & STATUS_UNDEFINED) && branchDecomp.format && IsConditionalBranch(branchDecomp)
+				&& IsSameOrInvertedCondition(branchDecomp.fields[FIELD_cond], cond))
+			{
+				bool branchOnTrue = branchDecomp.fields[FIELD_cond] == cond;
+				bool& terminated = branchOnTrue ? trueTerminated : falseTerminated;
+				bool& branched = branchOnTrue ? trueBranched : falseBranched;
+				bool& wroteFlags = branchOnTrue ? trueWroteFlags : falseWroteFlags;
+				uint64_t& branchTarget = branchOnTrue ? trueBranchTargetAddr : falseBranchTargetAddr;
+
+				if (!terminated && !wroteFlags)
+				{
+					branched = true;
+					terminated = true;
+					branchTarget = GetConditionalBranchTarget(branchDecomp);
+					offset += branchDecomp.instrSize / 8;
+				}
+			}
+
+			result.length = offset;
+
+			uint64_t fallThroughAddr = (addr + offset) & 0xffffffffLL;
+			// The targets for true/false branches either go somewhere or fall through to the next instr
+			uint64_t trueTargetAddr = trueBranched ? trueBranchTargetAddr : fallThroughAddr;
+			uint64_t falseTargetAddr = falseBranched ? falseBranchTargetAddr : fallThroughAddr;
+
+			if (trueReturned && falseReturned)
+			{
+				// If both paths return
+				result.AddBranch(FunctionReturn);
+			}
+			else if (trueTargetAddr != falseTargetAddr)
+			{
+				// True and false go to different locations (either branch or fallthrough)
+				result.AddBranch(TrueBranch, trueTargetAddr, this);
+				result.AddBranch(FalseBranch, falseTargetAddr, this);
+			}
+			else if (trueTargetAddr != fallThroughAddr)
+			{
+				// True and false branch to the same location that isn't the fallthrough address
+				result.AddBranch(UnconditionalBranch, trueTargetAddr, this);
+			}
+
+			return true;
+		}
 
 		switch (decomp.mnem)
 		{
@@ -202,7 +427,8 @@ public:
 		case ARMV7_LDMDB:
 		case ARMV7_LDMIA: // defaults to ARMV7_LDM
 		case ARMV7_LDMIB:
-			if ((decomp.format->operands[0].type == OPERAND_FORMAT_REG) && (decomp.fields[decomp.format->operands[0].field0] == 15))
+			if ((decomp.format->operandCount > 1) && (decomp.format->operands[1].type == OPERAND_FORMAT_REGISTERS)
+				&& (decomp.fields[decomp.format->operands[1].field0] & (1 << 15)))
 			{
 				result.AddBranch(UnresolvedBranch);
 				result.archTransitionByTargetAddr = true;
@@ -349,7 +575,8 @@ public:
 		decomp_request request;
 		decomp_result decomp;
 
-		populateDecomposeRequest(&request, data, len, addr, IFTHEN_UNKNOWN, IFTHENLAST_UNKNOWN);
+		if (!populateDecomposeRequest(&request, data, len, addr, IFTHEN_UNKNOWN, IFTHENLAST_UNKNOWN))
+			return false;
 
 		if (thumb_decompose(&request, &decomp) != STATUS_OK)
 			return false;
@@ -1482,6 +1709,326 @@ public:
 			return "Coproc_SendOneWord";
 		case ARMV7_INTRIN_COPROC_SENDTWOWORDS:
 			return "Coproc_SendTwoWords";
+		case ARMV7_INTRIN_COPROC_STORE:
+			return "Coproc_Store";
+		case ARMV7_INTRIN_COPROC_LOAD:
+			return "Coproc_Load";
+		case ARMV7_INTRIN_COPROC_DATAPROCESSING:
+			return "Coproc_DataProcessing";
+		case ARMV7_INTRIN_EXCLUSIVE_MONITORS_PASS:
+			return "ExclusiveMonitorsPass";
+		case ARMV7_INTRIN_SET_EXCLUSIVE_MONITORS:
+			return "SetExclusiveMonitors";
+		case ARMV7_INTRIN_SEL:
+			return "__sel";
+		case ARMV7_INTRIN_VRINTA:
+			return "__vrinta";
+		case ARMV7_INTRIN_VMAXNM:
+			return "__vmaxnm";
+		case ARMV7_INTRIN_VMINNM:
+			return "__vminnm";
+		case ARMV7_INTRIN_VMAX:
+			return "__vmax";
+		case ARMV7_INTRIN_VMIN:
+			return "__vmin";
+		case ARMV7_INTRIN_VPADD:
+			return "__vpadd";
+		case ARMV7_INTRIN_VPMAX:
+			return "__vpmax";
+		case ARMV7_INTRIN_VPMIN:
+			return "__vpmin";
+		case ARMV7_INTRIN_VREV16:
+			return "__vrev16";
+		case ARMV7_INTRIN_VREV32:
+			return "__vrev32";
+		case ARMV7_INTRIN_VREV64:
+			return "__vrev64";
+		case ARMV7_INTRIN_VEXT:
+			return "__vext";
+		case ARMV7_INTRIN_VCGT:
+			return "__vcgt";
+		case ARMV7_INTRIN_VCGT_Q:
+			return "__vcgt_q";
+		case ARMV7_INTRIN_VCLT:
+			return "__vclt";
+		case ARMV7_INTRIN_VCLT_Q:
+			return "__vclt_q";
+		case ARMV7_INTRIN_VCGE:
+			return "__vcge";
+		case ARMV7_INTRIN_VCGE_Q:
+			return "__vcge_q";
+		case ARMV7_INTRIN_VCEQ:
+			return "__vceq";
+		case ARMV7_INTRIN_VTBL:
+			return "__vtbl";
+		case ARMV7_INTRIN_VTBX:
+			return "__vtbx";
+		case ARMV7_INTRIN_VDUP:
+			return "__vdup";
+		case ARMV7_INTRIN_VABD:
+			return "__vabd";
+		case ARMV7_INTRIN_VABDL:
+			return "__vabdl";
+		case ARMV7_INTRIN_VABA:
+			return "__vaba";
+		case ARMV7_INTRIN_VABAL:
+			return "__vabal";
+		case ARMV7_INTRIN_VADD:
+			return "__vadd";
+		case ARMV7_INTRIN_VSUB:
+			return "__vsub";
+		case ARMV7_INTRIN_VADDL:
+			return "__vaddl";
+		case ARMV7_INTRIN_VADDW:
+			return "__vaddw";
+		case ARMV7_INTRIN_VRADDHN:
+			return "__vraddhn";
+		case ARMV7_INTRIN_VRSHR:
+			return "__vrshr";
+		case ARMV7_INTRIN_VRSHL:
+			return "__vrshl";
+		case ARMV7_INTRIN_VSRA:
+			return "__vsra";
+		case ARMV7_INTRIN_VRSRA:
+			return "__vrsra";
+		case ARMV7_INTRIN_VSRI:
+			return "__vsri";
+		case ARMV7_INTRIN_VSLI:
+			return "__vsli";
+		case ARMV7_INTRIN_VLD2:
+			return "__vld2";
+		case ARMV7_INTRIN_VLD4:
+			return "__vld4";
+		case ARMV7_INTRIN_VST2:
+			return "__vst2";
+		case ARMV7_INTRIN_VST4:
+			return "__vst4";
+		case ARMV7_INTRIN_VSHL_Q:
+			return "__vshl_q";
+		case ARMV7_INTRIN_VSHL_IMM:
+			return "__vshl_imm";
+		case ARMV7_INTRIN_VSHL_IMM_Q:
+			return "__vshl_imm_q";
+		case ARMV7_INTRIN_VSHR_Q:
+			return "__vshr_q";
+		case ARMV7_INTRIN_VSHRN:
+			return "__vshrn";
+		case ARMV7_INTRIN_VTRN:
+			return "__vtrn";
+		case ARMV7_INTRIN_VTRN_Q:
+			return "__vtrn_q";
+		case ARMV7_INTRIN_VUZP:
+			return "__vuzp";
+		case ARMV7_INTRIN_VUZP_Q:
+			return "__vuzp_q";
+		case ARMV7_INTRIN_VZIP:
+			return "__vzip";
+		case ARMV7_INTRIN_VZIP_Q:
+			return "__vzip_q";
+		case ARMV7_INTRIN_VTST:
+			return "__vtst";
+		case ARMV7_INTRIN_VTST_Q:
+			return "__vtst_q";
+		case ARMV7_INTRIN_VSHL:
+			return "__vshl";
+		case ARMV7_INTRIN_VSHR:
+			return "__vshr";
+		case ARMV7_INTRIN_VSHLL:
+			return "__vshll";
+		case ARMV7_INTRIN_VMOVL:
+			return "__vmovl";
+		case ARMV7_INTRIN_VMOVN:
+			return "__vmovn";
+		case ARMV7_INTRIN_VBIF:
+			return "__vbif";
+		case ARMV7_INTRIN_VBIT:
+			return "__vbit";
+		case ARMV7_INTRIN_VBSL:
+			return "__vbsl";
+		case ARMV7_INTRIN_VQADD:
+			return "__vqadd";
+		case ARMV7_INTRIN_VHADD:
+			return "__vhadd";
+		case ARMV7_INTRIN_VRHADD:
+			return "__vrhadd";
+		case ARMV7_INTRIN_VRECPE:
+			return "__vrecpe";
+		case ARMV7_INTRIN_VABS:
+			return "__vabs";
+		case ARMV7_INTRIN_VNEG:
+			return "__vneg";
+		case ARMV7_INTRIN_VNEG_Q:
+			return "__vneg_q";
+		case ARMV7_INTRIN_VCVT_FIXED:
+			return "__vcvt_fixed";
+		case ARMV7_INTRIN_VABS_Q:
+			return "__vabs_q";
+		case ARMV7_INTRIN_VCVT_FIXED_Q:
+			return "__vcvt_fixed_q";
+		case ARMV7_INTRIN_VQSHL:
+			return "__vqshl";
+		case ARMV7_INTRIN_VQRSHL:
+			return "__vqrshl";
+		case ARMV7_INTRIN_VQSHRN:
+			return "__vqshrn";
+		case ARMV7_INTRIN_VQSHRUN:
+			return "__vqshrun";
+		case ARMV7_INTRIN_VQRSHRN:
+			return "__vqrshrn";
+		case ARMV7_INTRIN_VQRSHRUN:
+			return "__vqrshrun";
+		case ARMV7_INTRIN_VQMOVN:
+			return "__vqmovn";
+		case ARMV7_INTRIN_VQMOVUN:
+			return "__vqmovun";
+		case ARMV7_INTRIN_VMLA:
+			return "__vmla";
+		case ARMV7_INTRIN_VMLS:
+			return "__vmls";
+		case ARMV7_INTRIN_VMLAL:
+			return "__vmlal";
+		case ARMV7_INTRIN_VMLSL:
+			return "__vmlsl";
+		case ARMV7_INTRIN_VMUL:
+			return "__vmul";
+		case ARMV7_INTRIN_VMULL:
+			return "__vmull";
+		case ARMV7_INTRIN_VQDMULL:
+			return "__vqdmull";
+		case ARMV7_INTRIN_SSAT:
+			return "__ssat";
+		case ARMV7_INTRIN_SSAT16:
+			return "__ssat16";
+		case ARMV7_INTRIN_USAT:
+			return "__usat";
+		case ARMV7_INTRIN_USAT16:
+			return "__usat16";
+		case ARMV7_INTRIN_SRS:
+			return "__srs";
+		case ARMV7_INTRIN_RFE:
+			return "__rfe";
+		case ARMV7_INTRIN_QADD:
+			return "__qadd";
+		case ARMV7_INTRIN_QSUB:
+			return "__qsub";
+		case ARMV7_INTRIN_QDADD:
+			return "__qdadd";
+		case ARMV7_INTRIN_QDSUB:
+			return "__qdsub";
+		case ARMV7_INTRIN_QADD16:
+			return "__qadd16";
+		case ARMV7_INTRIN_QADD8:
+			return "__qadd8";
+		case ARMV7_INTRIN_QSUB16:
+			return "__qsub16";
+		case ARMV7_INTRIN_QSUB8:
+			return "__qsub8";
+		case ARMV7_INTRIN_UQADD16:
+			return "__uqadd16";
+		case ARMV7_INTRIN_UQADD8:
+			return "__uqadd8";
+		case ARMV7_INTRIN_UQSUB16:
+			return "__uqsub16";
+		case ARMV7_INTRIN_UQSUB8:
+			return "__uqsub8";
+		case ARMV7_INTRIN_SXTAB16:
+			return "__sxtab16";
+		case ARMV7_INTRIN_SXTB16:
+			return "__sxtb16";
+		case ARMV7_INTRIN_UXTAB16:
+			return "__uxtab16";
+		case ARMV7_INTRIN_UXTB16:
+			return "__uxtb16";
+		case ARMV7_INTRIN_SADD16:
+			return "__sadd16";
+		case ARMV7_INTRIN_SADD8:
+			return "__sadd8";
+		case ARMV7_INTRIN_UADD16:
+			return "__uadd16";
+		case ARMV7_INTRIN_UADD8:
+			return "__uadd8";
+		case ARMV7_INTRIN_SHADD16:
+			return "__shadd16";
+		case ARMV7_INTRIN_SHADD8:
+			return "__shadd8";
+		case ARMV7_INTRIN_UHADD16:
+			return "__uhadd16";
+		case ARMV7_INTRIN_UHADD8:
+			return "__uhadd8";
+		case ARMV7_INTRIN_SASX:
+			return "__sasx";
+		case ARMV7_INTRIN_UASX:
+			return "__uasx";
+		case ARMV7_INTRIN_SHASX:
+			return "__shasx";
+		case ARMV7_INTRIN_UHASX:
+			return "__uhasx";
+		case ARMV7_INTRIN_SSAX:
+			return "__ssax";
+		case ARMV7_INTRIN_USAX:
+			return "__usax";
+		case ARMV7_INTRIN_SSUB16:
+			return "__ssub16";
+		case ARMV7_INTRIN_SSUB8:
+			return "__ssub8";
+		case ARMV7_INTRIN_SHSUB8:
+			return "__shsub8";
+		case ARMV7_INTRIN_SHSUB16:
+			return "__shsub16";
+		case ARMV7_INTRIN_UHSUB8:
+			return "__uhsub8";
+		case ARMV7_INTRIN_UHSUB16:
+			return "__uhsub16";
+		case ARMV7_INTRIN_USUB8:
+			return "__usub8";
+		case ARMV7_INTRIN_USUB16:
+			return "__usub16";
+		case ARMV7_INTRIN_SMLAD:
+			return "__smlad";
+		case ARMV7_INTRIN_SMLADX:
+			return "__smladx";
+		case ARMV7_INTRIN_SMUAD:
+			return "__smuad";
+		case ARMV7_INTRIN_SMUADX:
+			return "__smuadx";
+		case ARMV7_INTRIN_SMUSD:
+			return "__smusd";
+		case ARMV7_INTRIN_SMUSDX:
+			return "__smusdx";
+		case ARMV7_INTRIN_SMLSD:
+			return "__smlsd";
+		case ARMV7_INTRIN_SMLSDX:
+			return "__smlsdx";
+		case ARMV7_INTRIN_SMLSLD:
+			return "__smlsld";
+		case ARMV7_INTRIN_SMLSLDX:
+			return "__smlsldx";
+		case ARMV7_INTRIN_SMLAWB:
+			return "__smlawb";
+		case ARMV7_INTRIN_SMLAWT:
+			return "__smlawt";
+		case ARMV7_INTRIN_SMLABB:
+			return "__smlabb";
+		case ARMV7_INTRIN_SMLABT:
+			return "__smlabt";
+		case ARMV7_INTRIN_SMLATB:
+			return "__smlatb";
+		case ARMV7_INTRIN_SMLATT:
+			return "__smlatt";
+		case ARMV7_INTRIN_SMLALD:
+			return "__smlald";
+		case ARMV7_INTRIN_SMLALDX:
+			return "__smlaldx";
+		case ARMV7_INTRIN_USAD8:
+			return "__usad8";
+		case ARMV7_INTRIN_USADA8:
+			return "__usada8";
+		case ARMV7_INTRIN_QSAX:
+			return "__qsax";
+		case ARMV7_INTRIN_UQASX:
+			return "__uqasx";
+		case ARMV7_INTRIN_UQSAX:
+			return "__uqsax";
 		case ARMV7_INTRIN_DBG:
 			return "__dbg";
 		case ARMV7_INTRIN_DMB_SY:
@@ -1522,18 +2069,52 @@ public:
 			return "__mrs";
 		case ARMV7_INTRIN_MSR:
 			return "__msr";
+		case ARMV7_INTRIN_VMRS:
+			return "__vmrs";
+		case ARMV7_INTRIN_VMSR:
+			return "__vmsr";
+		case ARMV7_INTRIN_YIELD:
+			return "__yield";
 		case ARMV7_INTRIN_SEV:
 			return "__sev";
 		case ARMV7_INTRIN_WFE:
 			return "__wfe";
 		case ARMV7_INTRIN_WFI:
 			return "__wfi";
+		case ARMV7_INTRIN_HINT:
+			return "__hint";
+		case ARMV7_INTRIN_UNPREDICTABLE:
+			return "__unpredictable";
+		case ARMV7_INTRIN_HVC:
+			return "__hvc";
+		case ARMV7_INTRIN_SMC:
+			return "__smc";
 		case ARM_M_INTRIN_SET_BASEPRI:
 			return "__set_BASEPRI";
-		case ARMV7_INTRIN_RBIT:
-			return "__rbit";
-		case ARMV7_INTRIN_CLZ:
-			return "__clz";
+		case ARMV7_INTRIN_CPS:
+			return "__cps";
+		case ARMV7_INTRIN_CPSID:
+			return "__cpsid";
+		case ARMV7_INTRIN_CPSIE:
+			return "__cpsie";
+		case ARMV7_INTRIN_SETEND:
+			return "__setend";
+		case ARMV7_INTRIN_CLREX:
+			return "__clrex";
+		case ARMV7_INTRIN_PLD:
+			return "__pld";
+		case ARMV7_INTRIN_CRC32B:
+			return "__crc32b";
+		case ARMV7_INTRIN_CRC32CB:
+			return "__crc32cb";
+		case ARMV7_INTRIN_CRC32CH:
+			return "__crc32ch";
+		case ARMV7_INTRIN_CRC32CW:
+			return "__crc32cw";
+		case ARMV7_INTRIN_CRC32H:
+			return "__crc32h";
+		case ARMV7_INTRIN_CRC32W:
+			return "__crc32w";
 		default:
 			return "";
 		}
@@ -1546,7 +2127,172 @@ public:
 			ARMV7_INTRIN_COPROC_GETTWOWORDS,
 			ARMV7_INTRIN_COPROC_SENDONEWORD,
 			ARMV7_INTRIN_COPROC_SENDTWOWORDS,
+			ARMV7_INTRIN_COPROC_STORE,
+			ARMV7_INTRIN_COPROC_LOAD,
+			ARMV7_INTRIN_COPROC_DATAPROCESSING,
+			ARMV7_INTRIN_EXCLUSIVE_MONITORS_PASS,
+			ARMV7_INTRIN_SET_EXCLUSIVE_MONITORS,
+			ARMV7_INTRIN_SETEND,
+			ARMV7_INTRIN_SEL,
+			ARMV7_INTRIN_VRINTA,
+			ARMV7_INTRIN_VMAXNM,
+			ARMV7_INTRIN_VMINNM,
+			ARMV7_INTRIN_VMAX,
+			ARMV7_INTRIN_VMIN,
+			ARMV7_INTRIN_VPADD,
+			ARMV7_INTRIN_VPMAX,
+			ARMV7_INTRIN_VPMIN,
+			ARMV7_INTRIN_VREV16,
+			ARMV7_INTRIN_VREV32,
+			ARMV7_INTRIN_VREV64,
+			ARMV7_INTRIN_VEXT,
+			ARMV7_INTRIN_VCGT,
+			ARMV7_INTRIN_VCGT_Q,
+			ARMV7_INTRIN_VCLT,
+			ARMV7_INTRIN_VCLT_Q,
+			ARMV7_INTRIN_VCGE,
+			ARMV7_INTRIN_VCGE_Q,
+			ARMV7_INTRIN_VCEQ,
+			ARMV7_INTRIN_VTBL,
+			ARMV7_INTRIN_VTBX,
+			ARMV7_INTRIN_VDUP,
+			ARMV7_INTRIN_VABD,
+			ARMV7_INTRIN_VABDL,
+			ARMV7_INTRIN_VABA,
+			ARMV7_INTRIN_VABAL,
+			ARMV7_INTRIN_VADDL,
+			ARMV7_INTRIN_VADDW,
+			ARMV7_INTRIN_VRADDHN,
+			ARMV7_INTRIN_VRSHR,
+			ARMV7_INTRIN_VRSHL,
+			ARMV7_INTRIN_VSRA,
+			ARMV7_INTRIN_VRSRA,
+			ARMV7_INTRIN_VSRI,
+			ARMV7_INTRIN_VSLI,
+			ARMV7_INTRIN_VLD2,
+			ARMV7_INTRIN_VLD4,
+			ARMV7_INTRIN_VST2,
+			ARMV7_INTRIN_VST4,
+			ARMV7_INTRIN_VSHL,
+			ARMV7_INTRIN_VSHL_Q,
+			ARMV7_INTRIN_VSHL_IMM,
+			ARMV7_INTRIN_VSHL_IMM_Q,
+			ARMV7_INTRIN_VSHR_Q,
+			ARMV7_INTRIN_VSHRN,
+			ARMV7_INTRIN_VTRN,
+			ARMV7_INTRIN_VTRN_Q,
+			ARMV7_INTRIN_VUZP,
+			ARMV7_INTRIN_VUZP_Q,
+			ARMV7_INTRIN_VZIP,
+			ARMV7_INTRIN_VZIP_Q,
+			ARMV7_INTRIN_VTST,
+			ARMV7_INTRIN_VTST_Q,
+			ARMV7_INTRIN_VSHR,
+			ARMV7_INTRIN_VSHLL,
+			ARMV7_INTRIN_VMOVL,
+			ARMV7_INTRIN_VMOVN,
+			ARMV7_INTRIN_VBIF,
+			ARMV7_INTRIN_VBIT,
+			ARMV7_INTRIN_VBSL,
+			ARMV7_INTRIN_VQADD,
+			ARMV7_INTRIN_VHADD,
+			ARMV7_INTRIN_VRHADD,
+			ARMV7_INTRIN_VRECPE,
+			ARMV7_INTRIN_VABS,
+			ARMV7_INTRIN_VNEG,
+			ARMV7_INTRIN_VNEG_Q,
+			ARMV7_INTRIN_VCVT_FIXED,
+			ARMV7_INTRIN_VABS_Q,
+			ARMV7_INTRIN_VCVT_FIXED_Q,
+			ARMV7_INTRIN_VQSHL,
+			ARMV7_INTRIN_VQRSHL,
+			ARMV7_INTRIN_VQSHRN,
+			ARMV7_INTRIN_VQSHRUN,
+			ARMV7_INTRIN_VQRSHRN,
+			ARMV7_INTRIN_VQRSHRUN,
+			ARMV7_INTRIN_VQMOVN,
+			ARMV7_INTRIN_VQMOVUN,
+			ARMV7_INTRIN_VMLA,
+			ARMV7_INTRIN_VMLS,
+			ARMV7_INTRIN_VMLAL,
+			ARMV7_INTRIN_VMLSL,
+			ARMV7_INTRIN_VMUL,
+			ARMV7_INTRIN_VMULL,
+			ARMV7_INTRIN_VQDMULL,
+			ARMV7_INTRIN_SSAT,
+			ARMV7_INTRIN_SSAT16,
+			ARMV7_INTRIN_USAT,
+			ARMV7_INTRIN_USAT16,
+			ARMV7_INTRIN_SRS,
+			ARMV7_INTRIN_RFE,
+			ARMV7_INTRIN_QADD,
+			ARMV7_INTRIN_QSUB,
+			ARMV7_INTRIN_QDADD,
+			ARMV7_INTRIN_QDSUB,
+			ARMV7_INTRIN_QADD16,
+			ARMV7_INTRIN_QADD8,
+			ARMV7_INTRIN_QSUB16,
+			ARMV7_INTRIN_QSUB8,
+			ARMV7_INTRIN_UQADD16,
+			ARMV7_INTRIN_UQADD8,
+			ARMV7_INTRIN_UQSUB16,
+			ARMV7_INTRIN_UQSUB8,
+			ARMV7_INTRIN_SXTAB16,
+			ARMV7_INTRIN_SXTB16,
+			ARMV7_INTRIN_UXTAB16,
+			ARMV7_INTRIN_UXTB16,
+			ARMV7_INTRIN_SADD16,
+			ARMV7_INTRIN_SADD8,
+			ARMV7_INTRIN_SHADD16,
+			ARMV7_INTRIN_SHADD8,
+			ARMV7_INTRIN_UHADD16,
+			ARMV7_INTRIN_UHADD8,
+			ARMV7_INTRIN_SASX,
+			ARMV7_INTRIN_UASX,
+			ARMV7_INTRIN_SHASX,
+			ARMV7_INTRIN_UHASX,
+			ARMV7_INTRIN_SSAX,
+			ARMV7_INTRIN_USAX,
+			ARMV7_INTRIN_SSUB16,
+			ARMV7_INTRIN_SSUB8,
+			ARMV7_INTRIN_SHSUB8,
+			ARMV7_INTRIN_SHSUB16,
+			ARMV7_INTRIN_UHSUB8,
+			ARMV7_INTRIN_UHSUB16,
+			ARMV7_INTRIN_USUB8,
+			ARMV7_INTRIN_USUB16,
+			ARMV7_INTRIN_SMLAD,
+			ARMV7_INTRIN_SMLADX,
+			ARMV7_INTRIN_SMUAD,
+			ARMV7_INTRIN_SMUADX,
+			ARMV7_INTRIN_SMUSD,
+			ARMV7_INTRIN_SMUSDX,
+			ARMV7_INTRIN_SMLSD,
+			ARMV7_INTRIN_SMLSDX,
+			ARMV7_INTRIN_SMLSLD,
+			ARMV7_INTRIN_SMLSLDX,
+			ARMV7_INTRIN_SMLAWB,
+			ARMV7_INTRIN_SMLAWT,
+			ARMV7_INTRIN_SMLABB,
+			ARMV7_INTRIN_SMLABT,
+			ARMV7_INTRIN_SMLATB,
+			ARMV7_INTRIN_SMLATT,
+			ARMV7_INTRIN_SMLALD,
+			ARMV7_INTRIN_SMLALDX,
+			ARMV7_INTRIN_USAD8,
+			ARMV7_INTRIN_USADA8,
+			ARMV7_INTRIN_QSAX,
+			ARMV7_INTRIN_UQASX,
+			ARMV7_INTRIN_UQSAX,
 			ARMV7_INTRIN_DBG,
+			ARMV7_INTRIN_CLREX,
+			ARMV7_INTRIN_PLD,
+			ARMV7_INTRIN_CRC32B,
+			ARMV7_INTRIN_CRC32CB,
+			ARMV7_INTRIN_CRC32CH,
+			ARMV7_INTRIN_CRC32CW,
+			ARMV7_INTRIN_CRC32H,
+			ARMV7_INTRIN_CRC32W,
 			ARMV7_INTRIN_DMB_SY,
 			ARMV7_INTRIN_DMB_ST,
 			ARMV7_INTRIN_DMB_ISH,
@@ -1566,9 +2312,16 @@ public:
 			ARMV7_INTRIN_ISB,
 			ARMV7_INTRIN_MRS,
 			ARMV7_INTRIN_MSR,
+			ARMV7_INTRIN_VMRS,
+			ARMV7_INTRIN_VMSR,
+			ARMV7_INTRIN_YIELD,
 			ARMV7_INTRIN_SEV,
 			ARMV7_INTRIN_WFE,
 			ARMV7_INTRIN_WFI,
+			ARMV7_INTRIN_HINT,
+			ARMV7_INTRIN_UNPREDICTABLE,
+			ARMV7_INTRIN_HVC,
+			ARMV7_INTRIN_SMC,
 		};
 	}
 
@@ -1607,6 +2360,481 @@ public:
 				NameAndType(Type::IntegerType(1, false)),
 				NameAndType("m", Type::IntegerType(1, false)),
 			};
+		case ARMV7_INTRIN_COPROC_STORE:
+		case ARMV7_INTRIN_COPROC_LOAD:
+			return {
+				NameAndType("address", Type::PointerType(4, Confidence(Type::VoidType(), 0), Confidence(false), Confidence(false), PointerReferenceType)),
+				NameAndType("cp", Type::IntegerType(1, false)),
+				NameAndType("d", Type::IntegerType(1, false)),
+				NameAndType("long_transfer", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_COPROC_DATAPROCESSING:
+			return {
+				NameAndType("cp", Type::IntegerType(1, false)),
+				NameAndType("opc1", Type::IntegerType(1, false)),
+				NameAndType("d", Type::IntegerType(1, false)),
+				NameAndType("n", Type::IntegerType(1, false)),
+				NameAndType("m", Type::IntegerType(1, false)),
+				NameAndType("opc2", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_EXCLUSIVE_MONITORS_PASS:
+		case ARMV7_INTRIN_SET_EXCLUSIVE_MONITORS:
+			return {
+				NameAndType("address", Type::PointerType(4, Confidence(Type::VoidType(), 0), Confidence(false), Confidence(false), PointerReferenceType)),
+				NameAndType("size", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_SMC:
+			return {
+				NameAndType("imm", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_HVC:
+			return {
+				NameAndType("imm", Type::IntegerType(2, false)),
+			};
+		case ARMV7_INTRIN_SEL:
+			return {
+				NameAndType("rn", Type::IntegerType(4, false)),
+				NameAndType("rm", Type::IntegerType(4, false)),
+				NameAndType("ge", Type::IntegerType(4, false)),
+			};
+		case ARMV7_INTRIN_QADD:
+		case ARMV7_INTRIN_QSUB:
+		case ARMV7_INTRIN_QDADD:
+		case ARMV7_INTRIN_QDSUB:
+		case ARMV7_INTRIN_QADD16:
+		case ARMV7_INTRIN_QADD8:
+		case ARMV7_INTRIN_QSUB16:
+		case ARMV7_INTRIN_QSUB8:
+		case ARMV7_INTRIN_UQADD16:
+		case ARMV7_INTRIN_UQADD8:
+		case ARMV7_INTRIN_UQSUB16:
+		case ARMV7_INTRIN_UQSUB8:
+		case ARMV7_INTRIN_QSAX:
+		case ARMV7_INTRIN_UQASX:
+		case ARMV7_INTRIN_UQSAX:
+		case ARMV7_INTRIN_SXTAB16:
+		case ARMV7_INTRIN_UXTAB16:
+		case ARMV7_INTRIN_SADD16:
+		case ARMV7_INTRIN_SADD8:
+		case ARMV7_INTRIN_UADD16:
+		case ARMV7_INTRIN_UADD8:
+		case ARMV7_INTRIN_SHADD16:
+		case ARMV7_INTRIN_SHADD8:
+		case ARMV7_INTRIN_UHADD16:
+		case ARMV7_INTRIN_UHADD8:
+		case ARMV7_INTRIN_SASX:
+		case ARMV7_INTRIN_UASX:
+		case ARMV7_INTRIN_SHASX:
+		case ARMV7_INTRIN_UHASX:
+		case ARMV7_INTRIN_SSAX:
+		case ARMV7_INTRIN_USAX:
+		case ARMV7_INTRIN_SSUB16:
+		case ARMV7_INTRIN_SSUB8:
+		case ARMV7_INTRIN_SHSUB8:
+		case ARMV7_INTRIN_SHSUB16:
+		case ARMV7_INTRIN_UHSUB8:
+		case ARMV7_INTRIN_UHSUB16:
+		case ARMV7_INTRIN_USUB8:
+		case ARMV7_INTRIN_USUB16:
+		case ARMV7_INTRIN_USAD8:
+		case ARMV7_INTRIN_SMUAD:
+		case ARMV7_INTRIN_SMUADX:
+		case ARMV7_INTRIN_SMUSD:
+		case ARMV7_INTRIN_SMUSDX:
+			return {
+				NameAndType("source1", Type::IntegerType(4, false)),
+				NameAndType("source2", Type::IntegerType(4, false)),
+			};
+		case ARMV7_INTRIN_SMLAD:
+		case ARMV7_INTRIN_SMLADX:
+		case ARMV7_INTRIN_SMLSD:
+		case ARMV7_INTRIN_SMLSDX:
+		case ARMV7_INTRIN_SMLAWB:
+		case ARMV7_INTRIN_SMLAWT:
+		case ARMV7_INTRIN_SMLABB:
+		case ARMV7_INTRIN_SMLABT:
+		case ARMV7_INTRIN_SMLATB:
+		case ARMV7_INTRIN_SMLATT:
+			return {
+				NameAndType("source1", Type::IntegerType(4, false)),
+				NameAndType("source2", Type::IntegerType(4, false)),
+				NameAndType("accumulator", Type::IntegerType(4, false)),
+			};
+		case ARMV7_INTRIN_SMLSLD:
+		case ARMV7_INTRIN_SMLSLDX:
+		case ARMV7_INTRIN_SMLALD:
+		case ARMV7_INTRIN_SMLALDX:
+			return {
+				NameAndType("source1", Type::IntegerType(4, false)),
+				NameAndType("source2", Type::IntegerType(4, false)),
+				NameAndType("accumulator", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_SXTB16:
+		case ARMV7_INTRIN_UXTB16:
+			return {
+				NameAndType("source", Type::IntegerType(4, false)),
+			};
+		case ARMV7_INTRIN_USADA8:
+			return {
+				NameAndType("source1", Type::IntegerType(4, false)),
+				NameAndType("source2", Type::IntegerType(4, false)),
+				NameAndType("accumulator", Type::IntegerType(4, false)),
+			};
+		case ARMV7_INTRIN_VRINTA:
+			return {
+				NameAndType("source_register", Type::IntegerType(4, false)),
+			};
+		case ARMV7_INTRIN_VMAXNM:
+		case ARMV7_INTRIN_VMINNM:
+			return {
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VMAX:
+		case ARMV7_INTRIN_VMIN:
+		case ARMV7_INTRIN_VPMAX:
+		case ARMV7_INTRIN_VPMIN:
+		case ARMV7_INTRIN_VHADD:
+		case ARMV7_INTRIN_VRHADD:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VCGT:
+		case ARMV7_INTRIN_VCGT_Q:
+		case ARMV7_INTRIN_VCGE:
+		case ARMV7_INTRIN_VCGE_Q:
+		case ARMV7_INTRIN_VCLT:
+		case ARMV7_INTRIN_VCLT_Q:
+		{
+			size_t vectorSize = intrinsic == ARMV7_INTRIN_VCGE_Q || intrinsic == ARMV7_INTRIN_VCGT_Q
+				|| intrinsic == ARMV7_INTRIN_VCLT_Q ? 16 : 8;
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("is_float", Type::BoolType()),
+				NameAndType("source1", Type::IntegerType(vectorSize, false)),
+				NameAndType("source2", Type::IntegerType(vectorSize, false)),
+			};
+		}
+		case ARMV7_INTRIN_VPADD:
+		case ARMV7_INTRIN_VCEQ:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_float", Type::BoolType()),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VRECPE:
+		case ARMV7_INTRIN_VNEG:
+		case ARMV7_INTRIN_VABS:
+		case ARMV7_INTRIN_VABS_Q:
+		case ARMV7_INTRIN_VNEG_Q:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_float", Type::BoolType()),
+				NameAndType("source", Type::IntegerType(
+					(intrinsic == ARMV7_INTRIN_VABS_Q || intrinsic == ARMV7_INTRIN_VNEG_Q) ? 16 : 8, false)),
+			};
+		case ARMV7_INTRIN_VCVT_FIXED:
+		case ARMV7_INTRIN_VCVT_FIXED_Q:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("fractional_bits", Type::IntegerType(1, false)),
+				NameAndType("to_fixed", Type::BoolType()),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source", Type::IntegerType(
+					intrinsic == ARMV7_INTRIN_VCVT_FIXED_Q ? 16 : 8, false)),
+			};
+		case ARMV7_INTRIN_VREV16:
+		case ARMV7_INTRIN_VREV32:
+		case ARMV7_INTRIN_VREV64:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("source", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VEXT:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+				NameAndType("index", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_SSAT:
+		case ARMV7_INTRIN_SSAT16:
+		case ARMV7_INTRIN_USAT16:
+		case ARMV7_INTRIN_USAT:
+			return {
+				NameAndType("saturate_to", Type::IntegerType(4, false)),
+				NameAndType("source", Type::IntegerType(4, false)),
+			};
+		case ARMV7_INTRIN_VTBL:
+			return {
+				NameAndType("length", Type::IntegerType(1, false)),
+				NameAndType("table0", Type::IntegerType(8, false)),
+				NameAndType("table1", Type::IntegerType(8, false)),
+				NameAndType("table2", Type::IntegerType(8, false)),
+				NameAndType("table3", Type::IntegerType(8, false)),
+				NameAndType("indices", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VTBX:
+			return {
+				NameAndType("length", Type::IntegerType(1, false)),
+				NameAndType("table0", Type::IntegerType(8, false)),
+				NameAndType("table1", Type::IntegerType(8, false)),
+				NameAndType("table2", Type::IntegerType(8, false)),
+				NameAndType("table3", Type::IntegerType(8, false)),
+				NameAndType("indices", Type::IntegerType(8, false)),
+				NameAndType("destination", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VDUP:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("source", Type::IntegerType(8, false)),
+				NameAndType("index", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_VABD:
+		case ARMV7_INTRIN_VABDL:
+		case ARMV7_INTRIN_VADD:
+		case ARMV7_INTRIN_VSUB:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VABA:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("accumulator", Type::IntegerType(16, false)),
+				NameAndType("source1", Type::IntegerType(16, false)),
+				NameAndType("source2", Type::IntegerType(16, false)),
+			};
+		case ARMV7_INTRIN_VABAL:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("accumulator", Type::IntegerType(16, false)),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VADDL:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VADDW:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source1", Type::IntegerType(16, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VRADDHN:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("source1", Type::IntegerType(16, false)),
+				NameAndType("source2", Type::IntegerType(16, false)),
+			};
+		case ARMV7_INTRIN_VSHL_Q:
+		case ARMV7_INTRIN_VSHR_Q:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source", Type::IntegerType(16, false)),
+				NameAndType("shift", Type::IntegerType(intrinsic == ARMV7_INTRIN_VSHL_Q ? 16 : 8, false)),
+			};
+		case ARMV7_INTRIN_VTST:
+		case ARMV7_INTRIN_VTST_Q:
+		case ARMV7_INTRIN_VZIP:
+		case ARMV7_INTRIN_VZIP_Q:
+		case ARMV7_INTRIN_VUZP:
+		case ARMV7_INTRIN_VUZP_Q:
+		case ARMV7_INTRIN_VTRN:
+		case ARMV7_INTRIN_VTRN_Q:
+		{
+			size_t size = (intrinsic == ARMV7_INTRIN_VTRN_Q || intrinsic == ARMV7_INTRIN_VTST_Q
+				|| intrinsic == ARMV7_INTRIN_VUZP_Q || intrinsic == ARMV7_INTRIN_VZIP_Q) ? 16 : 8;
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("source1", Type::IntegerType(size, false)),
+				NameAndType("source2", Type::IntegerType(size, false)),
+			};
+		}
+		case ARMV7_INTRIN_VSHL_IMM:
+		case ARMV7_INTRIN_VSHL_IMM_Q:
+		case ARMV7_INTRIN_VSHRN:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("source", Type::IntegerType(intrinsic == ARMV7_INTRIN_VSHL_IMM ? 8 : 16, false)),
+				NameAndType("shift", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_VRSHR:
+		case ARMV7_INTRIN_VRSHL:
+		case ARMV7_INTRIN_VSHL:
+		case ARMV7_INTRIN_VSHR:
+		case ARMV7_INTRIN_VSHLL:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source", Type::IntegerType(8, false)),
+				NameAndType("shift", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VMOVL:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VMOVN:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("source", Type::IntegerType(16, false)),
+			};
+		case ARMV7_INTRIN_VBIF:
+		case ARMV7_INTRIN_VBIT:
+		case ARMV7_INTRIN_VBSL:
+			return {
+				NameAndType("destination", Type::IntegerType(8, false)),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VSRA:
+		case ARMV7_INTRIN_VRSRA:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("accumulator", Type::IntegerType(8, false)),
+				NameAndType("source", Type::IntegerType(8, false)),
+				NameAndType("shift", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VSRI:
+		case ARMV7_INTRIN_VSLI:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("destination", Type::IntegerType(8, false)),
+				NameAndType("source", Type::IntegerType(8, false)),
+				NameAndType("shift", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VLD2:
+		case ARMV7_INTRIN_VLD4:
+			return {
+				NameAndType("address", Type::PointerType(4, Confidence(Type::VoidType(), 0), Confidence(false), Confidence(false), PointerReferenceType)),
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("alignment", Type::IntegerType(1, false)),
+				NameAndType("index", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_VST2:
+		case ARMV7_INTRIN_VST4:
+			return {
+				NameAndType("address", Type::PointerType(4, Confidence(Type::VoidType(), 0), Confidence(false), Confidence(false), PointerReferenceType)),
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("alignment", Type::IntegerType(1, false)),
+				NameAndType("index", Type::IntegerType(1, false)),
+				NameAndType("source0", Type::IntegerType(8, false)),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+				NameAndType("source3", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VQADD:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_VQSHL:
+		case ARMV7_INTRIN_VQRSHL:
+		case ARMV7_INTRIN_VQSHRN:
+		case ARMV7_INTRIN_VQSHRUN:
+		case ARMV7_INTRIN_VQRSHRN:
+		case ARMV7_INTRIN_VQRSHRUN:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("source_unsigned", Type::BoolType()),
+				NameAndType("destination_unsigned", Type::BoolType()),
+				NameAndType("source", Type::IntegerType(
+					(intrinsic == ARMV7_INTRIN_VQSHL || intrinsic == ARMV7_INTRIN_VQRSHL) ? 8 : 16, false)),
+				NameAndType("shift", Type::IntegerType(
+					(intrinsic == ARMV7_INTRIN_VQSHL || intrinsic == ARMV7_INTRIN_VQRSHL) ? 8 : 16, false)),
+			};
+		case ARMV7_INTRIN_VQMOVN:
+		case ARMV7_INTRIN_VQMOVUN:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("source_unsigned", Type::BoolType()),
+				NameAndType("destination_unsigned", Type::BoolType()),
+				NameAndType("source", Type::IntegerType(16, false)),
+			};
+		case ARMV7_INTRIN_VMLA:
+		case ARMV7_INTRIN_VMLS:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("accumulator", Type::IntegerType(8, false)),
+				NameAndType("source", Type::IntegerType(8, false)),
+				NameAndType("scalar", Type::IntegerType(8, false)),
+				NameAndType("index", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_VMLAL:
+		case ARMV7_INTRIN_VMLSL:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("accumulator", Type::IntegerType(16, false)),
+				NameAndType("source", Type::IntegerType(8, false)),
+				NameAndType("scalar", Type::IntegerType(8, false)),
+				NameAndType("index", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_VMULL:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("is_polynomial", Type::BoolType()),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+				NameAndType("index", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_VMUL:
+		case ARMV7_INTRIN_VQDMULL:
+			return {
+				NameAndType("size", Type::IntegerType(1, false)),
+				NameAndType("is_unsigned", Type::BoolType()),
+				NameAndType("source1", Type::IntegerType(8, false)),
+				NameAndType("source2", Type::IntegerType(8, false)),
+			};
+		case ARMV7_INTRIN_SRS:
+			return {
+				NameAndType("mode", Type::IntegerType(1, false)),
+				NameAndType("increment", Type::BoolType()),
+				NameAndType("wordhigher", Type::BoolType()),
+				NameAndType("writeback", Type::BoolType()),
+			};
+		case ARMV7_INTRIN_RFE:
+			return {
+				NameAndType("base_register", Type::IntegerType(4, false)),
+				NameAndType("increment", Type::BoolType()),
+				NameAndType("wordhigher", Type::BoolType()),
+				NameAndType("writeback", Type::BoolType()),
+			};
+		case ARMV7_INTRIN_CPS:
+			return {
+				NameAndType("mode", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_SETEND:
+			return {
+				NameAndType("endian", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_CPSID:
+		case ARMV7_INTRIN_CPSIE:
+			return {
+				NameAndType("iflags", Type::IntegerType(1, false)),
+				NameAndType("mode", Type::IntegerType(1, false)),
+			};
 		case ARMV7_INTRIN_MRS:
 			// return {NameAndType(Type::IntegerType(4, false))};
 			return {
@@ -1618,8 +2846,41 @@ public:
 				NameAndType("msr", Confidence<Ref<Type>>(Type::EnumerationType(this, get_msr_op_enum(), 4, false), BN_FULL_CONFIDENCE)),
 				NameAndType(Type::IntegerType(4, false))
 			};
+		case ARMV7_INTRIN_VMRS:
+			return {
+				NameAndType("status_register", Confidence<Ref<Type>>(Type::EnumerationType(this, GetVfpStatusRegisterEnum(), 4, false), BN_FULL_CONFIDENCE)),
+			};
+		case ARMV7_INTRIN_VMSR:
+			return {
+				NameAndType("status_register", Confidence<Ref<Type>>(Type::EnumerationType(this, GetVfpStatusRegisterEnum(), 4, false), BN_FULL_CONFIDENCE)),
+				NameAndType("source_register", Type::IntegerType(4, false)),
+			};
 		case ARMV7_INTRIN_DBG:
 			return {NameAndType(Type::IntegerType(1, false))};
+		case ARMV7_INTRIN_HINT:
+			return {NameAndType("imm", Type::IntegerType(1, false))};
+		case ARMV7_INTRIN_PLD:
+			return {
+				NameAndType("address", Type::PointerType(4, Confidence(Type::VoidType(), 0), Confidence(false), Confidence(false), PointerReferenceType)),
+			};
+		case ARMV7_INTRIN_CRC32B:
+		case ARMV7_INTRIN_CRC32CB:
+			return {
+				NameAndType("accumulator", Type::IntegerType(4, false)),
+				NameAndType("value", Type::IntegerType(1, false)),
+			};
+		case ARMV7_INTRIN_CRC32H:
+		case ARMV7_INTRIN_CRC32CH:
+			return {
+				NameAndType("accumulator", Type::IntegerType(4, false)),
+				NameAndType("value", Type::IntegerType(2, false)),
+			};
+		case ARMV7_INTRIN_CRC32W:
+		case ARMV7_INTRIN_CRC32CW:
+			return {
+				NameAndType("accumulator", Type::IntegerType(4, false)),
+				NameAndType("value", Type::IntegerType(4, false)),
+			};
 		default:
 			return vector<NameAndType>();
 		}
@@ -1633,8 +2894,176 @@ public:
 			return { Type::IntegerType(4, false) };
 		case ARMV7_INTRIN_COPROC_GETTWOWORDS:
 			return { Type::IntegerType(4, false), Type::IntegerType(4, false) };
+		case ARMV7_INTRIN_EXCLUSIVE_MONITORS_PASS:
+			return { Type::BoolType() };
+		case ARMV7_INTRIN_SADD16:
+		case ARMV7_INTRIN_SADD8:
+		case ARMV7_INTRIN_UADD16:
+		case ARMV7_INTRIN_UADD8:
+		case ARMV7_INTRIN_SASX:
+		case ARMV7_INTRIN_UASX:
+		case ARMV7_INTRIN_SSAX:
+		case ARMV7_INTRIN_USAX:
+		case ARMV7_INTRIN_SSUB16:
+		case ARMV7_INTRIN_SSUB8:
+		case ARMV7_INTRIN_USUB8:
+		case ARMV7_INTRIN_USUB16:
+			return { Type::IntegerType(4, false), Type::IntegerType(4, false) };
 		case ARMV7_INTRIN_MRS:
+		case ARMV7_INTRIN_VMRS:
+		case ARMV7_INTRIN_SEL:
+		case ARMV7_INTRIN_QADD:
+		case ARMV7_INTRIN_QSUB:
+		case ARMV7_INTRIN_QDADD:
+		case ARMV7_INTRIN_QDSUB:
+		case ARMV7_INTRIN_QADD16:
+		case ARMV7_INTRIN_QADD8:
+		case ARMV7_INTRIN_QSUB16:
+		case ARMV7_INTRIN_QSUB8:
+		case ARMV7_INTRIN_UQADD16:
+		case ARMV7_INTRIN_UQADD8:
+		case ARMV7_INTRIN_UQSUB16:
+		case ARMV7_INTRIN_UQSUB8:
+		case ARMV7_INTRIN_QSAX:
+		case ARMV7_INTRIN_UQASX:
+		case ARMV7_INTRIN_SXTAB16:
+		case ARMV7_INTRIN_SXTB16:
+		case ARMV7_INTRIN_UXTAB16:
+		case ARMV7_INTRIN_UXTB16:
+		case ARMV7_INTRIN_SHADD16:
+		case ARMV7_INTRIN_SHADD8:
+		case ARMV7_INTRIN_UHADD16:
+		case ARMV7_INTRIN_UHADD8:
+		case ARMV7_INTRIN_SHASX:
+		case ARMV7_INTRIN_UHASX:
+		case ARMV7_INTRIN_SHSUB8:
+		case ARMV7_INTRIN_SHSUB16:
+		case ARMV7_INTRIN_UHSUB8:
+		case ARMV7_INTRIN_UHSUB16:
+		case ARMV7_INTRIN_USAD8:
+		case ARMV7_INTRIN_USADA8:
+		case ARMV7_INTRIN_SMLAD:
+		case ARMV7_INTRIN_SMLADX:
+		case ARMV7_INTRIN_SMUAD:
+		case ARMV7_INTRIN_SMUADX:
+		case ARMV7_INTRIN_SMUSD:
+		case ARMV7_INTRIN_SMUSDX:
+		case ARMV7_INTRIN_SMLSD:
+		case ARMV7_INTRIN_SMLSDX:
+		case ARMV7_INTRIN_SMLAWB:
+		case ARMV7_INTRIN_SMLAWT:
+		case ARMV7_INTRIN_SMLABB:
+		case ARMV7_INTRIN_SMLABT:
+		case ARMV7_INTRIN_SMLATB:
+		case ARMV7_INTRIN_SMLATT:
+		case ARMV7_INTRIN_UQSAX:
+		case ARMV7_INTRIN_VRINTA:
+		case ARMV7_INTRIN_VMAXNM:
+		case ARMV7_INTRIN_VMINNM:
+		case ARMV7_INTRIN_SSAT:
+		case ARMV7_INTRIN_SSAT16:
+		case ARMV7_INTRIN_USAT:
+		case ARMV7_INTRIN_USAT16:
+		case ARMV7_INTRIN_CRC32B:
+		case ARMV7_INTRIN_CRC32CB:
+		case ARMV7_INTRIN_CRC32CH:
+		case ARMV7_INTRIN_CRC32CW:
+		case ARMV7_INTRIN_CRC32H:
+		case ARMV7_INTRIN_CRC32W:
 			return {Type::IntegerType(4, false)};
+		case ARMV7_INTRIN_SMLSLD:
+		case ARMV7_INTRIN_SMLSLDX:
+		case ARMV7_INTRIN_SMLALD:
+		case ARMV7_INTRIN_SMLALDX:
+			return {Type::IntegerType(4, false), Type::IntegerType(4, false)};
+		case ARMV7_INTRIN_VZIP_Q:
+		case ARMV7_INTRIN_VUZP_Q:
+		case ARMV7_INTRIN_VTRN_Q:
+			return {Type::IntegerType(16, false), Type::IntegerType(16, false)};
+		case ARMV7_INTRIN_VZIP:
+		case ARMV7_INTRIN_VUZP:
+		case ARMV7_INTRIN_VTRN:
+		case ARMV7_INTRIN_VLD2:
+			return {Type::IntegerType(8, false), Type::IntegerType(8, false)};
+		case ARMV7_INTRIN_VLD4:
+			return {Type::IntegerType(8, false), Type::IntegerType(8, false), Type::IntegerType(8, false), Type::IntegerType(8, false)};
+		case ARMV7_INTRIN_VTBL:
+		case ARMV7_INTRIN_VTBX:
+		case ARMV7_INTRIN_VDUP:
+		case ARMV7_INTRIN_VABD:
+		case ARMV7_INTRIN_VABA:
+		case ARMV7_INTRIN_VRSHR:
+		case ARMV7_INTRIN_VRSHL:
+		case ARMV7_INTRIN_VSRA:
+		case ARMV7_INTRIN_VRSRA:
+		case ARMV7_INTRIN_VSRI:
+		case ARMV7_INTRIN_VSLI:
+		case ARMV7_INTRIN_VRADDHN:
+		case ARMV7_INTRIN_VTST:
+		case ARMV7_INTRIN_VSHL_IMM:
+		case ARMV7_INTRIN_VSHRN:
+		case ARMV7_INTRIN_VSHL:
+		case ARMV7_INTRIN_VSHR:
+		case ARMV7_INTRIN_VMAX:
+		case ARMV7_INTRIN_VMIN:
+		case ARMV7_INTRIN_VPADD:
+		case ARMV7_INTRIN_VPMAX:
+		case ARMV7_INTRIN_VPMIN:
+		case ARMV7_INTRIN_VREV16:
+		case ARMV7_INTRIN_VREV32:
+		case ARMV7_INTRIN_VREV64:
+		case ARMV7_INTRIN_VEXT:
+		case ARMV7_INTRIN_VCGT:
+		case ARMV7_INTRIN_VCGE:
+		case ARMV7_INTRIN_VCLT:
+		case ARMV7_INTRIN_VCEQ:
+		case ARMV7_INTRIN_VADD:
+		case ARMV7_INTRIN_VSUB:
+		case ARMV7_INTRIN_VQADD:
+		case ARMV7_INTRIN_VHADD:
+		case ARMV7_INTRIN_VRHADD:
+		case ARMV7_INTRIN_VRECPE:
+		case ARMV7_INTRIN_VNEG:
+		case ARMV7_INTRIN_VABS:
+		case ARMV7_INTRIN_VCVT_FIXED:
+		case ARMV7_INTRIN_VQSHL:
+		case ARMV7_INTRIN_VQRSHL:
+		case ARMV7_INTRIN_VQSHRN:
+		case ARMV7_INTRIN_VQSHRUN:
+		case ARMV7_INTRIN_VQRSHRN:
+		case ARMV7_INTRIN_VQRSHRUN:
+		case ARMV7_INTRIN_VQMOVN:
+		case ARMV7_INTRIN_VQMOVUN:
+		case ARMV7_INTRIN_VMOVN:
+		case ARMV7_INTRIN_VMLA:
+		case ARMV7_INTRIN_VMLS:
+		case ARMV7_INTRIN_VMUL:
+		case ARMV7_INTRIN_VBIF:
+		case ARMV7_INTRIN_VBIT:
+		case ARMV7_INTRIN_VBSL:
+			return {Type::IntegerType(8, false)};
+		case ARMV7_INTRIN_VTST_Q:
+		case ARMV7_INTRIN_VSHL_Q:
+		case ARMV7_INTRIN_VSHL_IMM_Q:
+		case ARMV7_INTRIN_VSHR_Q:
+		case ARMV7_INTRIN_VABS_Q:
+		case ARMV7_INTRIN_VNEG_Q:
+		case ARMV7_INTRIN_VCVT_FIXED_Q:
+		case ARMV7_INTRIN_VCGE_Q:
+		case ARMV7_INTRIN_VCGT_Q:
+		case ARMV7_INTRIN_VCLT_Q:
+			return {Type::IntegerType(16, false)};
+		case ARMV7_INTRIN_VABAL:
+		case ARMV7_INTRIN_VABDL:
+		case ARMV7_INTRIN_VADDL:
+		case ARMV7_INTRIN_VADDW:
+		case ARMV7_INTRIN_VSHLL:
+		case ARMV7_INTRIN_VMLAL:
+		case ARMV7_INTRIN_VMLSL:
+		case ARMV7_INTRIN_VQDMULL:
+		case ARMV7_INTRIN_VMOVL:
+		case ARMV7_INTRIN_VMULL:
+			return {Type::IntegerType(16, false)};
 		case ARMV7_INTRIN_MSR:
 			// return {Type::IntegerType(4, false)};
 			return {};
@@ -1648,7 +3077,8 @@ public:
 		decomp_request request;
 		decomp_result decomp;
 
-		populateDecomposeRequest(&request, data, len, addr, IFTHEN_NO, IFTHENLAST_NO);
+		if (!populateDecomposeRequest(&request, data, len, addr, IFTHEN_NO, IFTHENLAST_NO))
+			return false;
 
 		if (thumb_decompose(&request, &decomp) != STATUS_OK)
 			return false;
@@ -1664,45 +3094,103 @@ public:
 			uint32_t mask = decomp.fields[FIELD_mask];
 			uint32_t cond = decomp.fields[FIELD_firstcond];
 
-			// Calculate number of instructions
 			size_t instrCount;
-			if (decomp.fields[FIELD_mask] & 1)
+			if (mask & 1)
 				instrCount = 4;
-			else if (decomp.fields[FIELD_mask] & 2)
+			else if (mask & 2)
 				instrCount = 3;
-			else if (decomp.fields[FIELD_mask] & 4)
+			else if (mask & 4)
 				instrCount = 2;
 			else
 				instrCount = 1;
 
-			// decompose all instructions in the if-then block
-			vector<uint32_t> addrsTrue, addrsFalse;
-			vector<decomp_result> decompsTrue, decompsFalse;
+			// Decompose all instructions in the IT block and keep their original
+			// mask slot. A path may skip later slots once it has branched/returned.
+			vector<ThumbITSlot> slots;
+			bool pathTerminated[2] = {false, false};
+			bool pathHasBody[2] = {false, false};
+			bool pathWroteFlags[2] = {false, false};
 
 			for (size_t i = 0; i < instrCount; i++)
 			{
-				bool isTrue = (i == 0) || (((mask >> (4 - i)) & 1) == (cond & 1));
-
-				populateDecomposeRequest(&request, data+offset, len-offset, addr+offset,
-					IFTHEN_YES, ((i + 1) >= instrCount) ? IFTHENLAST_YES : IFTHENLAST_NO);
-
-				if (thumb_decompose(&request, &decomp) != STATUS_OK)
-					return false;
-				if ((offset + (decomp.instrSize / 8)) > len)
-					return false;
-				if ((decomp.status & STATUS_UNDEFINED) || (!decomp.format))
+				if (offset >= len || (len - offset) < 2)
 					return false;
 
-				if (isTrue) {
-					addrsTrue.push_back(request.addr);
-					decompsTrue.push_back(decomp);
-				}
-				else {
-					addrsFalse.push_back(request.addr);
-					decompsFalse.push_back(decomp);
+				bool thenSlot = (i == 0) || (((mask >> (4 - i)) & 1) == (cond & 1));
+				size_t stateIdx = thenSlot ? 0 : 1;
+				size_t remainingLen = len - offset;
+
+				bool decoded = populateDecomposeRequest(&request, data + offset, remainingLen, addr + offset,
+					IFTHEN_YES, ((i + 1) >= instrCount) ? IFTHENLAST_YES : IFTHENLAST_NO)
+					&& (thumb_decompose(&request, &decomp) == STATUS_OK)
+					&& !(decomp.status & STATUS_UNDEFINED) && decomp.format;
+				if (!decoded)
+					return false;
+				if ((decomp.instrSize / 8) > remainingLen)
+					return false;
+
+				ThumbITSlot slot;
+				slot.addr = request.addr;
+				slot.decomp = decomp;
+				slot.thenSlot = thenSlot;
+				slot.lift = !pathTerminated[stateIdx];
+				slots.push_back(slot);
+				pathHasBody[stateIdx] |= slot.lift;
+
+				if (slot.lift)
+				{
+					pathWroteFlags[stateIdx] |= ThumbITInstructionWritesAPSR(decomp);
+
+					InstructionInfo innerResult;
+					if (GetInstructionInfo(data + offset, addr + offset, remainingLen, innerResult))
+					{
+						for (size_t j = 0; j < innerResult.branchCount; j++)
+						{
+							switch (innerResult.branchType[j])
+							{
+							case UnconditionalBranch:
+							case TrueBranch:
+							case FalseBranch:
+							case FunctionReturn:
+							case UnresolvedBranch:
+							case IndirectBranch:
+							case ExceptionBranch:
+								pathTerminated[stateIdx] = true;
+								break;
+							default:
+								break;
+							}
+						}
+					}
 				}
 
 				offset += decomp.instrSize / 8;
+			}
+
+			decomp_result branchDecomp;
+
+			if ((offset < len) && ((len - offset) >= 2)
+				&& populateDecomposeRequest(&request, data + offset, len - offset, addr + offset, IFTHEN_NO, IFTHENLAST_NO)
+				&& (thumb_decompose(&request, &branchDecomp) == STATUS_OK)
+				&& ((offset + (branchDecomp.instrSize / 8)) <= len)
+				&& !(branchDecomp.status & STATUS_UNDEFINED) && branchDecomp.format && IsConditionalBranch(branchDecomp)
+				&& IsSameOrInvertedCondition(branchDecomp.fields[FIELD_cond], cond))
+			{
+				bool branchOnTrue = branchDecomp.fields[FIELD_cond] == cond;
+				size_t stateIdx = branchOnTrue ? 0 : 1;
+				if (!pathTerminated[stateIdx] && !pathWroteFlags[stateIdx])
+				{
+					ThumbITSlot slot;
+					slot.addr = request.addr;
+					slot.thenSlot = branchOnTrue;
+					slot.lift = true;
+					slot.directBranch = true;
+					slot.branchTarget = GetConditionalBranchTarget(branchDecomp);
+					slots.push_back(slot);
+					pathHasBody[stateIdx] = true;
+					pathTerminated[stateIdx] = true;
+					offset += branchDecomp.instrSize / 8;
+				}
 			}
 
 			// generate IL
@@ -1710,31 +3198,33 @@ public:
 
 			il.AddInstruction(il.If(GetCondition(il, cond), labelTrue, labelFalse));
 
-			// generate IL for "true" if-else members
-			il.MarkLabel(labelTrue);
-
-			for (size_t i = 0; i < decompsTrue.size(); i++)
+			auto liftPath = [&](bool thenPath, LowLevelILLabel& label)
 			{
-				il.SetCurrentAddress(this, addrsTrue[i]);
-				GetLowLevelILForThumbInstruction(this, il, &(decompsTrue[i]), true);
-			}
+				size_t stateIdx = thenPath ? 0 : 1;
 
-			if (decompsFalse.empty()) {
-				il.MarkLabel(labelFalse);
-			}
-			else {
-				il.AddInstruction(il.Goto(labelDone));
-				il.MarkLabel(labelFalse);
+				il.MarkLabel(label);
 
-				// generate IL for "false" if-else members
-				for (int i = 0; i < decompsFalse.size(); i++)
+				for (auto& slot : slots)
 				{
-					il.SetCurrentAddress(this, addrsFalse[i]);
-					GetLowLevelILForThumbInstruction(this, il, &(decompsFalse[i]), true);
+					if (!slot.lift || (slot.thenSlot != thenPath))
+						continue;
+
+					il.SetCurrentAddress(this, slot.addr);
+					if (slot.directBranch)
+						EmitDirectThumbJump(this, il, slot.branchTarget);
+					else
+						GetLowLevelILForThumbInstruction(this, il, &slot.decomp, true);
 				}
 
+				if (thenPath && pathHasBody[1] && !pathTerminated[stateIdx])
+					il.AddInstruction(il.Goto(labelDone));
+			};
+
+			liftPath(true, labelTrue);
+			liftPath(false, labelFalse);
+
+			if (pathHasBody[1])
 				il.MarkLabel(labelDone);
-			}
 
 			len = offset;
 			return true;

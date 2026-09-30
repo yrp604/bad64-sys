@@ -1,4 +1,4 @@
-// Copyright 2022-2025 Vector 35 Inc.
+// Copyright 2022-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 use binaryninjacore_sys::*;
 use std::fmt::{Debug, Formatter};
+use std::ptr::NonNull;
 
 use crate::architecture::CoreArchitecture;
 use crate::binary_view::BinaryView;
@@ -128,7 +129,28 @@ pub struct TagType {
     pub(crate) handle: *mut BNTagType,
 }
 
+impl CoreArrayProvider for TagType {
+    type Raw = *mut BNTagType;
+    type Context = ();
+    type Wrapped<'a> = Guard<'a, Self>;
+}
+
+unsafe impl CoreArrayProviderInner for TagType {
+    unsafe fn free(raw: *mut Self::Raw, count: usize, _context: &Self::Context) {
+        BNFreeTagTypeList(raw, count)
+    }
+
+    unsafe fn wrap_raw<'a>(raw: &'a Self::Raw, context: &'a Self::Context) -> Self::Wrapped<'a> {
+        Guard::new(Self::from_raw(*raw), context)
+    }
+}
+
 impl TagType {
+    pub(crate) unsafe fn from_raw(handle: *mut BNTagType) -> Self {
+        debug_assert!(!handle.is_null());
+        Self { handle }
+    }
+
     pub(crate) unsafe fn ref_from_raw(handle: *mut BNTagType) -> Ref<Self> {
         debug_assert!(!handle.is_null());
         Ref::new(Self { handle })
@@ -236,8 +258,8 @@ unsafe impl Sync for TagType {}
 
 #[derive(Clone, PartialEq)]
 pub struct TagReference {
-    pub arch: CoreArchitecture,
-    pub func: Ref<Function>,
+    pub arch: Option<CoreArchitecture>,
+    pub func: Option<Ref<Function>>,
     pub addr: u64,
     pub auto_defined: bool,
     pub reference_type: TagReferenceType,
@@ -250,8 +272,10 @@ impl From<&BNTagReference> for TagReference {
             reference_type: value.refType,
             auto_defined: value.autoDefined,
             tag: unsafe { Tag::from_raw(value.tag).to_owned() },
-            arch: unsafe { CoreArchitecture::from_raw(value.arch) },
-            func: unsafe { Function::from_raw(value.func).to_owned() },
+            arch: NonNull::new(value.arch)
+                .map(|arch| unsafe { CoreArchitecture::from_raw(arch.as_ptr()) }),
+            func: NonNull::new(value.func)
+                .map(|func| unsafe { Function::from_raw(func.as_ptr()).to_owned() }),
             addr: value.addr,
         }
     }

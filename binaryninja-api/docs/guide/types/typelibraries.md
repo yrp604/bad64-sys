@@ -32,8 +32,10 @@ Type Libraries contain details about a specific library that is imported by bina
 
 Type Libraries are named after the source library they are providing types for. When a binary is opened, Binary Ninja finds all of its linked library dependencies, and looks up Type Libraries for them. Those with a File Name or Alternative Name matching the exact text of a library used by the binary will be imported into the analysis. You can see this process in the Log:
 
-    elf: searching for 'libc.so.6' in type libraries
-    Type library 'libc.so.6' imported
+```text
+elf: searching for 'libc.so.6' in type libraries
+Type library 'libc.so.6' imported
+```
 
 The [Developer Guide](../../dev/typelibraries.md) contains more details about the implementation details of the Type Library format.
 

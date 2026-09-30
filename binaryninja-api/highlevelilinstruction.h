@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2025 Vector 35 Inc
+// Copyright (c) 2019-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -20,15 +20,19 @@
 
 #pragma once
 
-#include <functional>
-#include <unordered_map>
-#include <vector>
+#include "base/function_ref.h"
+#include "mediumlevelilinstruction.h"
+
 #ifdef BINARYNINJACORE_LIBRARY
 	#include "variable.h"
+	#include "ilsourcelocation.h"
 #else
 	#include "binaryninjaapi.h"
 #endif
-#include "mediumlevelilinstruction.h"
+
+#include <unordered_map>
+#include <vector>
+
 #include <fmt/core.h>
 
 #ifdef BINARYNINJACORE_LIBRARY
@@ -61,7 +65,7 @@ namespace BinaryNinja
 	/*!
 		\ingroup highlevelil
 	*/
-	enum HighLevelILOperandType
+	enum HighLevelILOperandType : uint8_t
 	{
 		IntegerHighLevelOperand,
 		ConstantDataHighLevelOperand,
@@ -78,13 +82,14 @@ namespace BinaryNinja
 	/*!
 		\ingroup highlevelil
 	*/
-	enum HighLevelILOperandUsage
+	enum HighLevelILOperandUsage : uint8_t
 	{
 		SourceExprHighLevelOperandUsage,
 		VariableHighLevelOperandUsage,
 		DestVariableHighLevelOperandUsage,
 		SSAVariableHighLevelOperandUsage,
 		DestSSAVariableHighLevelOperandUsage,
+		PartialSSAVariableSourceHighLevelOperandUsage,
 		DestExprHighLevelOperandUsage,
 		LeftExprHighLevelOperandUsage,
 		RightExprHighLevelOperandUsage,
@@ -113,6 +118,7 @@ namespace BinaryNinja
 		BlockExprsHighLevelOperandUsage,
 		CasesHighLevelOperandUsage,
 		ValueExprsHighLevelOperandUsage,
+		FieldExprsHighLevelOperandUsage,
 		SourceSSAVariablesHighLevelOperandUsage,
 		SourceMemoryVersionHighLevelOperandUsage,
 		SourceMemoryVersionsHighLevelOperandUsage,
@@ -192,8 +198,8 @@ namespace BinaryNinja
 #else
 			Ref<HighLevelILFunction> function;
 #endif
-			BNHighLevelILInstruction instr;
-			size_t operand, count;
+			size_t offset;
+			size_t count;
 
 			bool operator==(const ListIterator& a) const;
 			bool operator!=(const ListIterator& a) const;
@@ -208,7 +214,7 @@ namespace BinaryNinja
 	  public:
 		typedef ListIterator const_iterator;
 
-		HighLevelILIntegerList(HighLevelILFunction* func, const BNHighLevelILInstruction& instr, size_t count);
+		HighLevelILIntegerList(HighLevelILFunction* func, size_t offset, size_t count);
 
 		const_iterator begin() const;
 		const_iterator end() const;
@@ -248,7 +254,7 @@ namespace BinaryNinja
 	  public:
 		typedef ListIterator const_iterator;
 
-		HighLevelILIndexList(HighLevelILFunction* func, const BNHighLevelILInstruction& instr, size_t count);
+		HighLevelILIndexList(HighLevelILFunction* func, size_t offset, size_t count);
 
 		const_iterator begin() const;
 		const_iterator end() const;
@@ -292,7 +298,7 @@ namespace BinaryNinja
 	  public:
 		typedef ListIterator const_iterator;
 
-		HighLevelILInstructionList(HighLevelILFunction* func, const BNHighLevelILInstruction& instr, size_t count,
+		HighLevelILInstructionList(HighLevelILFunction* func, size_t offset, size_t count,
 		    bool asFullAst, size_t instructionIndex);
 
 		const_iterator begin() const;
@@ -301,6 +307,7 @@ namespace BinaryNinja
 		const HighLevelILInstruction operator[](size_t i) const;
 
 		operator _STD_VECTOR<HighLevelILInstruction>() const;
+		operator _STD_VECTOR<ExprId>() const;
 	};
 
 	/*!
@@ -334,7 +341,7 @@ namespace BinaryNinja
 	  public:
 		typedef ListIterator const_iterator;
 
-		HighLevelILSSAVariableList(HighLevelILFunction* func, const BNHighLevelILInstruction& instr, size_t count);
+		HighLevelILSSAVariableList(HighLevelILFunction* func, size_t offset, size_t count);
 
 		const_iterator begin() const;
 		const_iterator end() const;
@@ -357,10 +364,6 @@ namespace BinaryNinja
 		size_t exprIndex, instructionIndex;
 		bool ast;
 
-		static _STD_UNORDERED_MAP<HighLevelILOperandUsage, HighLevelILOperandType> operandTypeForUsage;
-		static _STD_UNORDERED_MAP<BNHighLevelILOperation, _STD_VECTOR<HighLevelILOperandUsage>> operationOperandUsage;
-		static _STD_UNORDERED_MAP<BNHighLevelILOperation, _STD_UNORDERED_MAP<HighLevelILOperandUsage, size_t>>
-		    operationOperandIndex;
 
 		HighLevelILOperandList GetOperands() const;
 
@@ -370,6 +373,7 @@ namespace BinaryNinja
 		HighLevelILInstruction GetRawOperandAsExpr(size_t operand) const;
 		Variable GetRawOperandAsVariable(size_t operand) const;
 		SSAVariable GetRawOperandAsSSAVariable(size_t operand) const;
+		SSAVariable GetRawOperandAsPartialSSAVariableSource(size_t operand) const;
 		HighLevelILInstructionList GetRawOperandAsExprList(size_t operand) const;
 		HighLevelILSSAVariableList GetRawOperandAsSSAVariableList(size_t operand) const;
 		HighLevelILIndexList GetRawOperandAsIndexList(size_t operand) const;
@@ -483,13 +487,14 @@ namespace BinaryNinja
 		HighLevelILInstruction(const HighLevelILInstructionBase& instr);
 
 		void CollectSubExprs(_STD_STACK<size_t>& toProcess) const;
-		void VisitExprs(const std::function<bool(const HighLevelILInstruction& expr)>& func) const;
-		void VisitExprs(const std::function<bool(const HighLevelILInstruction& expr)>& preFunc,
-			const std::function<void(const HighLevelILInstruction& expr)>& postFunc) const;
+		void VisitExprs(bn::base::function_ref<bool(const HighLevelILInstruction& expr)> func) const;
+		void VisitExprs(bn::base::function_ref<bool(const HighLevelILInstruction& expr)> preFunc,
+			bn::base::function_ref<void(const HighLevelILInstruction& expr)> postFunc) const;
 
-		ExprId CopyTo(HighLevelILFunction* dest) const;
+		ExprId CopyTo(HighLevelILFunction* dest, const ILSourceLocation& sourceLocation = {}) const;
 		ExprId CopyTo(HighLevelILFunction* dest,
-		    const std::function<ExprId(const HighLevelILInstruction& subExpr)>& subExprHandler) const;
+		    bn::base::function_ref<ExprId(const HighLevelILInstruction& subExpr)> subExprHandler,
+			const ILSourceLocation& sourceLocation = {}) const;
 
 		bool operator<(const HighLevelILInstruction& other) const;
 		bool operator==(const HighLevelILInstruction& other) const;
@@ -520,6 +525,11 @@ namespace BinaryNinja
 		SSAVariable GetDestSSAVariable() const
 		{
 			return As<N>().GetDestSSAVariable();
+		}
+		template <BNHighLevelILOperation N>
+		SSAVariable GetSourceSSAVariable() const
+		{
+			return As<N>().GetSourceSSAVariable();
 		}
 		template <BNHighLevelILOperation N>
 		HighLevelILInstruction GetDestExpr() const
@@ -662,6 +672,11 @@ namespace BinaryNinja
 			return As<N>().GetValueExprs();
 		}
 		template <BNHighLevelILOperation N>
+		HighLevelILInstructionList GetFieldExprs() const
+		{
+			return As<N>().GetFieldExprs();
+		}
+		template <BNHighLevelILOperation N>
 		HighLevelILSSAVariableList GetSourceSSAVariables() const
 		{
 			return As<N>().GetSourceSSAVariables();
@@ -696,6 +711,11 @@ namespace BinaryNinja
 		void SetDestSSAVersion(size_t version)
 		{
 			As<N>().SetDestSSAVersion(version);
+		}
+		template <BNHighLevelILOperation N>
+		void SetSourceSSAVersion(size_t version)
+		{
+			As<N>().SetSourceSSAVersion(version);
 		}
 		template <BNHighLevelILOperation N>
 		void SetParameterExprs(const _STD_VECTOR<MediumLevelILInstruction>& params)
@@ -777,6 +797,7 @@ namespace BinaryNinja
 		Variable GetDestVariable() const;
 		SSAVariable GetSSAVariable() const;
 		SSAVariable GetDestSSAVariable() const;
+		SSAVariable GetSourceSSAVariable() const;
 		HighLevelILInstruction GetDestExpr() const;
 		HighLevelILInstruction GetLeftExpr() const;
 		HighLevelILInstruction GetRightExpr() const;
@@ -805,6 +826,7 @@ namespace BinaryNinja
 		HighLevelILInstructionList GetBlockExprs() const;
 		HighLevelILInstructionList GetCases() const;
 		HighLevelILInstructionList GetValueExprs() const;
+		HighLevelILInstructionList GetFieldExprs() const;
 		HighLevelILSSAVariableList GetSourceSSAVariables() const;
 		size_t GetSourceMemoryVersion() const;
 		HighLevelILIndexList GetSourceMemoryVersions() const;
@@ -854,28 +876,29 @@ namespace BinaryNinja
 			typedef value_type reference;
 
 			const HighLevelILOperandList* owner;
-			_STD_VECTOR<HighLevelILOperandUsage>::const_iterator pos;
-			bool operator==(const ListIterator& a) const { return pos == a.pos; }
-			bool operator!=(const ListIterator& a) const { return pos != a.pos; }
-			bool operator<(const ListIterator& a) const { return pos < a.pos; }
+			size_t index;
+			constexpr bool operator==(const ListIterator& a) const { return index == a.index; }
+			constexpr auto operator<=>(const ListIterator& a) const { return index <=> a.index; }
 			ListIterator& operator++()
 			{
-				++pos;
+				++index;
 				return *this;
 			}
 			const HighLevelILOperand operator*();
 		};
 
 		HighLevelILInstruction m_instr;
-		const _STD_VECTOR<HighLevelILOperandUsage>& m_usageList;
-		const _STD_UNORDERED_MAP<HighLevelILOperandUsage, size_t>& m_operandIndexMap;
+		const HighLevelILOperandUsage* m_usages;
+		const uint8_t* m_indices;
+		uint8_t m_count;
 
 	  public:
 		typedef ListIterator const_iterator;
 
 		HighLevelILOperandList(const HighLevelILInstruction& instr,
-		    const _STD_VECTOR<HighLevelILOperandUsage>& usageList,
-		    const _STD_UNORDERED_MAP<HighLevelILOperandUsage, size_t>& operandIndexMap);
+		    const HighLevelILOperandUsage* usages,
+		    const uint8_t* indices,
+		    uint8_t count);
 
 		const_iterator begin() const;
 		const_iterator end() const;
@@ -1148,6 +1171,18 @@ namespace BinaryNinja
 		HighLevelILInstruction GetHighExpr() const { return GetRawOperandAsExpr(0); }
 		HighLevelILInstruction GetLowExpr() const { return GetRawOperandAsExpr(1); }
 	};
+	template <>
+	struct HighLevelILInstructionAccessor<HLIL_STRUCT_INIT> : public HighLevelILInstructionBase
+	{
+		HighLevelILInstructionList GetFieldExprs() const { return GetRawOperandAsExprList(0); }
+	};
+	template <>
+	struct HighLevelILInstructionAccessor<HLIL_STRUCT_INIT_FIELD> : public HighLevelILInstructionBase
+	{
+		uint64_t GetOffset() const { return GetRawOperandAsInteger(0); }
+		size_t GetMemberIndex() const { return GetRawOperandAsIndex(1); }
+		HighLevelILInstruction GetSourceExpr() const { return GetRawOperandAsExpr(2); }
+	};
 
 	template <>
 	struct HighLevelILInstructionAccessor<HLIL_VAR> : public HighLevelILInstructionBase
@@ -1159,6 +1194,14 @@ namespace BinaryNinja
 	{
 		SSAVariable GetSSAVariable() const { return GetRawOperandAsSSAVariable(0); }
 		void SetSSAVersion(size_t version) { UpdateRawOperand(1, version); }
+	};
+	template <>
+	struct HighLevelILInstructionAccessor<HLIL_VAR_SSA_PARTIAL> : public HighLevelILInstructionBase
+	{
+		SSAVariable GetDestSSAVariable() const { return GetRawOperandAsSSAVariable(0); }
+		SSAVariable GetSourceSSAVariable() const { return GetRawOperandAsPartialSSAVariableSource(0); }
+		void SetDestSSAVersion(size_t version) { UpdateRawOperand(1, version); }
+		void SetSourceSSAVersion(size_t version) { UpdateRawOperand(2, version); }
 	};
 	template <>
 	struct HighLevelILInstructionAccessor<HLIL_VAR_PHI> : public HighLevelILInstructionBase
@@ -1268,7 +1311,9 @@ namespace BinaryNinja
 	{};
 	template <>
 	struct HighLevelILInstructionAccessor<HLIL_UNIMPL> : public HighLevelILInstructionBase
-	{};
+	{
+		bool IsUnknown() const { return GetRawOperandAsInteger(0) != 0; }
+	};
 	template <>
 	struct HighLevelILInstructionAccessor<HLIL_UNREACHABLE> : public HighLevelILInstructionBase
 	{};
@@ -1451,6 +1496,39 @@ namespace BinaryNinja
 	struct HighLevelILInstructionAccessor<HLIL_NOT> : public HighLevelILOneOperandInstruction
 	{};
 	template <>
+	struct HighLevelILInstructionAccessor<HLIL_BSWAP> : public HighLevelILOneOperandInstruction
+	{};
+	template <>
+	struct HighLevelILInstructionAccessor<HLIL_POPCNT> : public HighLevelILOneOperandInstruction
+	{};
+	template <>
+	struct HighLevelILInstructionAccessor<HLIL_CLZ> : public HighLevelILOneOperandInstruction
+	{};
+	template <>
+	struct HighLevelILInstructionAccessor<HLIL_CTZ> : public HighLevelILOneOperandInstruction
+	{};
+	template <>
+	struct HighLevelILInstructionAccessor<HLIL_RBIT> : public HighLevelILOneOperandInstruction
+	{};
+	template <>
+	struct HighLevelILInstructionAccessor<HLIL_CLS> : public HighLevelILOneOperandInstruction
+	{};
+	template <>
+	struct HighLevelILInstructionAccessor<HLIL_MINS> : public HighLevelILTwoOperandInstruction
+	{};
+	template <>
+	struct HighLevelILInstructionAccessor<HLIL_MAXS> : public HighLevelILTwoOperandInstruction
+	{};
+	template <>
+	struct HighLevelILInstructionAccessor<HLIL_MINU> : public HighLevelILTwoOperandInstruction
+	{};
+	template <>
+	struct HighLevelILInstructionAccessor<HLIL_MAXU> : public HighLevelILTwoOperandInstruction
+	{};
+	template <>
+	struct HighLevelILInstructionAccessor<HLIL_ABS> : public HighLevelILOneOperandInstruction
+	{};
+	template <>
 	struct HighLevelILInstructionAccessor<HLIL_SX> : public HighLevelILOneOperandInstruction
 	{};
 	template <>
@@ -1464,7 +1542,9 @@ namespace BinaryNinja
 	{};
 	template <>
 	struct HighLevelILInstructionAccessor<HLIL_UNIMPL_MEM> : public HighLevelILOneOperandInstruction
-	{};
+	{
+		bool IsUnknown() const { return GetRawOperandAsInteger(1) != 0; }
+	};
 	template <>
 	struct HighLevelILInstructionAccessor<HLIL_FSQRT> : public HighLevelILOneOperandInstruction
 	{};
@@ -1494,6 +1574,12 @@ namespace BinaryNinja
 	{};
 	template <>
 	struct HighLevelILInstructionAccessor<HLIL_FTRUNC> : public HighLevelILOneOperandInstruction
+	{};
+	template <>
+	struct HighLevelILInstructionAccessor<HLIL_PASS_BY_REF> : public HighLevelILOneOperandInstruction
+	{};
+	template <>
+	struct HighLevelILInstructionAccessor<HLIL_RETURN_BY_REF> : public HighLevelILOneOperandInstruction
 	{};
 
 #undef _STD_VECTOR

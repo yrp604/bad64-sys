@@ -1,17 +1,14 @@
-use crate::cache::container::cached_containers;
+use crate::cache::container::{add_cached_container, cached_container_by_name, cached_containers};
+use crate::container::disk::DiskContainer;
 use crate::container::{
     ContainerSearchItem, ContainerSearchItemKind, ContainerSearchQuery, SourcePath, SourceTag,
 };
-use crate::convert::{from_bn_type, to_bn_type};
 use crate::plugin::ffi::{
-    BNWARPContainer, BNWARPFunction, BNWARPFunctionGUID, BNWARPSource, BNWARPTarget, BNWARPTypeGUID,
+    BNWARPConstraintGUID, BNWARPContainer, BNWARPFunction, BNWARPFunctionGUID, BNWARPSource,
+    BNWARPTarget, BNWARPType, BNWARPTypeGUID,
 };
-use binaryninja::architecture::CoreArchitecture;
-use binaryninja::binary_view::BinaryView;
-use binaryninja::rc::Ref;
 use binaryninja::string::BnString;
-use binaryninja::types::Type;
-use binaryninjacore_sys::{BNArchitecture, BNBinaryView, BNType};
+use std::collections::HashMap;
 use std::ffi::{c_char, CStr};
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
@@ -95,32 +92,25 @@ pub unsafe extern "C" fn BNWARPContainerSearchItemGetSource(
 
 #[no_mangle]
 pub unsafe extern "C" fn BNWARPContainerSearchItemGetType(
-    arch: *mut BNArchitecture,
     item: *mut BNWARPContainerSearchItem,
-) -> *mut BNType {
-    // NOTE: to convert the type, we must have an architecture.
-    let arch = match !arch.is_null() {
-        true => Some(CoreArchitecture::from_raw(arch)),
-        false => None,
-    };
-
+) -> *mut BNWARPType {
     let item = ManuallyDrop::new(Arc::from_raw(item));
     match &item.kind {
         ContainerSearchItemKind::Source { .. } => std::ptr::null_mut(),
         ContainerSearchItemKind::Function(func) => {
             match &func.ty {
                 None => std::ptr::null_mut(),
-                Some(ty) => {
-                    let bn_ty = to_bn_type(arch, &ty);
-                    // NOTE: The type ref has been pre-incremented for the caller.
-                    unsafe { Ref::into_raw(bn_ty) }.handle
+                Some(func_ty) => {
+                    let arc_func_ty = Arc::new(func_ty.clone());
+                    // NOTE: Freed by BNWARPFreeTypeReference
+                    Arc::into_raw(arc_func_ty) as *mut BNWARPType
                 }
             }
         }
         ContainerSearchItemKind::Type(ty) => {
-            let bn_ty = to_bn_type(arch, &ty);
-            // NOTE: The type ref has been pre-incremented for the caller.
-            unsafe { Ref::into_raw(bn_ty) }.handle
+            let arc_ty = Arc::new(ty.clone());
+            // NOTE: Freed by BNWARPFreeTypeReference
+            Arc::into_raw(arc_ty) as *mut BNWARPType
         }
         ContainerSearchItemKind::Symbol(_) => std::ptr::null_mut(),
     }
@@ -173,6 +163,21 @@ pub unsafe extern "C" fn BNWARPContainerSearchItemGetFunction(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn BNWARPAddContainer(name: *const c_char) -> *mut BNWARPContainer {
+    let name_cstr = unsafe { CStr::from_ptr(name) };
+    let name_str = name_cstr.to_str().unwrap();
+    // TODO: Using this generic API name for disk container, I think anything like the network container
+    // TODO: should probably be a second class name so something like BNWARPAddNetworkContainer.
+    let disk_container = DiskContainer::new(name_str.to_string(), HashMap::new());
+    let container_name = disk_container.to_string();
+    add_cached_container(disk_container);
+    match cached_container_by_name(&container_name) {
+        Some(container) => Arc::into_raw(container) as *mut BNWARPContainer,
+        None => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn BNWARPGetContainers(count: *mut usize) -> *mut *mut BNWARPContainer {
     // NOTE: Leak the arc pointers to be freed by BNWARPFreeContainerList
     let boxed_raw_containers: Box<[_]> =
@@ -201,9 +206,11 @@ pub unsafe extern "C" fn BNWARPContainerFetchFunctions(
     source_tags_count: usize,
     guids: *const BNWARPFunctionGUID,
     count: usize,
+    constraints: *const BNWARPConstraintGUID,
+    constraints_count: usize,
 ) {
     let arc_container = ManuallyDrop::new(Arc::from_raw(container));
-    let Ok(mut container) = arc_container.write() else {
+    let Ok(container) = arc_container.read() else {
         return;
     };
 
@@ -217,9 +224,10 @@ pub unsafe extern "C" fn BNWARPContainerFetchFunctions(
         .collect();
 
     let guids = unsafe { std::slice::from_raw_parts(guids, count) };
+    let constraints = unsafe { std::slice::from_raw_parts(constraints, constraints_count) };
 
-    if let Err(e) = container.fetch_functions(&target, &source_tags, guids) {
-        log::error!("Failed to fetch functions: {}", e);
+    if let Err(e) = container.fetch_functions(&target, &source_tags, guids, constraints) {
+        tracing::error!("Failed to fetch functions: {}", e);
     }
 }
 
@@ -229,11 +237,11 @@ pub unsafe extern "C" fn BNWARPContainerGetSources(
     count: *mut usize,
 ) -> *mut BNWARPSource {
     let arc_container = ManuallyDrop::new(Arc::from_raw(container));
-    let Ok(container) = arc_container.write() else {
+    let Ok(container) = arc_container.read() else {
         return std::ptr::null_mut();
     };
 
-    // NOTE: Leak the sources to be freed by BNWARPFreeSourceList
+    // NOTE: Leak the sources to be freed by BNWARPFreeUUIDList
     let boxed_sources: Box<[_]> = container.sources().unwrap_or_default().into_boxed_slice();
     *count = boxed_sources.len();
     Box::into_raw(boxed_sources) as *mut BNWARPSource
@@ -368,14 +376,11 @@ pub unsafe extern "C" fn BNWARPContainerAddFunctions(
 
 #[no_mangle]
 pub unsafe extern "C" fn BNWARPContainerAddTypes(
-    view: *mut BNBinaryView,
     container: *mut BNWARPContainer,
     source: *const BNWARPSource,
-    types: *mut *mut BNType,
+    types: *mut *mut BNWARPType,
     count: usize,
 ) -> bool {
-    let view = unsafe { BinaryView::from_raw(view) };
-
     let arc_container = ManuallyDrop::new(Arc::from_raw(container));
     let Ok(mut container) = arc_container.write() else {
         return false;
@@ -384,10 +389,11 @@ pub unsafe extern "C" fn BNWARPContainerAddTypes(
     let source = unsafe { *source };
 
     let types_ptr = std::slice::from_raw_parts(types, count);
+    // TODO: We have to clone the objects here to make the type checker happy.
+    // TODO: See about avoiding this later.
     let types: Vec<_> = types_ptr
         .iter()
-        .map(|&t| Type::from_raw(t))
-        .map(|ty| from_bn_type(&view, &ty, 255))
+        .map(|&t| unsafe { ManuallyDrop::new(Arc::from_raw(t)).as_ref().clone() })
         .collect();
     container.add_types(&source, &types).is_ok()
 }
@@ -455,7 +461,7 @@ pub unsafe extern "C" fn BNWARPContainerGetSourcesWithFunctionGUID(
 
     let guid = unsafe { *guid };
 
-    // NOTE: Leak the sources to be freed by BNWARPFreeSourceList
+    // NOTE: Leak the sources to be freed by BNWARPFreeUUIDList
     let boxed_sources: Box<[_]> = container
         .sources_with_function_guid(&target, &guid)
         .unwrap_or_default()
@@ -477,7 +483,7 @@ pub unsafe extern "C" fn BNWARPContainerGetSourcesWithTypeGUID(
 
     let guid = unsafe { *guid };
 
-    // NOTE: Leak the sources to be freed by BNWARPFreeSourceList
+    // NOTE: Leak the sources to be freed by BNWARPFreeUUIDList
     let boxed_sources: Box<[_]> = container
         .sources_with_type_guid(&guid)
         .unwrap_or_default()
@@ -517,21 +523,16 @@ pub unsafe extern "C" fn BNWARPContainerGetFunctionsWithGUID(
     Box::into_raw(raw_boxed_functions) as *mut *mut BNWARPFunction
 }
 
-// TODO: Swap arch to Target?
 #[no_mangle]
 pub unsafe extern "C" fn BNWARPContainerGetTypeWithGUID(
-    arch: *mut BNArchitecture,
     container: *mut BNWARPContainer,
     source: *const BNWARPSource,
     guid: *const BNWARPTypeGUID,
-) -> *mut BNType {
+) -> *mut BNWARPType {
     let arc_container = ManuallyDrop::new(Arc::from_raw(container));
     let Ok(container) = arc_container.read() else {
         return std::ptr::null_mut();
     };
-
-    // NOTE: to convert the type, we must have an architecture.
-    let arch = CoreArchitecture::from_raw(arch);
 
     let source = unsafe { *source };
 
@@ -540,9 +541,10 @@ pub unsafe extern "C" fn BNWARPContainerGetTypeWithGUID(
     let Some(ty) = container.type_with_guid(&source, &guid).unwrap_or_default() else {
         return std::ptr::null_mut();
     };
-    let function_type = to_bn_type(Some(arch), &ty);
-    // NOTE: The type ref has been pre-incremented for the caller.
-    unsafe { Ref::into_raw(function_type) }.handle
+
+    let arc_ty = Arc::new(ty);
+    // NOTE: Freed by BNWARPFreeTypeReference
+    Arc::into_raw(arc_ty) as *mut BNWARPType
 }
 
 #[no_mangle]
@@ -586,7 +588,7 @@ pub unsafe extern "C" fn BNWARPContainerSearch(
     let result = match container.search(&query) {
         Ok(result) => result,
         Err(err) => {
-            log::error!("Failed to search container {:?}: {}", query.deref(), err);
+            tracing::error!("Failed to search container {:?}: {}", query.deref(), err);
             return std::ptr::null_mut();
         }
     };

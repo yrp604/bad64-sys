@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QScrollArea, QWidget, QVBoxLayout, QHBoxLayout, QP
 from PySide6.QtCore import Qt
 from . import headers
 from . import entropy
+from . import file_info
 from . import imports
 from . import exports
 from . import sections
@@ -30,9 +31,16 @@ class TriageView(QScrollArea, View):
 
 		entropyGroup = QGroupBox("Entropy", container)
 		entropyLayout = QVBoxLayout()
-		entropyLayout.addWidget(entropy.EntropyWidget(entropyGroup, self, self.data))
+		self.entropyWidget = entropy.EntropyWidget(entropyGroup, self, self.data)
+		entropyLayout.addWidget(self.entropyWidget)
 		entropyGroup.setLayout(entropyLayout)
 		layout.addWidget(entropyGroup)
+
+		fileInfoGroup = QGroupBox("File Info", container)
+		fileInfoLayout = QVBoxLayout()
+		fileInfoLayout.addWidget(file_info.FileInfoWidget(fileInfoGroup, self.data, self.entropyWidget))
+		fileInfoGroup.setLayout(fileInfoLayout)
+		layout.addWidget(fileInfoGroup)
 
 		hdr = None
 		try:
@@ -40,7 +48,7 @@ class TriageView(QScrollArea, View):
 				hdr = headers.PEHeaders(self.data)
 			elif self.data.view_type != "Raw":
 				hdr = headers.GenericHeaders(self.data)
-		except:
+		except Exception:
 			log.log_error(traceback.format_exc())
 
 		if hdr is not None:
@@ -151,7 +159,9 @@ class TriageView(QScrollArea, View):
 			if addr is None:
 				view_frame.navigate("Hex:Raw", offset)
 			else:
-				view_frame.navigate("Linear:" + view_frame.getCurrentDataType(), addr)
+				view_type = "Graph" if Settings().get_bool("ui.view.graph.preferred") else "Linear"
+				data_type = self.data.view_type
+				view_frame.navigate(f"{view_type}:{data_type}", addr)
 		else:
 			if self.data == self.data.file.raw:
 				addr = offset

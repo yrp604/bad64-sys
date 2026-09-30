@@ -9,7 +9,7 @@
 
 We recommend the following steps to produce the best bug-reports:
 
-1. Try to reproduce your issue with both the latest stable release and [the latest development release](index.md#updates).
+1. Try to reproduce your issue with both the latest stable release and [the latest development release](index.md#updates). See [Side-by-Side Installations](#side-by-side-installations) to run both at once.
 2. Try temporarily [disabling plugins](#disabling-plugins)
 3. Try temporarily [disabling user settings](#disabling-user-settings)
 4. Try temporarily [resetting QSettings](#resetting-qsettings)
@@ -45,13 +45,31 @@ Alternatively, it might be easier to save debug logs to a file instead:
 
 (note that both long and short-form of the command-line arguments are demonstrated in the above examples)
 
+## Side-by-Side Installations
+
+When investigating bugs it can be useful to keep a stable and a development build installed simultaneously.
+
+Each installation updates only itself and the update setting and [update channels](index.md#updates) are settings that are saved per-install. Othewise however they share the same [user folder](index.md#user-folder), sharing settings, plugins, license, and the `lastrun` file that records the most recently launched install path. If you want to keep separate profiles, use the `BN_USER_DIRECTORY` environment variable along with the [`BN_QSETTINGS_POSTFIX`](#resetting-qsettings) variable to also separate window layout, recent files, and dialog history.
+
+### Installing
+
+Install the second copy to a path of its own:
+
+- macOS: rename the bundle, for example `/Applications/Binary Ninja Dev.app`
+- Linux: extract to a separate directory
+- Windows: combine a user install (`%LOCALAPPDATA%\Vector35\BinaryNinja`) with a global one (`C:\Program Files\Vector35\BinaryNinja`), or point the installer at a different directory
+
+### URL Handler
+
+Only one installation can own the [`binaryninja:` URL handler](index.md#loading-files), and the registration is global rather than per-install: macOS registers the scheme from each bundle's `Info.plist`, Windows writes the handler command during installation, and Linux registers `x-scheme-handler/binaryninja` from `linux-setup.sh`. Whichever copy registered most recently generally wins, so expect URLs to open in only one of the two. On Linux, re-run [`linux-setup.sh`](https://github.com/Vector35/binaryninja-api/blob/dev/scripts/linux-setup.sh) from the install you want to handle URLs.
+
 ## Troubleshooting Plugins
 
 While third party plugins are not officially supported, there are a number of troubleshooting tips that can help identify the cause. The most important is to enable debug logging as suggested in the previous section. This will often highlight problems with python paths or any other issues that prevent plugins from running.
 
 Additionally, if you're having trouble running a plugin in headless mode (without a GUI calling directly into the core), make sure you're running the Commercial or Ultimate edition of Binary Ninja as the Non-Commercial edition does not support headless processing.
 
-Next, if running a python plugin, make sure the python requirements are met by your existing installation. Note that on Windows, the bundled python is used and python requirements should be installed either by manually copying the modules to the `plugins` [folder](./index.md#directories), or by switching to a different interpreter in the settings.
+Next, if running a python plugin, make sure the python requirements are met by the bundled Python runtime or your configured custom interpreter. Plugin requirements can be installed by the extension manager, by manually copying modules to the `plugins` [folder](./index.md#directories), or by switching to a different interpreter in the settings.
 
 ## License Problems
 
@@ -80,22 +98,41 @@ Analysis databases (`.bndb`) may grow in size after repeated saving/loading due 
 
 ## Platforms
 
-The below steps are specific to different platforms that Binary Ninja runs on.  See the [FAQ] for currently supported versions.
+The below steps are specific to different platforms that Binary Ninja runs on.  See the [requirements](../about/requirements.md#supported-platforms) page for currently supported versions.
 
 ### Windows
 
 - While Windows 7 is not officially supported (by us, or Microsoft for that matter), it may work if all available Windows updates are installed (including non-security updates with certificate bundle updates).
 - If you install Windows without internet access and have never run Windows updates to install an update, you may have an incomplete Windows certificate store. You'll see errors when attempting to update about `CERTIFICATE VERIFICATION FAILED`.  If that is the case, you can either use something like `certutil.exe -generateSSTFromWU roots.sst` and then manually copy over the DST and Amazon certificates into your root store, or wait until the next time you have an update from Windows Update which should automatically refresh your certificate store.
 
+#### Defender Causes Slow Startup
+
+When launching Binary Ninja on windows, Defender can cause extremely long start-up times when first run after reboot. The fix is to explicitly <a href="https://learn.microsoft.com/en-us/defender-endpoint/configure-extension-file-exclusions-microsoft-defender-antivirus">white-list</a> the binaryninja.exe file.
+
+Note that the problem is especially exaccerbated by adding a large number of python dependencies for plugins as the initial python plugin loading triggering accessing all of the python modules is the slowest part of the scan process.
+
 #### Some Graphics Chipsets
 
 Some graphics chipsets may experience problems with [scaling](https://github.com/Vector35/binaryninja-api/issues/1529) resulting in the top menu disappearing. In that case, the simplest fix is to set the environment variable `QT_OPENGL=angle`.
+
+#### Miniconda and Miniforge
+
+If you are using [Miniconda](https://docs.anaconda.com/miniconda/) or [Miniforge](https://github.com/conda-forge/miniforge) as your Python distribution on Windows, you must ensure the install path is added to your **user** `PATH` environment variable. By default, neither installer adds itself to `PATH`.
+
+To set the user `PATH` variable:
+
+1. Open **Settings > System > About > Advanced system settings** (or search for "Environment Variables" in the Start menu).
+2. Under **User variables**, select `Path` and click **Edit**.
+3. Click **New** and add the path to your Miniconda or Miniforge installation (e.g. `C:\Users\<username>\miniconda3` or `C:\Users\<username>\miniforge3`).
+4. Click **OK** to save and restart Binary Ninja.
+
+Without these paths set, Binary Ninja will not be able to locate the Python interpreter or install plugin dependencies correctly.
 
 #### VirtualBox and VMWare
 
 If you're using Windows virtual machines within virtualbox or VMWare, you may have trouble with the 3d acceleration drivers. If so, disabling the 3d acceleration is the easiest way to get BN working.
 
-You may also manually create a `settings.json` file in your [user folder](./index.md#user-folder) with the contents though using the [plugin manager](plugins.md#plugin-manager) may also have problems:
+You may also manually create a `settings.json` file in your [user folder](./index.md#user-folder) with the contents though using the [extension manager](plugins.md#extension-manager) may also have problems:
 
 ``` js
 {
@@ -109,13 +146,13 @@ You may also manually create a `settings.json` file in your [user folder](./inde
 
 macOS Ventura enables more in-depth code signing verification that can cause issues with Binary Ninja when migrating between versions. If you receive a warning that `“Binary Ninja.app” is damaged and can’t be opened. You should move it to the Trash.`, it is likely that you have merely upgraded from an older version of Binary Ninja and older files in the application bundle are impacting code signing. The simplest fix is to simply request a [new download bundle](https://binary.ninja/recover/), drag the old bundle to the trash and drag the new bundle in place. Alternatively, if your bandwidth is low or you do not have an active license, you can try manually removing extra folders. In case you are migrating from 3.1.3439 to 3.2.3811, that would be:
 
-```
+```bash
 rm -rf /Applications/Binary\ Ninja.app/Contents/Frameworks/Python.framework/Versions/3.9/
 ```
 
 ### Linux
 
-Given the diversity of Linux distributions, some workarounds are required to run Binary Ninja on platforms that are not [officially supported][FAQ].
+Given the diversity of Linux distributions, some workarounds are required to run Binary Ninja on platforms that are not [officially supported](../about/requirements.md#supported-platforms).
 
 #### Common Problems
 
@@ -123,12 +160,13 @@ Below are a few of the most common problems with Linux installations:
 
  - Some unzip utilities do not maintain the `+x` executable bit on files when extracted. To fix this, we recommend:
 
- ```
+ ```text
  chmod +x binaryninja/*.so.*
  chmod +x binaryninja/plugins/*
  ```
 
  - Permissions: ensure that the user you are running Binary Ninja as has write permission to `~/.binaryninja` as it needs to be able to update user settings and other files in this folder.
+ - In some virtual environments where GPU drivers aren't installed, `libOpenGL.so.0` won't be available and Binary Ninja will fail to start. This is currently a requirement for the UI and will need to be installed.
 
 
 #### Debian
@@ -139,12 +177,46 @@ Debian requires one package be manually installed to support the emoji icons use
 apt install fonts-noto-color-emoji
 ```
 
+#### glibc Version Requirements
+
+Binary Ninja targets the glibc shipped with the latest and previous-latest Ubuntu LTS releases. With the release of Ubuntu 26.04, that baseline moved from 22.04/24.04 to 24.04/26.04, which raised the minimum required glibc version for development builds. Distributions with an older glibc will fail to launch — notably Debian 12, which ships glibc 2.36 rather than the 2.38 now required.
+
+If you hit this, the two supported options are:
+
+* **Stay on the 5.3 stable release**, which targets an older glibc that remains compatible with Debian 12.
+* **Upgrade to Debian 13**, which ships glibc 2.41 and will remain compatible until Ubuntu 28.04 is released.
+
+If your current install no longer runs and you need a fresh installer, download one from the [Portal](https://portal.binary.ninja/).
+
+If you must run development builds on Debian 12, several unsupported work-arounds exist, though none are particularly clean. The most promising are a rootless Podman container or a `debootstrap` chroot with access to your X/Wayland server, either of which lets you run Debian 13 packages while keeping the host on Debian 12. Compiling glibc 2.38 and its dependencies yourself and injecting them via `LD_PRELOAD` or `LD_LIBRARY_PATH` is theoretically possible but significantly more effort. None of these configurations are tested or supported.
+
 #### Headless Ubuntu
 
 If you're having trouble getting Binary Ninja installed in a headless server install where you want to be able to X-Forward the GUI on a remote machine, the following should meet requirements (for at least 14.04 LTS):
 
 ``` bash
 apt-get install libgl1-mesa-glx libfontconfig1 libxrender1 libegl1-mesa libxi6 libnspr4 libsm6
+```
+
+#### Firefox Snap on Ubuntu 22.04 and Newer
+
+If you have installed Binary Ninja into a path outside your home folder such as `/opt`, you will likely run into this limitation. 
+
+Ubuntu 22.04 and newer ship Firefox as a snap that is confined by AppArmor. The confinement blocks `snap.firefox.firefox` from reading arbitrary system paths outside the user's home directory, so paths such as `/opt/binaryninja/docs` are inaccessible. Binary Ninja's local help viewer fails under these conditions because Firefox cannot open the documentation files it launches from `/opt/binaryninja/`, and `dmesg` will show `apparmor="DENIED"` entries similar to:
+
+```text
+apparmor="DENIED" operation="open" profile="snap.firefox.firefox" name="/opt/binaryninja/docs/index.html" requested_mask="r" denied_mask="r"
+```
+
+**Work-around 1:** Keep using the Firefox snap but relocate Binary Ninja so Firefox reads the docs inside `$HOME`. Moving the entire installation from `/opt/binaryninja` to a directory such as `~/Applications/binaryninja/` avoids the sandbox restriction because the snap may read anywhere under the user's home.
+
+**Work-around 2:** Replace the snap build with the deb-packaged Firefox, which is not sandboxed and can read from `/opt`. Canonical publishes the deb via the `ppa:mozillateam/ppa`. A typical sequence looks like:
+
+``` bash
+sudo add-apt-repository ppa:mozillateam/ppa
+sudo apt update
+sudo apt install firefox
+sudo snap remove firefox
 ```
 
 #### Wayland
@@ -194,13 +266,9 @@ stdenv.mkDerivation rec {
 ```
 
 [known issues]: https://github.com/Vector35/binaryninja-api/issues
-[libcurl-compat]: https://www.archlinux.org/packages/community/x86_64/libcurl-compat/
-[archrepo]: https://wiki.archlinux.org/index.php/Official_repositories
 [recover]: https://binary.ninja/recover.html
 [support]: https://binary.ninja/support.html
-[FAQ]: https://binary.ninja/faq.html
 [purchase]: https://binary.ninja/purchase.html
-[unofficial script]: https://gist.github.com/0x1F9F1/64725fbe9acdeafaf39e048e03f4dd9d
 [slack]: https://slack.binary.ninja
 [hashes]: https://binary.ninja/js/hashes.js
 
@@ -217,7 +285,7 @@ The following environment variables may be helpful when troubleshooting issues:
 | BN_LICENSE | File Contents (String) | This variable is useful for using Binary Ninja with a license passed from outside a docker image without storing the raw license file inside. [Must contain](https://github.com/Vector35/debugger/blob/dev/scripts/build.py#L195-L196) the full contents of the license file.  |
 | BN_USER_DIRECTORY | Path (String) | This variable overrides the [default user folder](https://docs.binary.ninja/guide/index.html#user-folder) path. |
 | BN_QSETTINGS_POSTFIX | Postfix (String) | This environment variable is treated as a string postfix that can be used to separate saved QSettings for testing purposes. |
-| BN_DISABLE_REPOSITORY_PLUGINS | Flag (True if exists) | This setting will only disable plugins installed via the plugin manager. |
+| BN_DISABLE_REPOSITORY_PLUGINS | Flag (True if exists) | This setting will only disable plugins installed via the extension manager. |
 | BN_DISABLE_USER_PLUGINS | Flag (True if exists) | This environment variable will disable all plugins loaded from the [plugins user folder](https://docs.binary.ninja/guide/index.html#user-folder). |
 | BN_DISABLE_USER_SETTINGS | Flag (True if exists) | This flag will cause Binary Ninja to ignore any [`settings.json`](https://docs.binary.ninja/guide/settings.html).|
 | BN_SCREENSHOT | Flag (True if exists) | This flag removes some small UI clutter to enable cleaner screenshots. |
@@ -235,7 +303,7 @@ With the addition of [projects](../guide/projects.md) and [type archives](../gui
 1. Update to a version with support for the new extensions (builds 4860 or newer)
 1. Run:
 
-```
+```text
 /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister -f -R -trusted "/Applications/Binary Ninja.app"
 ```
 
@@ -263,11 +331,12 @@ By default, Binary Ninja does full analysis of the binary and decompiles every f
 
 Other [analysis settings](settings.md#settings-reference) can also help. Check the descriptions to see what they do.
 
+One workflow we recommend is to use an [initial analysis hold](settings.md#analysis.initialAnalysisHold) specified in [Open With Options](index.md#opening-with-options) as well as disabling [linear sweep](settings.md#analysis.linearSweep.autorun), then manually using [memory map permissions](index.md#memory-map) to control where functions will be automatically created. You can add or remove execute permissions to a segment or section and then either manually run linear sweep, or create functions via a script or by hand. In cases of firmware blobs where large parts of a file are data, this can prevent Binary Ninja from trying to automatically create code in regions that are known to be data-only.
 
 ## Collaboration Issues
 
 !!! note
-    This section only applies to the Binary Ninja Ultimate edition when being used with the Enterprise server.
+    This section only applies when using the collaboration add-on with an Enterprise Server.
 
 ### Cannot Connect to Server
 There are a number of reasons why you might not be able to connect to a server, including:

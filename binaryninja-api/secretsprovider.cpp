@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -73,6 +73,7 @@ std::vector<Ref<SecretsProvider>> SecretsProvider::GetList()
 	size_t count;
 	BNSecretsProvider** list = BNGetSecretsProviderList(&count);
 	std::vector<Ref<SecretsProvider>> result;
+	result.reserve(count);
 	for (size_t i = 0; i < count; i++)
 		result.push_back(new CoreSecretsProvider(list[i]));
 	BNFreeSecretsProviderList(list);

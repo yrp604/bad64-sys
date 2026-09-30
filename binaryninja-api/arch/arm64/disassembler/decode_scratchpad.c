@@ -1086,9 +1086,12 @@ static const char* const reg_lookup_c[16] = {"c0", "c1", "c2", "c3", "c4", "c5",
 	i++;
 
 #define ADD_OPERAND_FLOAT32(VALUE) \
-	instr->operands[i].operandClass = FIMM32; \
-	*(float*)&(instr->operands[i].immediate) = VALUE; \
-	i++;
+	do { \
+		float value = VALUE; \
+		instr->operands[i].operandClass = FIMM32; \
+		memcpy(&instr->operands[i].immediate, &value, sizeof(float)); \
+		i++; \
+	} while (0)
 
 #define ADD_OPERAND_CONST  ADD_OPERAND_IMM64(const_, 0)
 #define ADD_OPERAND_FBITS  ADD_OPERAND_IMM32(fbits, 0)
@@ -1533,6 +1536,16 @@ static unsigned rhsdr_0123x_reg(int v)
 
 #define LAST_OPERAND_LSL_12 LAST_OPERAND_SHIFT(ShiftType_LSL, 12)
 
+#define OPTIONAL_LSL_AMOUNT(AMOUNT) \
+	if (AMOUNT) \
+	{ \
+		LAST_OPERAND_SHIFT(ShiftType_LSL, AMOUNT); \
+	} \
+	else \
+	{ \
+		instr->operands[i - 1].shiftValueUsed = 0; \
+	}
+
 #define ADD_OPERAND_OPTIONAL_PATTERN_MUL \
 	{ \
 		bool print_mul = ctx->imm != 1; \
@@ -1571,10 +1584,12 @@ int decode_scratchpad(context* ctx, Instruction* instr)
 
 	switch (instr->encoding)
 	{
-	/* instrucitons with no operands */
+	/* instructions with no operands */
+	case ENC_AUTIA171615_64LR_DP_1SRC:
 	case ENC_AUTIA1716_HI_HINTS:
 	case ENC_AUTIASP_HI_HINTS:
 	case ENC_AUTIAZ_HI_HINTS:
+	case ENC_AUTIB171615_64LR_DP_1SRC:
 	case ENC_AUTIB1716_HI_HINTS:
 	case ENC_AUTIBSP_HI_HINTS:
 	case ENC_AUTIBZ_HI_HINTS:
@@ -1588,12 +1603,19 @@ int decode_scratchpad(context* ctx, Instruction* instr)
 	case ENC_ERET_64E_BRANCH_REG:
 	case ENC_ESB_HI_HINTS:
 	case ENC_NOP_HI_HINTS:
+	case ENC_PACIA171615_64LR_DP_1SRC:
 	case ENC_PACIA1716_HI_HINTS:
 	case ENC_PACIASP_HI_HINTS:
+	case ENC_PACIASPPC_64LR_DP_1SRC:
 	case ENC_PACIAZ_HI_HINTS:
+	case ENC_PACIB171615_64LR_DP_1SRC:
 	case ENC_PACIB1716_HI_HINTS:
 	case ENC_PACIBSP_HI_HINTS:
+	case ENC_PACIBSPPC_64LR_DP_1SRC:
 	case ENC_PACIBZ_HI_HINTS:
+	case ENC_PACM_HI_HINTS:
+	case ENC_PACNBIASPPC_64LR_DP_1SRC:
+	case ENC_PACNBIBSPPC_64LR_DP_1SRC:
 	case ENC_RETAA_64E_BRANCH_REG:
 	case ENC_RETAB_64E_BRANCH_REG:
 	case ENC_SEVL_HI_HINTS:
@@ -5719,6 +5741,7 @@ int decode_scratchpad(context* ctx, Instruction* instr)
 	case ENC_MADD_64A_DP_3SRC:
 	case ENC_MSUB_64A_DP_3SRC:
 	case ENC_MADDPT_64A_DP_3SRC:
+	case ENC_MSUBPT_64A_DP_3SRC:
 	{
 		// <Xd>,<Xn>,<Xm>,<Xa>
 		ADD_OPERAND_XD;
@@ -6023,6 +6046,16 @@ int decode_scratchpad(context* ctx, Instruction* instr)
 		OPTIONAL_EXTEND_AMOUNT_64_BEHAVIOR1;
 		break;
 	}
+	case ENC_ADDPT_64_ADDSUB_PT:
+	case ENC_SUBPT_64_ADDSUB_PT:
+	{
+		// <Xd|SP>,<Xn|SP>,<Xm>{, LSL #<amount>}
+		ADD_OPERAND_XD_SP;
+		ADD_OPERAND_XN_SP;
+		ADD_OPERAND_XM;
+		OPTIONAL_LSL_AMOUNT(ctx->shift);
+		break;
+	}
 	case ENC_IRG_64I_DP_2SRC:
 	{
 		// <Xd|SP>,<Xn|SP>{,<Xm>}
@@ -6034,6 +6067,8 @@ int decode_scratchpad(context* ctx, Instruction* instr)
 		}
 		break;
 	}
+	case ENC_AUTIASPPCR_64LRR_DP_1SRC:
+	case ENC_AUTIBSPPCR_64LRR_DP_1SRC:
 	case ENC_BLRAAZ_64_BRANCH_REG:
 	case ENC_BLRABZ_64_BRANCH_REG:
 	case ENC_BLR_64_BRANCH_REG:
@@ -6828,6 +6863,31 @@ int decode_scratchpad(context* ctx, Instruction* instr)
 		ADD_OPERAND_CONST;
 		break;
 	}
+	case ENC_ADDPT_Z_ZZ_:
+	case ENC_SUBPT_Z_ZZ_:
+	{
+		// <Zd>.D,<Zn>.D,<Zm>.D
+		ADD_OPERAND_ZREG_T(ctx->d, _1D)
+		ADD_OPERAND_ZREG_T(ctx->n, _1D)
+		ADD_OPERAND_ZREG_T(ctx->m, _1D)
+		break;
+	}
+	case ENC_MLAPT_Z_ZZZ_:
+	{
+		// <Zda>.D,<Zn>.D,<Zm>.D
+		ADD_OPERAND_ZREG_T(ctx->da, _1D)
+		ADD_OPERAND_ZREG_T(ctx->n, _1D)
+		ADD_OPERAND_ZREG_T(ctx->m, _1D)
+		break;
+	}
+	case ENC_MADPT_Z_ZZZ_:
+	{
+		// <Zdn>.D,<Zm>.D,<Za>.D
+		ADD_OPERAND_ZREG_T(ctx->dn, _1D)
+		ADD_OPERAND_ZREG_T(ctx->m, _1D)
+		ADD_OPERAND_ZREG_T(ctx->a, _1D)
+		break;
+	}
 	case ENC_ADD_Z_ZZ_:
 	case ENC_FADD_Z_ZZ_:
 	case ENC_FMUL_Z_ZZ_:
@@ -7287,6 +7347,16 @@ int decode_scratchpad(context* ctx, Instruction* instr)
 		ADD_OPERAND_PRED_REG_QUAL(ctx->g, 'm');
 		ADD_OPERAND_ZREG_T(ctx->dn, T)
 		ADD_OPERAND_CONST;
+		break;
+	}
+	case ENC_ADDPT_Z_P_ZZ_:
+	case ENC_SUBPT_Z_P_ZZ_:
+	{
+		// <Zdn>.D,<Pg>/M,<Zdn>.D,<Zm>.D
+		ADD_OPERAND_ZREG_T(ctx->dn, _1D)
+		ADD_OPERAND_PRED_REG_QUAL(ctx->g, 'm');
+		ADD_OPERAND_ZREG_T(ctx->dn, _1D)
+		ADD_OPERAND_ZREG_T(ctx->m, _1D)
 		break;
 	}
 	case ENC_ADD_Z_P_ZZ_:
@@ -7763,6 +7833,24 @@ int decode_scratchpad(context* ctx, Instruction* instr)
 	case ENC_B_ONLY_BRANCH_IMM:
 	{
 		uint64_t eaddr = ctx->address + ctx->offset;
+		// <label>
+		ADD_OPERAND_LABEL;
+		break;
+	}
+	case ENC_RETAASPPCR_64M_BRANCH_REG:
+	case ENC_RETABSPPCR_64M_BRANCH_REG:
+	{
+		// <Xm>
+		ADD_OPERAND_XM;
+		break;
+	}
+	case ENC_AUTIASPPC_ONLY_DP_1SRC_IMM:
+	case ENC_AUTIBSPPC_ONLY_DP_1SRC_IMM:
+	case ENC_RETAASPPC_ONLY_MISCBRANCH:
+	case ENC_RETABSPPC_ONLY_MISCBRANCH:
+	{
+		/* these encode a negative offset: the modifier is PC minus <offset> */
+		uint64_t eaddr = ctx->address - ctx->offset;
 		// <label>
 		ADD_OPERAND_LABEL;
 		break;

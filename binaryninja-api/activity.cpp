@@ -19,7 +19,7 @@ Activity::Activity(const string& configuration, const std::function<void(Ref<Ana
 Activity::Activity(BNActivity* activity)
 {
 	// LogError("API-Side Activity Constructed!");
-	m_object = BNNewActivityReference(activity);
+	m_object = activity;
 }
 
 

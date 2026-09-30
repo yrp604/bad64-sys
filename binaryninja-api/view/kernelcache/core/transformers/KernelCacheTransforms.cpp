@@ -11,6 +11,7 @@ using namespace BinaryNinja;
 #include "libimg4/img4.h"
 #include "liblzfse/lzfse.h"
 #include <algorithm>
+#include <optional>
 
 class IMG4PayloadTransform : public Transform
 {
@@ -20,19 +21,40 @@ public:
     {
     }
 
+    // Attempt to decode a full IMG4 container first, falling back to decoding as a bare IM4P payload.
+    // Returns the IM4P payload, which contains pointers into the input buffer.
+    static std::optional<Img4Payload> DecodePayload(const uint8_t* data, size_t length)
+    {
+        DERSize derLen = static_cast<DERSize>(std::min(length, (size_t)std::numeric_limits<DERSize>::max()));
+
+        DERItem der = {};
+        der.data = (DERByte*)data;
+        der.length = derLen;
+
+        // Try unwrapping a full IMG4 container to get the inner IM4P item
+        DERItem img4Items[4] = {};
+        if (DERImg4Decode(&der, img4Items) == DR_Success)
+            der = img4Items[1];
+
+        // Parse the IM4P payload. We ignore DR_DecodeError as it is returned if the payload
+        // has trailing fields, such as the optional "PAYP" (payload properties) item.
+        Img4Payload payload = {};
+        if (auto result = DERImg4DecodePayload(&der, &payload); result != DR_Success && result != DR_DecodeError)
+            return std::nullopt;
+
+        if (!payload.payload.data || !payload.payload.length)
+            return std::nullopt;
+
+        return payload;
+    }
+
     virtual bool Decode(const DataBuffer& input, DataBuffer& output, const std::map<std::string, DataBuffer>& params) override
     {
-        DERItem item = {};
-        item.data = (DERByte *)input.GetData();
-        item.length = static_cast<DERSize>(std::min(input.GetLength(), (size_t)std::numeric_limits<DERSize>::max()));
-        Img4Payload payload = {};
-        if (auto result = DERImg4DecodePayload(&item, &payload); (result != DR_Success) && (result != DR_DecodeError))
-            return false;
-        if (!payload.payload.data || !payload.payload.length)
+        auto payload = DecodePayload((const uint8_t*)input.GetData(), input.GetLength());
+        if (!payload)
             return false;
 
-        output = DataBuffer(payload.payload.data, payload.payload.length);
-
+        output = DataBuffer(payload->payload.data, payload->payload.length);
         return true;
     }
 
@@ -46,32 +68,27 @@ public:
         if (!dataPtr || !dataLength)
             return false;
 
-        DERItem item = {};
-        item.data = (DERByte *)dataPtr;
-        item.length = static_cast<DERSize>(std::min(dataLength, (size_t)std::numeric_limits<DERSize>::max()));
-        Img4Payload payload = {};
-        if (auto result = DERImg4DecodePayload(&item, &payload); (result != DR_Success) && (result != DR_DecodeError))
-            return false;
-        if (!payload.payload.data || !payload.payload.length)
+        auto payload = DecodePayload(dataPtr, dataLength);
+        if (!payload)
             return false;
 
         // Synthesize name: <type>[.<version>]
         std::string filename = "";
-        if (payload.type.data && payload.type.length)
-            filename = std::string((const char*)payload.type.data, payload.type.length);
-        if (payload.version.data && payload.version.length)
+        if (payload->type.data && payload->type.length)
+            filename = std::string((const char*)payload->type.data, payload->type.length);
+        if (payload->version.data && payload->version.length)
         {
             if (!filename.empty())
                 filename += ".";
-            filename += std::string((const char*)payload.version.data, payload.version.length);
+            filename += std::string((const char*)payload->version.data, payload->version.length);
         }
 
-        if (payload.keybag.data && payload.keybag.length)
+        if (payload->keybag.data && payload->keybag.length)
         {
            LogWarn("IMG4 payload contains keybag, which is not currently supported.");
         }
 
-        context->SetChild(DataBuffer(payload.payload.data, payload.payload.length), filename);
+        context->SetChild(DataBuffer(payload->payload.data, payload->payload.length), filename, TransformSuccess, "", true);
 
         return true;
     }
@@ -91,7 +108,9 @@ public:
         v.insert(v.end(), p, p + len);
     }
 
-    // TODO fix/support round-tripping of optional fields (type, desc)
+    // TODO fix/support round-tripping. Encode always produces a bare IM4P, but Decode
+    // accepts both bare IM4P and full IMG4 containers. Type/desc are also lost unless
+    // passed via params.
     virtual bool Encode(const DataBuffer& input, DataBuffer& output, const std::map<std::string, DataBuffer>& params) override
     {
         // type (exactly 4 chars)
@@ -190,7 +209,7 @@ public:
         if (seqLen > (inputLength - offset))
             return false;
 
-        // parse up to the first 5 elements to find the magic "IM4P"
+        // parse up to the first 5 elements to find the magic "IM4P" or "IMG4"
         for (int i = 0; i < 5 && offset < seqEnd; ++i)
         {
             if (offset >= headerLength)
@@ -208,7 +227,7 @@ public:
             offset += elementLenHdr;
             if (offset + elementLen > headerLength)
                 return false;
-            if ((tag == 0x16) && (elementLen == 4) && memcmp(data + offset, "IM4P", 4) == 0)
+            if (tag == 0x16 && elementLen == 4 && (memcmp(data + offset, "IM4P", 4) == 0 || memcmp(data + offset, "IMG4", 4) == 0))
                 return true;
             offset += elementLen;
         }

@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -49,30 +49,23 @@ bool BinaryNinja::InitPlugins(bool allowUserPlugins)
 }
 
 
-void BinaryNinja::InitCorePlugins()
-{
-	BNInitCorePlugins();
-}
-
-
-void BinaryNinja::InitUserPlugins()
-{
-	BNInitUserPlugins();
-}
-
-
-void BinaryNinja::InitRepoPlugins()
-{
-	BNInitRepoPlugins();
-}
-
-
 string BinaryNinja::GetBundledPluginDirectory()
 {
 	char* path = BNGetBundledPluginDirectory();
 	if (!path)
 		return string();
 	string result = path;
+	BNFreeString(path);
+	return result;
+}
+
+
+std::string BinaryNinja::GetBundledScriptPluginDirectory()
+{
+	char* path = BNGetBundledScriptPluginDirectory();
+	if (!path)
+		return string();
+	std::string result = path;
 	BNFreeString(path);
 	return result;
 }
@@ -214,31 +207,30 @@ string BinaryNinja::GetVersionString()
 }
 
 
-VersionInfo BinaryNinja::GetVersionInfo()
+static VersionInfo VersionInfoFromCoreStruct(const BNVersionInfo& result)
 {
-	BNVersionInfo result = BNGetVersionInfo();
 	VersionInfo info;
 	info.major = result.major;
 	info.minor = result.minor;
 	info.build = result.build;
-	info.channel = "";
-	if (result.channel)
-		info.channel = result.channel;
+	info.channel = result.channel ? result.channel : "";
+	return info;
+}
+
+
+VersionInfo BinaryNinja::GetVersionInfo()
+{
+	BNVersionInfo result = BNGetVersionInfo();
+	VersionInfo info = VersionInfoFromCoreStruct(result);
 	BNFreeString(result.channel);
 	return info;
 }
 
 
-VersionInfo ParseVersionString(const string &version)
+VersionInfo BinaryNinja::ParseVersionString(const string &version)
 {
 	BNVersionInfo result = BNParseVersionString(version.c_str());
-	VersionInfo info;
-	info.major = result.major;
-	info.minor = result.minor;
-	info.build = result.build;
-	info.channel = "";
-	if (result.channel)
-		info.channel = result.channel;
+	VersionInfo info = VersionInfoFromCoreStruct(result);
 	BNFreeString(result.channel);
 	return info;
 }
@@ -280,6 +272,29 @@ string BinaryNinja::GetSerialNumber()
 }
 
 
+vector<LicenseAddon> BinaryNinja::GetLicenseAddons()
+{
+	size_t count = 0;
+	BNLicenseAddon* addons = BNGetLicenseAddons(&count);
+	vector<LicenseAddon> result;
+	result.reserve(count);
+	for (size_t i = 0; i < count; i++)
+	{
+		result.push_back({
+			addons[i].id,
+			addons[i].licenseSerial,
+			addons[i].product,
+			addons[i].created,
+			addons[i].createdTimestamp,
+			addons[i].expiration,
+			addons[i].expirationTimestamp,
+			addons[i].signature});
+	}
+	BNFreeLicenseAddons(addons, count);
+	return result;
+}
+
+
 int BinaryNinja::GetLicenseCount()
 {
 	return BNGetLicenseCount();
@@ -298,7 +313,7 @@ uint32_t BinaryNinja::GetBuildId()
 }
 
 
-void BinaryNinja::SetCurrentPluginLoadOrder(BNPluginLoadOrder order)
+void BinaryNinja::SetCurrentPluginLoadOrder(BNPluginLoadPhase order)
 {
 	BNSetCurrentPluginLoadOrder(order);
 }
@@ -424,6 +439,25 @@ map<string, uint64_t> BinaryNinja::GetMemoryUsageInfo()
 }
 
 
+map<string, BinaryNinja::StatHistogram> BinaryNinja::GetStatHistograms()
+{
+	size_t count;
+	BNStatHistogram* info = BNGetStatHistograms(&count);
+
+	map<string, StatHistogram> result;
+	for (size_t i = 0; i < count; i++)
+	{
+		StatHistogram h;
+		h.total = info[i].total;
+		for (size_t k = 0; k < BN_STAT_HISTOGRAM_BUCKET_COUNT; k++)
+			h.buckets[k] = info[i].buckets[k];
+		result[info[i].name] = h;
+	}
+	BNFreeStatHistograms(info, count);
+	return result;
+}
+
+
 bool BinaryNinja::DefaultProgressFunction(size_t, size_t)
 {
 	return true;
@@ -454,6 +488,7 @@ BinaryNinja::ProgressFunction BinaryNinja::SplitProgress(
 	// Keep a running count of weights for the start
 	std::vector<double> subpartStarts;
 	double start = 0.0;
+	subpartStarts.reserve(subpartWeights.size());
 	for (size_t i = 0; i < subpartWeights.size(); ++i)
 	{
 		subpartStarts.push_back(start);
@@ -637,6 +672,17 @@ fmt::format_context::iterator fmt::formatter<BinaryNinja::NameList>::format(cons
 std::optional<size_t> BinaryNinja::FuzzyMatchSingle(const std::string& target, const std::string& query)
 {
 	size_t result = BNFuzzyMatchSingle(target.c_str(), query.c_str());
+	if (result == 0)
+	{
+		return std::nullopt;
+	}
+	return result;
+}
+
+
+std::optional<size_t> BinaryNinja::FuzzyMatchContextual(const std::string& target, const std::string& query)
+{
+	size_t result = BNFuzzyMatchContextual(target.c_str(), query.c_str());
 	if (result == 0)
 	{
 		return std::nullopt;

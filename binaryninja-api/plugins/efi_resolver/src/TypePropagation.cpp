@@ -16,7 +16,7 @@ bool TypePropagation::propagateFuncParamTypes(Function* func)
 {
 	m_queue.push_back(func->GetStart());
 
-	LogDebug("Start Type propagation from 0x%llx", func->GetStart());
+	LogDebugF("Start Type propagation from {:#x}", func->GetStart());
 
 	while (!m_queue.empty())
 	{
@@ -190,7 +190,7 @@ bool TypePropagation::propagateFuncParamTypes(Function* func, SSAVariable ssa_va
 		}
 
 		default:
-			LogInfo("Not handled case during type propagation. At %llx: %d", instr.address, instr.operation);
+			LogInfoF("Not handled case during type propagation. At {:#x}: {}", instr.address, instr.operation);
 			break;
 		}
 	}

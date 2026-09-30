@@ -1,6 +1,8 @@
+#include <QFutureWatcher>
 #include <QHeaderView>
 #include <QItemDelegate>
 #include <QPainter>
+#include <QPointer>
 #include <QSortFilterProxyModel>
 #include <QStandardItemModel>
 #include <QStyledItemDelegate>
@@ -8,7 +10,9 @@
 #include <binaryninjaapi.h>
 #include <progresstask.h>
 #include <sharedcacheapi.h>
+#include <memory>
 #include "filter.h"
+#include "stringstable.h"
 #include "symboltable.h"
 #include "ui/fontsettings.h"
 #include "uicontext.h"
@@ -102,6 +106,8 @@ public:
 class FilterableTableView : public QTableView, public FilterTarget {
 	Q_OBJECT
 
+	std::string m_filter;
+	FilterOptions m_filterOptions;
 	bool m_filterByHiding;
 
 public:
@@ -113,19 +119,22 @@ public:
 
 	~FilterableTableView() override = default;
 
-	void setFilter(const std::string& filter) override {
+	void setFilter(const std::string& filter, FilterOptions options) override {
+		m_filter = filter;
+		m_filterOptions = options;
+		QString qFilter = QString::fromStdString(m_filter);
 		if (!m_filterByHiding)
 		{
-			emit filterTextChanged(QString::fromStdString(filter));
+			emit filterTextChanged(qFilter);
 			return;
 		}
-		QString qFilter = QString::fromStdString(filter);
+		bool caseSensitive = options.testFlag(CaseSensitiveOption);
 		for (int row = 0; row < model()->rowCount(); ++row) {
 			bool match = false;
 			for (int col = 0; col < model()->columnCount(); ++col) {
 				QModelIndex index = model()->index(row, col);
 				QString data = model()->data(index).toString();
-				if (data.contains(qFilter, Qt::CaseInsensitive)) {
+				if (data.contains(qFilter, caseSensitive ? Qt::CaseSensitive : Qt::CaseInsensitive)) {
 					match = true;
 					break;
 				}
@@ -150,24 +159,23 @@ public:
 		}
 	}
 
-	void selectFirstItem() override {
-		if (model()->rowCount() > 0) {
-			QModelIndex top = indexAt(rect().topLeft());
-			if (top.isValid()) {
-				selectionModel()->select(top, QItemSelectionModel::ClearAndSelect);
-				setCurrentIndex(top);
-			}
+	void ensureSelection() override {
+		QModelIndex current = selectionModel()->currentIndex();
+		if (current.isValid() && !isRowHidden(current.row()))
+			return;
+
+		if (auto top = indexAt(rect().topLeft()); top.isValid())
+		{
+			selectionModel()->select(top, QItemSelectionModel::ClearAndSelect);
+			setCurrentIndex(top);
 		}
 	}
 
-	void activateFirstItem() override {
-		if (model()->rowCount() > 0) {
-			QModelIndex topLeft = indexAt(rect().topLeft());
-			if (topLeft.isValid()) {
-				setCurrentIndex(topLeft);
-				emit activated(topLeft);
-			}
-		}
+
+	void activateSelection() override {
+		ensureSelection();
+		if (auto current = selectionModel()->currentIndex(); current.isValid())
+			emit activated(current);
 	}
 
 signals:
@@ -187,6 +195,13 @@ class DSCTriageView : public QWidget, public View, public UIContextNotification
 	QStandardItemModel* m_imageModel;
 
 	SymbolTableView* m_symbolTable;
+	TriageTablePanel* m_symbolsPanel;
+	QPointer<QFutureWatcher<std::vector<SharedCacheAPI::CacheSymbol>>> m_symbolsWatcher;
+
+	StringsTableView* m_stringsTable;
+	TriageTablePanel* m_stringsPanel;
+	QTimer* m_stringsPollTimer;
+	std::unique_ptr<SharedCacheAPI::CacheStringScanner> m_stringScanner;
 
 	FilterableTableView* m_regionTable;
 
@@ -208,11 +223,23 @@ public:
 	void OnAfterOpenFile(UIContext* context, FileContext* file, ViewFrame* frame) override;
 	void RefreshData();
 
+protected:
+	void showEvent(QShowEvent* event) override;
+	void hideEvent(QHideEvent* event) override;
+
 private:
-	void loadImagesWithAddr(const std::vector<uint64_t>& addresses, bool includeDependencies = false);
+	void loadImagesWithAddr(const std::vector<uint64_t>& addresses, bool includeDependencies = false,
+		std::optional<uint64_t> navigateTo = std::nullopt);
 	void setImageLoaded(uint64_t imageHeaderAddr);
+	void navigateToAddress(uint64_t address);
 	QWidget* initImageTable();
 	void initSymbolTable();
+	bool startSymbolLoad();
+	void initStringsTab();
+	bool startStringScan();
+	void pollStringScan();
+	void promptToLoadImage(const std::string& imageName, uint64_t address, uint64_t navigateTo);
+	void loadStringRegion(const SharedCacheAPI::CacheString& string, std::optional<uint64_t> navigateTo);
 	void initCacheInfoTables();
 };
 

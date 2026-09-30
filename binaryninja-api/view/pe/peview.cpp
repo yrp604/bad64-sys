@@ -22,6 +22,47 @@ using namespace std;
 static PEViewType* g_peViewType = nullptr;
 static const char* imageDirName[] = { "exportTable", "importTable", "resourceTable", "exceptionTable", "certificateTable", "baseRelocationTable", "debug", "architecture", "globalPtr", "tlsTable", "loadConfigTable", "boundImport", "iat", "delayImportDescriptor", "clrRuntimeHeader", "reserved"};
 
+
+static const char* GetResourceTypeName(uint32_t id)
+{
+	switch (id)
+	{
+	case 1:  return "RT_CURSOR";
+	case 2:  return "RT_BITMAP";
+	case 3:  return "RT_ICON";
+	case 4:  return "RT_MENU";
+	case 5:  return "RT_DIALOG";
+	case 6:  return "RT_STRING";
+	case 7:  return "RT_FONTDIR";
+	case 8:  return "RT_FONT";
+	case 9:  return "RT_ACCELERATOR";
+	case 10: return "RT_RCDATA";
+	case 11: return "RT_MESSAGETABLE";
+	case 12: return "RT_GROUP_CURSOR";
+	case 14: return "RT_GROUP_ICON";
+	case 16: return "RT_VERSION";
+	case 17: return "RT_DLGINCLUDE";
+	case 19: return "RT_PLUGPLAY";
+	case 20: return "RT_VXD";
+	case 21: return "RT_ANICURSOR";
+	case 22: return "RT_ANIICON";
+	case 23: return "RT_HTML";
+	case 24: return "RT_MANIFEST";
+	default: return nullptr;
+	}
+}
+
+
+struct ResourceParseItem
+{
+	uint64_t tableAddr;
+	uint32_t depth;          // 0=root, 1=type children, 2=name children
+	std::string typeName;    // resolved at depth 0
+	std::string resourceName;// resolved at depth 1
+	uint32_t typeId;         // raw type ID
+	uint32_t nameId;         // raw name/ID
+};
+
 void BinaryNinja::InitPEViewType()
 {
 	static PEViewType type;
@@ -595,7 +636,6 @@ bool PEView::Init()
 
 		Ref<Settings> viewSettings = Settings::Instance();
 		m_extractMangledTypes = viewSettings->Get<bool>("analysis.extractTypesFromMangledNames", this);
-		m_simplifyTemplates = viewSettings->Get<bool>("analysis.types.templateSimplifier", this);
 
 		bool platformSetByUser = false;
 		settings = GetLoadSettings(GetTypeName());
@@ -632,12 +672,7 @@ bool PEView::Init()
 				m_logger->LogError("Support for PE architecture 'x86_64' is not present");
 				break;
 			case 0xaa64:
-				#ifndef DEMO_EDITION
 				m_logger->LogError("Support for PE architecture 'arm64' is not present");
-				#else
-				m_logger->LogError("Binary Ninja free does not support PE architecture 'arm64'. "
-								   "Purchase Binary Ninja to unlock all features.");
-				#endif
 				break;
 			default:
 				m_logger->LogError("PE architecture '0x%x' is not supported", header.machine);
@@ -667,31 +702,31 @@ bool PEView::Init()
 		m_relocatable = (opt.dllCharacteristics & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE) > 0;
 		m_logger->LogDebug(
 			"OptionalHeaderComponents:\n"
-			"\topt.baseOfData            %08lx\n"
-			"\topt.imageBase             %016lx\n"
-			"\topt.sectionAlign          %08lx\n"
-			"\topt.fileAlign             %08lx\n"
+			"\topt.baseOfData            %08x\n"
+			"\topt.imageBase             %016" PRIx64 "\n"
+			"\topt.sectionAlign          %08x\n"
+			"\topt.fileAlign             %08x\n"
 			"\topt.majorOSVersion        %04hx\n"
 			"\topt.minorOSVersion        %04hx\n"
 			"\topt.majorImageVersion     %04hx\n"
 			"\topt.minorImageVersion     %04hx\n"
 			"\topt.majorSubsystemVersion %04hx\n"
 			"\topt.minorSubsystemVersion %04hx\n"
-			"\topt.win32Version          %08lx\n"
-			"\topt.sizeOfImage           %08lx\n"
-			"\topt.sizeOfHeaders         %08lx\n"
-			"\topt.checksum              %08lx\n"
+			"\topt.win32Version          %08x\n"
+			"\topt.sizeOfImage           %08x\n"
+			"\topt.sizeOfHeaders         %08x\n"
+			"\topt.checksum              %08x\n"
 			"\topt.subsystem             %04hx\n"
 			"\topt.dllCharacteristics    %04hx\n"
-			"\topt.sizeOfStackReserve    %016lx\n"
-			"\topt.sizeOfStackCommit     %016lx\n"
-			"\topt.sizeOfHeapReserve     %016lx\n"
-			"\topt.sizeOfHeapCommit      %016lx\n"
-			"\topt.loaderFlags           %08lx\n"
-			"\topt.dataDirCount          %016llx\n"
-			"\topt.imageBase             %016llx\n"
-			"\topt.sizeOfHeaders         %08lx\n"
-			"\topt.addressOfEntry        %08lx\n",
+			"\topt.sizeOfStackReserve    %016" PRIx64 "\n"
+			"\topt.sizeOfStackCommit     %016" PRIx64 "\n"
+			"\topt.sizeOfHeapReserve     %016" PRIx64 "\n"
+			"\topt.sizeOfHeapCommit      %016" PRIx64 "\n"
+			"\topt.loaderFlags           %08x\n"
+			"\topt.dataDirCount          %016x\n"
+			"\topt.imageBase             %016" PRIx64 "\n"
+			"\topt.sizeOfHeaders         %08x\n"
+			"\topt.addressOfEntry        %08x\n",
 			opt.baseOfData,
 			opt.imageBase,
 			opt.sectionAlign,
@@ -756,7 +791,7 @@ bool PEView::Init()
 		for (uint16_t i = 0; i < header.sectionCount; i++)
 		{
 			PESection section;
-			m_logger->LogDebug("Offset: %lx\n", reader.GetOffset());
+			m_logger->LogDebug("Offset: %" PRIx64 "\n", reader.GetOffset());
 			char name[9];
 			memset(name, 0, sizeof(name));
 			reader.Read(name, 8);
@@ -834,15 +869,15 @@ bool PEView::Init()
 			m_logger->LogDebug(
 				"Section [%d]\n"
 				"\tsection.name                  %s\n"
-				"\tsection.virtualSize:          %lx\n"
-				"\tsection.virtualAddress:       %lx\n"
-				"\tsection.sizeOfRawData:        %lx\n"
-				"\tsection.pointerToRawData:     %lx\n"
-				"\tsection.pointerToRelocs:      %lx\n"
-				"\tsection.pointerToLineNumbers: %lx\n"
+				"\tsection.virtualSize:          %x\n"
+				"\tsection.virtualAddress:       %x\n"
+				"\tsection.sizeOfRawData:        %x\n"
+				"\tsection.pointerToRawData:     %x\n"
+				"\tsection.pointerToRelocs:      %x\n"
+				"\tsection.pointerToLineNumbers: %x\n"
 				"\tsection.relocCount:           %hx\n"
 				"\tsection.lineNumberCount:      %hx\n"
-				"\tsection.characteristics:      %lx\n",
+				"\tsection.characteristics:      %x\n",
 				i,
 				section.name.c_str(),
 				section.virtualSize,
@@ -855,7 +890,7 @@ bool PEView::Init()
 				section.lineNumberCount,
 				section.characteristics);
 
-			m_logger->LogDebug("Segment: Vaddr: %08" PRIx64 " Vsize: %08" PRIx64 " Offset: %08" PRIx64 " Rawsize: %08" PRIx64
+			m_logger->LogDebug("Segment: Vaddr: %08" PRIx64 " Vsize: %08x Offset: %08x Rawsize: %08x"
 				" %c%c%c %s\n",
 				section.virtualAddress + m_imageBase,
 				section.virtualSize,
@@ -970,8 +1005,8 @@ bool PEView::Init()
 				richMetadataLookupIdentifiers.push_back(id);
 				richMetadataLookupNames.push_back(name);
 			}
-			StoreMetadata("RichHeaderLookupIdentifiers", new Metadata(richMetadataLookupIdentifiers), true);
-			StoreMetadata("RichHeaderLookupNames", new Metadata(richMetadataLookupNames), true);
+			StoreMetadata("RichHeaderLookupIdentifiers", new Metadata(richMetadataLookupIdentifiers), MetadataStoreEphemeral);
+			StoreMetadata("RichHeaderLookupNames", new Metadata(richMetadataLookupNames), MetadataStoreEphemeral);
 
 			vector<Ref<Metadata>> richMetadata;
 			for (entryIdx = 0; entryIdx < richValues.size(); entryIdx++)
@@ -1001,7 +1036,7 @@ bool PEView::Init()
 
 			if (validRichHeader)
 			{
-				StoreMetadata("RichHeader", new Metadata(richMetadata), true);
+				StoreMetadata("RichHeader", new Metadata(richMetadata), MetadataStoreEphemeral);
 				StructureBuilder richHeaderBuilder;
 				richHeaderBuilder.AddMember(Type::IntegerType(4, false), "e_magic__DanS");
 				richHeaderBuilder.AddMember(Type::ArrayType(Type::IntegerType(4, false), 3), "e_align");
@@ -1307,8 +1342,10 @@ bool PEView::Init()
 	}
 
 	vector<pair<BNRelocationInfo, string>> relocs;
-	BeginBulkModifySymbols();
+
+	BulkSymbolModification bulkSymbolModification(this);
 	m_symbolQueue = new SymbolQueue();
+	m_simplifyTemplates = Settings::Instance()->Get<bool>("analysis.types.templateSimplifier", this);
 	m_symExternMappingMetadata = new Metadata(KeyValueDataType);
 
 	try
@@ -1384,34 +1421,79 @@ bool PEView::Init()
 				// + m_imageBase, e_scnum, e_value);
 
 				uint8_t baseType = (e_type >> 4) & 0x3;
-				switch (baseType)
+
+				bool createSymbol = true;
+
+				// Some records are just providing debugging information and we should ignore them
+				// TODO: can we recover any useful information from the aux records?
+				// See https://learn.microsoft.com/en-us/windows/win32/debug/pe-format#auxiliary-symbol-records for info provided by aux records
+				if (e_sclass == IMAGE_SYM_CLASS_EXTERNAL && baseType == IMAGE_SYM_DTYPE_FUNCTION)
 				{
-					case IMAGE_SYM_DTYPE_NULL: // no derived type
+					// Auxiliary Format 1: Function Definitions
+				}
+				else if (e_sclass == IMAGE_SYM_CLASS_FUNCTION)
+				{
+					if (symbolName == ".bf" || symbolName == ".ef")
 					{
-						if (virtualAddress)
-							AddPESymbol(DataSymbol, "", symbolName, virtualAddress, binding);
-						break;
+						// Auxiliary Format 2: .bf and .ef Symbols
+						// This entry is providing information about a function's line numbers and should not have a symbol created
+						createSymbol = false;
 					}
-					case IMAGE_SYM_DTYPE_POINTER: // pointer to base type
+					else if (symbolName == ".lf")
 					{
-						break;
+						// This entry is providing information about a function's line numbers and should not have a symbol created
+						createSymbol = false;
 					}
-					case IMAGE_SYM_DTYPE_FUNCTION: // function that returns base type
-					{
-						//LogError("%x StorageClass:%u Type:%x NumAux:%x COFF_DT_FCN at %x section:%x %s ", header.coffSymbolTable + (i * 18), e_sclass, e_type, e_numaux, virtualAddress + m_imageBase, e_scnum, symbolName.c_str());
-						if (virtualAddress)
-							AddPESymbol(FunctionSymbol, "", symbolName, virtualAddress, binding);
-						break;
-					}
-					case IMAGE_SYM_DTYPE_ARRAY: // array of base type
-					{
-						break;
-					}
-					default:
-						break;
+				}
+				else if (e_sclass == IMAGE_SYM_CLASS_EXTERNAL && e_scnum == IMAGE_SYM_UNDEFINED && e_value == 0)
+				{
+					// Auxiliary Format 3: Weak Externals
+				}
+				else if (e_sclass == IMAGE_SYM_CLASS_FILE && symbolName == ".file")
+				{
+					// Auxiliary Format 4: Files
+					// This entry is providing information about a source file and should not have a symbol created
+					createSymbol = false;
+				}
+				else if (e_sclass == IMAGE_SYM_CLASS_STATIC &&
+					find_if(m_sections.begin(), m_sections.end(), [&symbolName](const PESection& section) { return section.name == symbolName; }) != m_sections.end())
+				{
+					// Auxiliary Format 5: Section Definitions
+					// This entry is providing information about a section and should not have a symbol created
+					createSymbol = false;
 				}
 
-				// TODO handle auxiliary entries
+				if (createSymbol)
+				{
+					switch (baseType)
+					{
+						case IMAGE_SYM_DTYPE_NULL: // no derived type
+						{
+							if (virtualAddress)
+								AddPESymbol(DataSymbol, "", symbolName, virtualAddress, binding);
+							break;
+						}
+						case IMAGE_SYM_DTYPE_POINTER: // pointer to base type
+						{
+							break;
+						}
+						case IMAGE_SYM_DTYPE_FUNCTION: // function that returns base type
+						{
+							//LogError("%x StorageClass:%u Type:%x NumAux:%x COFF_DT_FCN at %x section:%x %s ", header.coffSymbolTable + (i * 18), e_sclass, e_type, e_numaux, virtualAddress + m_imageBase, e_scnum, symbolName.c_str());
+							if (virtualAddress)
+								AddPESymbol(FunctionSymbol, "", symbolName, virtualAddress, binding);
+							break;
+						}
+						case IMAGE_SYM_DTYPE_ARRAY: // array of base type
+						{
+							break;
+						}
+						default:
+							break;
+					}
+				}
+
+				// Skip over auxiliary entries
 				i += e_numaux;
 			}
 		}
@@ -1454,7 +1536,7 @@ bool PEView::Init()
 						m_logger->LogWarn(
 							"The number of Import_Directory_Table reported by the Data Directories is different from "
 							"its correct amount. "
-							"There are actually %d Import_Directory_Table in the file, but SizeOfImportTable reports "
+							"There are actually %zu Import_Directory_Table in the file, but SizeOfImportTable reports "
 							"%d. "
 							"The PE parsing continues with the actual number of Import_Directory_Table",
 							numImportEntries + 1, dir.size / 20);
@@ -1545,7 +1627,7 @@ bool PEView::Init()
 						entry &= 0x7fffffff;
 						DefineDataVariable(m_imageBase + entryOffset, Type::IntegerType(4, false));
 					}
-					m_logger->LogDebug("Entry 0x%llx isOrdinal: %s\n", entry, isOrdinal ? "True" : "False");
+					m_logger->LogDebug("Entry 0x%" PRIx64 " isOrdinal: %s\n", entry, isOrdinal ? "True" : "False");
 
 					if ((!isOrdinal) && (entry == 0))
 						break;
@@ -1599,8 +1681,8 @@ bool PEView::Init()
 				numImportEntries++;
 			}
 
-			StoreMetadata("Libraries", new Metadata(libraries), true);
-			StoreMetadata("LibraryFound", new Metadata(libraryFound), true);
+			StoreMetadata("Libraries", new Metadata(libraries), MetadataStoreEphemeral);
+			StoreMetadata("LibraryFound", new Metadata(libraryFound), MetadataStoreEphemeral);
 			if (numImportEntries)
 			{
 				// Create Import Directory Table Type
@@ -1666,10 +1748,15 @@ bool PEView::Init()
 				}
 			}
 
-			if (m_dataDirs[IMAGE_DIRECTORY_ENTRY_EXCEPTION].size % entrySize)
+			const auto& exceptionDir = m_dataDirs[IMAGE_DIRECTORY_ENTRY_EXCEPTION];
+			if (exceptionDir.size % entrySize)
 				throw PEFormatException("invalid table size");
-			numExceptionEntries = m_dataDirs[IMAGE_DIRECTORY_ENTRY_EXCEPTION].size / entrySize;
+			const auto imageSize = GetEnd() - GetStart();
+			if ((exceptionDir.virtualAddress > imageSize)
+				|| (exceptionDir.size > (imageSize - exceptionDir.virtualAddress)))
+				throw PEFormatException("too many exception entries, table size exceeds available memory range");
 
+			numExceptionEntries = exceptionDir.size / entrySize;
 			// This DataVariable can end up creating a large array and rendering this in LinearView currently has performance implications
 			// So instead we just create separate structures not in an array
 			Ref<Structure> exceptionEntryStruct = exceptionEntryBuilder.Finalize();
@@ -1776,7 +1863,7 @@ bool PEView::Init()
 						"\tminorVersion:     %08x\n"
 						"\ttype:             %08x\n"
 						"\tsizeOfData:       %08x\n"
-						"\taddressOfRawData: %08x\n"
+						"\taddressOfRawData: %08" PRIx64 "\n"
 						"\tpointerToRawData: %08x\n",
 						debugDir.characteristics,
 						debugDir.timeDateStamp,
@@ -1801,16 +1888,16 @@ bool PEView::Init()
 
 						reader.Seek(RVAToFileOffset(debugDir.addressOfRawData));
 						uint32_t signature = reader.Read32();
-						StoreMetadata("DEBUG_INFO_TYPE", new Metadata((uint64_t)signature), true);
+						StoreMetadata("DEBUG_INFO_TYPE", new Metadata((uint64_t)signature), MetadataStoreEphemeral);
 						if (signature == 0x53445352) // SDSR
 						{
 							vector<uint8_t> guid(16);
 							reader.Read(&guid[0], 16);
 							uint32_t age = reader.Read32();
-							StoreMetadata("PDB_GUID", new Metadata(guid), true);
-							StoreMetadata("PDB_AGE", new Metadata((uint64_t)age), true);
+							StoreMetadata("PDB_GUID", new Metadata(guid), MetadataStoreEphemeral);
+							StoreMetadata("PDB_AGE", new Metadata((uint64_t)age), MetadataStoreEphemeral);
 							string pdbFileName = reader.ReadCString();
-							StoreMetadata("PDB_FILENAME", new Metadata(pdbFileName), true);
+							StoreMetadata("PDB_FILENAME", new Metadata(pdbFileName), MetadataStoreEphemeral);
 							m_logger->LogInfo("PDBFileName: %s\n", pdbFileName.c_str());
 
 							DefineDataVariable(m_imageBase + debugDir.addressOfRawData + 4, Type::ArrayType(Type::IntegerType(1, false), 16));
@@ -1908,10 +1995,10 @@ bool PEView::Init()
 
 				m_logger->LogDebug(
 					"Parsing IMAGE_DIRECTORY_ENTRY_TLS: %08x\n"
-					"\tstartAddressOfRawData %016x\n"
-					"\tendAddressOfRawData   %016x\n"
-					"\taddressOfIndex        %016x\n"
-					"\taddressOfCallBacks    %016x\n"
+					"\tstartAddressOfRawData %016" PRIx64 "\n"
+					"\tendAddressOfRawData   %016" PRIx64 "\n"
+					"\taddressOfIndex        %016" PRIx64 "\n"
+					"\taddressOfCallBacks    %016" PRIx64 "\n"
 					"\tsizeOfZeroFill        %08x\n"
 					"\tcharacteristics       %08x\n",
 					dir.size,
@@ -2024,7 +2111,7 @@ bool PEView::Init()
 						m_logger->LogWarn(
 							"The number of Import_Directory_Table reported by the Data Directories is different from "
 							"its correct amount. "
-							"There are actually %d Import_Directory_Table in the file, but SizeOfImportTable reports %d. "
+							"There are actually %zu Import_Directory_Table in the file, but SizeOfImportTable reports %d. "
 							"The PE parsing continues with the actual number of Import_Directory_Table",
 							numImportDelayEntries + 1, dir.size / 32);
 					break;
@@ -2100,7 +2187,7 @@ bool PEView::Init()
 						entry &= 0x7fffffff;
 						DefineDataVariable(m_imageBase + entryOffset, Type::IntegerType(4, false));
 					}
-					m_logger->LogDebug("Entry 0x%llx isOrdinal: %s\n", entry, isOrdinal ? "True" : "False");
+					m_logger->LogDebug("Entry 0x%" PRIx64 " isOrdinal: %s\n", entry, isOrdinal ? "True" : "False");
 
 					if ((!isOrdinal) && (entry == 0))
 						break;
@@ -2582,9 +2669,70 @@ bool PEView::Init()
 	delete m_symbolQueue;
 	m_symbolQueue = nullptr;
 
-	EndBulkModifySymbols();
+	bulkSymbolModification.End();
 
-	StoreMetadata("SymbolExternalLibraryMapping", m_symExternMappingMetadata, true);
+	StoreMetadata("SymbolExternalLibraryMapping", m_symExternMappingMetadata, MetadataStoreEphemeral);
+
+	EnumerationBuilder relocTypeBuilder;
+	relocTypeBuilder.AddMemberWithValue("IMAGE_USER_DEFINED", 0xffffffff);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_ABSOLUTE", 0);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_HIGH", 1);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_LOW", 2);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_HIGHLOW", 3);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_HIGHADJ", 4);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_MIPS_JMPADDR", 5);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_ARM_MOV32", 5);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_RISCV_HIGH20", 5);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASE_RESERVED", 6);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_THUMB_MOV32", 7);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_RISCV_LOW12I", 7);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_RISCV_LOW12S", 8);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_MIPS_JMPADDR16", 9);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_DIR64", 10);
+
+	Ref<Enumeration> relocTypeEnum = relocTypeBuilder.Finalize();
+	Ref<Type> relocTypeType = Type::EnumerationType(relocTypeEnum, 2);
+	QualifiedName relocTypeName = string("Relocation_Type");
+	string relocTypeTypeId = Type::GenerateAutoTypeId("pe", relocTypeName);
+	QualifiedName relocTypeTypeName = DefineType(relocTypeTypeId, relocTypeName, relocTypeType);
+
+	TypeBuilder baseAddressPtrType = TypeBuilder::PointerType(4, Type::VoidType());
+	baseAddressPtrType.SetPointerBase(RelativeToBinaryStartPointerBaseType, 0);
+
+	StructureBuilder imageBaseRelocBuilder;
+	imageBaseRelocBuilder.SetPacked(true);
+	imageBaseRelocBuilder.AddMember(baseAddressPtrType.Finalize(), "virtualAddress");
+	imageBaseRelocBuilder.AddMember(Type::IntegerType(4, false), "sizeOfBlock");
+
+	Ref<Structure> imageBaseRelocStruct = imageBaseRelocBuilder.Finalize();
+	Ref<Type> imageBaseRelocType = Type::StructureType(imageBaseRelocStruct);
+	QualifiedName imageBaseRelocName = string("Image_Base_Relocation");
+	string imageBaseRelocTypeId = Type::GenerateAutoTypeId("pe", imageBaseRelocName);
+	QualifiedName imageBaseRelocTypeName = DefineType(imageBaseRelocTypeId, imageBaseRelocName, imageBaseRelocType);
+
+	StructureBuilder imageRelocBuilder;
+	imageRelocBuilder.SetPacked(true);
+	imageRelocBuilder.AddMemberAtBitOffset(Type::IntegerType(2, false), "offset", 0, 12);
+	imageRelocBuilder.AddMemberAtBitOffset(Type::NamedType(this, relocTypeTypeName), "nativeType", 12, 4);
+
+	Ref<Structure> imageRelocStruct = imageRelocBuilder.Finalize();
+	Ref<Type> imageRelocType = Type::StructureType(imageRelocStruct);
+	QualifiedName imageRelocName = string("Image_Relocation");
+	string imageRelocTypeId = Type::GenerateAutoTypeId("pe", imageRelocName);
+	QualifiedName imageRelocTypeName = DefineType(imageRelocTypeId, imageRelocName, imageRelocType);
+
+	StructureBuilder imageRelocHighAdjBuilder;
+	imageRelocHighAdjBuilder.SetPacked(true);
+	imageRelocHighAdjBuilder.AddMemberAtBitOffset(Type::IntegerType(2, false), "offset", 0, 12);
+	imageRelocHighAdjBuilder.AddMemberAtBitOffset(Type::NamedType(this, relocTypeTypeName), "nativeType", 12, 4);
+	imageRelocHighAdjBuilder.AddMemberAtOffset(Type::IntegerType(2, false), "addend", 2);
+	imageRelocHighAdjBuilder.SetWidth(4);
+
+	Ref<Structure> imageRelocHighAdjStruct = imageRelocHighAdjBuilder.Finalize();
+	Ref<Type> imageRelocHighAdjType = Type::StructureType(imageRelocHighAdjStruct);
+	QualifiedName imageRelocHighAdjName = string("Image_Relocation_HighAdj");
+	string imageRelocHighAdjTypeId = Type::GenerateAutoTypeId("pe", imageRelocHighAdjName);
+	QualifiedName imageRelocHighAdjTypeName = DefineType(imageRelocHighAdjTypeId, imageRelocHighAdjName, imageRelocHighAdjType);
 
 	try
 	{
@@ -2599,6 +2747,7 @@ bool PEView::Init()
 				if (section->virtualAddress != dir.virtualAddress)
 					dirs.push_back({ section->virtualAddress, section->sizeOfRawData });
 			}
+			size_t dirCount = 0;
 			for (auto& dir : dirs)
 			{
 				if (dir.size == 0 || dir.virtualAddress == 0)
@@ -2618,6 +2767,7 @@ bool PEView::Init()
 						size += baseReloc.SizeOfBlock;
 						continue;
 					}
+					bool anyHighAdj = false; // These prevent us from making a clean array
 					size_t nEntries = (baseReloc.SizeOfBlock - 8) / sizeof(uint16_t);
 					uint16_t* relocEntries = new uint16_t[nEntries];
 					if (relocEntries)
@@ -2631,14 +2781,57 @@ bool PEView::Init()
 							if (!reloc.nativeType) // IMAGE_REL_BASED_ABSOLUTE relocations are skipped/used for padding
 								continue;
 							reloc.address = baseReloc.VirtualAddress + (relocEntries[i] & 0xfff);
-							reloc.size = m_is64 ? 8 : 4;
+							reloc.type = StandardRelocationType;
 							reloc.pcRelative = false;
 							reloc.base = m_imageBase - m_peImageBase;
+							switch (reloc.nativeType)
+							{
+							case 1: // IMAGE_REL_BASED_HIGH
+							case 2: // IMAGE_REL_BASED_LOW
+								reloc.size = 2;
+								break;
+							case 3: // IMAGE_REL_BASED_HIGHLOW
+								reloc.size = 4;
+								break;
+							case 4: // IMAGE_REL_BASED_HIGHADJ consumes the next relocation slot as an addend.
+								if ((i + 1) >= nEntries)
+									continue;
+								reloc.size = 2;
+								reloc.addend = relocEntries[++i];
+								anyHighAdj = true;
+								break;
+							case 7: // IMAGE_REL_BASED_THUMB_MOV32
+								reloc.size = 8;
+								if (header.machine != IMAGE_FILE_MACHINE_ARM64)
+									reloc.type = UnhandledRelocation;
+								break;
+							case 10: // IMAGE_REL_BASED_DIR64
+								reloc.size = 8;
+								break;
+							default:
+								reloc.size = m_is64 ? 8 : 4;
+								reloc.type = UnhandledRelocation;
+								break;
+							}
 							DefineRelocation(m_arch, reloc, 0, reloc.address);
 						}
 						delete[] relocEntries;
 					}
+
+					DefineDataVariable(m_imageBase + dir.virtualAddress + size, Type::NamedType(this, imageBaseRelocTypeName));
+					DefineAutoSymbol(new Symbol(DataSymbol, fmt::format("__reloc_table_header({})", dirCount), m_imageBase + dir.virtualAddress + size, NoBinding));
+
+					if (!anyHighAdj)
+					{
+						DefineDataVariable(m_imageBase + dir.virtualAddress + size + 8, Type::ArrayType(
+							Type::NamedType(this, imageRelocTypeName),
+							nEntries
+						));
+						DefineAutoSymbol(new Symbol(DataSymbol, fmt::format("__reloc_table({})", dirCount), m_imageBase + dir.virtualAddress + size + 8, NoBinding));
+					}
+
 					size += baseReloc.SizeOfBlock;
+					dirCount ++;
 				}
 			}
 		}
@@ -2656,8 +2849,6 @@ bool PEView::Init()
 
 	try
 	{
-		//TODO: properly name tables, entries, data entries
-
 		PEDataDirectory dir;
 		// Read resource directory
 		if (m_dataDirs.size() > IMAGE_DIRECTORY_ENTRY_RESOURCE)
@@ -2706,7 +2897,51 @@ bool PEView::Init()
 			string resourceDataEntryTypeId = Type::GenerateAutoTypeId("pe", resourceDataEntryName);
 			QualifiedName resourceDataEntryTypeName = DefineType(resourceDataEntryTypeId, resourceDataEntryName, resourceDataEntryType);
 
-			std::list<uint64_t> tableAddrsToParse = {dir.virtualAddress};
+			// Helper: convert UTF-16LE code units to UTF-8
+			auto utf16ToUtf8 = [](const std::vector<uint16_t>& codeUnits) -> std::string {
+				std::string result;
+				result.reserve(codeUnits.size());
+				for (uint16_t ch : codeUnits)
+				{
+					if (ch < 0x80)
+						result.push_back(static_cast<char>(ch));
+					else if (ch < 0x800)
+					{
+						result.push_back(static_cast<char>(0xC0 | (ch >> 6)));
+						result.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
+					}
+					else
+					{
+						result.push_back(static_cast<char>(0xE0 | (ch >> 12)));
+						result.push_back(static_cast<char>(0x80 | ((ch >> 6) & 0x3F)));
+						result.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
+					}
+				}
+				return result;
+			};
+
+			// Helper lambda to read a UTF-16LE resource name string and convert to UTF-8
+			auto readResourceName = [&](uint64_t nameRva) -> std::string {
+				if (nameRva < dir.virtualAddress || nameRva >= dir.virtualAddress + dir.size)
+					return "";
+				BinaryReader nameReader(GetParentView(), LittleEndian);
+				nameReader.Seek(RVAToFileOffset(nameRva));
+				uint16_t nameLen = nameReader.Read16();
+				if (nameLen == 0 || nameRva + 2 + (nameLen * 2) > dir.virtualAddress + dir.size)
+					return "";
+
+				// Define the wide char array data variable
+				DefineDataVariable(m_imageBase + nameRva + 2, Type::ArrayType(Type::WideCharType(2), nameLen));
+
+				std::vector<uint16_t> codeUnits(nameLen);
+				for (uint16_t i = 0; i < nameLen; i++)
+					codeUnits[i] = nameReader.Read16();
+				return utf16ToUtf8(codeUnits);
+			};
+
+			// Path-tracking BFS traversal of the resource directory tree
+			std::list<ResourceParseItem> itemsToParse;
+			itemsToParse.push_back({dir.virtualAddress, 0, "", "", 0, 0});
 			std::unordered_set<uint64_t> visitedTables;
 
 			uint64_t maxTableCount = 10000;
@@ -2714,7 +2949,24 @@ bool PEView::Init()
 				maxTableCount = settings->Get<uint64_t>("loader.pe.maxResourceDirectoryTableCount", this);
 
 			uint32_t resourceDirectoryTableNum = 0;
-			while (!tableAddrsToParse.empty())
+
+			// Collect resource leaf entries for metadata
+			std::vector<std::map<std::string, Ref<Metadata>>> resourceEntries;
+			// Track used symbol names to handle duplicates
+			std::unordered_map<std::string, int> usedSymbolNames;
+
+			auto makeUniqueSymbolName = [&](const std::string& baseName) -> std::string {
+				auto it = usedSymbolNames.find(baseName);
+				if (it == usedSymbolNames.end())
+				{
+					usedSymbolNames[baseName] = 1;
+					return baseName;
+				}
+				int count = it->second++;
+				return fmt::format("{}_{}", baseName, count);
+			};
+
+			while (!itemsToParse.empty())
 			{
 				// Check for safety limit to prevent infinite parsing
 				if (resourceDirectoryTableNum >= maxTableCount)
@@ -2723,97 +2975,135 @@ bool PEView::Init()
 					break;
 				}
 
-				uint64_t tableAddr = tableAddrsToParse.front();
-				tableAddrsToParse.pop_front();
+				ResourceParseItem item = itemsToParse.front();
+				itemsToParse.pop_front();
 
 				// Cycle detection - skip if we've already processed this table
-				if (visitedTables.count(tableAddr))
+				if (visitedTables.count(item.tableAddr))
 				{
-					m_logger->LogWarn("Resource directory cycle detected at RVA 0x%" PRIx64 ", skipping", tableAddr);
+					m_logger->LogWarn("Resource directory cycle detected at RVA 0x%" PRIx64 ", skipping", item.tableAddr);
 					continue;
 				}
-				visitedTables.insert(tableAddr);
+				visitedTables.insert(item.tableAddr);
 
 				// Bounds check - ensure table address is within resource section
-				if (tableAddr < dir.virtualAddress || tableAddr >= dir.virtualAddress + dir.size)
+				if (item.tableAddr < dir.virtualAddress || item.tableAddr >= dir.virtualAddress + dir.size)
 				{
-					m_logger->LogWarn("Resource directory table at RVA 0x%" PRIx64 " is outside resource section bounds", tableAddr);
+					m_logger->LogWarn("Resource directory table at RVA 0x%" PRIx64 " is outside resource section bounds", item.tableAddr);
 					continue;
 				}
 
-				// Read in next directory entry
-				reader.Seek(RVAToFileOffset(tableAddr));
-				PEResourceDirectoryTable importDirTable;
-				importDirTable.characteristics = reader.Read32();
-				importDirTable.timeDateStamp = reader.Read32();
-				importDirTable.majorVersion = reader.Read16();
-				importDirTable.minorVersion = reader.Read16();
-				importDirTable.numNameEntries = reader.Read16();
-				importDirTable.numIdEntries = reader.Read16();
+				// Read in next directory table
+				reader.Seek(RVAToFileOffset(item.tableAddr));
+				PEResourceDirectoryTable dirTable;
+				dirTable.characteristics = reader.Read32();
+				dirTable.timeDateStamp = reader.Read32();
+				dirTable.majorVersion = reader.Read16();
+				dirTable.minorVersion = reader.Read16();
+				dirTable.numNameEntries = reader.Read16();
+				dirTable.numIdEntries = reader.Read16();
 
-				DefineDataVariable(m_imageBase + tableAddr, Type::NamedType(this, resourceDirTableTypeName));
-				DefineAutoSymbol(new Symbol(DataSymbol, fmt::format("__resource_directory_table_{}", resourceDirectoryTableNum), m_imageBase + tableAddr, NoBinding));
+				// Build a descriptive symbol name for this directory table
+				std::string tableSymName;
+				if (item.depth == 0)
+					tableSymName = "__pe_rsrc_root";
+				else if (item.depth == 1)
+					tableSymName = makeUniqueSymbolName(fmt::format("__pe_rsrc_{}", item.typeName));
+				else
+					tableSymName = makeUniqueSymbolName(fmt::format("__pe_rsrc_{}_{}", item.typeName, item.resourceName));
+
+				DefineDataVariable(m_imageBase + item.tableAddr, Type::NamedType(this, resourceDirTableTypeName));
+				DefineAutoSymbol(new Symbol(DataSymbol, tableSymName, m_imageBase + item.tableAddr, NoBinding));
 
 				// All the Name entries precede all the ID entries for the table but we treat them the same
-				// All entries for the table are sorted in ascending order: the Name entries by case-sensitive string and the ID entries by numeric value.
 				// Offsets are relative to the address in the IMAGE_DIRECTORY_ENTRY_RESOURCE DataDirectory.
 
-				// Offset value:
-				// High bit 0. Address of a Resource Data entry (a leaf).
-				// High bit 1. The lower 31 bits are the address of another resource directory table (the next level down).
+				struct PendingDataEntry {
+					size_t offset;
+					std::string typeName;
+					std::string resourceName;
+					std::string langName;
+					uint32_t typeId;
+					uint32_t nameId;
+					uint32_t langId;
+				};
+				std::vector<PendingDataEntry> pendingDataEntries;
 
-				std::vector<size_t> dataEntryOffsets;
-
-				size_t numTableEntries = importDirTable.numNameEntries + importDirTable.numIdEntries;
+				size_t numTableEntries = dirTable.numNameEntries + dirTable.numIdEntries;
 
 				if (numTableEntries > 0)
 				{
 					for (size_t entryNum = 0; entryNum < numTableEntries; entryNum++)
 					{
-						PEResourceDirectoryEntry importDirEntry;
-						importDirEntry.id = reader.Read32();
-						importDirEntry.offset = reader.Read32();
+						PEResourceDirectoryEntry dirEntry;
+						dirEntry.id = reader.Read32();
+						dirEntry.offset = reader.Read32();
 
-						if (importDirEntry.id & 0x80000000)
+						// Resolve the name/ID for this entry based on depth
+						std::string entryName;
+						uint32_t entryRawId = dirEntry.id & 0x7FFFFFFF;
+
+						if (dirEntry.id & 0x80000000)
 						{
-							// Name entry
-							// First 2 bytes of name are length
-
-							size_t nameAddr = dir.virtualAddress + (importDirEntry.id ^ 0x80000000);
-
-							// Bounds check - ensure name address is within resource section
-							if (nameAddr < dir.virtualAddress || nameAddr >= dir.virtualAddress + dir.size)
+							// Name entry — UTF-16LE string at the offset
+							uint64_t nameAddr = dir.virtualAddress + entryRawId;
+							std::string uniName = readResourceName(nameAddr);
+							if (!uniName.empty())
+								entryName = uniName;
+							else
+								entryName = fmt::format("name_{:x}", entryRawId);
+						}
+						else
+						{
+							// ID entry — resolve based on depth
+							if (item.depth == 0)
 							{
-								m_logger->LogWarn("Resource name at RVA 0x%zx is outside resource section bounds, skipping", nameAddr);
-								continue;
+								// Type ID
+								const char* typeName = GetResourceTypeName(entryRawId);
+								if (typeName)
+									entryName = typeName;
+								else
+									entryName = fmt::format("type_{}", entryRawId);
 							}
-
-							BinaryReader nameReader(GetParentView(), LittleEndian);
-							nameReader.Seek(RVAToFileOffset(nameAddr));
-
-							uint16_t nameLen = nameReader.Read16();
-
-							// Check that the full name fits within the resource section
-							// nameLen is in UTF-16 code-units, each 2 bytes, plus 2 bytes for the length prefix
-							if (nameAddr + 2 + (nameLen * 2) > dir.virtualAddress + dir.size)
+							else if (item.depth == 1)
 							{
-								m_logger->LogWarn("Resource name extends beyond resource section bounds, skipping");
-								continue;
+								// Resource name/ID
+								entryName = fmt::format("#{}", entryRawId);
 							}
-
-							// Plus 2 because it's length-prefixed
-							DefineDataVariable(m_imageBase + nameAddr + 2, Type::ArrayType(Type::WideCharType(2), nameLen));
+							else
+							{
+								// Language ID
+								entryName = fmt::format("lang{}", entryRawId);
+							}
 						}
 
-						if (importDirEntry.offset & 0x80000000)
+						// Build child item context
+						std::string childTypeName = item.typeName;
+						std::string childResourceName = item.resourceName;
+						uint32_t childTypeId = item.typeId;
+						uint32_t childNameId = item.nameId;
+
+						if (item.depth == 0)
+						{
+							childTypeName = entryName;
+							childTypeId = entryRawId;
+						}
+						else if (item.depth == 1)
+						{
+							childResourceName = entryName;
+							childNameId = entryRawId;
+						}
+
+						if (dirEntry.offset & 0x80000000)
 						{
 							// Lower 31 bits are address of another table
-							uint64_t nextTableAddr = dir.virtualAddress + (importDirEntry.offset ^ 0x80000000);
+							uint64_t nextTableAddr = dir.virtualAddress + (dirEntry.offset ^ 0x80000000);
 
 							// Bounds check before adding to queue to prevent invalid references
 							if (nextTableAddr >= dir.virtualAddress && nextTableAddr < dir.virtualAddress + dir.size)
 							{
-								tableAddrsToParse.push_back(nextTableAddr);
+								itemsToParse.push_back({nextTableAddr, item.depth + 1,
+									childTypeName, childResourceName, childTypeId, childNameId});
 							}
 							else
 							{
@@ -2822,32 +3112,54 @@ bool PEView::Init()
 						}
 						else
 						{
-							// Address of data entry
-							// Validate offset is within resource section bounds
-							uint64_t dataEntryAddr = dir.virtualAddress + importDirEntry.offset;
+							// Address of data entry (leaf)
+							uint64_t dataEntryAddr = dir.virtualAddress + dirEntry.offset;
 							if (dataEntryAddr >= dir.virtualAddress && dataEntryAddr + sizeof(PEResourceDataEntry) <= dir.virtualAddress + dir.size)
 							{
-								dataEntryOffsets.push_back(importDirEntry.offset);
+								std::string langName;
+								uint32_t langId = 0;
+								if (item.depth >= 2)
+								{
+									// This shouldn't happen in a well-formed PE (depth 2 entries point to data),
+									// but handle gracefully
+									langName = entryName;
+									langId = entryRawId;
+								}
+								else if (item.depth == 1)
+								{
+									// We're at the name level, entry is language
+									langName = entryName;
+									langId = entryRawId;
+								}
+								else
+								{
+									langName = entryName;
+									langId = entryRawId;
+								}
+
+								pendingDataEntries.push_back({(size_t)dirEntry.offset,
+									childTypeName, childResourceName, langName,
+									childTypeId, childNameId, langId});
 							}
 							else
 							{
-								m_logger->LogWarn("Resource data entry at offset 0x%" PRIx32 " is outside resource section bounds, skipping", importDirEntry.offset);
+								m_logger->LogWarn("Resource data entry at offset 0x%" PRIx32 " is outside resource section bounds, skipping", dirEntry.offset);
 							}
 						}
 					}
 
-					size_t tableEntriesStart = m_imageBase + tableAddr + sizeof(PEResourceDirectoryTable);
+					size_t tableEntriesStart = m_imageBase + item.tableAddr + sizeof(PEResourceDirectoryTable);
 					DefineDataVariable(tableEntriesStart, Type::ArrayType(Type::NamedType(this, resourceDirEntryTypeName), numTableEntries));
-					DefineAutoSymbol(new Symbol(DataSymbol, fmt::format("__resource_directory_table_{}_entries", resourceDirectoryTableNum), tableEntriesStart, NoBinding));
+					std::string entriesSymName = tableSymName + "_entries";
+					DefineAutoSymbol(new Symbol(DataSymbol, entriesSymName, tableEntriesStart, NoBinding));
 				}
 
-				// Create BinaryReader once outside the loop for better performance
+				// Process data entries (leaves)
 				BinaryReader entryReader(GetParentView(), LittleEndian);
 
-				for(size_t dataEntryNum = 0; dataEntryNum < dataEntryOffsets.size(); dataEntryNum++)
+				for (auto& pending : pendingDataEntries)
 				{
-					size_t entryOffset = dataEntryOffsets[dataEntryNum];
-					entryReader.Seek(RVAToFileOffset(dir.virtualAddress + entryOffset));
+					entryReader.Seek(RVAToFileOffset(dir.virtualAddress + pending.offset));
 					PEResourceDataEntry dataEntry;
 					dataEntry.dataRva = entryReader.Read32();
 					dataEntry.dataSize = entryReader.Read32();
@@ -2855,12 +3167,8 @@ bool PEView::Init()
 					dataEntry.reserved = entryReader.Read32();
 
 					if (dataEntry.reserved != 0)
-					{
-						// Invalid entry, this needs to be 0
 						continue;
-					}
 
-					// Limit excessively large data sizes 
 					const uint32_t MAX_REASONABLE_RESOURCE_SIZE = 100 * 1024 * 1024; // 100 MB
 					if (dataEntry.dataSize > MAX_REASONABLE_RESOURCE_SIZE)
 					{
@@ -2868,7 +3176,6 @@ bool PEView::Init()
 						continue;
 					}
 
-					// Check for overflow when adding dataRva + dataSize
 					if (dataEntry.dataSize > 0)
 					{
 						uint64_t dataEnd = (uint64_t)dataEntry.dataRva + dataEntry.dataSize;
@@ -2879,19 +3186,313 @@ bool PEView::Init()
 						}
 					}
 
-					size_t entryAddr = m_imageBase + dir.virtualAddress + entryOffset;
+					// Build descriptive path-based symbol names
+					std::string pathPrefix;
+					if (!pending.typeName.empty() && !pending.resourceName.empty() && !pending.langName.empty())
+						pathPrefix = fmt::format("__pe_rsrc_{}_{}_{}", pending.typeName, pending.resourceName, pending.langName);
+					else if (!pending.typeName.empty() && !pending.resourceName.empty())
+						pathPrefix = fmt::format("__pe_rsrc_{}_{}", pending.typeName, pending.resourceName);
+					else if (!pending.typeName.empty())
+						pathPrefix = fmt::format("__pe_rsrc_{}", pending.typeName);
+					else
+						pathPrefix = fmt::format("__pe_rsrc_entry_{}", resourceDirectoryTableNum);
 
+					size_t entryAddr = m_imageBase + dir.virtualAddress + pending.offset;
 					DefineDataVariable(entryAddr, Type::NamedType(this, resourceDataEntryTypeName));
-					DefineAutoSymbol(new Symbol(DataSymbol, fmt::format("__resource_directory_table_{}_data_entry_{}", resourceDirectoryTableNum, dataEntryNum), entryAddr, NoBinding));
+					DefineAutoSymbol(new Symbol(DataSymbol, makeUniqueSymbolName(pathPrefix + "_data_entry"), entryAddr, NoBinding));
 
-					//TODO: properly name based on path taken to get here
 					if (dataEntry.dataSize > 0)
 					{
 						DefineDataVariable(m_imageBase + dataEntry.dataRva, Type::ArrayType(Type::IntegerType(1, true), dataEntry.dataSize));
+						DefineAutoSymbol(new Symbol(DataSymbol, makeUniqueSymbolName(pathPrefix + "_data"), m_imageBase + dataEntry.dataRva, NoBinding));
 					}
+
+					// Generate preview for parseable resource types
+					std::string preview;
+					if (pending.typeId == 6 && dataEntry.dataSize > 0) // RT_STRING
+					{
+						try
+						{
+							BinaryReader strReader(GetParentView(), LittleEndian);
+							strReader.Seek(RVAToFileOffset(dataEntry.dataRva));
+							size_t bytesRead = 0;
+							std::vector<std::string> strings;
+							for (int strIdx = 0; strIdx < 16 && bytesRead < dataEntry.dataSize; strIdx++)
+							{
+								uint16_t strLen = strReader.Read16();
+								bytesRead += 2;
+								if (strLen == 0)
+									continue;
+								if (bytesRead + strLen * 2 > dataEntry.dataSize)
+									break;
+								std::vector<uint16_t> codeUnits(strLen);
+								for (uint16_t i = 0; i < strLen; i++)
+									codeUnits[i] = strReader.Read16();
+								bytesRead += strLen * 2;
+								std::string s = utf16ToUtf8(codeUnits);
+								if (!s.empty())
+									strings.push_back(s);
+							}
+							for (size_t i = 0; i < strings.size(); i++)
+							{
+								if (i > 0)
+									preview += ", ";
+								if (preview.size() + strings[i].size() > 200)
+								{
+									preview += "...";
+									break;
+								}
+								preview += strings[i];
+							}
+						}
+						catch (...) {}
+					}
+
+					// Collect metadata for this resource leaf
+					std::map<std::string, Ref<Metadata>> entry;
+					entry["type"] = new Metadata(pending.typeName);
+					entry["typeId"] = new Metadata((uint64_t)pending.typeId);
+					entry["name"] = new Metadata(pending.resourceName);
+					entry["nameId"] = new Metadata((uint64_t)pending.nameId);
+					entry["language"] = new Metadata(pending.langName);
+					entry["languageId"] = new Metadata((uint64_t)pending.langId);
+					entry["dataRva"] = new Metadata((uint64_t)dataEntry.dataRva);
+					entry["dataSize"] = new Metadata((uint64_t)dataEntry.dataSize);
+					entry["dataAddress"] = new Metadata((uint64_t)(m_imageBase + dataEntry.dataRva));
+					entry["codepage"] = new Metadata((uint64_t)dataEntry.dataCodePage);
+					entry["preview"] = new Metadata(preview);
+					resourceEntries.push_back(entry);
 				}
 
 				resourceDirectoryTableNum++;
+			}
+
+			// Parse RT_VERSION resource and store version info metadata
+			for (auto& resEntry : resourceEntries)
+			{
+				uint64_t typeId = resEntry["typeId"]->GetUnsignedInteger();
+				if (typeId != 16) // RT_VERSION
+					continue;
+				uint64_t dataSize = resEntry["dataSize"]->GetUnsignedInteger();
+				if (dataSize < 6 || dataSize > 65536)
+					break;
+
+				try
+				{
+					BinaryReader vr(GetParentView(), LittleEndian);
+					vr.Seek(RVAToFileOffset(resEntry["dataRva"]->GetUnsignedInteger()));
+					size_t baseOffset = vr.GetOffset();
+
+					uint16_t viLength = vr.Read16();
+					uint16_t viValueLength = vr.Read16();
+					uint16_t viType = vr.Read16();
+					(void)viType;
+
+					// Read and verify "VS_VERSION_INFO" key
+					std::vector<uint16_t> keyChars;
+					for (int i = 0; i < 20; i++)
+					{
+						uint16_t ch = vr.Read16();
+						if (ch == 0) break;
+						keyChars.push_back(ch);
+					}
+					std::string keyStr = utf16ToUtf8(keyChars);
+					if (keyStr != "VS_VERSION_INFO")
+						break;
+
+					// Align to DWORD boundary
+					size_t pos = vr.GetOffset() - baseOffset;
+					if (pos % 4 != 0)
+						vr.SeekRelative(4 - (pos % 4));
+
+					// Parse VS_FIXEDFILEINFO
+					std::map<std::string, Ref<Metadata>> versionInfo;
+					if (viValueLength >= 52)
+					{
+						uint32_t sig = vr.Read32();
+						if (sig == 0xFEEF04BD)
+						{
+							vr.Read32(); // dwStrucVersion
+							uint32_t fileVerMS = vr.Read32();
+							uint32_t fileVerLS = vr.Read32();
+							uint32_t prodVerMS = vr.Read32();
+							uint32_t prodVerLS = vr.Read32();
+
+							std::string fileVer = fmt::format("{}.{}.{}.{}",
+								(fileVerMS >> 16) & 0xFFFF, fileVerMS & 0xFFFF,
+								(fileVerLS >> 16) & 0xFFFF, fileVerLS & 0xFFFF);
+							std::string prodVer = fmt::format("{}.{}.{}.{}",
+								(prodVerMS >> 16) & 0xFFFF, prodVerMS & 0xFFFF,
+								(prodVerLS >> 16) & 0xFFFF, prodVerLS & 0xFFFF);
+
+							versionInfo["FileVersion"] = new Metadata(fileVer);
+							versionInfo["ProductVersion"] = new Metadata(prodVer);
+
+							// Skip rest of VS_FIXEDFILEINFO (7 more DWORDs):
+							// fileFlagsMask, fileFlags, fileOS, fileType, fileSubtype, fileDateMS, fileDateLS
+							for (int i = 0; i < 7; i++)
+								vr.Read32();
+						}
+					}
+
+					// Align after VS_FIXEDFILEINFO
+					pos = vr.GetOffset() - baseOffset;
+					if (pos % 4 != 0)
+						vr.SeekRelative(4 - (pos % 4));
+
+					// Parse StringFileInfo / VarFileInfo children
+					size_t endOffset = baseOffset + std::min((size_t)viLength, (size_t)dataSize);
+					while ((size_t)vr.GetOffset() + 6 < endOffset)
+					{
+						size_t childBase = vr.GetOffset();
+						uint16_t childLength = vr.Read16();
+						uint16_t childValueLength = vr.Read16();
+						uint16_t childType = vr.Read16();
+						(void)childValueLength;
+						(void)childType;
+
+						if (childLength < 6 || childBase + childLength > baseOffset + dataSize)
+							break;
+
+						// Read child key
+						std::vector<uint16_t> childKeyChars;
+						for (int i = 0; i < 30; i++)
+						{
+							if ((size_t)vr.GetOffset() >= childBase + childLength)
+								break;
+							uint16_t ch = vr.Read16();
+							if (ch == 0) break;
+							childKeyChars.push_back(ch);
+						}
+						std::string childKey = utf16ToUtf8(childKeyChars);
+
+						if (childKey == "StringFileInfo")
+						{
+							// Align
+							pos = vr.GetOffset() - baseOffset;
+							if (pos % 4 != 0)
+								vr.SeekRelative(4 - (pos % 4));
+
+							size_t sfiEnd = childBase + childLength;
+							// Parse StringTable(s)
+							while ((size_t)vr.GetOffset() + 6 < sfiEnd)
+							{
+								size_t stBase = vr.GetOffset();
+								uint16_t stLength = vr.Read16();
+								vr.Read16(); // stValueLength
+								vr.Read16(); // stType
+
+								if (stLength < 6 || stBase + stLength > sfiEnd)
+									break;
+
+								// Skip StringTable key (language+codepage like "040904b0")
+								for (int i = 0; i < 12; i++)
+								{
+									if ((size_t)vr.GetOffset() >= stBase + stLength)
+										break;
+									uint16_t ch = vr.Read16();
+									if (ch == 0) break;
+								}
+
+								// Align
+								pos = vr.GetOffset() - baseOffset;
+								if (pos % 4 != 0)
+									vr.SeekRelative(4 - (pos % 4));
+
+								size_t stEnd = stBase + stLength;
+								// Parse individual String entries
+								while ((size_t)vr.GetOffset() + 6 < stEnd)
+								{
+									size_t strBase = vr.GetOffset();
+									uint16_t strLength = vr.Read16();
+									uint16_t strValueLength = vr.Read16();
+									uint16_t strType = vr.Read16();
+									(void)strType;
+
+									if (strLength < 6 || strBase + strLength > stEnd)
+										break;
+
+									// Read key
+									std::vector<uint16_t> strKeyChars;
+									for (int i = 0; i < 80; i++)
+									{
+										if ((size_t)vr.GetOffset() >= strBase + strLength)
+											break;
+										uint16_t ch = vr.Read16();
+										if (ch == 0) break;
+										strKeyChars.push_back(ch);
+									}
+									std::string strKey = utf16ToUtf8(strKeyChars);
+
+									// Align
+									pos = vr.GetOffset() - baseOffset;
+									if (pos % 4 != 0)
+										vr.SeekRelative(4 - (pos % 4));
+
+									// Read value
+									std::string strValue;
+									if (strValueLength > 0 && (size_t)vr.GetOffset() < strBase + strLength)
+									{
+										std::vector<uint16_t> valChars;
+										uint16_t charsToRead = strValueLength;
+										for (uint16_t i = 0; i < charsToRead; i++)
+										{
+											if ((size_t)vr.GetOffset() >= strBase + strLength)
+												break;
+											uint16_t ch = vr.Read16();
+											if (ch == 0) break;
+											valChars.push_back(ch);
+										}
+										strValue = utf16ToUtf8(valChars);
+									}
+
+									if (!strKey.empty() && !strValue.empty())
+										versionInfo[strKey] = new Metadata(strValue);
+
+									// Advance to next String entry
+									vr.Seek(strBase + ((strLength + 3) & ~3));
+								}
+
+								// Advance to next StringTable
+								vr.Seek(stBase + ((stLength + 3) & ~3));
+							}
+						}
+
+						// Advance to next child
+						vr.Seek(childBase + ((childLength + 3) & ~3));
+					}
+
+					if (!versionInfo.empty())
+					{
+						StoreMetadata("PEVersionInfo", new Metadata(versionInfo), MetadataStoreEphemeral);
+
+						// Set preview on this resource entry
+						std::string verPreview;
+						auto fv = versionInfo.find("FileVersion");
+						if (fv != versionInfo.end())
+							verPreview = fv->second->GetString();
+						auto cn = versionInfo.find("CompanyName");
+						if (cn != versionInfo.end())
+						{
+							if (!verPreview.empty())
+								verPreview += " - ";
+							verPreview += cn->second->GetString();
+						}
+						resEntry["preview"] = new Metadata(verPreview);
+					}
+				}
+				catch (...) {}
+				break; // Only parse first RT_VERSION
+			}
+
+			// Store resource tree as metadata for programmatic access
+			if (!resourceEntries.empty())
+			{
+				std::vector<Ref<Metadata>> metadataArray;
+				metadataArray.reserve(resourceEntries.size());
+				for (auto& entry : resourceEntries)
+					metadataArray.push_back(new Metadata(entry));
+				StoreMetadata("PEResources", new Metadata(metadataArray), MetadataStoreEphemeral);
 			}
 		}
 	}
@@ -3007,7 +3608,7 @@ uint64_t PEView::Read64(uint64_t rva)
 
 // The addr is RVA
 void PEView::AddPESymbol(BNSymbolType type, const string& dll, const string& name, uint64_t addr,
-		BNSymbolBinding binding, uint64_t ordinal, vector<Ref<TypeLibrary>> libs)
+	BNSymbolBinding binding, uint64_t ordinal, vector<Ref<TypeLibrary>> libs)
 {
 	// Don't create symbols that are present in the database snapshot now
 	if (type != ExternalSymbol && m_backedByDatabase)
@@ -3065,11 +3666,11 @@ void PEView::AddPESymbol(BNSymbolType type, const string& dll, const string& nam
 
 			if (m_arch && name.size() > 0)
 			{
-				QualifiedName demangledName;
-				Ref<Type> demangledType;
-				if (DemangleGeneric(m_arch, rawName, demangledType, demangledName, nullptr, m_simplifyTemplates))
+				DemanglerConfig demanglerConfig(GetDefaultPlatform(), this, m_simplifyTemplates);
+				if (auto result = Demangler::DemangleAny(rawName, demanglerConfig))
 				{
-					shortName = demangledName.GetString();
+					auto demangledType = result->type;
+					shortName = result->name.GetString();
 					fullName = shortName;
 					if (demangledType)
 						fullName += demangledType->GetStringAfterName();

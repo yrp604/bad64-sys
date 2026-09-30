@@ -97,14 +97,14 @@ def rgbStr(tokenType):
 	'''Given a token string name, look up the theme color for it and return as rbg(x,y,z) str'''
 	try:
 		color = eval(f'getThemeColor(ThemeColor.{tokenType})')
-	except:
+	except Exception:
 		color = None
 	if (not color):
 		try:
 			ctx = UIContext.activeContext()
 			view_frame = ctx.getCurrentViewFrame()
 			color = eval(f'getTokenColor(view_frame, InstructionTextTokenType.{tokenType})')
-		except:
+		except Exception:
 			return 'rgb(224, 224, 224)'
 	r = color.getRgb()[0]
 	g = color.getRgb()[1]
@@ -301,7 +301,7 @@ def render_svg(function, offset, mode, form, showOpcodes, showAddresses, orignam
 					rgb = colors[color_str]
 			else:
 				rgb = [bb.highlight.red, bb.highlight.green, bb.highlight.blue]
-		except:
+		except Exception:
 			pass
 		output += f'			<rect class="basicblock" x="{x}" y="{y}" height="{height + 12}" width="{width + 16}" fill="rgb({rgb[0]},{rgb[1]},{rgb[2]})"/>\n'
 

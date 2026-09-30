@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,8 +19,8 @@
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::needless_doctest_main)]
 #![doc(html_root_url = "https://dev-rust.binary.ninja/")]
-#![doc(html_favicon_url = "https://binary.ninja/icons/favicon-32x32.png")]
-#![doc(html_logo_url = "https://binary.ninja/icons/android-chrome-512x512.png")]
+#![doc(html_favicon_url = "/brand/favicon-32x32.png")]
+#![doc(html_logo_url = "/brand/logo-vertical-dark.svg")]
 #![doc(issue_tracker_base_url = "https://github.com/Vector35/binaryninja-api/issues/")]
 #![doc = include_str!("../README.md")]
 
@@ -37,8 +37,8 @@ pub mod collaboration;
 pub mod command;
 pub mod component;
 pub mod confidence;
-pub mod custom_binary_view;
 pub mod data_buffer;
+pub mod data_notification;
 pub mod data_renderer;
 pub mod database;
 pub mod debuginfo;
@@ -64,27 +64,28 @@ pub mod low_level_il;
 pub mod main_thread;
 pub mod medium_level_il;
 pub mod metadata;
+pub mod object_destructor;
 pub mod platform;
 pub mod progress;
 pub mod project;
+pub mod qualified_name;
 pub mod rc;
 pub mod references;
 pub mod relocation;
 pub mod render_layer;
 pub mod repository;
+pub mod scripting_provider;
 pub mod secrets_provider;
 pub mod section;
 pub mod segment;
 pub mod settings;
+pub mod similarity;
 pub mod string;
+pub mod string_detection;
 pub mod symbol;
 pub mod tags;
-pub mod template_simplifier;
-pub mod type_archive;
-pub mod type_container;
-pub mod type_library;
-pub mod type_parser;
-pub mod type_printer;
+pub mod tracing;
+pub mod transform;
 pub mod types;
 pub mod update;
 pub mod variable;
@@ -92,30 +93,47 @@ pub mod websocket;
 pub mod worker_thread;
 pub mod workflow;
 
-use crate::file_metadata::FileMetadata;
-use crate::function::Function;
+use crate::progress::{NoProgressCallback, ProgressCallback};
+use crate::string::raw_to_string;
 use binary_view::BinaryView;
 use binaryninjacore_sys::*;
-use metadata::Metadata;
-use metadata::MetadataType;
 use rc::Ref;
 use std::cmp;
 use std::collections::HashMap;
 use std::ffi::{c_char, c_void, CStr};
+use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 use string::BnString;
 use string::IntoCStr;
 use string::IntoJson;
 
-use crate::progress::{NoProgressCallback, ProgressCallback};
-use crate::string::raw_to_string;
-pub use binaryninjacore_sys::BNBranchType as BranchType;
+use crate::project::file::ProjectFile;
 pub use binaryninjacore_sys::BNDataFlowQueryOption as DataFlowQueryOption;
 pub use binaryninjacore_sys::BNEndianness as Endianness;
 pub use binaryninjacore_sys::BNILBranchDependence as ILBranchDependence;
 
 pub const BN_FULL_CONFIDENCE: u8 = u8::MAX;
 pub const BN_INVALID_EXPR: usize = usize::MAX;
+
+/// Fuzzy match a string against a query string. Returns a score that is higher for
+/// a more confident match, or `None` if the query does not match the target string.
+pub fn fuzzy_match_single(target: &str, query: &str) -> Option<usize> {
+    let target = target.to_cstr();
+    let query = query.to_cstr();
+    let score = unsafe { BNFuzzyMatchSingle(target.as_ptr(), query.as_ptr()) };
+    (score != 0).then_some(score)
+}
+
+/// Fuzzy match a string against a query string. Returns a score that is higher for
+/// a more confident match, or None if the query does not match the target string.
+/// Same algorithm as [`fuzzy_match_single`] but with extra heuristics based on
+/// word boundaries and match offsets.
+pub fn fuzzy_match_contextual(target: &str, query: &str) -> Option<usize> {
+    let target = target.to_cstr();
+    let query = query.to_cstr();
+    let score = unsafe { BNFuzzyMatchContextual(target.as_ptr(), query.as_ptr()) };
+    (score != 0).then_some(score)
+}
 
 /// The main way to open and load files into Binary Ninja. Make sure you've properly initialized the core before calling this function. See [`crate::headless::init()`]
 pub fn load(file_path: impl AsRef<Path>) -> Option<Ref<BinaryView>> {
@@ -202,11 +220,7 @@ where
             .to_bytes_with_nul()
             .to_vec()
     } else {
-        Metadata::new_of_type(MetadataType::KeyValueDataType)
-            .get_json_string()
-            .ok()?
-            .as_ref()
-            .to_vec()
+        "{}".to_cstr().to_bytes_with_nul().to_vec()
     };
     let handle = unsafe {
         BNLoadFilename(
@@ -254,15 +268,59 @@ where
             .to_bytes_with_nul()
             .to_vec()
     } else {
-        Metadata::new_of_type(MetadataType::KeyValueDataType)
-            .get_json_string()
-            .ok()?
-            .as_ref()
-            .to_vec()
+        "{}".to_cstr().to_bytes_with_nul().to_vec()
     };
     let handle = unsafe {
         BNLoadBinaryView(
             bv.handle as *mut _,
+            update_analysis_and_wait,
+            options_or_default.as_ptr() as *mut c_char,
+            Some(P::cb_progress_callback),
+            &mut progress as *mut P as *mut c_void,
+        )
+    };
+
+    if handle.is_null() {
+        None
+    } else {
+        Some(unsafe { BinaryView::ref_from_raw(handle) })
+    }
+}
+
+pub fn load_project_file<O>(
+    file: &ProjectFile,
+    update_analysis_and_wait: bool,
+    options: Option<O>,
+) -> Option<Ref<BinaryView>>
+where
+    O: IntoJson,
+{
+    load_project_file_with_progress(file, update_analysis_and_wait, options, NoProgressCallback)
+}
+
+/// Equivalent to [`load_project_file`] but with a progress callback.
+pub fn load_project_file_with_progress<O, P>(
+    file: &ProjectFile,
+    update_analysis_and_wait: bool,
+    options: Option<O>,
+    mut progress: P,
+) -> Option<Ref<BinaryView>>
+where
+    O: IntoJson,
+    P: ProgressCallback,
+{
+    let options_or_default = if let Some(opt) = options {
+        opt.get_json_string()
+            .ok()?
+            .to_cstr()
+            .to_bytes_with_nul()
+            .to_vec()
+    } else {
+        "{}".to_cstr().to_bytes_with_nul().to_vec()
+    };
+    let handle = unsafe {
+        BNLoadProjectFile(
+            file.handle.as_ptr(),
             update_analysis_and_wait,
             options_or_default.as_ptr() as *mut c_char,
             Some(P::cb_progress_callback),
@@ -385,54 +443,6 @@ pub fn memory_info() -> HashMap<String, u64> {
     usage
 }
 
-/// The trait required for receiving core object destruction callbacks.
-pub trait ObjectDestructor: 'static + Sync + Sized {
-    fn destruct_view(&self, _view: &BinaryView) {}
-    fn destruct_file_metadata(&self, _metadata: &FileMetadata) {}
-    fn destruct_function(&self, _func: &Function) {}
-
-    unsafe extern "C" fn cb_destruct_binary_view(ctxt: *mut c_void, view: *mut BNBinaryView) {
-        ffi_wrap!("ObjectDestructor::destruct_view", {
-            let view_type = &*(ctxt as *mut Self);
-            let view = BinaryView { handle: view };
-            view_type.destruct_view(&view);
-        })
-    }
-
-    unsafe extern "C" fn cb_destruct_file_metadata(ctxt: *mut c_void, file: *mut BNFileMetadata) {
-        ffi_wrap!("ObjectDestructor::destruct_file_metadata", {
-            let view_type = &*(ctxt as *mut Self);
-            let file = FileMetadata::from_raw(file);
-            view_type.destruct_file_metadata(&file);
-        })
-    }
-
-    unsafe extern "C" fn cb_destruct_function(ctxt: *mut c_void, func: *mut BNFunction) {
-        ffi_wrap!("ObjectDestructor::destruct_function", {
-            let view_type = &*(ctxt as *mut Self);
-            let func = Function { handle: func };
-            view_type.destruct_function(&func);
-        })
-    }
-
-    unsafe fn as_callbacks(&'static mut self) -> BNObjectDestructionCallbacks {
-        BNObjectDestructionCallbacks {
-            context: std::mem::transmute(&self),
-            destructBinaryView: Some(Self::cb_destruct_binary_view),
-            destructFileMetadata: Some(Self::cb_destruct_file_metadata),
-            destructFunction: Some(Self::cb_destruct_function),
-        }
-    }
-
-    fn register(&'static mut self) {
-        unsafe { BNRegisterObjectDestructionCallbacks(&mut self.as_callbacks()) };
-    }
-
-    fn unregister(&'static mut self) {
-        unsafe { BNUnregisterObjectDestructionCallbacks(&mut self.as_callbacks()) };
-    }
-}
-
 pub fn version() -> String {
     unsafe { BnString::into_string(BNGetVersionString()) }
 }
@@ -514,6 +524,20 @@ impl Ord for VersionInfo {
     }
 }
 
+impl Display for VersionInfo {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.channel.is_empty() {
+            write!(f, "{}.{}.{}", self.major, self.minor, self.build)
+        } else {
+            write!(
+                f,
+                "{}.{}.{}-{}",
+                self.major, self.minor, self.build, self.channel
+            )
+        }
+    }
+}
+
 pub fn version_info() -> VersionInfo {
     let info_raw = unsafe { BNGetVersionInfo() };
     VersionInfo::from_owned_raw(info_raw)
@@ -539,9 +563,57 @@ pub fn license_count() -> i32 {
     unsafe { BNGetLicenseCount() }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LicenseAddon {
+    pub id: String,
+    pub license_serial: String,
+    pub product: String,
+    pub created: String,
+    pub created_timestamp: u64,
+    pub expiration: String,
+    pub expiration_timestamp: u64,
+    pub signature: String,
+}
+
+pub fn license_addons() -> Vec<LicenseAddon> {
+    let mut count = 0;
+    let addons = unsafe { BNGetLicenseAddons(&mut count) };
+    if addons.is_null() {
+        return Vec::new();
+    }
+
+    let result = unsafe { std::slice::from_raw_parts(addons, count) }
+        .iter()
+        .map(|addon| LicenseAddon {
+            id: unsafe { CStr::from_ptr(addon.id).to_string_lossy().into_owned() },
+            license_serial: unsafe {
+                CStr::from_ptr(addon.licenseSerial)
+                    .to_string_lossy()
+                    .into_owned()
+            },
+            product: unsafe { CStr::from_ptr(addon.product).to_string_lossy().into_owned() },
+            created: unsafe { CStr::from_ptr(addon.created).to_string_lossy().into_owned() },
+            created_timestamp: addon.createdTimestamp,
+            expiration: unsafe {
+                CStr::from_ptr(addon.expiration)
+                    .to_string_lossy()
+                    .into_owned()
+            },
+            expiration_timestamp: addon.expirationTimestamp,
+            signature: unsafe {
+                CStr::from_ptr(addon.signature)
+                    .to_string_lossy()
+                    .into_owned()
+            },
+        })
+        .collect();
+    unsafe { BNFreeLicenseAddons(addons, count) };
+    result
+}
+
 /// Set the license that will be used once the core initializes. You can reset the license by passing `None`.
 ///
-/// If not set the normal license retrieval will occur:
+/// If not set, the normal license retrieval will occur:
 /// 1. Check the BN_LICENSE environment variable
 /// 2. Check the Binary Ninja user directory for license.dat
 #[cfg(not(feature = "demo"))]
@@ -609,7 +681,7 @@ pub fn add_optional_plugin_dependency(name: &str) {
     unsafe { BNAddOptionalPluginDependency(raw_name.as_ptr()) };
 }
 
-// Provide ABI version automatically so that the core can verify binary compatibility
+/// Exported function to tell the core what core ABI version this plugin was compiled against.
 #[cfg(not(feature = "no_exports"))]
 #[no_mangle]
 #[allow(non_snake_case)]
@@ -617,6 +689,7 @@ pub extern "C" fn CorePluginABIVersion() -> u32 {
     plugin_abi_version()
 }
 
+/// Exported function to tell the core what UI ABI version this plugin was compiled against.
 #[cfg(not(feature = "no_exports"))]
 #[no_mangle]
 pub extern "C" fn UIPluginABIVersion() -> u32 {

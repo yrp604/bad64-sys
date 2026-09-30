@@ -1,5 +1,5 @@
 use binaryninja::{
-    binary_view::{BinaryView, BinaryViewExt as _},
+    binary_view::BinaryView,
     function::Function,
     low_level_il::{
         expression::{ExpressionHandler as _, LowLevelILExpressionKind},
@@ -53,7 +53,7 @@ pub fn process(ac: &AnalysisContext) -> Result<(), Error> {
                 Ok(true) => function_changed = true,
                 Ok(_) => {}
                 Err(err) => {
-                    log::error!(
+                    tracing::error!(
                         "Error processing instruction at {:#x}: {}",
                         insn.address(),
                         err
@@ -107,7 +107,7 @@ fn process_instruction(
     };
 
     let mut function_changed = false;
-    if adjust_call_type::process_call(bv, func, insn, &selector, message_send_type).is_ok() {
+    if adjust_call_type::process_call(bv, func, ssa, insn, &selector, message_send_type).is_ok() {
         function_changed = true;
     }
 
@@ -119,12 +119,12 @@ fn process_instruction(
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum MessageSendType {
+pub(crate) enum MessageSendType {
     Normal,
     Super,
 }
 
-fn call_target_type(bv: &BinaryView, call_target: u64) -> Option<MessageSendType> {
+pub(crate) fn call_target_type(bv: &BinaryView, call_target: u64) -> Option<MessageSendType> {
     let name = bv
         .symbol_by_address(call_target)
         .map(|s| s.raw_name().to_string_lossy().into_owned())?;
@@ -141,7 +141,7 @@ fn call_target_type(bv: &BinaryView, call_target: u64) -> Option<MessageSendType
     }
 }
 
-fn selector_from_call(
+pub(crate) fn selector_from_call(
     bv: &BinaryView,
     ssa: &LowLevelILFunction<Mutable, SSA>,
     call_op: &Operation<Mutable, SSA, CallSsa>,
@@ -166,7 +166,7 @@ fn selector_from_call(
         return None;
     };
 
-    let raw_selector = ssa.get_ssa_register_value(&reg.source_reg())?.value as u64;
+    let raw_selector = ssa.get_ssa_register_value(reg.source_reg())?.value as u64;
     if raw_selector == 0 {
         return None;
     }

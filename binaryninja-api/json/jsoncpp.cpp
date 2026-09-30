@@ -114,6 +114,7 @@ license you like.
  */
 
 namespace Json {
+JSONCPP_INLINE_NS_BEGIN
 static inline char getDecimalPoint() {
 #ifdef JSONCPP_NO_LOCALE_SUPPORT
   return '\0';
@@ -217,6 +218,7 @@ template <typename Iter> Iter fixZerosInTheEnd(Iter begin, Iter end) {
   return end;
 }
 
+JSONCPP_INLINE_NS_END
 } // namespace Json
 
 #endif // LIB_JSONCPP_JSON_TOOL_H_INCLUDED
@@ -291,6 +293,7 @@ static size_t const stackLimit_g =
     JSONCPP_DEPRECATED_STACK_LIMIT; // see readValue()
 
 namespace Json {
+JSONCPP_INLINE_NS_BEGIN
 
 #if __cplusplus >= 201103L || (defined(_CPPLIB_VER) && _CPPLIB_VER >= 520)
 typedef std::unique_ptr<CharReader> CharReaderPtr;
@@ -2265,6 +2268,7 @@ JSONCPP_ISTREAM& operator>>(JSONCPP_ISTREAM& sin, Value& root) {
   return sin;
 }
 
+JSONCPP_INLINE_NS_END
 } // namespace Json
 
 // //////////////////////////////////////////////////////////////////////
@@ -2288,6 +2292,7 @@ JSONCPP_ISTREAM& operator>>(JSONCPP_ISTREAM& sin, Value& root) {
 // included by json_value.cpp
 
 namespace Json {
+JSONCPP_INLINE_NS_BEGIN
 
 // //////////////////////////////////////////////////////////////////
 // //////////////////////////////////////////////////////////////////
@@ -2446,6 +2451,7 @@ ValueIterator& ValueIterator::operator=(const SelfType& other) {
   return *this;
 }
 
+JSONCPP_INLINE_NS_END
 } // namespace Json
 
 // //////////////////////////////////////////////////////////////////////
@@ -2490,6 +2496,7 @@ ValueIterator& ValueIterator::operator=(const SelfType& other) {
 #define JSON_ASSERT_UNREACHABLE assert(false)
 
 namespace Json {
+JSONCPP_INLINE_NS_BEGIN
 
 // This is a walkaround to avoid the static initialization of Value::null.
 // kNull must be word-aligned to avoid crashing on ARM.  We use an alignment of
@@ -2637,6 +2644,7 @@ static inline void releasePrefixedStringValue(char* value) { free(value); }
 static inline void releaseStringValue(char* value, unsigned) { free(value); }
 #endif // JSONCPP_USING_SECURE_MEMORY
 
+JSONCPP_INLINE_NS_END
 } // namespace Json
 
 // //////////////////////////////////////////////////////////////////
@@ -2652,6 +2660,7 @@ static inline void releaseStringValue(char* value, unsigned) { free(value); }
 #endif // if !defined(JSON_IS_AMALGAMATION)
 
 namespace Json {
+JSONCPP_INLINE_NS_BEGIN
 
 // BN: subclass
 Exception::Exception(JSONCPP_STRING const& msg) : JSONCPP_EXCEPTION(msg.c_str()) {}
@@ -4157,6 +4166,7 @@ Value& Path::make(Value& root) const {
   return *node;
 }
 
+JSONCPP_INLINE_NS_END
 } // namespace Json
 
 // //////////////////////////////////////////////////////////////////////
@@ -4257,6 +4267,7 @@ Value& Path::make(Value& root) const {
 #endif
 
 namespace Json {
+JSONCPP_INLINE_NS_BEGIN
 
 #if __cplusplus >= 201103L || (defined(_CPPLIB_VER) && _CPPLIB_VER >= 520)
 typedef std::unique_ptr<StreamWriter> StreamWriterPtr;
@@ -5434,6 +5445,7 @@ JSONCPP_OSTREAM& operator<<(JSONCPP_OSTREAM& sout, Value const& root) {
   return sout;
 }
 
+JSONCPP_INLINE_NS_END
 } // namespace Json
 
 // //////////////////////////////////////////////////////////////////////

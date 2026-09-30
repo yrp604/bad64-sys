@@ -101,11 +101,14 @@ public:
 	void renameRoot();
 	void renameMember();
 	bool canUndefine();
+	QString undefineDisplayName();
 	void undefine();
 	void undefineRoots();
 	void undefineMembers();
 	bool canAppendField();
 	void appendField();
+	bool canCreateStructureMemberAtOffset();
+	void createStructureMemberAtOffset();
 	bool canCreateArray();
 	void createArray();
 	bool canChangeType();

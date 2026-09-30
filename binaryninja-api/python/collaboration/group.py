@@ -2,7 +2,7 @@ import ctypes
 from typing import List, Tuple
 
 from .. import _binaryninjacore as core
-from . import remote, util
+from . import remote, user, util
 
 
 class Group:
@@ -70,43 +70,40 @@ class Group:
 		core.BNCollaborationGroupSetName(self._handle, name)
 
 	@property
-	def users(self) -> List[Tuple[str, str]]:
+	def users(self) -> List[user.User]:
 		"""
 		Get list of users in the group
 
-		:return: List of (userid, username) pairs
+		:return: List of users
 		"""
 		count = ctypes.c_size_t()
-		user_ids = ctypes.POINTER(ctypes.c_char_p)()
-		usernames = ctypes.POINTER(ctypes.c_char_p)()
-		if not core.BNCollaborationGroupGetUsers(self._handle, user_ids, usernames, count):
+		result = core.BNCollaborationGroupGetUsers(self._handle, count)
+		if not result:
 			raise RuntimeError(util._last_error())
-		result = []
+		out = []
 		for i in range(count.value):
-			result.append((core.pyNativeStr(user_ids[i]), core.pyNativeStr(usernames[i])))
-		core.BNFreeStringList(user_ids, count.value)
-		core.BNFreeStringList(usernames, count.value)
-		return result
+			out.append(user.User(result[i]))
+		return out
 
 	@users.setter
-	def users(self, usernames: List[str]):
+	def users(self, users: List[user.User]):
 		"""
-		Set the list of users in a group by their usernames.
+		Set the list of users in a group.
 		You will need to push the group to update the Remote.
 
-		:param usernames: Usernames of new group members
+		:param users: New group members
 		"""
-		array = (ctypes.c_char_p * len(usernames))()
-		for i in range(len(usernames)):
-			array[i] = core.cstr(usernames[i])
-		if not core.BNCollaborationGroupSetUsernames(self._handle, array, len(usernames)):
+		array = ctypes.POINTER(core.BNCollaborationUserHandle)()
+		for i in range(len(users)):
+			array[i] = users[i]._handle
+		if not core.BNCollaborationGroupSetUsers(self._handle, array, len(users)):
 			raise RuntimeError(util._last_error())
 
-	def contains_user(self, username: str) -> bool:
+	def contains_user(self, user: user.User) -> bool:
 		"""
-		Test if a group has a user with the given username
+		Test if a group contains a user
 
-		:param username: Username of user to check membership
-		:return: If the user is in the group
+		:param user: User to check membership of
+		:return: If the group contains the user
 		"""
-		return core.BNCollaborationGroupContainsUser(self._handle, username)
+		return core.BNCollaborationGroupContainsUser(self._handle, user._handle)

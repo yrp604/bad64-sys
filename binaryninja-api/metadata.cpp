@@ -126,7 +126,7 @@ Metadata::Metadata(const std::vector<std::string>& data)
 	delete[] list;
 }
 
-bool Metadata::operator==(const Metadata& rhs)
+bool Metadata::operator==(const Metadata& rhs) const
 {
 	return BNMetadataIsEqual(m_object, rhs.m_object);
 }

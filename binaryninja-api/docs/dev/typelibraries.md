@@ -13,13 +13,13 @@ The information in a type library is contained in two key-value stores:
 
 When a binary is opened, its platform is determined, all .bntl's are processed, and those matching the platform of the loaded binary are registered. A debug log will show:
 
-```
+```text
 Registered library 'libc.so.6' with platform 'linux-x86_64'
 ```
 
 Then, those with either a filename or an alternative name matching the exact text of the binary's import command are imported, much like the native linker/loader. For example, in ELF, the .dynstr entry is used.
 
-```
+```text
 elf: searching for 'libc.so.6' in type libraries
 Type library 'libc.so.6' imported
 ```
@@ -30,7 +30,7 @@ This requested name should be a soname, like "libfoo.so.1" but could be a linkna
 
 Binary Ninja's logic for determining a match is straightforward:
 
-```
+```python
 typelibname.removesuffix('.bntl') == requestedname or requestedname in alternativenames
 ```
 
@@ -46,7 +46,7 @@ Example:
 
 The alternative names list should have:
 
-```
+```text
 libfoo.so.1.2.3 <-- includes version, minor, release (most specific)
 libfoo.so.1.2   <-- includes version, minor (less specific)
 libfoo.so.1     <-- includes version (soname)
@@ -172,12 +172,12 @@ A named object is the name of an external/imported symbol for which the type lib
 
 I've seen "types of types", "sorts of types", "kinds of types", "classes of types" used to differentiate the varieties of possible types, and there are probably more. Binary Ninja uses "class", example:
 
-```
+```pycon
 >>> type_obj.type_class
 <TypeClass.FunctionTypeClass: 8>
 ```
 
-In [enums.py](https://api.binary.ninja/_modules/binaryninja/enums.html#TypeClass) we can see Binary Ninja currently thinks of types falling into 13 classes: `Void`, `Bool`, `Integer`, `Float`, `Structure`, `Enumeration`, `Pointer`, `Array`, `Function`, `VarArgs`, `Value`, `NamedTypeReference`, `WideCharType`.
+In [enums.py](https://api.binary.ninja/_modules/binaryninja/enums.html#TypeClass) we can see Binary Ninja currently thinks of types falling into 14 classes: `Void`, `Bool`, `Integer`, `Float`, `Structure`, `Enumeration`, `Pointer`, `Array`, `Function`, `VarArgs`, `Value`, `NamedTypeReference`, `WideCharType`, `FragmentType`.
 
 Compare this to LLDB, which also uses the term "class", and currently has 19 of them: `Array`, `BlockPointer`, `Builtin`, `Class`, `ComplexFloat`, `ComplexInteger`, `Enumeration`, `Function`, `MemberPointer`, `ObjCObject`, `ObjCInterface`, `ObjCObjectPointer`, `Pointer`, `Reference`, `Struct`, `Typedef`, `Union`, `Vector`, `Other`.
 
@@ -191,13 +191,13 @@ Function types (types with `.type_class == FunctionTypeClass`) have a `.paramete
 
 ### How do I manually load a type library?
 
-```
+```pycon
 >>> bv.add_type_library(TypeLibrary.load_from_file('test.bntl'))
 ```
 
 ### How can I manually load a type object?
 
-```
+```pycon
 >>> bv.import_library_object('_MySuperComputation')
 <type: int32_t (int32_t, int32_t, char*)>
 ```
@@ -221,7 +221,7 @@ Named Type References are a way to refer to a type by name without having its de
 
 For example, examine this struct from [typelib_create.py](https://github.com/Vector35/binaryninja-api/blob/dev/python/examples/typelib_create.py):
 
-```
+```c
 struct Rectangle2 {
   int width;
   int height;
@@ -233,13 +233,13 @@ We don't know at this moment what a `struct Point is`. Maybe we've already added
 
 Load the resulting `test.bntl` in your binary and try to set some data to type `struct Rectangle2` and you'll be met with this message:
 
-```
+```text
 TypeLibrary: failed to import type 'Point'; referenced but not present in library 'libtest.so.1`
 ```
 
 This makes sense! Now go to types view and `define struct Point { int x; int y; }` and try again, success!
 
-```
+```text
 100001000  struct rectangle_unresolved data_100001000 =
 100001000  {
 100001000      int32_t width = 0x5f0100
@@ -260,7 +260,7 @@ By a hierarchy of objects from [api/python/types.py](https://github.com/Vector35
 
 As an example, here is the hierarchical representation of `type struct Rectangle` from [typelib_create.py](https://github.com/Vector35/binaryninja-api/blob/dev/python/examples/typelib_create.py)
 
-```
+```text
 typelib.named_types["Rectangle"] =
 ----------------------------------
 Type class=Structure
@@ -281,7 +281,7 @@ Here is the representation of `type int ()(int, int)` named `MyFunctionType` fro
 
 When a binary is loaded and its external symbols is processed, the symbol names are searched against the named objects from type libraries. If there is a match, it obeys the type from the type library. Upon success, you'll see a message like:
 
-```
+```text
 type library test.bntl found hit for _DoSuperComputation
 ```
 

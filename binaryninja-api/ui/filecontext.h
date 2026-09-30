@@ -65,6 +65,13 @@ class BINARYNINJAUIAPI FileContext : public FileContextBase, public BinaryNinja:
 	FileMetadataRef getMetadata() const { return m_file; }
 	QString getFilename() const { return m_filename; }
 	void setFilename(QString newName) { m_filename = newName; }
+
+	// Returns the virtual path if the FileMetadata has one (transform session set it), otherwise
+	// the physical filename. Use this anywhere you need a stable per-file identity.
+	// Empty virtual_path carries real meaning ("this FileMetadata has not been processed by the
+	// transform system"), so callers must not collapse that state at the core layer; this helper
+	// is the intended fallback at the use site.
+	static QString getVirtualPathOrFilename(FileMetadataRef file);
 	ViewFrame* getCurrentViewFrame() const { return m_currentViewFrame; }
 	QString getTabName(QWidget* widget);
 	QString getShortFileName(QWidget* widget);

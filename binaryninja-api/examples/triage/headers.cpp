@@ -1,6 +1,8 @@
 #include <cstring>
 #include <time.h>
 #include <map>
+#include <QtWidgets/QHBoxLayout>
+#include <QtWidgets/QPushButton>
 #include "headers.h"
 #include "fontsettings.h"
 #include "theme.h"
@@ -14,6 +16,7 @@ NavigationLabel::NavigationLabel(const QString& text, QColor color, const std::f
 	style.setColor(QPalette::WindowText, color);
 	setPalette(style);
 	setFont(getMonospaceFont(this));
+	setCursor(Qt::PointingHandCursor);
 }
 
 
@@ -95,10 +98,14 @@ GenericHeaders::GenericHeaders(BinaryViewRef data)
 	AddField("Type", QString::fromStdString(data->GetTypeName()));
 	if (data->GetDefaultPlatform())
 		AddField("Platform", QString::fromStdString(data->GetDefaultPlatform()->GetName()));
-	if (data->IsValidOffset(data->GetEntryPoint()))
-		AddField("Entry Point", QString("0x") + QString::number(data->GetEntryPoint(), 16), CodeHeaderField);
+	auto entryFunctions = data->GetAllEntryFunctions();
+	if (!entryFunctions.empty() && data->GetEntryPoint() != 0)
+		AddField("Entry Point", QString("0x") + QString::number(data->GetEntryPoint(), 16), AddressHeaderField);
+	else
+		AddField("Entry Point", "None");
 	if (data->IsValidOffset(data->GetStart()))
-		AddField("Current Base", QString("0x") + QString::number(data->GetStart(), 16), AddressHeaderField);
+		AddField("Current Base", QString("0x%1").arg(data->GetStart(), (int)data->GetAddressSize() * 2, 16, QChar('0')),
+			AddressHeaderField);
 	AddField("Endianness", data->GetDefaultEndianness() == BigEndian ? "Big" : "Little");
 }
 
@@ -128,8 +135,11 @@ PEHeaders::PEHeaders(BinaryViewRef data)
 		AddField("Type", QString::fromStdString(data->GetTypeName()));
 		if (data->GetDefaultPlatform())
 			AddField("Platform", QString::fromStdString(data->GetDefaultPlatform()->GetName()));
-		if (data->IsValidOffset(data->GetEntryPoint()))
-			AddField("Entry Point", QString("0x") + QString::number(data->GetEntryPoint(), 16), CodeHeaderField);
+		auto entryFunctions = data->GetAllEntryFunctions();
+		if (!entryFunctions.empty() && data->GetEntryPoint() != 0)
+			AddField("Entry Point", QString("0x") + QString::number(data->GetEntryPoint(), 16), AddressHeaderField);
+		else
+			AddField("Entry Point", "None");
 		return;
 	}
 
@@ -153,13 +163,18 @@ PEHeaders::PEHeaders(BinaryViewRef data)
 	AddField("Timestamp (Hex)", QString::number(secs, 16).prepend("0x"));
 
 	uint64_t currentBase = data->GetStart();
-	AddField("Current Base", QString("0x") + QString::number(currentBase, 16), AddressHeaderField);
+	AddField("Current Base", QString("0x%1").arg(currentBase, (int)data->GetAddressSize() * 2, 16, QChar('0')),
+		AddressHeaderField);
 
 	uint64_t base = GetValueOfStructMember(data, optHeaderName, optHeaderStart, "imageBase");
 	AddField("Image Base", QString("0x") + QString::number(base, 16), AddressHeaderField);
 
 	uint64_t entryPoint = currentBase + GetValueOfStructMember(data, optHeaderName, optHeaderStart, "addressOfEntryPoint");
-	AddField("Entry Point", QString("0x") + QString::number(entryPoint, 16), CodeHeaderField);
+	auto entryFunctions = data->GetAllEntryFunctions();
+	if (!entryFunctions.empty() && entryPoint != 0)
+		AddField("Entry Point", QString("0x") + QString::number(entryPoint, 16), AddressHeaderField);
+	else
+		AddField("Entry Point", "None");
 
 	uint64_t sectionAlign = GetValueOfStructMember(data, optHeaderName, optHeaderStart, "sectionAlignment");
 	AddField("Section Alignment", QString("0x") + QString::number(sectionAlign, 16));
@@ -295,8 +310,19 @@ PEHeaders::PEHeaders(BinaryViewRef data)
 		AddField("Compiler(s) Used", compilersUsed);
 	}
 
+	auto versionInfo = data->QueryMetadata("PEVersionInfo");
+	if (versionInfo && versionInfo->IsKeyValueStore())
+	{
+		for (const auto& [key, value] : versionInfo->GetKeyValueStore())
+		{
+			if (value->IsString() && !value->GetString().empty())
+				AddField(QString::fromStdString(key), QString::fromStdString(value->GetString()));
+		}
+	}
+
 	SetColumns(3);
-	SetRowsPerColumn(9);
+	size_t numFields = GetFields().size();
+	SetRowsPerColumn((numFields + 2) / 3);
 }
 
 
@@ -350,16 +376,122 @@ QString PEHeaders::GetNameOfEnumerationMember(BinaryViewRef data, const std::str
 }
 
 
-HeaderWidget::HeaderWidget(QWidget* parent, const Headers& header) : QWidget(parent)
+HeaderWidget::HeaderWidget(QWidget* parent, const Headers& header, const std::function<void()>& detectBaseAddress) :
+    QWidget(parent), m_headers(header), m_detectBaseAddress(detectBaseAddress)
 {
-	QGridLayout* layout = new QGridLayout();
-	layout->setContentsMargins(0, 0, 0, 0);
-	layout->setVerticalSpacing(1);
+	m_layout = new QGridLayout();
+	m_layout->setContentsMargins(0, 0, 0, 0);
+	m_layout->setVerticalSpacing(1);
+	m_layout->setHorizontalSpacing(2);
+	setLayout(m_layout);
+	m_currentColumns = (int)header.GetColumns();
+	m_pendingWidth = -1;
+
+	// Create timer for debouncing resize events
+	m_resizeTimer = new QTimer(this);
+	m_resizeTimer->setSingleShot(true);
+	m_resizeTimer->setInterval(50);  // 50ms delay after resize stops
+	connect(m_resizeTimer, &QTimer::timeout, this, &HeaderWidget::performDelayedResize);
+
+	rebuildLayout();
+}
+
+
+void HeaderWidget::resizeEvent(QResizeEvent* event)
+{
+	QWidget::resizeEvent(event);
+	updateColumns(this->width());
+}
+
+
+void HeaderWidget::updateColumns(int width)
+{
+	m_pendingWidth = width;
+	m_resizeTimer->start();
+}
+
+
+void HeaderWidget::performDelayedResize()
+{
+	if (m_pendingWidth < 0)
+		return;
+
+	int width = m_pendingWidth;
+	m_pendingWidth = -1;
+
+	int desiredColumns;
+
+	// Add hysteresis to prevent thrashing when width oscillates near breakpoints
+	if (m_currentColumns == 1)
+	{
+		// Growing from 1 column: need to exceed threshold to switch
+		if (width >= TriageBreakpoints::NARROW + 40)
+			desiredColumns = (width >= TriageBreakpoints::MEDIUM + 40) ? (int)m_headers.GetColumns() : 2;
+		else
+			desiredColumns = 1;
+	}
+	else if (m_currentColumns == 2)
+	{
+		// From 2 columns: wider hysteresis band
+		if (width < TriageBreakpoints::NARROW - 40)
+			desiredColumns = 1;
+		else if (width >= TriageBreakpoints::MEDIUM + 40)
+			desiredColumns = (int)m_headers.GetColumns();
+		else
+			desiredColumns = 2;
+	}
+	else
+	{
+		// Shrinking from 3 columns: need to fall below threshold to switch
+		if (width < TriageBreakpoints::NARROW - 40)
+			desiredColumns = 1;
+		else if (width < TriageBreakpoints::MEDIUM - 40)
+			desiredColumns = 2;
+		else
+			desiredColumns = (int)m_headers.GetColumns();
+	}
+
+	if (desiredColumns != m_currentColumns)
+	{
+		m_currentColumns = desiredColumns;
+		rebuildLayout();
+	}
+}
+
+
+void HeaderWidget::rebuildLayout()
+{
+	// Disable updates during rebuild to prevent flickering
+	setUpdatesEnabled(false);
+
+	// Clear existing layout
+	QLayoutItem* item;
+	while ((item = m_layout->takeAt(0)) != nullptr)
+	{
+		if (item->widget())
+		{
+			item->widget()->hide();  // Hide before deletion to reduce flicker
+			item->widget()->deleteLater();  // Use deleteLater() to safely delete during events
+		}
+		delete item;
+	}
+
+	// Rebuild with current column count
 	int row = 0;
 	int col = 0;
-	for (auto& field : header.GetFields())
+	for (auto& field : m_headers.GetFields())
 	{
-		layout->addWidget(new QLabel(field.title + ": "), row, col * 3);
+		m_layout->addWidget(new QLabel(field.title + ": "), row, col * 3);
+
+		// For text fields with multiple values, join them with newlines for copying
+		QString copyText;
+		if (field.type == TextHeaderField && field.values.size() > 1)
+		{
+			copyText = field.values[0];
+			for (size_t i = 1; i < field.values.size(); i++)
+				copyText += "\n" + field.values[i];
+		}
+
 		for (auto& value : field.values)
 		{
 			QWidget* label;
@@ -373,21 +505,50 @@ HeaderWidget::HeaderWidget(QWidget* parent, const Headers& header) : QWidget(par
 			}
 			else
 			{
-				label = new QLabel(value);
-				label->setFont(getMonospaceFont(this));
+				// Use CopyableLabel for text fields with AlphanumericHighlightColor
+				auto copyLabel = new CopyableLabel(value, getThemeColor(AlphanumericHighlightColor));
+				copyLabel->setFont(getMonospaceFont(this));
+				if (field.values.size() > 1)
+					copyLabel->setCopyText(copyText);
+				label = copyLabel;
 			}
-			layout->addWidget(label, row, col * 3 + 1);
+			if ((field.title == "Current Base") && m_detectBaseAddress)
+			{
+				auto baseWidget = new QWidget(this);
+				auto baseLayout = new QHBoxLayout(baseWidget);
+				baseLayout->setContentsMargins(0, 0, 0, 0);
+				baseLayout->addWidget(label);
+				auto detectButton = new QPushButton("Detect", baseWidget);
+				connect(detectButton, &QPushButton::clicked, this, m_detectBaseAddress);
+				baseLayout->addWidget(detectButton);
+				baseLayout->addStretch();
+				label = baseWidget;
+			}
+			m_layout->addWidget(label, row, col * 3 + 1);
 			row++;
 		}
-		if ((header.GetColumns() > 1) && (row >= (int)header.GetRowsPerColumn())
-		    && ((col + 1) < (int)header.GetColumns()))
+		if ((m_currentColumns > 1) && (row >= (int)m_headers.GetRowsPerColumn())
+		    && ((col + 1) < m_currentColumns))
 		{
 			row = 0;
 			col++;
 		}
 	}
-	for (col = 1; col < (int)header.GetColumns(); col++)
-		layout->setColumnMinimumWidth(col * 3 - 1, UIContext::getScaledWindowSize(20, 20).width());
-	layout->setColumnStretch((int)header.GetColumns() * 3 - 1, 1);
-	setLayout(layout);
+
+	// Clear all column stretches and minimum widths first
+	for (col = 0; col < 9; col++)  // Max 3 columns * 3 grid columns each
+	{
+		m_layout->setColumnStretch(col, 0);
+		m_layout->setColumnMinimumWidth(col, 0);
+	}
+
+	// Set spacing columns to minimum width
+	for (col = 1; col < m_currentColumns; col++)
+		m_layout->setColumnMinimumWidth(col * 3 - 1, UIContext::getScaledWindowSize(20, 20).width());
+
+	// Set last column to stretch
+	m_layout->setColumnStretch(m_currentColumns * 3 - 1, 1);
+
+	// Re-enable updates and force a single repaint
+	setUpdatesEnabled(true);
 }

@@ -1,5 +1,6 @@
 use super::{Remote, RemoteProject};
 use binaryninjacore_sys::*;
+use std::fmt::Debug;
 use std::ptr::NonNull;
 
 use crate::project::folder::ProjectFolder;
@@ -125,11 +126,22 @@ impl RemoteFolder {
     }
 }
 
+impl Debug for RemoteFolder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RemoteFolder")
+            .field("id", &self.id())
+            .field("name", &self.name())
+            .field("description", &self.description())
+            .finish()
+    }
+}
+
 impl PartialEq for RemoteFolder {
     fn eq(&self, other: &Self) -> bool {
         self.id() == other.id()
     }
 }
+
 impl Eq for RemoteFolder {}
 
 impl ToOwned for RemoteFolder {
@@ -139,6 +151,9 @@ impl ToOwned for RemoteFolder {
         unsafe { RefCountable::inc_ref(self) }
     }
 }
+
+unsafe impl Send for RemoteFolder {}
+unsafe impl Sync for RemoteFolder {}
 
 unsafe impl RefCountable for RemoteFolder {
     unsafe fn inc_ref(handle: &Self) -> Ref<Self> {

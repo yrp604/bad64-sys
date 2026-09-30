@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "apple_vendor.h"
 #include "arm64dis.h"
 #include "binaryninjaapi.h"
 #include "il.h"
@@ -115,7 +116,7 @@ enum ElfArm64RelocationType : uint32_t
 	R_AARCH64_IRELATIVE = 1032,
 };
 
-enum PeArm64RelocationType : uint32_t
+enum COFFArm64RelocationType : uint32_t
 {
 	PE_IMAGE_REL_ARM64_ABSOLUTE       = 0x0000, //	The relocation is ignored.
 	PE_IMAGE_REL_ARM64_ADDR32         = 0x0001, //	The 32-bit VA of the target.
@@ -138,6 +139,27 @@ enum PeArm64RelocationType : uint32_t
 	MAX_PE_ARM64_RELOCATION           = 0x0012
 };
 
+enum PeRelocationType : uint32_t
+{
+	PE_IMAGE_USER_DEFINED             = 0xffffffff, // User defined relocation type for synthesized relocations at IAT sites.
+	PE_IMAGE_REL_BASED_ABSOLUTE       = 0,  // The base relocation is skipped. This type can be used to pad a block.
+	PE_IMAGE_REL_BASED_HIGH           = 1,  // The base relocation adds the high 16 bits of the difference to the 16-bit field at offset. The 16-bit field represents the high value of a 32-bit word.
+	PE_IMAGE_REL_BASED_LOW            = 2,  // The base relocation adds the low 16 bits of the difference to the 16-bit field at offset. The 16-bit field represents the low half of a 32-bit word.
+	PE_IMAGE_REL_BASED_HIGHLOW        = 3,  // The base relocation applies all 32 bits of the difference to the 32-bit field at offset.
+	PE_IMAGE_REL_BASED_HIGHADJ        = 4,  // The base relocation adds the high 16 bits of the difference to the 16-bit field at offset. The 16-bit field represents the high value of a 32-bit word. The low 16 bits of the 32-bit value are stored in the 16-bit word that follows this base relocation. This means that this base relocation occupies two slots.
+	PE_IMAGE_REL_BASED_MIPS_JMPADDR   = 5,  // The relocation interpretation is dependent on the machine type. When the machine type is MIPS, the base relocation applies to a MIPS jump instruction.
+	PE_IMAGE_REL_BASED_ARM_MOV32      = 5,  // This relocation is meaningful only when the machine type is ARM or Thumb. The base relocation applies the 32-bit address of a symbol across a consecutive MOVW/MOVT instruction pair.
+	PE_IMAGE_REL_BASED_RISCV_HIGH20   = 5,  // This relocation is only meaningful when the machine type is RISC-V. The base relocation applies to the high 20 bits of a 32-bit absolute address.
+	PE_IMAGE_REL_BASE_RESERVED        = 6,  // Reserved, must be zero.
+	PE_IMAGE_REL_BASED_THUMB_MOV32    = 7,  // This relocation is meaningful only when the machine type is Thumb. The base relocation applies the 32-bit address of a symbol to a consecutive MOVW/MOVT instruction pair.
+	PE_IMAGE_REL_BASED_RISCV_LOW12I   = 7,  // This relocation is only meaningful when the machine type is RISC-V. The base relocation applies to the low 12 bits of a 32-bit absolute address formed in RISC-V I-type instruction format.
+	PE_IMAGE_REL_BASED_RISCV_LOW12S   = 8,  // This relocation is only meaningful when the machine type is RISC-V. The base relocation applies to the low 12 bits of a 32-bit absolute address formed in RISC-V S-type instruction format.
+	PE_IMAGE_REL_BASED_MIPS_JMPADDR16 = 9,  // The relocation is only meaningful when the machine type is MIPS. The base relocation applies to a MIPS16 jump instruction.
+	PE_IMAGE_REL_BASED_DIR64          = 10, // The base relocation applies the difference to the 64-bit field at offset.
+	MAX_PE_RELOCATION
+};
+
+
 static const char* GetRelocationString(MachoArm64RelocationType rel)
 {
 	static const char* relocTable[] = {"ARM64_RELOC_UNSIGNED", "ARM64_RELOC_SUBTRACTOR",
@@ -152,7 +174,31 @@ static const char* GetRelocationString(MachoArm64RelocationType rel)
 }
 
 
-static const char* GetRelocationString(PeArm64RelocationType rel)
+static const char* GetRelocationString(PeRelocationType relocType)
+{
+	static const char* relocTable[] =
+	{
+		/*  0 */ "PE_IMAGE_REL_BASED_ABSOLUTE",
+		/*  1 */ "PE_IMAGE_REL_BASED_HIGH",
+		/*  2 */ "PE_IMAGE_REL_BASED_LOW",
+		/*  3 */ "PE_IMAGE_REL_BASED_HIGHLOW",
+		/*  4 */ "PE_IMAGE_REL_BASED_HIGHADJ",
+		// These are the same value
+		/*  5 */ "PE_IMAGE_REL_BASED_MIPS_JMPADDR/ARM_MOV32/RISCV_HIGH20",
+		/*  6 */ "PE_IMAGE_REL_BASE_RESERVED",
+		/*  7 */ "PE_IMAGE_REL_BASED_THUMB_MOV32/RISCV_LOW12I",
+		/*  8 */ "PE_IMAGE_REL_BASED_RISCV_LOW12S",
+		/*  9 */ "PE_IMAGE_REL_BASED_MIPS_JMPADDR16",
+		/* 10 */ "PE_IMAGE_REL_BASED_DIR64"
+	};
+
+	if (relocType < MAX_PE_RELOCATION)
+		return relocTable[relocType];
+	return "Unknown relocation";
+}
+
+
+static const char* GetRelocationString(COFFArm64RelocationType rel)
 {
 	static const char* relocTable[] = {
 		"IMAGE_REL_ARM64_ABSOLUTE",
@@ -398,6 +444,10 @@ class Arm64Architecture : public Architecture
 		case ARM64_RET:
 		case ARM64_RETAA:
 		case ARM64_RETAB:
+		case ARM64_RETAASPPC:
+		case ARM64_RETABSPPC:
+		case ARM64_RETAASPPCR:
+		case ARM64_RETABSPPCR:
 			result.AddBranch(FunctionReturn);
 			break;
 		case ARM64_SVC:
@@ -420,7 +470,7 @@ class Arm64Architecture : public Architecture
 	{
 		if (operand->shiftType != ShiftType_NONE)
 		{
-			const char* shiftStr = get_shift(operand->shiftType);
+			const char* shiftStr = aarch64_get_shift(operand->shiftType);
 			if (shiftStr == NULL)
 				return FAILED_TO_DISASSEMBLE_OPERAND;
 
@@ -494,7 +544,7 @@ class Arm64Architecture : public Architecture
 	uint32_t tokenize_shifted_register(const InstructionOperand* restrict operand,
 	    uint32_t registerNumber, vector<InstructionTextToken>& result)
 	{
-		const char* reg = get_register_name(operand->reg[registerNumber]);
+		const char* reg = aarch64_get_register_name(operand->reg[registerNumber]);
 		if (EMPTY(reg))
 			return FAILED_TO_DISASSEMBLE_REGISTER;
 
@@ -533,7 +583,7 @@ class Arm64Architecture : public Architecture
 			return tokenize_shifted_register(operand, registerNumber, result);
 		}
 
-		const char* reg = get_register_name(operand->reg[registerNumber]);
+		const char* reg = aarch64_get_register_name(operand->reg[registerNumber]);
 		if (EMPTY(reg))
 			return FAILED_TO_DISASSEMBLE_REGISTER;
 
@@ -573,7 +623,7 @@ class Arm64Architecture : public Architecture
 		char paramBuff[32] = {0};
 		const char *reg0, *reg1;
 
-		reg0 = get_register_name(operand->reg[0]);
+		reg0 = aarch64_get_register_name(operand->reg[0]);
 		if (EMPTY(reg0))
 			return FAILED_TO_DISASSEMBLE_REGISTER;
 
@@ -615,7 +665,7 @@ class Arm64Architecture : public Architecture
 			}
 			else
 			{
-				reg1 = get_register_name(operand->reg[1]);
+				reg1 = aarch64_get_register_name(operand->reg[1]);
 				if (EMPTY(reg1))
 					return FAILED_TO_DISASSEMBLE_REGISTER;
 				result.emplace_back(EndMemoryOperandToken, "");
@@ -639,7 +689,7 @@ class Arm64Architecture : public Architecture
 			break;
 		case MEM_EXTENDED:  // [<reg>, <reg> optional(shift optional(imm))]
 			result.emplace_back(TextToken, ", ");
-			reg1 = get_register_name(operand->reg[1]);
+			reg1 = aarch64_get_register_name(operand->reg[1]);
 			if (EMPTY(reg1))
 				return FAILED_TO_DISASSEMBLE_REGISTER;
 			result.emplace_back(RegisterToken, reg1);
@@ -690,7 +740,7 @@ class Arm64Architecture : public Architecture
 	uint32_t tokenize_condition(
 	    const InstructionOperand* restrict operand, vector<InstructionTextToken>& result)
 	{
-		const char* condStr = get_condition((Condition)operand->cond);
+		const char* condStr = aarch64_get_condition((Condition)operand->cond);
 		if (condStr == NULL)
 			return FAILED_TO_DISASSEMBLE_OPERAND;
 
@@ -782,6 +832,13 @@ class Arm64Architecture : public Architecture
 		if (maxLen < 4)
 			return false;
 
+		if (m_onlyDisassembleOnAlignedAddresses && (addr % 4 != 0))
+			return false;
+
+		uint32_t insn = *(const uint32_t*)data;
+		if (IsAppleVendorEncoding(insn) && AppleVendorGetInstructionInfo(insn, addr, result))
+			return true;
+
 		Instruction instr;
 		if (!Disassemble(data, addr, maxLen, instr))
 			return false;
@@ -795,6 +852,14 @@ class Arm64Architecture : public Architecture
 	    vector<InstructionTextToken>& result) override
 	{
 		len = 4;
+
+		if (m_onlyDisassembleOnAlignedAddresses && (addr % 4 != 0))
+			return false;
+
+		uint32_t insn = *(const uint32_t*)data;
+		if (IsAppleVendorEncoding(insn) && AppleVendorGetInstructionText(insn, result))
+			return true;
+
 		Instruction instr;
 		bool tokenizeSuccess = false;
 		char buf[9];
@@ -802,7 +867,7 @@ class Arm64Architecture : public Architecture
 			return false;
 
 		memset(buf, 0x20, sizeof(buf));
-		const char* operation = get_operation(&instr);
+		const char* operation = aarch64_get_operation(&instr);
 		if (operation == nullptr)
 			return false;
 
@@ -868,7 +933,7 @@ class Arm64Architecture : public Architecture
 			case ACCUM_ARRAY: /* eg: "za[w12, #0x6]" */
 				result.emplace_back(TextToken, "ZA");
 				result.emplace_back(BraceToken, "[");
-				snprintf(buf, sizeof(buf), "%s", get_register_name(operand->reg[0]));
+				snprintf(buf, sizeof(buf), "%s", aarch64_get_register_name(operand->reg[0]));
 				result.emplace_back(RegisterToken, buf);
 				result.emplace_back(OperandSeparatorToken, ", ");
 				result.emplace_back(OperationToken, " #");
@@ -888,7 +953,7 @@ class Arm64Architecture : public Architecture
 				if (operand->reg[0] != REG_NONE)
 				{
 					result.emplace_back(BraceToken, "[");
-					snprintf(buf, sizeof(buf), "%s", get_register_name(operand->reg[0]));
+					snprintf(buf, sizeof(buf), "%s", aarch64_get_register_name(operand->reg[0]));
 					result.emplace_back(RegisterToken, buf);
 					if (operand->arrSpec != ARRSPEC_FULL)
 					{
@@ -902,10 +967,10 @@ class Arm64Architecture : public Architecture
 				tokenizeSuccess = true;
 				break;
 			case INDEXED_ELEMENT: /* eg: "p12.d[w15, #0xf]" */
-				result.emplace_back(RegisterToken, get_register_name(operand->reg[0]));
+				result.emplace_back(RegisterToken, aarch64_get_register_name(operand->reg[0]));
 				result.emplace_back(TextToken, get_arrspec_str_truncated(operand->arrSpec));
 				result.emplace_back(BraceToken, "[");
-				result.emplace_back(RegisterToken, get_register_name(operand->reg[1]));
+				result.emplace_back(RegisterToken, aarch64_get_register_name(operand->reg[1]));
 				if (operand->immediate)
 				{
 					result.emplace_back(OperandSeparatorToken, ", ");
@@ -932,6 +997,9 @@ class Arm64Architecture : public Architecture
 
 	virtual string GetIntrinsicName(uint32_t intrinsic) override
 	{
+		if (AppleVendorIsIntrinsic(intrinsic))
+			return AppleVendorGetIntrinsicName(intrinsic);
+
 		switch (intrinsic)
 		{
 		case ARM64_INTRIN_AUTDA:
@@ -942,6 +1010,14 @@ class Arm64Architecture : public Architecture
 			return "__autia";
 		case ARM64_INTRIN_AUTIB:
 			return "__autib";
+		case ARM64_INTRIN_AUTIA2:
+			return "__autia2";
+		case ARM64_INTRIN_AUTIB2:
+			return "__autib2";
+		case ARM64_INTRIN_PACIA2:
+			return "__pacia2";
+		case ARM64_INTRIN_PACIB2:
+			return "__pacib2";
 		case ARM64_INTRIN_ISB:
 			return "__isb";
 		case ARM64_INTRIN_WFE:
@@ -974,6 +1050,8 @@ class Arm64Architecture : public Architecture
 			return "SystemHintOp_CSDB";
 		case ARM64_INTRIN_HINT_BTI:
 			return "SystemHintOp_BTI";
+		case ARM64_INTRIN_HINT_PACM:
+			return "SystemHintOp_PACM";
 		case ARM64_INTRIN_SEV:
 			return "__sev";
 		case ARM64_INTRIN_SEVL:
@@ -994,18 +1072,12 @@ class Arm64Architecture : public Architecture
 			return "__xpaci";
 		case ARM64_INTRIN_ERET:
 			return "_eret";
-		case ARM64_INTRIN_CLZ:
-			return "_CountLeadingZeros";
 		case ARM64_INTRIN_CNT:
 			return "_PopulationCount";
-		case ARM64_INTRIN_CTZ:
-			return "_CountTrailingZeros";
 		case ARM64_INTRIN_CLREX:
 			return "__clrex";
-		case ARM64_INTRIN_REV:
-			return "_byteswap";
-		case ARM64_INTRIN_RBIT:
-			return "__rbit";
+		case ARM64_INTRIN_REV16:
+			return "__rev16";
 		case ARM64_INTRIN_AESD:
 			return "__aesd";
 		case ARM64_INTRIN_AESE:
@@ -1020,6 +1092,8 @@ class Arm64Architecture : public Architecture
 			return "__ldxrb";
 		case ARM64_INTRIN_LDXRH:
 			return "__ldxrh";
+		case ARM64_INTRIN_LDXP:
+			return "__ldxp";
 		case ARM64_INTRIN_LDAXR:
 			return "__ldaxr";
 		case ARM64_INTRIN_LDAXRB:
@@ -1032,6 +1106,8 @@ class Arm64Architecture : public Architecture
 			return "__stxrb";
 		case ARM64_INTRIN_STXRH:
 			return "__stxrh";
+		case ARM64_INTRIN_STXP:
+			return "__stxp";
 		case ARM64_INTRIN_STLXR:
 			return "__stlxr";
 		case ARM64_INTRIN_STLXRB:
@@ -1104,12 +1180,17 @@ class Arm64Architecture : public Architecture
 			result.push_back(id);
 		}
 
+		AppleVendorGetAllIntrinsics(result);
+
 		return result;
 	}
 
 
 	virtual vector<NameAndType> GetIntrinsicInputs(uint32_t intrinsic) override
 	{
+		if (AppleVendorIsIntrinsic(intrinsic))
+			return AppleVendorGetIntrinsicInputs(intrinsic);
+
 		switch (intrinsic)
 		{
 		case ARM64_INTRIN_MRS:
@@ -1121,12 +1202,9 @@ class Arm64Architecture : public Architecture
 				NameAndType(Type::IntegerType(8, false))
 			};
 			break;
-		case ARM64_INTRIN_CLZ:        // reads <Xn>
 		case ARM64_INTRIN_CNT:        // reads <Xn>
-		case ARM64_INTRIN_CTZ:        // reads <Xn>
 		case ARM64_INTRIN_PRFM:
-		case ARM64_INTRIN_REV:   // reads <Xn>
-		case ARM64_INTRIN_RBIT:  // reads <Xn>
+		case ARM64_INTRIN_REV16:      // reads <Xn>
 			return {NameAndType(Type::IntegerType(8, false))};
 		case ARM64_INTRIN_AUTDA:      // reads <Xd>, <Xn|SP>
 		case ARM64_INTRIN_AUTDB:      // reads <Xd>, <Xn|SP>
@@ -1138,6 +1216,12 @@ class Arm64Architecture : public Architecture
 		case ARM64_INTRIN_PACIA:      // reads <Xd>, <Xn>
 		case ARM64_INTRIN_PACIB:      // reads <Xd>, <Xn>
 			return {NameAndType(Type::IntegerType(8, false)), NameAndType(Type::IntegerType(8, false))};
+		case ARM64_INTRIN_AUTIA2:     // reads <Xd>, modifier, modifier2
+		case ARM64_INTRIN_AUTIB2:     // reads <Xd>, modifier, modifier2
+		case ARM64_INTRIN_PACIA2:     // reads <Xd>, modifier, modifier2
+		case ARM64_INTRIN_PACIB2:     // reads <Xd>, modifier, modifier2
+			return {NameAndType(Type::IntegerType(8, false)), NameAndType(Type::IntegerType(8, false)),
+				NameAndType(Type::IntegerType(8, false))};
 		case ARM64_INTRIN_TLBI:      // reads <tlbi_op>, <Xn>
 			return {
 				NameAndType("tlbi_op", Confidence<Ref<Type>>(Type::EnumerationType(this, get_tlbi_op_enum(), 4, false), BN_FULL_CONFIDENCE))
@@ -1170,6 +1254,9 @@ class Arm64Architecture : public Architecture
 
 	virtual vector<Confidence<Ref<Type>>> GetIntrinsicOutputs(uint32_t intrinsic) override
 	{
+		if (AppleVendorIsIntrinsic(intrinsic))
+			return AppleVendorGetIntrinsicOutputs(intrinsic);
+
 		switch (intrinsic)
 		{
 		case ARM64_INTRIN_MSR:
@@ -1184,13 +1271,14 @@ class Arm64Architecture : public Architecture
 		case ARM64_INTRIN_PACIA:      // writes <Xd>
 		case ARM64_INTRIN_PACGA:      // writes <Xd>
 		case ARM64_INTRIN_PACIB:      // writes <Xd>
+		case ARM64_INTRIN_AUTIA2:     // writes <Xd>
+		case ARM64_INTRIN_AUTIB2:     // writes <Xd>
+		case ARM64_INTRIN_PACIA2:     // writes <Xd>
+		case ARM64_INTRIN_PACIB2:     // writes <Xd>
 		case ARM64_INTRIN_XPACD:      // writes <Xd>
 		case ARM64_INTRIN_XPACI:      // writes <Xd>
-		case ARM64_INTRIN_CLZ:        // writes <Xd>
 		case ARM64_INTRIN_CNT:        // writes <Xd>
-		case ARM64_INTRIN_CTZ:        // writes <Xd>
-		case ARM64_INTRIN_REV:        // writes <Xd>
-		case ARM64_INTRIN_RBIT:       // writes <Xd>
+		case ARM64_INTRIN_REV16:      // writes <Xd>
 			return {Type::IntegerType(8, false)};
 		case ARM64_INTRIN_AESD:
 		case ARM64_INTRIN_AESE:
@@ -1200,6 +1288,15 @@ class Arm64Architecture : public Architecture
 		}
 
 		return NeonGetIntrinsicOutputs(intrinsic);
+	}
+
+
+	virtual BNIntrinsicClass GetIntrinsicClass(uint32_t intrinsic) override
+	{
+		if (AppleVendorIsIntrinsic(intrinsic))
+			return AppleVendorGetIntrinsicClass(intrinsic);
+
+		return GeneralIntrinsicClass;
 	}
 
 
@@ -1323,6 +1420,22 @@ class Arm64Architecture : public Architecture
 	virtual bool GetInstructionLowLevelIL(
 	    const uint8_t* data, uint64_t addr, size_t& len, LowLevelILFunction& il) override
 	{
+		if (m_onlyDisassembleOnAlignedAddresses && (addr % 4 != 0))
+		{
+			il.AddInstruction(il.Undefined());
+			return false;
+		}
+
+		uint32_t insn = *(const uint32_t*)data;
+		if (IsAppleVendorEncoding(insn))
+		{
+			if (optional<bool> handled = AppleVendorGetInstructionLowLevelIL(insn, il))
+			{
+				len = 4;
+				return *handled;
+			}
+		}
+
 		Instruction instr;
 		if (!Disassemble(data, addr, len, instr))
 		{
@@ -1681,7 +1794,7 @@ class Arm64Architecture : public Architecture
 	virtual string GetRegisterName(uint32_t reg_) override
 	{
 		if (reg_ > REG_NONE && reg_ < REG_END)
-			return get_register_name((enum Register)reg_);
+			return aarch64_get_register_name((enum Register)reg_);
 
 		if (reg_ > SYSREG_NONE && reg_ < SYSREG_END)
 			return get_system_register_name((enum SystemReg)reg_);
@@ -2333,7 +2446,7 @@ class Arm64ImportedFunctionRecognizer : public FunctionRecognizer
 		LowLevelILInstruction ldOperand = ld.GetSourceExpr<LLIL_SET_REG>();
 		if (ldOperand.operation != LLIL_LOAD)
 			return false;
-		if (ldOperand.size != func->GetArchitecture()->GetAddressSize())
+		if (ldOperand.size != func->GetPlatform()->GetAddressSize())
 			return false;
 		LowLevelILInstruction ldAddrOperand = ldOperand.GetSourceExpr<LLIL_LOAD>();
 		uint64_t entry = pltPage;
@@ -2355,7 +2468,6 @@ class Arm64ImportedFunctionRecognizer : public FunctionRecognizer
 		}
 		else if (ldAddrOperand.operation != LLIL_REG)  // If theres no constant
 			return false;
-
 		targetReg = ld.GetDestRegister<LLIL_SET_REG>();
 		Ref<Symbol> sym = data->GetSymbolByAddress(entry);
 		if (!sym)
@@ -2366,17 +2478,18 @@ class Arm64ImportedFunctionRecognizer : public FunctionRecognizer
 		LowLevelILInstruction add = il->GetInstruction(2);
 		if (add.operation != LLIL_SET_REG)
 			return false;
-		if (add.GetDestRegister<LLIL_SET_REG>() != pltReg)
+		BNRegisterInfo destRegInfo = func->GetArchitecture()->GetRegisterInfo(add.GetDestRegister<LLIL_SET_REG>());
+		if (destRegInfo.fullWidthRegister != pltReg)
 			return false;
 		LowLevelILInstruction addOperand = add.GetSourceExpr<LLIL_SET_REG>();
-
 		if (addOperand.operation == LLIL_ADD)
 		{
 			LowLevelILInstruction addLeftOperand = addOperand.GetLeftExpr<LLIL_ADD>();
 			LowLevelILInstruction addRightOperand = addOperand.GetRightExpr<LLIL_ADD>();
 			if (addLeftOperand.operation != LLIL_REG)
 				return false;
-			if (addLeftOperand.GetSourceRegister<LLIL_REG>() != pltReg)
+			BNRegisterInfo addLeftRegInfo = func->GetArchitecture()->GetRegisterInfo(addLeftOperand.GetSourceRegister<LLIL_REG>());
+			if (addLeftRegInfo.fullWidthRegister != pltReg)
 				return false;
 			if (!LowLevelILFunction::IsConstantType(addRightOperand.operation))
 				return false;
@@ -2395,7 +2508,8 @@ class Arm64ImportedFunctionRecognizer : public FunctionRecognizer
                                             jump.GetDestExpr<LLIL_TAILCALL>();
 		if (jumpOperand.operation != LLIL_REG)
 			return false;
-		if (jumpOperand.GetSourceRegister<LLIL_REG>() != targetReg)
+		BNRegisterInfo targetRegInfo = func->GetArchitecture()->GetRegisterInfo(targetReg);
+		if (jumpOperand.GetSourceRegister<LLIL_REG>() != targetRegInfo.fullWidthRegister)
 			return false;
 
 		Ref<Symbol> funcSym = Symbol::ImportedFunctionFromImportAddressSymbol(sym, func->GetStart());
@@ -2641,9 +2755,42 @@ class Arm64CallingConvention : public CallingConvention
 
 
 	virtual uint32_t GetIntegerReturnValueRegister() override { return REG_X0; }
+	virtual uint32_t GetHighIntegerReturnValueRegister() override { return REG_X1; }
 
 
 	virtual uint32_t GetFloatReturnValueRegister() override { return REG_V0; }
+
+
+	bool IsReturnTypeRegisterCompatible(BinaryView*, Type* type) override
+	{
+		if (!type)
+			return false;
+		if (type->IsFloat())
+			return true;
+		return type->GetWidth() <= 16;
+	}
+
+
+	Variable GetIndirectReturnValueLocation() override
+	{
+		return Variable::Register(REG_X8);
+	}
+
+
+	bool IsArgumentTypeRegisterCompatible(BinaryView*, Type* type) override
+	{
+		if (!type)
+			return false;
+		if (type->IsFloat())
+			return true;
+		return type->GetWidth() <= 16;
+	}
+
+
+	bool IsNonRegisterArgumentIndirect(BinaryView*, Type*) override
+	{
+		return true;
+	}
 };
 
 
@@ -2658,6 +2805,12 @@ public:
 	virtual bool AreArgumentRegistersUsedForVarArgs() override
 	{
 		return false;
+	}
+
+
+	virtual bool AreStackArgumentsNaturallyAligned() override
+	{
+		return true;
 	}
 };
 
@@ -2760,6 +2913,115 @@ class AppleArm64SystemCallConvention : public CallingConvention
 	virtual bool IsEligibleForHeuristics() override { return false; }
 };
 
+
+// Swift calling convention for ARM64.
+//
+// The Swift ABI repurposes three callee-saved registers for implicit parameters:
+//   x20 - self (swiftself): context/self parameter, passed as the last integer argument
+//   x21 - error (swifterror): caller initializes to zero, callee sets to error pointer on throw
+//   x22 - async context (swiftasync): implicit async context for async functions
+//
+// Each combination of these three properties requires a distinct calling convention,
+// since it changes which registers are arguments, callee-saved, or implicitly defined.
+// The naming scheme is "swift" with optional suffixes: "-self", "-throws", "-async".
+class SwiftArm64CallingConvention : public CallingConvention
+{
+	bool m_hasSelf;
+	bool m_throws;
+	bool m_isAsync;
+
+public:
+	SwiftArm64CallingConvention(Architecture* arch, const string& name, bool hasSelf, bool throws, bool isAsync)
+	    : CallingConvention(arch, name), m_hasSelf(hasSelf), m_throws(throws), m_isAsync(isAsync)
+	{
+	}
+
+	virtual vector<uint32_t> GetIntegerArgumentRegisters() override
+	{
+		// Self goes first because our function types list self as the first
+		// parameter. Parameters are assigned to registers sequentially, so
+		// this ensures self -> x20 and remaining args -> x0-x7.
+		// Async context and error go last as implicit trailing registers.
+		vector<uint32_t> regs;
+		if (m_hasSelf)
+			regs.push_back(REG_X20);
+		regs.insert(regs.end(), {REG_X0, REG_X1, REG_X2, REG_X3, REG_X4, REG_X5, REG_X6, REG_X7});
+		if (m_isAsync)
+			regs.push_back(REG_X22);
+		if (m_throws)
+			regs.push_back(REG_X21);
+		return regs;
+	}
+
+	virtual vector<uint32_t> GetFloatArgumentRegisters() override
+	{
+		return vector<uint32_t> {REG_V0, REG_V1, REG_V2, REG_V3, REG_V4, REG_V5, REG_V6, REG_V7};
+	}
+
+	virtual vector<uint32_t> GetCallerSavedRegisters() override
+	{
+		vector<uint32_t> regs {REG_X0, REG_X1, REG_X2, REG_X3, REG_X4, REG_X5, REG_X6, REG_X7, REG_X8,
+		    REG_X9, REG_X10, REG_X11, REG_X12, REG_X13, REG_X14, REG_X15, REG_X16, REG_X17, REG_X18,
+		    REG_X30, REG_V0, REG_V1, REG_V2, REG_V3, REG_V4, REG_V5, REG_V6, REG_V7, REG_V16, REG_V17,
+		    REG_V18, REG_V19, REG_V20, REG_V21, REG_V22, REG_V23, REG_V24, REG_V25, REG_V26, REG_V27,
+		    REG_V28, REG_V29, REG_V30, REG_V31};
+		// When used as special registers, they are no longer callee-saved.
+		if (m_hasSelf)
+			regs.push_back(REG_X20);
+		if (m_throws)
+			regs.push_back(REG_X21);
+		if (m_isAsync)
+			regs.push_back(REG_X22);
+		return regs;
+	}
+
+	virtual vector<uint32_t> GetCalleeSavedRegisters() override
+	{
+		vector<uint32_t> regs {REG_X19, REG_X23, REG_X24, REG_X25, REG_X26, REG_X27, REG_X28, REG_X29};
+		// Only include x20/x21/x22 as callee-saved when they are NOT repurposed.
+		if (!m_hasSelf)
+			regs.push_back(REG_X20);
+		if (!m_throws)
+			regs.push_back(REG_X21);
+		if (!m_isAsync)
+			regs.push_back(REG_X22);
+		return regs;
+	}
+
+	virtual vector<uint32_t> GetImplicitlyDefinedRegisters() override
+	{
+		vector<uint32_t> regs;
+		// Throwing functions implicitly define x21 (the error register) on return.
+		if (m_throws)
+			regs.push_back(REG_X21);
+		return regs;
+	}
+
+	virtual uint32_t GetIntegerReturnValueRegister() override { return REG_X0; }
+
+	virtual uint32_t GetFloatReturnValueRegister() override { return REG_V0; }
+
+	virtual vector<uint32_t> GetRequiredArgumentRegisters() override
+	{
+		vector<uint32_t> regs;
+		if (m_hasSelf)
+			regs.push_back(REG_X20);
+		if (m_throws)
+			regs.push_back(REG_X21);
+		if (m_isAsync)
+			regs.push_back(REG_X22);
+		return regs;
+	}
+
+	virtual bool AreArgumentRegistersUsedForVarArgs() override { return false; }
+
+	virtual bool IsEligibleForHeuristics() override
+	{
+		return m_hasSelf || m_throws || m_isAsync;
+	}
+};
+
+
 #define PAGE(x)        (uint32_t)((x) >> 12)
 #define PAGE_OFF(x)    (uint32_t)((x)&0xfff)
 #define PAGE_NO_OFF(x) (uint32_t)((x)&0xFFFFF000)
@@ -2782,10 +3044,24 @@ class Arm64MachoRelocationHandler : public RelocationHandler
 		// printf("reloc->GetAddress(): 0x%llX\n", reloc->GetAddress());
 
 		if (info.nativeType == BINARYNINJA_MANUAL_RELOCATION)
-		{  // Magic number defined in MachOView.cpp for tagged pointers
-			*(uint64_t*)dest = info.target;
+		{  // Magic number defined in MachOView.cpp for chained fixups
+			*(uint64_t*)dest = info.target + info.addend;
 		}
-		else if (info.nativeType == ARM64_RELOC_PAGE21)
+		else if (info.nativeType == ARM64_RELOC_BRANCH26)
+		{
+			// B/BL: OP=X|00101|IMM26=XXXXXXXXXXXXXXXXXXXXXXXXXX
+			// imm26 is signed number of 4-byte instructions
+			int64_t delta = (int64_t)reloc->GetTarget() - (int64_t)reloc->GetAddress();
+			if (delta < -(1LL << 27) || delta >= (1LL << 27) || (delta & 3))
+			{
+				// Relocation can't apply bc the delta is out of range or not 4-byte aligned
+				return false;
+			}
+			// Keep the opcode, shift the delta bc the encoding is in terms of 4-byte instructions
+			insword = (insword & 0xFC000000) | ((uint32_t)(delta >> 2) & 0x03FFFFFF);
+			*(uint32_t*)dest = insword;
+		}
+		else if (info.nativeType == ARM64_RELOC_PAGE21 || info.nativeType == ARM64_RELOC_GOT_LOAD_PAGE21)
 		{
 			// 21 bits across IMMHI:IMMLO
 			// OP=1|IMMLO=XX|10000|IMMHI=XXXXXXXXXXXXXXXXXXX|RD=XXXXX
@@ -2795,40 +3071,29 @@ class Arm64MachoRelocationHandler : public RelocationHandler
 			insword = insword | ((page_delta >> 2) << 5);  // IMMHI
 			*(uint32_t*)dest = insword;
 		}
-		else if (info.nativeType == ARM64_RELOC_PAGEOFF12)
+		else if (info.nativeType == ARM64_RELOC_PAGEOFF12 || info.nativeType == ARM64_RELOC_GOT_LOAD_PAGEOFF12)
 		{
-			/* verify relocation point to qualifying instructions */
-			if ((insword & 0x3B000000) != 0x39000000 && (insword & 0x11C00000) != 0x11000000)
+			int left_shift;
+			if ((insword & 0x3B000000) == 0x39000000)
+			{
+				// ldr/str unsigned immediate has size in top two bits
+				left_shift = (insword >> 30) & 0x3;
+			}
+			else if ((insword & 0x11C00000) == 0x11000000)
+			{
+				// add/sub immediate
+				left_shift = 0;
+			}
+			else
+			{
 				return false;
-
-			/* verify it's a positive/forward jump (the imm12 is unsigned) */
-			int64_t delta = reloc->GetTarget() - PAGE_NO_OFF(reloc->GetAddress());
-			if (delta < 0)
-				return false;
-
-			/* disassemble instruction, is last operand an immediate? is there a shift? */
-			Instruction instr;
-			if (aarch64_decompose(*(uint32_t*)dest, &instr, reloc->GetAddress()) != 0)
-				return false;
-
-			int n_operands = 0;
-			while (instr.operands[n_operands].operandClass != NONE)
-				n_operands++;
-
-			if (instr.operands[n_operands - 1].operandClass != IMM32 &&
-			    instr.operands[n_operands - 1].operandClass != IMM64)
-				return false;
-
-			int left_shift = (instr.operands[n_operands - 1].shiftValueUsed) ?
-                           instr.operands[n_operands - 1].shiftValue :
-                           0;
+			}
 
 			/* re-encode */
-			/* left shift is upon DECODING, we right shift to bias this */
-			delta = delta >> left_shift;
-			// SF=X|OP=0|S=0|100010|SH=X|IMM12=XXXXXXXXXXXX|RN=XXXXX|RD=XXXXX
-			uint16_t imm12 = (insword & 0x3FFC00) >> 10;
-			imm12 = PAGE_OFF(imm12 + delta);
+			// add/sub: SF=X|OP=0|S=0|100010|SH=X|IMM12=XXXXXXXXXXXX|RN=XXXXX|RD=XXXXX
+			// ldr/str: Size=XX|111|001|OP=XX|IMM12=XXXXXXXXXXXX|Rn=XXXXX|Rt=XXXXX
+			uint64_t page_offset = PAGE_OFF((uint64_t)reloc->GetTarget() + info.addend);
+			uint32_t imm12 = (page_offset >> left_shift) & 0xfff;
 			insword = (insword & 0xFFC003FF) | (imm12 << 10);
 			*(uint32_t*)dest = insword;
 		}
@@ -2839,9 +3104,8 @@ class Arm64MachoRelocationHandler : public RelocationHandler
 	virtual bool GetRelocationInfo(
 	    Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
 	{
-		(void)view;
 		(void)arch;
-
+		Ref<Logger> logger = view->CreateLogger("Arm64MachoReloc");
 		set<MachoArm64RelocationType> unsupportedRelocations;
 		for (size_t i = 0; i < result.size(); i++)
 		{
@@ -2872,17 +3136,19 @@ class Arm64MachoRelocationHandler : public RelocationHandler
 				result[i].hasSign = false;
 				break;
 			case ARM64_RELOC_PAGE21:
+			case ARM64_RELOC_GOT_LOAD_PAGE21:
 				// eg: the number of pages to get to <addr> in "adrp x1, <addr>"
-				// printf("GetRelocationInfo(): ARM64_RELOC_PAGE21 .address=0x%llX\n", result[i].address);
+				// GOT_LOAD: the page of the GOT slot
 				break;
 			case ARM64_RELOC_PAGEOFF12:
+			case ARM64_RELOC_GOT_LOAD_PAGEOFF12:
 				// eg: the 12-bit <immediate> in "add x8, x8, #<immediate>"
-				// printf("GetRelocationInfo(): ARM64_RELOC_PAGEOFF12 .address=0x%llX\n",
-				// result[i].address);
+				// GOT_LOAD: 12-bit offset in the GOT slot page (usually used with ARM64_RELOC_GOT_LOAD_PAGE21)
 				break;
 			case ARM64_RELOC_BRANCH26:
-			case ARM64_RELOC_GOT_LOAD_PAGE21:
-			case ARM64_RELOC_GOT_LOAD_PAGEOFF12:
+				// 26-bit immediate for branch instrs
+				result[i].pcRelative = true;
+				break;
 			case ARM64_RELOC_TLVP_LOAD_PAGE21:
 			case ARM64_RELOC_TLVP_LOAD_PAGEOFF12:
 			case ARM64_RELOC_ADDEND:
@@ -2893,8 +3159,25 @@ class Arm64MachoRelocationHandler : public RelocationHandler
 		}
 
 		for (auto& relocType : unsupportedRelocations)
-			LogWarn("Unsupported relocation: %s (%x)", GetRelocationString(relocType), relocType);
+			logger->LogWarn("Unsupported relocation: %s (%x)", GetRelocationString(relocType), relocType);
 		return true;
+	}
+
+	virtual size_t GetOperandForExternalRelocation(const uint8_t* data, uint64_t addr, size_t length,
+	    Ref<LowLevelILFunction> il, Ref<Relocation> relocation) override
+	{
+		(void)data;
+		(void)addr;
+		(void)length;
+		(void)il;
+		auto info = relocation->GetInfo();
+		switch (info.nativeType)
+		{
+		case ARM64_RELOC_GOT_LOAD_PAGE21:
+			return BN_NOCOERCE_EXTERN_PTR;
+		default:
+			return BN_AUTOCOERCE_EXTERN_PTR;
+		}
 	}
 };
 
@@ -3155,9 +3438,9 @@ class Arm64ElfRelocationHandler : public RelocationHandler
 
 	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
 	{
-		(void)view;
 		(void)arch;
 		(void)result;
+		Ref<Logger> logger = view->CreateLogger("Arm64ElfReloc");
 		set<uint64_t> relocTypes;
 		for (auto& reloc : result)
 		{
@@ -3249,7 +3532,7 @@ class Arm64ElfRelocationHandler : public RelocationHandler
 			}
 		}
 		for (auto& reloc : relocTypes)
-			LogWarn("Unsupported ELF relocation type: %s", GetRelocationString((ElfArm64RelocationType)reloc));
+			logger->LogWarn("Unsupported ELF relocation type: %s", GetRelocationString((ElfArm64RelocationType)reloc));
 		return true;
 	}
 
@@ -3272,24 +3555,186 @@ class Arm64ElfRelocationHandler : public RelocationHandler
 };
 
 
+static uint32_t ReadPeThumbMov32RelocationInstruction(const uint8_t* data)
+{
+	uint32_t instruction;
+	memcpy(&instruction, data, sizeof(instruction));
+	return ToLE32(instruction);
+}
+
+static void WritePeThumbMov32RelocationInstruction(uint8_t* data, uint32_t instruction)
+{
+	instruction = ToLE32(instruction);
+	memcpy(data, &instruction, sizeof(instruction));
+}
+
+static uint16_t GetPeThumbMov32RelocationImmediate(uint32_t instruction)
+{
+	return (uint16_t)(((instruction >> 16) & 0xff) |
+		(((instruction >> 28) & 7) << 8) |
+		(((instruction >> 10) & 1) << 11) |
+		((instruction & 0xf) << 12));
+}
+
+static uint32_t SetPeThumbMov32RelocationImmediate(uint32_t instruction, uint16_t value)
+{
+	const uint32_t immediateMask =
+		0x00ff0000 |
+		0x70000000 |
+		0x00000400 |
+		0x0000000f;
+	instruction &= ~immediateMask;
+	instruction |= ((uint32_t)(value & 0xff) << 16) |
+		((uint32_t)((value >> 8) & 7) << 28) |
+		((uint32_t)((value >> 11) & 1) << 10) |
+		((uint32_t)((value >> 12) & 0xf));
+	return instruction;
+}
+
+static bool ApplyPeThumbMov32Relocation(uint8_t* dest, size_t len, uint64_t delta)
+{
+	if (len < 8)
+		return false;
+
+	uint32_t movw = ReadPeThumbMov32RelocationInstruction(dest);
+	uint32_t movt = ReadPeThumbMov32RelocationInstruction(dest + 4);
+	uint32_t value = GetPeThumbMov32RelocationImmediate(movw) |
+		((uint32_t)GetPeThumbMov32RelocationImmediate(movt) << 16);
+	value += (uint32_t)delta;
+	movw = SetPeThumbMov32RelocationImmediate(movw, value & 0xffff);
+	movt = SetPeThumbMov32RelocationImmediate(movt, (value >> 16) & 0xffff);
+	WritePeThumbMov32RelocationInstruction(dest, movw);
+	WritePeThumbMov32RelocationInstruction(dest + 4, movt);
+	return true;
+}
+
+
 class Arm64PeRelocationHandler : public RelocationHandler
 {
- public:
-	virtual bool GetRelocationInfo(
-	    Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
+public:
+	virtual bool ApplyRelocation(Ref<BinaryView> view, Ref<Architecture> arch, Ref<Relocation> reloc, uint8_t* dest, size_t len) override
 	{
+		// Note: info.base contains preferred base address and the base where the image is actually loaded
 		(void)view;
 		(void)arch;
+		uint64_t* data64 = (uint64_t*)dest;
+		uint32_t* data32 = (uint32_t*)dest;
+		uint16_t* data16 = (uint16_t*)dest;
+		auto info = reloc->GetInfo();
+		switch (info.nativeType)
+		{
+		case PE_IMAGE_USER_DEFINED:
+			if (info.size == 8)
+			{
+				if (len < 8)
+					return false;
+				data64[0] = info.target;
+			}
+			else if (info.size == 4)
+			{
+				if (len < 4)
+					return false;
+				data32[0] = (uint32_t)info.target;
+			}
+			break;
+		case PE_IMAGE_REL_BASED_DIR64:
+			if (len < 8)
+				return false;
+			data64[0] += info.base;
+			break;
+		case PE_IMAGE_REL_BASED_HIGHLOW:
+			if (len < 4)
+				return false;
+			data32[0] += (uint32_t)info.base;
+			break;
+		case PE_IMAGE_REL_BASED_HIGH:
+			if (len < 2)
+				return false;
+			data16[0] = data16[0] + (uint16_t)(info.base >> 16);
+			break;
+		case PE_IMAGE_REL_BASED_LOW:
+			if (len < 2)
+				return false;
+			data16[0] = data16[0] + (uint16_t)(info.base & 0xffff);
+			break;
+		case PE_IMAGE_REL_BASED_HIGHADJ:
+		{
+			if (len < 2)
+				return false;
+			uint64_t value = ((uint64_t)data16[0] << 16) + (int16_t)info.addend + info.base + 0x8000;
+			data16[0] = (uint16_t)(value >> 16);
+			break;
+		}
+		case PE_IMAGE_REL_BASED_THUMB_MOV32:
+			// Despite this being the arm64 platform, in practice these thumb mov32
+			// relocations are applied to binaries by Windows.
+			// Fun fact: the windows x64 emulation on an arm64 host ALSO applies these
+			// relocations if they are contained within x64 binaries, causing a divergence
+			// in loader behavior when emulating. We're not handling that nuance, though.
+			return ApplyPeThumbMov32Relocation(dest, len, info.base);
+		default:
+			return RelocationHandler::ApplyRelocation(view, arch, reloc, dest, len);
+		}
+		return true;
+	}
+
+	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
+	{
+		(void)arch;
+		Ref<Logger> logger = view->CreateLogger("Arm64PeReloc");
 		set<uint64_t> relocTypes;
 		for (auto& reloc : result)
 		{
-			reloc.type = UnhandledRelocation;
-			relocTypes.insert(reloc.nativeType);
+			reloc.type = StandardRelocationType;
+			reloc.pcRelative = false;
+			switch (reloc.nativeType)
+			{
+			case PE_IMAGE_REL_BASED_ABSOLUTE:
+				reloc.type = IgnoredRelocation;
+				break;
+			case PE_IMAGE_REL_BASED_HIGHLOW:
+				reloc.size = 4;
+				break;
+			case PE_IMAGE_REL_BASED_DIR64:
+				reloc.size = 8;
+				break;
+			case PE_IMAGE_REL_BASED_HIGH:
+				reloc.size = 2;
+				break;
+			case PE_IMAGE_REL_BASED_LOW:
+				reloc.size = 2;
+				break;
+			case PE_IMAGE_REL_BASED_HIGHADJ:
+				reloc.size = 2;
+				break;
+			case PE_IMAGE_REL_BASED_THUMB_MOV32:
+				reloc.size = 8;
+				break;
+			case PE_IMAGE_USER_DEFINED:
+				reloc.type = StandardRelocationType;
+				break;
+			default:
+				// By default, PE relocations are correct when not rebased.
+				// Upon rebasing, support would need to be added to correctly process the relocation
+				reloc.type = UnhandledRelocation;
+				relocTypes.insert(reloc.nativeType);
+			}
 		}
+
 		for (auto& reloc : relocTypes)
-			LogWarn(
-			    "Unsupported PE relocation type: %s", GetRelocationString((PeArm64RelocationType)reloc));
-		return false;
+			logger->LogWarn("Unsupported PE relocation: %s", GetRelocationString((PeRelocationType)reloc));
+		return true;
+	}
+
+	virtual size_t GetOperandForExternalRelocation(const uint8_t* data, uint64_t addr, size_t length,
+		Ref<LowLevelILFunction> il, Ref<Relocation> relocation) override
+	{
+		(void)data;
+		(void)addr;
+		(void)length;
+		(void)il;
+		(void)relocation;
+		return BN_AUTOCOERCE_EXTERN_PTR;
 	}
 };
 
@@ -3403,12 +3848,12 @@ public:
 
 	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
 	{
-		(void)view;
 		(void)arch;
+		Ref<Logger> logger = view->CreateLogger("Arm64CoffReloc");
 		set<uint64_t> relocTypes;
 		for (auto& reloc : result)
 		{
-			// LogDebug("%s COFF relocation %s at 0x%" PRIx64, __func__, GetRelocationString((PeArm64RelocationType)reloc.nativeType), reloc.address);
+			// LogDebug("%s COFF relocation %s at 0x%" PRIx64, __func__, GetRelocationString((COFFArm64RelocationType)reloc.nativeType), reloc.address);
 			switch (reloc.nativeType)
 			{
 			case PE_IMAGE_REL_ARM64_ABSOLUTE:
@@ -3473,7 +3918,7 @@ public:
 			}
 		}
 		for (auto& reloc : relocTypes)
-			LogWarn("Unsupported PE relocation type: %s", GetRelocationString((PeArm64RelocationType)reloc));
+			logger->LogWarn("Unsupported PE relocation type: %s", GetRelocationString((COFFArm64RelocationType)reloc));
 		return false;
 	}
 };
@@ -3545,6 +3990,20 @@ extern "C"
 
 		conv = new AppleArm64CallingConvention(arm64);
 		arm64->RegisterCallingConvention(conv);
+
+		// Register Swift calling conventions (all combinations of self/throws/async).
+		for (int swiftFlags = 0; swiftFlags < 8; swiftFlags++)
+		{
+			bool hasSelf = (swiftFlags & 1) != 0;
+			bool throws  = (swiftFlags & 2) != 0;
+			bool isAsync = (swiftFlags & 4) != 0;
+			string name = "swift";
+			if (hasSelf) name += "-self";
+			if (throws)  name += "-throws";
+			if (isAsync) name += "-async";
+			conv = new SwiftArm64CallingConvention(arm64, name, hasSelf, throws, isAsync);
+			arm64->RegisterCallingConvention(conv);
+		}
 
 		for (uint32_t i = REG_X0; i <= REG_X28; i++)
 		{

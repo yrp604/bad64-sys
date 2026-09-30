@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -309,6 +309,19 @@ where
 
     Neg(Operation<'func, M, F, operation::UnaryOp>),
     Not(Operation<'func, M, F, operation::UnaryOp>),
+    Bswap(Operation<'func, M, F, operation::UnaryOp>),
+    Popcnt(Operation<'func, M, F, operation::UnaryOp>),
+    Clz(Operation<'func, M, F, operation::UnaryOp>),
+    Ctz(Operation<'func, M, F, operation::UnaryOp>),
+    Rbit(Operation<'func, M, F, operation::UnaryOp>),
+    Cls(Operation<'func, M, F, operation::UnaryOp>),
+
+    MinSigned(Operation<'func, M, F, operation::BinaryOp>),
+    MaxSigned(Operation<'func, M, F, operation::BinaryOp>),
+    MinUnsigned(Operation<'func, M, F, operation::BinaryOp>),
+    MaxUnsigned(Operation<'func, M, F, operation::BinaryOp>),
+    Abs(Operation<'func, M, F, operation::UnaryOp>),
+
     Sx(Operation<'func, M, F, operation::UnaryOp>),
     Zx(Operation<'func, M, F, operation::UnaryOp>),
     LowPart(Operation<'func, M, F, operation::UnaryOp>),
@@ -466,6 +479,18 @@ where
 
             LLIL_NEG => LowLevelILExpressionKind::Neg(Operation::new(function, op, index)),
             LLIL_NOT => LowLevelILExpressionKind::Not(Operation::new(function, op, index)),
+            LLIL_BSWAP => LowLevelILExpressionKind::Bswap(Operation::new(function, op, index)),
+            LLIL_POPCNT => LowLevelILExpressionKind::Popcnt(Operation::new(function, op, index)),
+            LLIL_CLZ => LowLevelILExpressionKind::Clz(Operation::new(function, op, index)),
+            LLIL_CTZ => LowLevelILExpressionKind::Ctz(Operation::new(function, op, index)),
+            LLIL_RBIT => LowLevelILExpressionKind::Rbit(Operation::new(function, op, index)),
+            LLIL_CLS => LowLevelILExpressionKind::Cls(Operation::new(function, op, index)),
+
+            LLIL_MINS => LowLevelILExpressionKind::MinSigned(Operation::new(function, op, index)),
+            LLIL_MAXS => LowLevelILExpressionKind::MaxSigned(Operation::new(function, op, index)),
+            LLIL_MINU => LowLevelILExpressionKind::MinUnsigned(Operation::new(function, op, index)),
+            LLIL_MAXU => LowLevelILExpressionKind::MaxUnsigned(Operation::new(function, op, index)),
+            LLIL_ABS => LowLevelILExpressionKind::Abs(Operation::new(function, op, index)),
 
             LLIL_SX => LowLevelILExpressionKind::Sx(Operation::new(function, op, index)),
             LLIL_ZX => LowLevelILExpressionKind::Zx(Operation::new(function, op, index)),
@@ -536,8 +561,7 @@ where
             }
 
             _ => {
-                // #[cfg(debug_assertions)]
-                log::error!(
+                tracing::error!(
                     "Got unexpected operation {:?} in value expr at 0x{:x}",
                     op.operation,
                     op.address
@@ -603,7 +627,10 @@ where
             | Lsr(ref op) | Asr(ref op) | Rol(ref op) | Ror(ref op) | Mul(ref op)
             | MulsDp(ref op) | MuluDp(ref op) | Divu(ref op) | Divs(ref op) | Modu(ref op)
             | Mods(ref op) | Fadd(ref op) | Fsub(ref op) | Fmul(ref op) | Fdiv(ref op)
-            | DivuDp(ref op) | DivsDp(ref op) | ModuDp(ref op) | ModsDp(ref op) => Some(op),
+            | DivuDp(ref op) | DivsDp(ref op) | ModuDp(ref op) | ModsDp(ref op)
+            | MinSigned(ref op) | MaxSigned(ref op) | MinUnsigned(ref op) | MaxUnsigned(ref op) => {
+                Some(op)
+            }
             _ => None,
         }
     }
@@ -621,8 +648,9 @@ where
         use self::LowLevelILExpressionKind::*;
 
         match *self {
-            Neg(ref op) | Not(ref op) | Sx(ref op) | Zx(ref op) | LowPart(ref op)
-            | BoolToInt(ref op) | Fsqrt(ref op) | Fneg(ref op) | Fabs(ref op)
+            Neg(ref op) | Not(ref op) | Bswap(ref op) | Popcnt(ref op) | Clz(ref op)
+            | Ctz(ref op) | Rbit(ref op) | Cls(ref op) | Abs(ref op) | Sx(ref op) | Zx(ref op)
+            | LowPart(ref op) | BoolToInt(ref op) | Fsqrt(ref op) | Fneg(ref op) | Fabs(ref op)
             | FloatToInt(ref op) | IntToFloat(ref op) | FloatConv(ref op) | RoundToInt(ref op)
             | Floor(ref op) | Ceil(ref op) | Ftrunc(ref op) => Some(op),
             _ => None,
@@ -661,12 +689,14 @@ where
             | Mul(ref op) | MulsDp(ref op) | MuluDp(ref op) | Divu(ref op) | Divs(ref op)
             | Modu(ref op) | Mods(ref op) | Fadd(ref op) | Fsub(ref op) | Fmul(ref op)
             | DivuDp(ref op) | DivsDp(ref op) | ModuDp(ref op) | ModsDp(ref op) | Fdiv(ref op)
+            | MinSigned(ref op) | MaxSigned(ref op) | MinUnsigned(ref op) | MaxUnsigned(ref op)
             | TestBit(ref op) => {
                 visit!(op.left());
                 visit!(op.right());
             }
-            Neg(ref op) | Not(ref op) | Sx(ref op) | Zx(ref op) | LowPart(ref op)
-            | BoolToInt(ref op) | Fsqrt(ref op) | Fneg(ref op) | Fabs(ref op)
+            Neg(ref op) | Not(ref op) | Bswap(ref op) | Popcnt(ref op) | Clz(ref op)
+            | Ctz(ref op) | Rbit(ref op) | Cls(ref op) | Abs(ref op) | Sx(ref op) | Zx(ref op)
+            | LowPart(ref op) | BoolToInt(ref op) | Fsqrt(ref op) | Fneg(ref op) | Fabs(ref op)
             | FloatToInt(ref op) | IntToFloat(ref op) | FloatConv(ref op) | RoundToInt(ref op)
             | Floor(ref op) | Ceil(ref op) | Ftrunc(ref op) => {
                 visit!(op.operand());
@@ -755,12 +785,14 @@ where
             | Xor(ref op) | Lsl(ref op) | Lsr(ref op) | Asr(ref op) | Rol(ref op) | Ror(ref op)
             | Mul(ref op) | MulsDp(ref op) | MuluDp(ref op) | Divu(ref op) | Divs(ref op)
             | Modu(ref op) | Mods(ref op) | Fadd(ref op) | Fsub(ref op) | Fmul(ref op)
+            | MinSigned(ref op) | MaxSigned(ref op) | MinUnsigned(ref op) | MaxUnsigned(ref op)
             | Fdiv(ref op) | TestBit(ref op) => &op.op,
 
             DivuDp(ref op) | DivsDp(ref op) | ModuDp(ref op) | ModsDp(ref op) => &op.op,
 
-            Neg(ref op) | Not(ref op) | Sx(ref op) | Zx(ref op) | LowPart(ref op)
-            | BoolToInt(ref op) | Fsqrt(ref op) | Fneg(ref op) | Fabs(ref op)
+            Neg(ref op) | Not(ref op) | Bswap(ref op) | Popcnt(ref op) | Clz(ref op)
+            | Ctz(ref op) | Rbit(ref op) | Cls(ref op) | Abs(ref op) | Sx(ref op) | Zx(ref op)
+            | LowPart(ref op) | BoolToInt(ref op) | Fsqrt(ref op) | Fneg(ref op) | Fabs(ref op)
             | FloatToInt(ref op) | IntToFloat(ref op) | FloatConv(ref op) | RoundToInt(ref op)
             | Floor(ref op) | Ceil(ref op) | Ftrunc(ref op) => &op.op,
 
@@ -828,12 +860,14 @@ impl LowLevelILExpressionKind<'_, Mutable, NonSSA> {
             | Xor(ref op) | Lsl(ref op) | Lsr(ref op) | Asr(ref op) | Rol(ref op) | Ror(ref op)
             | Mul(ref op) | MulsDp(ref op) | MuluDp(ref op) | Divu(ref op) | Divs(ref op)
             | Modu(ref op) | Mods(ref op) | Fadd(ref op) | Fsub(ref op) | Fmul(ref op)
+            | MinSigned(ref op) | MaxSigned(ref op) | MinUnsigned(ref op) | MaxUnsigned(ref op)
             | Fdiv(ref op) | TestBit(ref op) => op.flag_write(),
 
             DivuDp(ref op) | DivsDp(ref op) | ModuDp(ref op) | ModsDp(ref op) => op.flag_write(),
 
-            Neg(ref op) | Not(ref op) | Sx(ref op) | Zx(ref op) | LowPart(ref op)
-            | BoolToInt(ref op) | Fsqrt(ref op) | Fneg(ref op) | Fabs(ref op)
+            Neg(ref op) | Not(ref op) | Bswap(ref op) | Popcnt(ref op) | Clz(ref op)
+            | Ctz(ref op) | Rbit(ref op) | Cls(ref op) | Abs(ref op) | Sx(ref op) | Zx(ref op)
+            | LowPart(ref op) | BoolToInt(ref op) | Fsqrt(ref op) | Fneg(ref op) | Fabs(ref op)
             | FloatToInt(ref op) | IntToFloat(ref op) | FloatConv(ref op) | RoundToInt(ref op)
             | Floor(ref op) | Ceil(ref op) | Ftrunc(ref op) => op.flag_write(),
 

@@ -1,14 +1,17 @@
 use crate::project::{systime_from_bntime, Project, ProjectFolder};
-use crate::rc::{CoreArrayProvider, CoreArrayProviderInner, Guard, Ref, RefCountable};
+use crate::rc::{Array, CoreArrayProvider, CoreArrayProviderInner, Guard, Ref, RefCountable};
 use crate::string::{BnString, IntoCStr};
 use binaryninjacore_sys::{
     BNFreeProjectFile, BNFreeProjectFileList, BNNewProjectFileReference, BNProjectFile,
-    BNProjectFileExistsOnDisk, BNProjectFileExport, BNProjectFileGetCreationTimestamp,
-    BNProjectFileGetDescription, BNProjectFileGetFolder, BNProjectFileGetId, BNProjectFileGetName,
+    BNProjectFileAddDependency, BNProjectFileExistsOnDisk, BNProjectFileExport,
+    BNProjectFileGetCreationTimestamp, BNProjectFileGetDependencies, BNProjectFileGetDescription,
+    BNProjectFileGetFolder, BNProjectFileGetId, BNProjectFileGetName,
     BNProjectFileGetPathInProject, BNProjectFileGetPathOnDisk, BNProjectFileGetProject,
-    BNProjectFileSetDescription, BNProjectFileSetFolder, BNProjectFileSetName,
+    BNProjectFileGetRequiredBy, BNProjectFileRemoveDependency, BNProjectFileSetDescription,
+    BNProjectFileSetFolder, BNProjectFileSetName,
 };
 use std::fmt::Debug;
+use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::ptr::{null_mut, NonNull};
 use std::time::SystemTime;
@@ -19,7 +22,7 @@ pub struct ProjectFile {
 }
 
 impl ProjectFile {
-    pub(crate) unsafe fn from_raw(handle: NonNull<BNProjectFile>) -> Self {
+    pub unsafe fn from_raw(handle: NonNull<BNProjectFile>) -> Self {
         Self { handle }
     }
 
@@ -110,6 +113,30 @@ impl ProjectFile {
         let dest_raw = dest.to_cstr();
         unsafe { BNProjectFileExport(self.handle.as_ptr(), dest_raw.as_ptr()) }
     }
+
+    /// Add a ProjectFile as a dependency of this file
+    pub fn add_dependency(&self, file: Ref<ProjectFile>) -> bool {
+        unsafe { BNProjectFileAddDependency(self.handle.as_ptr(), file.handle.as_ptr()) }
+    }
+
+    /// Remove a ProjectFile as a dependency of this file
+    pub fn remove_dependency(&self, file: Ref<ProjectFile>) -> bool {
+        unsafe { BNProjectFileRemoveDependency(self.handle.as_ptr(), file.handle.as_ptr()) }
+    }
+
+    /// Get the ProjectFiles that this file depends on
+    pub fn get_dependencies(&self) -> Array<ProjectFile> {
+        let mut count = 0;
+        let result = unsafe { BNProjectFileGetDependencies(self.handle.as_ptr(), &mut count) };
+        unsafe { Array::new(result, count, ()) }
+    }
+
+    /// Get the ProjectFiles that depend on this file
+    pub fn get_required_by(&self) -> Array<ProjectFile> {
+        let mut count = 0;
+        let result = unsafe { BNProjectFileGetRequiredBy(self.handle.as_ptr(), &mut count) };
+        unsafe { Array::new(result, count, ()) }
+    }
 }
 
 impl Debug for ProjectFile {
@@ -128,6 +155,20 @@ impl Debug for ProjectFile {
 
 unsafe impl Send for ProjectFile {}
 unsafe impl Sync for ProjectFile {}
+
+impl PartialEq for ProjectFile {
+    fn eq(&self, other: &Self) -> bool {
+        self.id() == other.id()
+    }
+}
+
+impl Eq for ProjectFile {}
+
+impl Hash for ProjectFile {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
+    }
+}
 
 impl ToOwned for ProjectFile {
     type Owned = Ref<Self>;

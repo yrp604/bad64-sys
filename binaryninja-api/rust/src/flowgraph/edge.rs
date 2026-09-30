@@ -1,8 +1,10 @@
-use binaryninjacore_sys::*;
+//! Represents the connection between two [`FlowGraphNode`]s.
 
+use crate::architecture::BranchType;
 use crate::flowgraph::node::FlowGraphNode;
-use crate::flowgraph::{BranchType, EdgePenStyle, ThemeColor};
+use crate::flowgraph::{EdgePenStyle, ThemeColor};
 use crate::rc::{CoreArrayProvider, CoreArrayProviderInner, Ref};
+use binaryninjacore_sys::*;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FlowGraphEdge {

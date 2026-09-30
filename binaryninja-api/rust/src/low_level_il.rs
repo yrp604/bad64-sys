@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,8 +13,9 @@
 // limitations under the License.
 
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::fmt;
-
+use std::fmt::{Debug, Display};
 // TODO : provide some way to forbid emitting register reads for certain registers
 // also writing for certain registers (e.g. zero register must prohibit il.set_reg and il.reg
 // (replace with nop or const(0) respectively)
@@ -83,9 +84,15 @@ impl LowLevelILTempRegister {
     }
 }
 
-impl fmt::Debug for LowLevelILTempRegister {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl Debug for LowLevelILTempRegister {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "temp{}", self.temp_id)
+    }
+}
+
+impl Display for LowLevelILTempRegister {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(self, f)
     }
 }
 
@@ -142,11 +149,20 @@ impl<R: ArchReg> LowLevelILRegisterKind<R> {
     }
 }
 
-impl<R: ArchReg> fmt::Debug for LowLevelILRegisterKind<R> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl<R: ArchReg> Debug for LowLevelILRegisterKind<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match *self {
             LowLevelILRegisterKind::Arch(ref r) => r.fmt(f),
-            LowLevelILRegisterKind::Temp(id) => id.fmt(f),
+            LowLevelILRegisterKind::Temp(ref id) => Debug::fmt(id, f),
+        }
+    }
+}
+
+impl<R: ArchReg> Display for LowLevelILRegisterKind<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            LowLevelILRegisterKind::Arch(ref r) => write!(f, "{}", r.name()),
+            LowLevelILRegisterKind::Temp(ref id) => Display::fmt(id, f),
         }
     }
 }
@@ -158,35 +174,127 @@ impl From<LowLevelILTempRegister> for LowLevelILRegisterKind<CoreRegister> {
 }
 
 #[derive(Copy, Clone, Debug)]
+pub struct LowLevelILSSARegister<R: ArchReg> {
+    pub reg: LowLevelILRegisterKind<R>,
+    /// The SSA version of the register.
+    pub version: u32,
+}
+
+impl<R: ArchReg> LowLevelILSSARegister<R> {
+    pub fn new(reg: LowLevelILRegisterKind<R>, version: u32) -> Self {
+        Self { reg, version }
+    }
+
+    pub fn name(&self) -> Cow<'_, str> {
+        self.reg.name()
+    }
+
+    pub fn id(&self) -> RegisterId {
+        self.reg.id()
+    }
+}
+
+impl<R: ArchReg> Display for LowLevelILSSARegister<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}#{}", self.reg, self.version)
+    }
+}
+
+/// The kind of SSA register.
+///
+/// An SSA register can exist in two states:
+///
+/// - Full, e.g. `eax` on x86
+/// - Partial, e.g. `al` on x86
+///
+/// If you intend to query for the ssa uses or definitions you must retrieve the physical register
+/// using the function [`LowLevelILSSARegisterKind::physical_reg`] which will give you the actual
+/// [`LowLevelILSSARegister`].
+#[derive(Copy, Clone, Debug)]
 pub enum LowLevelILSSARegisterKind<R: ArchReg> {
-    Full {
-        kind: LowLevelILRegisterKind<R>,
-        version: u32,
-    },
+    /// A full register is one that is not aliasing another, such as `eax` on x86 or `rax` on x86_64.
+    Full(LowLevelILSSARegister<R>),
     Partial {
-        full_reg: CoreRegister,
+        /// This is the non-aliased register.
+        ///
+        /// This register is what is used for dataflow, otherwise the backing storage of aliased registers
+        /// like `al` on x86 would contain separate value information from the physical register `eax`.
+        ///
+        /// NOTE: While this is a [`LowLevelILSSARegister`] temporary registers are not allowed in partial
+        /// assignments, so this will always be an actual architecture register.
+        full_reg: LowLevelILSSARegister<R>,
+        /// This is the aliased register.
+        ///
+        /// On x86 if the register `al` is used that would be considered a partial register, with the
+        /// full register `eax` being used as the backing storage.
         partial_reg: CoreRegister,
-        version: u32,
     },
 }
 
 impl<R: ArchReg> LowLevelILSSARegisterKind<R> {
     pub fn new_full(kind: LowLevelILRegisterKind<R>, version: u32) -> Self {
-        Self::Full { kind, version }
+        Self::Full(LowLevelILSSARegister::new(kind, version))
     }
 
-    pub fn new_partial(full_reg: CoreRegister, partial_reg: CoreRegister, version: u32) -> Self {
+    pub fn new_partial(
+        full_reg: LowLevelILRegisterKind<R>,
+        version: u32,
+        partial_reg: CoreRegister,
+    ) -> Self {
         Self::Partial {
-            full_reg,
+            full_reg: LowLevelILSSARegister::new(full_reg, version),
             partial_reg,
-            version,
         }
     }
 
-    pub fn version(&self) -> u32 {
+    /// This is the non-aliased register used. This should be called when you intend to actually
+    /// query for SSA dataflow information, as a partial register is prohibited from being used.
+    ///
+    /// # Example
+    ///
+    /// On x86 `al` in the LLIL SSA will have a physical register of `eax`.
+    pub fn physical_reg(&self) -> LowLevelILSSARegister<R> {
         match *self {
-            LowLevelILSSARegisterKind::Full { version, .. }
-            | LowLevelILSSARegisterKind::Partial { version, .. } => version,
+            LowLevelILSSARegisterKind::Full(reg) => reg,
+            LowLevelILSSARegisterKind::Partial { full_reg, .. } => full_reg,
+        }
+    }
+
+    /// Gets the displayable register, for partial this will be the partial register name.
+    ///
+    /// # Example
+    ///
+    /// On x86 this will display "al" not "eax".
+    pub fn name(&self) -> Cow<'_, str> {
+        match *self {
+            LowLevelILSSARegisterKind::Full(ref reg) => reg.reg.name(),
+            LowLevelILSSARegisterKind::Partial {
+                ref partial_reg, ..
+            } => partial_reg.name(),
+        }
+    }
+}
+
+impl<R: ArchReg> AsRef<LowLevelILSSARegister<R>> for LowLevelILSSARegisterKind<R> {
+    fn as_ref(&self) -> &LowLevelILSSARegister<R> {
+        match self {
+            LowLevelILSSARegisterKind::Full(reg) => reg,
+            LowLevelILSSARegisterKind::Partial { full_reg, .. } => full_reg,
+        }
+    }
+}
+
+impl<R: ArchReg> From<LowLevelILSSARegister<R>> for LowLevelILSSARegisterKind<R> {
+    fn from(value: LowLevelILSSARegister<R>) -> Self {
+        LowLevelILSSARegisterKind::Full(value)
+    }
+}
+
+impl<R: ArchReg> From<LowLevelILSSARegisterKind<R>> for LowLevelILSSARegister<R> {
+    fn from(value: LowLevelILSSARegisterKind<R>) -> Self {
+        match value {
+            LowLevelILSSARegisterKind::Full(reg) => reg,
+            LowLevelILSSARegisterKind::Partial { full_reg, .. } => full_reg,
         }
     }
 }
@@ -209,3 +317,42 @@ pub enum VisitorAction {
     Sibling,
     Halt,
 }
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub enum ILInstructionAttribute {
+    ILAllowDeadStoreElimination,
+    ILPreventDeadStoreElimination,
+    MLILAssumePossibleUse,
+    MLILUnknownSize,
+    SrcInstructionUsesPointerAuth,
+    ILPreventAliasAnalysis,
+    ILIsCFGProtected,
+    MLILPossiblyUnusedIntermediate,
+    HLILFoldableExpr,
+    HLILInvertableCondition,
+    HLILEarlyReturnPossible,
+    HLILSwitchRecoveryPossible,
+    ILTransparentCopy,
+}
+
+impl ILInstructionAttribute {
+    pub fn value(&self) -> u32 {
+        match self {
+            Self::ILAllowDeadStoreElimination => 1,
+            Self::ILPreventDeadStoreElimination => 2,
+            Self::MLILAssumePossibleUse => 4,
+            Self::MLILUnknownSize => 8,
+            Self::SrcInstructionUsesPointerAuth => 16,
+            Self::ILPreventAliasAnalysis => 32,
+            Self::ILIsCFGProtected => 64,
+            Self::MLILPossiblyUnusedIntermediate => 128,
+            Self::HLILFoldableExpr => 256,
+            Self::HLILInvertableCondition => 512,
+            Self::HLILEarlyReturnPossible => 1024,
+            Self::HLILSwitchRecoveryPossible => 2048,
+            Self::ILTransparentCopy => 4096,
+        }
+    }
+}
+
+pub type ILInstructionAttributeSet = HashSet<ILInstructionAttribute>;

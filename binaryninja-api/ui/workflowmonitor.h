@@ -25,7 +25,7 @@ class BINARYNINJAUIAPI WorkflowMonitorWidget : public QWidget
 	FunctionRef m_function;
 	WorkflowRef m_workflow;
 
-	Menu* m_menu;
+	Menu m_menu;
 	ContextMenuManager* m_contextMenuManager;
 	UIActionHandler m_actionHandler;
 

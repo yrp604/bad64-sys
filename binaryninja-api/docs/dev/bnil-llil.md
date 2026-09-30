@@ -15,14 +15,13 @@ Since doing is the easiest way to learn let's start with a simple example binary
 ![Low Level IL Option >](../img/llil-option.png)
 
  - Download [chal1](../files/chal1) and open it with Binary Ninja
- - Next, bring up the `Low Level IL` view by clicking in the view drop down at the top of the pane
- (or alternatively, use the `i` key to cycle view levels)
+ - Next, bring up the `Low Level IL` view by clicking in the view drop down at the top of the pane (or alternatively, use the `i` key to cycle view levels)
  - Navigate to main (`g`, then "main", or double-click it in the function list)
  - Finally, bring up the python console using: `~`
 
 Next, enter the following in the console:
 
-```
+```pycon
 >>> for block in current_function.low_level_il:
 ... 	for instr in block:
 ... 		print (instr.address, instr.instr_index, instr)
@@ -44,7 +43,7 @@ Finally, we can print out the attributes of the instruction. We first print out 
 
 In python, iterating over a class is a distinct operation from subscripting. This separation is used in the `LowLevelILFunction` class. If you iterate over a `LowLevelILFunction` you get a list of `LowLevelILBasicBlocks`, however if you subscript a `LowLevelILFunction` you actually get the `LowLevelILInstruction` whose `instr_index` corresponds to the subscript:
 
-```
+```pycon
 >>> list(current_function.low_level_il)
 [<block: x86_64@0x0-0x3f>, <block: x86_64@0x3f-0x45>, <block: x86_64@0x45-0x47>,
  <block: x86_64@0x47-0x53>, <block: x86_64@0x53-0x57>, <block: x86_64@0x57-0x5a>]
@@ -57,13 +56,13 @@ In python, iterating over a class is a distinct operation from subscripting. Thi
 ## Low Level IL Instructions
 Now that we've established how to access LLIL Functions, Blocks, and Instructions, let's focus in on the instructions themselves. LLIL instructions are infinite length and structured as an expression tree. An expression tree means that instruction operands can be composed of operation. Thus, we can have an IL instruction like this:
 
-```
+```text
 eax = eax + ecx * 4
 ```
 
 The tree for such an instruction would look like:
 
-```
+```text
    =
   / \
 eax  +
@@ -76,7 +75,7 @@ There are quite a few reasons that we chose to use expression trees that we won'
 
 Now let's get back to the examples. First let's pick an instruction to work with:
 
-```
+```pycon
 >>> instr = current_function.low_level_il[2]
 >>> instr
 <il: rsp = rsp - 0x110>
@@ -86,58 +85,63 @@ For the above instruction, we have a few operations we can perform:
 
 * **address** - returns the virtual address
 
-```
+```pycon
 >>> hex(instr.address)
 '0x40084aL'
 ```
 
 * **function** - returns the containing function
 
-```
+```pycon
 >>> instr.function
 <binaryninja.lowlevelil.LowLevelILFunction object at 0x111c79810>
 ```
+
 * **instr_index** - returns the LLIL index
 
-```
+```pycon
 >>> instr.instr_index
 2
 ```
+
 * **operands** - returns a list of all operands.
 
-```
+```pycon
 >>> instr.operands
 ['rsp', <il: rsp - 0x110>]
 ```
+
 * **operation** - returns the enumeration value of the current operation
 
-```
+```pycon
 >>> instr.operation
 <LowLevelILOperation.LLIL_SET_REG: 1>
 ```
+
 * **src** - returns the source operand
 
-```
+```pycon
 >>> instr.src
 <il: rsp - 0x110>
 ```
+
 * **dest** - returns the destination operand
 
-```
+```pycon
 >>> instr.dest
 'rsp'
 ```
 
 * **size** - returns the size of the operation in bytes (in this case we have an 8 byte assignment)
 
-```
+```pycon
 >>> instr.size
 8L
 ```
 
 Now with some knowledge of the `LowLevelIL` class let's try to do something with it. Let's say our goal is to find all the times the register `rdx` is written to in the current function. This code is straight forward:
 
-```
+```pycon
 >>> for block in current_function.low_level_il:
 ...  for instr in block:
 ...   if instr.operation == LowLevelILOperation.LLIL_SET_REG and instr.dest.name == 'rdx':
@@ -183,14 +187,14 @@ Control flow transferring- and comparison instructions are straightforward enoug
 
 Labels function much like they do in C code. They can be put anywhere in the emitted IL and serve as a destination for the `if` and `goto` instructions.  Labels are required because one assembly language instruction can translate to multiple IL instructions, and you need to be able to branch to any of the emitted IL instructions. Let's consider the following x86 instruction `cmove` (Conditional move if equal flag is set):
 
-```
+```nasm
 test    eax, eax
 cmove  eax, ebx
 ```
 
 To translate this instruction to IL we have to first create true and false labels. Then we emit the `if` instruction, passing it the proper conditional and labels. Next we emit the true label, then we emit the set register instruction and a goto false label instruction. This results in the following output:
 
-```
+```text
 0 @ 00000002 if (eax == 0) then 1 else 3
 1 @ 00000002 eax = ebx
 2 @ 00000002 goto 3
@@ -253,6 +257,17 @@ The double precision instruction multiply, divide, modulus instructions are part
 * `LLIL_MODS_DP` - Signed modulus double precision
 * `LLIL_NEG` - Sign negation
 * `LLIL_NOT` - Bitwise complement
+* `LLIL_BSWAP` - Reverse the byte order of `src`
+* `LLIL_POPCNT` - Population count (number of set bits) of `src`
+* `LLIL_CLZ` - Count leading zero bits of `src`; the result is `8 * size` when `src` is zero
+* `LLIL_CTZ` - Count trailing zero bits of `src`; the result is `8 * size` when `src` is zero
+* `LLIL_RBIT` - Reverse the bit order of `src`
+* `LLIL_CLS` - Count leading sign bits of `src` (the number of bits below the sign bit that match it)
+* `LLIL_MINS` - Signed minimum of `left` and `right`
+* `LLIL_MAXS` - Signed maximum of `left` and `right`
+* `LLIL_MINU` - Unsigned minimum of `left` and `right`
+* `LLIL_MAXU` - Unsigned maximum of `left` and `right`
+* `LLIL_ABS` - Signed absolute value of `src`
 * `LLIL_TEST_BIT ` - Test if bit `right` in expression `left` is set
 * `LLIL_BOOL_TO_INT ` - Converts a bool `src` to an integer
 
@@ -275,7 +290,7 @@ The double precision instruction multiply, divide, modulus instructions are part
 
 ### Floating Point Conditionals
 
-These are identical to their native counterparts but are lifted separately so that the operations can impact different flags. See [Control Flow & Conditionals](#control-flow--conditionals) above.
+These are identical to their native counterparts but are lifted separately so that the operations can impact different flags. See [Control Flow & Conditionals](#control-flow-conditionals) above.
 
 * `LLIL_FCMP_E ` - See above
 * `LLIL_FCMP_NE ` - See above

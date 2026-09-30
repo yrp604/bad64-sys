@@ -6,14 +6,14 @@
 // there are changes to the API that affect linking, including new functions,
 // new types, modifications to existing functions or types, or new versions
 // of the Qt libraries.
-#define BN_CURRENT_UI_ABI_VERSION 12
+#define BN_CURRENT_UI_ABI_VERSION 19
 
 // Minimum ABI version that is supported for loading of plugins. Plugins that
 // are linked to an ABI version less than this will not be able to load and
 // will require rebuilding. The minimum version is increased when there are
 // incompatible changes that break binary compatibility, such as changes to
 // existing types or functions, or a new version of Qt.
-#define BN_MINIMUM_UI_ABI_VERSION 12
+#define BN_MINIMUM_UI_ABI_VERSION 19
 
 #ifdef __GNUC__
 	#ifdef BINARYNINJAUI_LIBRARY
@@ -101,6 +101,7 @@ typedef BinaryNinja::Ref<BinaryNinja::Section> SectionRef;
 typedef BinaryNinja::Ref<BinaryNinja::Segment> SegmentRef;
 typedef BinaryNinja::Ref<BinaryNinja::MemoryMap> MemoryMapRef;
 typedef BinaryNinja::Ref<BinaryNinja::Settings> SettingsRef;
+typedef BinaryNinja::Ref<BinaryNinja::SimilaritySession> SimilaritySessionRef;
 typedef BinaryNinja::Ref<BinaryNinja::Snapshot> SnapshotRef;
 typedef BinaryNinja::Ref<BinaryNinja::Structure> StructureRef;
 typedef BinaryNinja::Ref<BinaryNinja::Symbol> SymbolRef;
@@ -116,7 +117,7 @@ typedef BinaryNinja::Ref<BinaryNinja::TypeLibrary> TypeLibraryRef;
 typedef BinaryNinja::Ref<BinaryNinja::WebsocketClient> WebsocketClientRef;
 typedef BinaryNinja::Ref<BinaryNinja::WebsocketProvider> WebsocketProviderRef;
 typedef BinaryNinja::Ref<BinaryNinja::Workflow> WorkflowRef;
-typedef BinaryNinja::Ref<BinaryNinja::RepoPlugin> RepoPluginRef;
+typedef BinaryNinja::Ref<BinaryNinja::Extension> ExtensionRef;
 typedef BinaryNinja::Ref<BinaryNinja::Repository> RepositoryRef;
 typedef BinaryNinja::Ref<BinaryNinja::RepositoryManager> RepositoryManagerRef;
 typedef BinaryNinja::Ref<BinaryNinja::Logger> LoggerRef;

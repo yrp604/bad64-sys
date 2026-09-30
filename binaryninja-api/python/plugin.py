@@ -1,4 +1,4 @@
-# Copyright (c) 2015-2025 Vector 35 Inc
+# Copyright (c) 2015-2026 Vector 35 Inc
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -43,7 +43,6 @@ class PluginCommandContext:
 	The ``class PluginCommandContext`` is used to access loaded plugins and their exposed methods with the context of a specific Binary VIew.
 
 	:Example:
-		# To trigger a registered plugin with a BinaryView, for example:
 		>>> bv = load("/tmp/file1")
 		>>> ctx = PluginCommandContext(bv);
 		>>> binexport = PluginCommand.get_valid_list(ctx)["BinExport"]
@@ -56,7 +55,8 @@ class PluginCommandContext:
 		self._length = 0
 		self._function = None
 		self._instruction = None
-		self._project = view.project
+		if view is not None:
+			self._project = view.project
 
 	def __len__(self):
 		return self._length
@@ -105,7 +105,7 @@ class PluginCommandContext:
 	def project(self):
 		return self._project
 
-	@function.setter
+	@project.setter
 	def project(self, value):
 		self._project = value
 
@@ -141,12 +141,20 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 		self._type = PluginCommandType(cmd.type)
 
 	@staticmethod
+	def _global_action(action):
+		try:
+			action()
+		except Exception:
+			log_error_for_exception("Unhandled Python exception in PluginCommand._global_action")
+
+
+	@staticmethod
 	def _default_action(view, action):
 		try:
 			file_metadata = filemetadata.FileMetadata(handle=core.BNGetFileForView(view))
 			view_obj = binaryview.BinaryView(file_metadata=file_metadata, handle=core.BNNewViewReference(view))
 			action(view_obj)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._default_action")
 
 	@staticmethod
@@ -155,7 +163,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			file_metadata = filemetadata.FileMetadata(handle=core.BNGetFileForView(view))
 			view_obj = binaryview.BinaryView(file_metadata=file_metadata, handle=core.BNNewViewReference(view))
 			action(view_obj, addr)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._address_action")
 
 	@staticmethod
@@ -164,7 +172,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			file_metadata = filemetadata.FileMetadata(handle=core.BNGetFileForView(view))
 			view_obj = binaryview.BinaryView(file_metadata=file_metadata, handle=core.BNNewViewReference(view))
 			action(view_obj, addr, length)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._range_action")
 
 	@staticmethod
@@ -174,7 +182,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			view_obj = binaryview.BinaryView(file_metadata=file_metadata, handle=core.BNNewViewReference(view))
 			func_obj = function.Function(view_obj, core.BNNewFunctionReference(func))
 			action(view_obj, func_obj)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._function_action")
 
 	@staticmethod
@@ -185,7 +193,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			owner = function.Function(view_obj, core.BNGetLowLevelILOwnerFunction(func))
 			func_obj = lowlevelil.LowLevelILFunction(owner.arch, core.BNNewLowLevelILFunctionReference(func), owner)
 			action(view_obj, func_obj)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._low_level_il_function_action")
 
 	@staticmethod
@@ -196,7 +204,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			owner = function.Function(view_obj, core.BNGetLowLevelILOwnerFunction(func))
 			func_obj = lowlevelil.LowLevelILFunction(owner.arch, core.BNNewLowLevelILFunctionReference(func), owner)
 			action(view_obj, func_obj[instr])
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._low_level_il_instruction_action")
 
 	@staticmethod
@@ -209,7 +217,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			    owner.arch, core.BNNewMediumLevelILFunctionReference(func), owner
 			)
 			action(view_obj, func_obj)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._medium_level_il_function_action")
 
 	@staticmethod
@@ -222,7 +230,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			    owner.arch, core.BNNewMediumLevelILFunctionReference(func), owner
 			)
 			action(view_obj, func_obj[instr])
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._medium_level_il_instruction_action")
 
 	@staticmethod
@@ -233,7 +241,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			owner = function.Function(view_obj, core.BNGetHighLevelILOwnerFunction(func))
 			func_obj = highlevelil.HighLevelILFunction(owner.arch, core.BNNewHighLevelILFunctionReference(func), owner)
 			action(view_obj, func_obj)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._high_level_il_function_action")
 
 	@staticmethod
@@ -244,7 +252,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			owner = function.Function(view_obj, core.BNGetHighLevelILOwnerFunction(func))
 			func_obj = highlevelil.HighLevelILFunction(owner.arch, core.BNNewHighLevelILFunctionReference(func), owner)
 			action(view_obj, func_obj[instr])
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._high_level_il_instruction_action")
 
 	@staticmethod
@@ -252,8 +260,18 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 		try:
 			project_obj = Project(handle=core.BNNewProjectReference(project))
 			action(project_obj)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._project_action")
+
+	@staticmethod
+	def _global_is_valid(is_valid):
+		try:
+			if is_valid is None:
+				return True
+			return is_valid()
+		except Exception:
+			log_error_for_exception("Unhandled Python exception in PluginCommand._global_is_valid")
+			return False
 
 	@staticmethod
 	def _default_is_valid(view, is_valid):
@@ -263,7 +281,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			file_metadata = filemetadata.FileMetadata(handle=core.BNGetFileForView(view))
 			view_obj = binaryview.BinaryView(file_metadata=file_metadata, handle=core.BNNewViewReference(view))
 			return is_valid(view_obj)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._default_is_valid")
 			return False
 
@@ -275,7 +293,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			file_metadata = filemetadata.FileMetadata(handle=core.BNGetFileForView(view))
 			view_obj = binaryview.BinaryView(file_metadata=file_metadata, handle=core.BNNewViewReference(view))
 			return is_valid(view_obj, addr)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._address_is_valid")
 			return False
 
@@ -287,7 +305,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			file_metadata = filemetadata.FileMetadata(handle=core.BNGetFileForView(view))
 			view_obj = binaryview.BinaryView(file_metadata=file_metadata, handle=core.BNNewViewReference(view))
 			return is_valid(view_obj, addr, length)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._range_is_valid")
 			return False
 
@@ -300,7 +318,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			view_obj = binaryview.BinaryView(file_metadata=file_metadata, handle=core.BNNewViewReference(view))
 			func_obj = function.Function(view_obj, core.BNNewFunctionReference(func))
 			return is_valid(view_obj, func_obj)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._function_is_valid")
 			return False
 
@@ -314,7 +332,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			owner = function.Function(view_obj, core.BNGetLowLevelILOwnerFunction(func))
 			func_obj = lowlevelil.LowLevelILFunction(owner.arch, core.BNNewLowLevelILFunctionReference(func), owner)
 			return is_valid(view_obj, func_obj)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._low_level_il_function_is_valid")
 			return False
 
@@ -330,7 +348,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			owner = function.Function(view_obj, core.BNGetLowLevelILOwnerFunction(func))
 			func_obj = lowlevelil.LowLevelILFunction(owner.arch, core.BNNewLowLevelILFunctionReference(func), owner)
 			return is_valid(view_obj, func_obj[instr])
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._low_level_il_instruction_is_valid")
 			return False
 
@@ -346,7 +364,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			    owner.arch, core.BNNewMediumLevelILFunctionReference(func), owner
 			)
 			return is_valid(view_obj, func_obj)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._medium_level_il_function_is_valid")
 			return False
 
@@ -364,7 +382,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			    owner.arch, core.BNNewMediumLevelILFunctionReference(func), owner
 			)
 			return is_valid(view_obj, func_obj[instr])
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._medium_level_il_instruction_is_valid")
 			return False
 
@@ -378,7 +396,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			owner = function.Function(view_obj, core.BNGetHighLevelILOwnerFunction(func))
 			func_obj = highlevelil.HighLevelILFunction(owner.arch, core.BNNewHighLevelILFunctionReference(func), owner)
 			return is_valid(view_obj, func_obj)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._high_level_il_function_is_valid")
 			return False
 
@@ -394,7 +412,7 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			owner = function.Function(view_obj, core.BNGetHighLevelILOwnerFunction(func))
 			func_obj = highlevelil.HighLevelILFunction(owner.arch, core.BNNewHighLevelILFunctionReference(func), owner)
 			return is_valid(view_obj, func_obj[instr])
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._high_level_il_instruction_is_valid")
 			return False
 
@@ -405,9 +423,41 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 				return True
 			project_obj = Project(handle=core.BNNewProjectReference(project))
 			return is_valid(project_obj)
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in PluginCommand._project_is_valid")
 			return False
+
+	@classmethod
+	def register_global(
+			cls, name: str, description: str, action: Callable[[], None],
+			is_valid: Optional[Callable[[], bool]] = None
+	):
+		r"""
+		``register_global`` Register a command globally
+
+		:param str name: name of the command (use 'Folder\\Name' to have the menu item nested in a folder)
+		:param str description: description of the command
+		:param callback action: function to call
+		:param callback is_valid: optional argument of a function to determine whether the command should be enabled
+		:rtype: None
+		:Example:
+
+			>>> def my_command():
+			>>> 	log_info(f"My command was called on bv")
+			>>> PluginCommand.register_global("My Command", "My command description (not used)", my_command)
+			True
+			>>> def is_valid() -> bool:
+			>>> 	return False
+			>>> PluginCommand.register_global("My Command (With Valid Function)", "My command description (not used)", my_plugin, is_valid)
+			True
+
+		.. warning:: Calling ``register_global`` with the same function name will replace the existing function but will leak the memory of the original plugin.
+		"""
+		binaryninja._init_plugins()
+		action_obj = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(lambda ctxt: cls._global_action(action))
+		is_valid_obj = ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_void_p)(lambda ctxt: cls._global_is_valid(is_valid))
+		cls._registered_commands.append((action_obj, is_valid_obj))
+		core.BNRegisterPluginCommandGlobal(name, description, action_obj, is_valid_obj, None)
 
 	@classmethod
 	def register(
@@ -648,11 +698,11 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 
 			>>> def my_plugin(bv: BinaryView, func: MediumLevelILFunction):
 			>>> 	log_info(f"My plugin was called on func {func} in bv `{bv}`")
-			>>> PluginCommand.register_for_low_level_il_function("My Plugin", "My plugin description (not used)", my_plugin)
+			>>> PluginCommand.register_for_medium_level_il_function("My Plugin", "My plugin description (not used)", my_plugin)
 			True
 			>>> def is_valid(bv: BinaryView, func: MediumLevelILFunction) -> bool:
 			>>> 	return False
-			>>> PluginCommand.register_for_low_level_il_function("My Plugin (With Valid Function)", "My plugin description (not used)", my_plugin, is_valid)
+			>>> PluginCommand.register_for_medium_level_il_function("My Plugin (With Valid Function)", "My plugin description (not used)", my_plugin, is_valid)
 			True
 
 		.. warning:: Calling ``register_for_medium_level_il_function`` with the same function name will replace the existing function but will leak the memory of the original plugin.
@@ -686,11 +736,11 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 
 			>>> def my_plugin(bv: BinaryView, inst: MediumLevelILInstruction):
 			>>> 	log_info(f"My plugin was called on inst {inst} in bv `{bv}`")
-			>>> PluginCommand.register_for_low_level_il_instruction("My Plugin", "My plugin description (not used)", my_plugin)
+			>>> PluginCommand.register_for_medium_level_il_instruction("My Plugin", "My plugin description (not used)", my_plugin)
 			True
 			>>> def is_valid(bv: BinaryView, inst: MediumLevelILInstruction) -> bool:
 			>>> 	return False
-			>>> PluginCommand.register_for_low_level_il_instruction("My Plugin (With Valid Function)", "My plugin description (not used)", my_plugin, is_valid)
+			>>> PluginCommand.register_for_medium_level_il_instruction("My Plugin (With Valid Function)", "My plugin description (not used)", my_plugin, is_valid)
 			True
 
 		.. warning:: Calling ``register_for_medium_level_il_instruction`` with the same function name will replace the existing function but will leak the memory of the original plugin.
@@ -725,11 +775,11 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 
 			>>> def my_plugin(bv: BinaryView, func: HighLevelILFunction):
 			>>> 	log_info(f"My plugin was called on func {func} in bv `{bv}`")
-			>>> PluginCommand.register_for_low_level_il_function("My Plugin", "My plugin description (not used)", my_plugin)
+			>>> PluginCommand.register_for_high_level_il_function("My Plugin", "My plugin description (not used)", my_plugin)
 			True
 			>>> def is_valid(bv: BinaryView, func: HighLevelILFunction) -> bool:
 			>>> 	return False
-			>>> PluginCommand.register_for_low_level_il_function("My Plugin (With Valid Function)", "My plugin description (not used)", my_plugin, is_valid)
+			>>> PluginCommand.register_for_high_level_il_function("My Plugin (With Valid Function)", "My plugin description (not used)", my_plugin, is_valid)
 			True
 
 		.. warning:: Calling ``register_for_high_level_il_function`` with the same function name will replace the existing function but will leak the memory of the original plugin.
@@ -763,11 +813,11 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 
 			>>> def my_plugin(bv: BinaryView, inst: HighLevelILInstruction):
 			>>> 	log_info(f"My plugin was called on inst {inst} in bv `{bv}`")
-			>>> PluginCommand.register_for_low_level_il_instruction("My Plugin", "My plugin description (not used)", my_plugin)
+			>>> PluginCommand.register_for_high_level_il_instruction("My Plugin", "My plugin description (not used)", my_plugin)
 			True
 			>>> def is_valid(bv: BinaryView, inst: HighLevelILInstruction) -> bool:
 			>>> 	return False
-			>>> PluginCommand.register_for_low_level_il_instruction("My Plugin (With Valid Function)", "My plugin description (not used)", my_plugin, is_valid)
+			>>> PluginCommand.register_for_high_level_il_instruction("My Plugin (With Valid Function)", "My plugin description (not used)", my_plugin, is_valid)
 			True
 
 		.. warning:: Calling ``register_for_high_level_il_instruction`` with the same function name will replace the existing function but will leak the memory of the original plugin.
@@ -832,6 +882,17 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 		return result
 
 	def is_valid(self, context: PluginCommandContext):
+		if self._command.type == PluginCommandType.ProjectPluginCommand:
+			if context.project is None:
+				return False
+			if not self._command.projectIsValid:
+				return True
+			return self._command.projectIsValid(self._command.context, context.project.handle)
+		elif self._command.type == PluginCommandType.GlobalPluginCommand:
+			if not self._command.globalIsValid:
+				return True
+			return self._command.globalIsValid(self._command.context)
+
 		if context.view is None:
 			return False
 		if self._command.type == PluginCommandType.DefaultPluginCommand:
@@ -913,12 +974,6 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 			    self._command.context, context.view.handle, context.instruction.function.handle,
 			    context.instruction.instr_index
 			)
-		elif self._command.type == PluginCommandType.ProjectPluginCommand:
-			if context.project is None:
-				return False
-			if not self._command.projectIsValid:
-				return True
-			return self._command.projectIsValid(self._command.context, context.project.handle)
 		return False
 
 	def execute(self, context: PluginCommandContext):
@@ -934,7 +989,9 @@ class PluginCommand(metaclass=_PluginCommandMetaClass):
 		"""
 		if not self.is_valid(context):
 			return
-		if self._command.type == PluginCommandType.DefaultPluginCommand:
+		if self._command.type == PluginCommandType.GlobalPluginCommand:
+			self._command.globalCommand(self._command.context)
+		elif self._command.type == PluginCommandType.DefaultPluginCommand:
 			self._command.defaultCommand(self._command.context, context.view.handle)
 		elif self._command.type == PluginCommandType.AddressPluginCommand:
 			self._command.addressCommand(self._command.context, context.view.handle, context.address)
@@ -1040,7 +1097,7 @@ class MainThreadActionHandler:
 	def _add_action(self, ctxt, action):
 		try:
 			self.add_action(MainThreadAction(action))
-		except:
+		except Exception:
 			log_error_for_exception("Unhandled Python exception in MainThreadActionHandler._add_action")
 
 	def add_action(self, action):
@@ -1073,7 +1130,7 @@ class BackgroundTask(metaclass=_BackgroundTaskMetaclass):
 	:param initial_progress_text: text description of the task to display in the status bar in the UI, defaults to `""`
 	:param can_cancel: whether to enable cancellation of the task, defaults to `False`
 	"""
-	def __init__(self, initial_progress_text="", can_cancel=False, handle=None):
+	def __init__(self, initial_progress_text: str = "", can_cancel: bool = False, handle=None):
 		if handle is None:
 			self.handle = core.BNBeginBackgroundTask(initial_progress_text, can_cancel)
 		else:

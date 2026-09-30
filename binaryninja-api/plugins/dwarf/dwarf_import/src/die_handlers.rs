@@ -1,4 +1,4 @@
-// Copyright 2021-2025 Vector 35 Inc.
+// Copyright 2021-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::dwarfdebuginfo::{DebugInfoBuilder, DebugInfoBuilderContext, TypeUID};
+use crate::dwarfdebuginfo::{
+    DebugInfoBuilder, DebugInfoBuilderContext, TypeUID, UNNAMED_FUNCTION_NAME,
+};
 use crate::types::get_type;
 use crate::{helpers::*, ReaderType};
 
 use binaryninja::{
+    confidence::{Conf, MAX_CONFIDENCE},
     rc::*,
     types::{EnumerationBuilder, FunctionParameter, ReferenceType, Type, TypeBuilder},
 };
@@ -109,7 +112,7 @@ pub(crate) fn handle_enum<R: ReaderType>(
     let mut tree = match unit.entries_tree(Some(entry.offset())) {
         Ok(x) => x,
         Err(e) => {
-            log::error!("Failed to get enum entry tree: {}", e);
+            tracing::error!("Failed to get enum entry tree: {}", e);
             return None;
         }
     };
@@ -117,7 +120,7 @@ pub(crate) fn handle_enum<R: ReaderType>(
     let tree_root = match tree.root() {
         Ok(x) => x,
         Err(e) => {
-            log::error!("Failed to get enum entry tree root: {}", e);
+            tracing::error!("Failed to get enum entry tree root: {}", e);
             return None;
         }
     };
@@ -132,15 +135,15 @@ pub(crate) fn handle_enum<R: ReaderType>(
                         enumeration_builder.insert(&name, value);
                     } else {
                         // Somehow the child entry is not a const value.
-                        log::error!("Unhandled enum member value type for `{}`", name);
+                        tracing::error!("Unhandled enum member value type for `{}`", name);
                     }
                 }
                 Ok(None) => {
                     // Somehow the child entry does not have a const value.
-                    log::error!("Enum member `{}` has no constant value attribute", name);
+                    tracing::error!("Enum member `{}` has no constant value attribute", name);
                 }
                 Err(e) => {
-                    log::error!("Error parsing next attribute entry for `{}`: {}", name, e);
+                    tracing::error!("Error parsing next attribute entry for `{}`: {}", name, e);
                     return None;
                 }
             }
@@ -173,8 +176,10 @@ pub(crate) fn handle_typedef(
     // This will fail in the case where we have a typedef to a type that doesn't exist (failed to parse, incomplete, etc)
     if let Some(entry_type_offset) = entry_type {
         if let Some(t) = debug_info_builder.get_type(entry_type_offset) {
-            let typedef_type = Type::named_type_from_type(typedef_name, &t.get_type());
-            return (Some(typedef_type), typedef_name != t.name);
+            let target = t.get_type();
+            let renames_target = typedef_name != t.name;
+            let typedef_type = debug_info_builder.typedef_placeholder(typedef_name, &target);
+            return (Some(typedef_type), renames_target);
         }
     }
 
@@ -208,18 +213,14 @@ pub(crate) fn handle_pointer<R: ReaderType>(
         Some(entry_type_offset) => {
             let debug_target_type =
                 debug_info_builder.get_type(entry_type_offset).or_else(|| {
-                    log::error!(
+                    tracing::error!(
                         "Failed to get pointer target type at entry offset {}",
                         entry_type_offset
                     );
                     None
                 })?;
 
-            if let Some(ntr) = debug_target_type.get_type().get_named_type_reference() {
-                Type::named_type_from_type(ntr.name(), &debug_target_type.get_type())
-            } else {
-                debug_target_type.get_type()
-            }
+            debug_target_type.get_type()
         }
         None => Type::void(),
     };
@@ -255,7 +256,7 @@ pub(crate) fn handle_array<R: ReaderType>(
     let parent_type = debug_info_builder
         .get_type(entry_type_offset)
         .or_else(|| {
-            log::error!(
+            tracing::error!(
                 "Failed to get array member type at entry offset {}",
                 entry_type_offset
             );
@@ -266,14 +267,14 @@ pub(crate) fn handle_array<R: ReaderType>(
     let mut tree = match unit.entries_tree(Some(entry.offset())) {
         Ok(x) => x,
         Err(e) => {
-            log::error!("Failed to get array entry tree: {}", e);
+            tracing::error!("Failed to get array entry tree: {}", e);
             return None;
         }
     };
     let tree_root = match tree.root() {
         Ok(x) => x,
         Err(e) => {
-            log::error!("Failed to get array entry tree root: {}", e);
+            tracing::error!("Failed to get array entry tree root: {}", e);
             return None;
         }
     };
@@ -335,13 +336,31 @@ pub(crate) fn handle_function<R: ReaderType>(
             .get_type(),
         None => Type::void(),
     };
+    let return_type_confidence = if entry_type.is_some() // Real return type
+        // void and we're sure about it
+        || (matches!(entry.attr_value(constants::DW_AT_type), Ok(None))
+            && matches!(entry.attr_value(constants::DW_AT_specification), Ok(None))
+            && matches!(entry.attr_value(constants::DW_AT_abstract_origin), Ok(None)))
+    {
+        MAX_CONFIDENCE
+    } else {
+        0
+    };
 
     // Alias function type in the case that it contains itself
-    let name = debug_info_builder_context
-        .get_name(dwarf, unit, entry)
-        .unwrap_or("_unnamed_func".to_string());
-    let ntr =
-        Type::named_type_from_type(&name, &Type::function(return_type.as_ref(), vec![], false));
+    let (name, ntr) = match debug_info_builder_context.get_name(dwarf, unit, entry) {
+        Some(name) => {
+            let ntr = Type::named_type_from_type(
+                &name,
+                &Type::function(return_type.as_ref(), vec![], false),
+            );
+            (name, ntr)
+        }
+        None => {
+            let ntr = debug_info_builder.unnamed_function_placeholder(return_type.as_ref());
+            (UNNAMED_FUNCTION_NAME.to_string(), ntr)
+        }
+    };
     debug_info_builder.add_type(get_uid(dwarf, unit, entry), name, ntr, false, None);
 
     let mut parameters: Vec<FunctionParameter> = vec![];
@@ -351,7 +370,7 @@ pub(crate) fn handle_function<R: ReaderType>(
     let mut tree = match unit.entries_tree(Some(entry.offset())) {
         Ok(x) => x,
         Err(e) => {
-            log::error!("Failed to get function entry tree: {}", e);
+            tracing::error!("Failed to get function entry tree: {}", e);
             return None;
         }
     };
@@ -359,7 +378,7 @@ pub(crate) fn handle_function<R: ReaderType>(
     let tree_root = match tree.root() {
         Ok(x) => x,
         Err(e) => {
-            log::error!("Failed to get function entry tree root: {}", e);
+            tracing::error!("Failed to get function entry tree root: {}", e);
             return None;
         }
     };
@@ -374,7 +393,7 @@ pub(crate) fn handle_function<R: ReaderType>(
                 debug_info_builder_context,
                 debug_info_builder,
             ) else {
-                log::error!(
+                tracing::error!(
                     "Failed to get function parameter child type in unit {:?} at offset {:x}",
                     unit.header.offset(),
                     child.entry().offset().0,
@@ -384,7 +403,7 @@ pub(crate) fn handle_function<R: ReaderType>(
             let name = debug_info_builder_context.get_name(dwarf, unit, child.entry());
 
             let child_debug_type = debug_info_builder.get_type(child_uid).or_else(|| {
-                log::error!(
+                tracing::error!(
                     "Failed to get function parameter type with uid {}",
                     child_uid
                 );
@@ -392,22 +411,11 @@ pub(crate) fn handle_function<R: ReaderType>(
             })?;
             let child_type = child_debug_type.get_type();
 
-            // If this is a typedef, make sure we reference it instead of resolving to the underlying type
-            if let Some(ntr) = child_type.get_named_type_reference() {
-                let typedef_type = Type::named_type_from_type(ntr.name(), &child_type);
-
-                parameters.push(FunctionParameter::new(
-                    typedef_type,
-                    name.unwrap_or_default(),
-                    None,
-                ));
-            } else {
-                parameters.push(FunctionParameter::new(
-                    child_type,
-                    name.unwrap_or_default(),
-                    None,
-                ));
-            }
+            parameters.push(FunctionParameter::new(
+                child_type,
+                name.unwrap_or_default(),
+                None,
+            ));
         } else if child.entry().tag() == constants::DW_TAG_unspecified_parameters {
             variable_arguments = true;
         }
@@ -417,7 +425,7 @@ pub(crate) fn handle_function<R: ReaderType>(
     debug_info_builder.remove_type(get_uid(dwarf, unit, entry));
 
     Some(Type::function(
-        return_type.as_ref(),
+        &Conf::new(return_type, return_type_confidence),
         parameters,
         variable_arguments,
     ))
@@ -439,7 +447,7 @@ pub(crate) fn handle_const(
         Some(entry_type_offset) => debug_info_builder
             .get_type(entry_type_offset)
             .or_else(|| {
-                log::error!(
+                tracing::error!(
                     "Failed to get const type with entry offset {}",
                     entry_type_offset
                 );
@@ -469,7 +477,7 @@ pub(crate) fn handle_volatile(
         Some(entry_type_offset) => debug_info_builder
             .get_type(entry_type_offset)
             .or_else(|| {
-                log::error!(
+                tracing::error!(
                     "Failed to get volatile type with entry offset {}",
                     entry_type_offset
                 );

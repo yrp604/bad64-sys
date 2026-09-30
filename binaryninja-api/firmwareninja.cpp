@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -63,7 +63,7 @@ FirmwareNinjaRelationship::FirmwareNinjaRelationship(Ref<BinaryView> view, BNFir
 	if (handle)
 		m_object = handle;
 	else
-		m_object = BNNewFirmwareNinjaRelationshipReference(BNCreateFirmwareNinjaRelationship(view->GetObject()));
+		m_object = BNCreateFirmwareNinjaRelationship(view->GetObject());
 }
 
 
@@ -204,7 +204,7 @@ Ref<ProjectFile> FirmwareNinjaRelationship::GetSecondaryExternalProjectFile() co
 	if (!bnProjectFile)
 		return nullptr;
 
-	return new ProjectFile(BNNewProjectFileReference(bnProjectFile));
+	return new ProjectFile(bnProjectFile);
 }
 
 
@@ -305,12 +305,6 @@ FirmwareNinjaReferenceNode::FirmwareNinjaReferenceNode(BNFirmwareNinjaReferenceN
 }
 
 
-FirmwareNinjaReferenceNode::~FirmwareNinjaReferenceNode()
-{
-	BNFreeFirmwareNinjaReferenceNode(m_object);
-}
-
-
 bool FirmwareNinjaReferenceNode::IsFunction()
 {
 	return BNFirmwareNinjaReferenceNodeIsFunction(m_object);
@@ -366,6 +360,7 @@ std::vector<Ref<FirmwareNinjaReferenceNode>> FirmwareNinjaReferenceNode::GetChil
 			BNNewFirmwareNinjaReferenceNodeReference(bnChildren[i])));
 	}
 
+	BNFreeFirmwareNinjaReferenceNodes(bnChildren, count);
 	return result;
 }
 
@@ -508,6 +503,7 @@ std::vector<FirmwareNinjaFunctionMemoryAccesses> FirmwareNinja::GetFunctionMemor
 		FirmwareNinjaFunctionMemoryAccesses info;
 		info.start = fma[i]->start;
 		info.count = fma[i]->count;
+		info.accesses.reserve(info.count);
 		for (size_t j = 0; j < info.count; j++)
 		{
 			BNFirmwareNinjaMemoryAccess access;
@@ -622,7 +618,7 @@ Ref<FirmwareNinjaReferenceNode> FirmwareNinja::GetReferenceTree(
 	if (!bnReferenceTree)
 		return nullptr;
 
-	return new FirmwareNinjaReferenceNode(BNNewFirmwareNinjaReferenceNodeReference(bnReferenceTree));
+	return new FirmwareNinjaReferenceNode(bnReferenceTree);
 }
 
 
@@ -640,7 +636,7 @@ Ref<FirmwareNinjaReferenceNode> FirmwareNinja::GetReferenceTree(
 	if (!bnReferenceTree)
 		return nullptr;
 
-	return new FirmwareNinjaReferenceNode(BNNewFirmwareNinjaReferenceNodeReference(bnReferenceTree));
+	return new FirmwareNinjaReferenceNode(bnReferenceTree);
 }
 
 
@@ -657,7 +653,7 @@ Ref<FirmwareNinjaReferenceNode> FirmwareNinja::GetReferenceTree(
 	if (!bnReferenceTree)
 		return nullptr;
 
-	return new FirmwareNinjaReferenceNode(BNNewFirmwareNinjaReferenceNodeReference(bnReferenceTree));
+	return new FirmwareNinjaReferenceNode(bnReferenceTree);
 }
 
 

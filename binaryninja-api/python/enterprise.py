@@ -1,5 +1,5 @@
 """
-.. note: This module is only available in the Ultimate edition of Binary Ninja.
+.. note:: This module is only available in the Ultimate edition of Binary Ninja.
 """
 
 import ctypes
@@ -52,6 +52,19 @@ def is_connected() -> bool:
 	:return: True if connected
 	"""
 	return core.BNIsEnterpriseServerConnected()
+
+
+def authenticate_with_token(token: str, remember: bool = True):
+	"""
+	Authenticate to the server with an access token
+
+	:param str token: Token of auth session.
+	:param bool remember: Remember token in keychain
+	"""
+	if not is_connected():
+		connect()
+	if not core.BNAuthenticateEnterpriseServerWithToken(token, remember):
+		raise RuntimeError(last_error())
 
 
 def authenticate_with_credentials(username: str, password: str, remember: bool = True):
@@ -320,7 +333,7 @@ class LicenseCheckout:
 	"""
 	Helper class for scripts to make use of a license checkout in a scope.
 
-	:param duration: Duration between refreshes
+	:param duration: Duration in seconds between refreshes
 	:param _cache: Deprecated but left in for compatibility
 	:param release: If the license should be released at the end of scope. If `False`, you
 					can either manually release it later or it will expire after `duration`.
@@ -334,11 +347,11 @@ class LicenseCheckout:
 		... 		print(hex(bv.start))
 		# License is released at end of scope
 	"""
-	def __init__(self, duration=900, _cache=True, release=True):
+	def __init__(self, duration: int = 900, _cache: bool = True, release: bool = True):
 		"""
 		Get a new license checkout
 
-		:param duration: Duration between refreshes
+		:param duration: Duration in seconds between refreshes
 		:param _cache: Deprecated but left in for compatibility
 		:param release: If the license should be released at the end of scope. If `False`, you
 		                can either manually release it later or it will expire after `duration`.
@@ -363,7 +376,7 @@ class LicenseCheckout:
 		if not is_initialized():
 			try:
 				initialize()
-			except:
+			except Exception:
 				# Named/computer licenses don't need this flow at all
 				if not is_floating_license():
 					return
@@ -392,11 +405,20 @@ class LicenseCheckout:
 				except RuntimeError:
 					pass
 
+			if not got_auth and \
+				os.environ.get('BN_ENTERPRISE_TOKEN') is not None:
+				try:
+					authenticate_with_token(os.environ['BN_ENTERPRISE_TOKEN'])
+					got_auth = True
+				except RuntimeError:
+					pass
+
 			if not got_auth:
 				raise RuntimeError(
 					"Could not checkout a license: Not authenticated. Try one of the following: \n"
 					" - Log in and check out a license for an extended time\n"
 					" - Set BN_ENTERPRISE_USERNAME and BN_ENTERPRISE_PASSWORD environment variables\n"
+					" - Set BN_ENTERPRISE_TOKEN environment variable\n"
 					" - Use binaryninja.enterprise.authenticate_with_credentials or authenticate_with_method in your code"
 				)
 

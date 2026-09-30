@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2025 Vector 35 Inc
+// Copyright (c) 2015-2026 Vector 35 Inc
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to
@@ -20,6 +20,8 @@
 
 
 #pragma once
+
+#include "base/function_ref.h"
 
 #ifdef BINARYNINJACORE_LIBRARY
 #include "binaryninjacore_global.h"
@@ -157,16 +159,13 @@ using namespace std;
 			populateRangeMap();
 		}
 
-		GenericRangeMap(const vector<GenericRange<T>>& ranges, std::function<void(vector<T>&)> orderingStrategy)
+		GenericRangeMap(const vector<GenericRange<T>>& ranges, bn::base::function_ref<void(vector<T>&)> orderingStrategy)
 		{
 			m_sourceRanges = ranges;
 			m_flattenedRanges = ranges;
 			flatten(m_flattenedRanges);
-			if (orderingStrategy)
-			{
-				for (auto& i : m_flattenedRanges)
-					orderingStrategy(i.GetMutableItems());
-			}
+			for (auto& i : m_flattenedRanges)
+				orderingStrategy(i.GetMutableItems());
 			populateRangeMap();
 		}
 
@@ -206,7 +205,7 @@ using namespace std;
 			throw std::out_of_range("GenericRangeMap::GetMutableGenericRangeAt - Address not found in any range!");
 		}
 
-		std::optional<std::pair<uint64_t, uint64_t>> GetNextValidRange(uint64_t addr, std::function<bool(const GenericRange<T>&)> predicate) const
+		std::optional<std::pair<uint64_t, uint64_t>> GetNextValidRange(uint64_t addr, bn::base::function_ref<bool(const GenericRange<T>&)> predicate) const
 		{
 			auto itr = m_rangeMap.upper_bound(addr);
 			if (itr != m_rangeMap.begin())
@@ -222,7 +221,7 @@ using namespace std;
 			return std::nullopt;
 		}
 
-		std::optional<std::pair<uint64_t, uint64_t>> GetPreviousValidRange(uint64_t addr, std::function<bool(const GenericRange<T>&)> predicate) const
+		std::optional<std::pair<uint64_t, uint64_t>> GetPreviousValidRange(uint64_t addr, bn::base::function_ref<bool(const GenericRange<T>&)> predicate) const
 		{
 			auto itr = m_rangeMap.upper_bound(addr);
 			if (itr != m_rangeMap.begin())

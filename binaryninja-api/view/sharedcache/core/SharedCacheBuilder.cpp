@@ -43,8 +43,7 @@ bool SharedCacheBuilder::AddFile(
 
 	try
 	{
-		auto entry = CacheEntry::FromFile(filePath, fileName, cacheType);
-		m_cache.AddEntry(std::move(entry));
+		m_cache.AddEntry(CacheEntry::FromFile(filePath, fileName, cacheType));
 	}
 	catch (const std::exception& e)
 	{

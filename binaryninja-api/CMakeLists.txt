@@ -17,32 +17,29 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
     endif()
 endif()
 
-file(GLOB BN_API_SOURCES CONFIGURE_DEPENDS *.cpp *.h json/json.h json/json-forwards.h)
-if(NOT DEMO)
-    list(APPEND BN_API_SOURCES json/jsoncpp.cpp)
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-        set_source_files_properties(json/jsoncpp.cpp PROPERTIES COMPILE_FLAGS /w)
-    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        set_source_files_properties(json/jsoncpp.cpp PROPERTIES COMPILE_FLAGS -Wno-everything)
-    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        set_source_files_properties(json/jsoncpp.cpp PROPERTIES COMPILE_FLAGS -w)
-    endif()
+file(GLOB BN_API_SOURCES CONFIGURE_DEPENDS *.cpp *.h json/*.cpp json/*.h)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    set_source_files_properties(json/jsoncpp.cpp PROPERTIES COMPILE_FLAGS /w)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set_source_files_properties(json/jsoncpp.cpp PROPERTIES COMPILE_FLAGS -Wno-everything)
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set_source_files_properties(json/jsoncpp.cpp PROPERTIES COMPILE_FLAGS -w)
+endif()
+
+if(NOT BN_INTERNAL_BUILD)
+    add_subdirectory(base)
 endif()
 
 add_library(binaryninjaapi STATIC ${BN_API_SOURCES})
 
+if(COVERAGE)
+    target_link_libraries(binaryninjaapi PRIVATE coverage_config)
+endif()
+
 target_include_directories(binaryninjaapi
     PUBLIC ${PROJECT_SOURCE_DIR})
 
-# Store path to user plugin dir
-if(WIN32)
-    set(BN_USER_PLUGINS_DIR "$ENV{APPDATA}\\Binary Ninja\\plugins")
-elseif(APPLE)
-    set(BN_USER_PLUGINS_DIR "$ENV{HOME}/Library/Application Support/Binary Ninja/plugins")
-else()
-    set(BN_USER_PLUGINS_DIR "$ENV{HOME}/.binaryninja/plugins")
-endif()
-message(STATUS "Binary Ninja User Plugins Dir: ${BN_USER_PLUGINS_DIR}")
+target_link_libraries(binaryninjaapi PUBLIC binaryninjabase)
 
 find_package(BinaryNinjaCore)
 if(BinaryNinjaCore_FOUND)
@@ -56,7 +53,7 @@ elseif(BN_ALLOW_STUBS)
     add_dependencies(binaryninjaapi binaryninjacore_stubs)
     target_link_libraries(binaryninjaapi PUBLIC binaryninjacore_stubs)
 else()
-    message(FATAL_ERROR "No Binary Ninja installation was found and stub generation is disabled")
+    message(FATAL_ERROR "Could NOT find Binary Ninja installation. Please configure with -DBN_INSTALL_DIR=<path to Binary Ninja>, set the BN_INSTALL_DIR environment variable, or enable stub generation with -DBN_ALLOW_STUBS=ON")
 endif()
 
 if(BN_REF_COUNT_DEBUG)
@@ -112,14 +109,7 @@ if(NOT HEADLESS)
 endif()
 
 function(bn_install_plugin target)
-    if(WIN32)
-        set(BN_USER_PLUGINS_DIR "$ENV{APPDATA}\\Binary Ninja\\plugins")
-    elseif(APPLE)
-        set(BN_USER_PLUGINS_DIR "$ENV{HOME}/Library/Application Support/Binary Ninja/plugins")
-    else()
-        set(BN_USER_PLUGINS_DIR "$ENV{HOME}/.binaryninja/plugins")
-    endif()
-
+    # BN_USER_PLUGINS_DIR is set by FindBinaryNinjaCore.cmake
     if(NOT BN_INTERNAL_BUILD)
         if(WIN32)
             install(TARGETS ${target} RUNTIME

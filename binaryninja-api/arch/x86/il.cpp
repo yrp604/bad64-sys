@@ -48,6 +48,34 @@ static xed_reg_enum_t GetCountRegister(const size_t addrSize)
 	}
 }
 
+
+static uint64_t GetRotateCarryEffectiveCount(size_t opSize, uint64_t maskedCount)
+{
+	switch (opSize)
+	{
+	case 1:
+		return maskedCount % 9;
+	case 2:
+		return maskedCount % 17;
+	default:
+		return maskedCount;
+	}
+}
+
+
+static ExprId GetRotateCarryEffectiveCount(LowLevelILFunction& il, size_t opSize, size_t countSize, ExprId maskedCount)
+{
+	switch (opSize)
+	{
+	case 1:
+		return il.ModUnsigned(countSize, maskedCount, il.Const(countSize, 9));
+	case 2:
+		return il.ModUnsigned(countSize, maskedCount, il.Const(countSize, 17));
+	default:
+		return maskedCount;
+	}
+}
+
 //TODO handle imms for MPX args
 // For most instructions, instruction_index == operand_index, but some instructions (floating point, some others) have an implicit first operand (st0), so we have to remap things a bit
 // Instruction index represents the 'nth' argument/opcode in the instruction, whereas the operand index is index that XED holds that operand in the instruction
@@ -198,28 +226,21 @@ static size_t ReadILOperand(LowLevelILFunction& il, const xed_decoded_inst_t* co
 		sizeToRead = xed_decoded_inst_operand_length_bits(xedd, (unsigned)operand_index) / 8;
 	const unsigned int immediateSize = xed_decoded_inst_get_operand_width(xedd) / 8;
 	const int64_t              relbr = xed_decoded_inst_get_branch_displacement(xedd) + addr + xed_decoded_inst_get_length(xedd);
+	const int64_t              absbr = xed_decoded_inst_get_branch_displacement(xedd);
 	const xed_operand_enum_t op_name = xed_operand_name(xed_inst_operand(xed_decoded_inst_inst(xedd), (unsigned)operand_index));
 	const auto                  reg1 = xed_decoded_inst_get_reg(xedd, op_name);
 	const size_t            addrSize = xed_decoded_inst_get_machine_mode_bits(xedd) / 8;
 
-	switch (op_name)
-	{
 	// Register cases
-	case XED_OPERAND_REG0:
-	case XED_OPERAND_REG1:
-	case XED_OPERAND_REG2:
-	case XED_OPERAND_REG3:
-	case XED_OPERAND_REG4:
-	case XED_OPERAND_REG5:
-	case XED_OPERAND_REG6:
-	case XED_OPERAND_REG7:
-	case XED_OPERAND_REG8:
-	case XED_OPERAND_BASE0:
-	case XED_OPERAND_BASE1:
+	if (xed_operand_is_register(op_name) || xed_operand_is_memory_addressing_register(op_name))
+	{
 		if ((reg1 == XED_REG_RIP) || (reg1 == XED_REG_EIP) || (reg1 == XED_REG_IP))
 			return il.Operand(instruction_index, il.ConstPointer(sizeToRead, addr));
 		return il.Operand(instruction_index, il.Register(sizeToRead, (uint32_t)reg1));
+	}
 
+	switch (op_name)
+	{
 	// Immediates:
 	case XED_OPERAND_IMM0:
 		if (xed_decoded_inst_get_immediate_is_signed(xedd))
@@ -235,6 +256,8 @@ static size_t ReadILOperand(LowLevelILFunction& il, const xed_decoded_inst_t* co
 	case XED_OPERAND_PTR:
 	case XED_OPERAND_RELBR:
 		return il.Operand(instruction_index, il.ConstPointer(addrSize, relbr));
+	case XED_OPERAND_ABSBR:
+		return il.Operand(instruction_index, il.ConstPointer(addrSize, absbr));
 
 	// Memory Acesses
 	case XED_OPERAND_AGEN:
@@ -256,25 +279,16 @@ static size_t ReadFloatILOperand(LowLevelILFunction& il, const xed_decoded_inst_
 	const unsigned int   operandSize = xed_decoded_inst_operand_length_bits(xedd, (unsigned)operand_index) / 8;
 	const xed_operand_enum_t op_name = xed_operand_name(xed_inst_operand(xed_decoded_inst_inst(xedd), (unsigned)operand_index));
 
-	switch (op_name)
-	{
 	// Register cases
-	case XED_OPERAND_REG0:
-	case XED_OPERAND_REG1:
-	case XED_OPERAND_REG2:
-	case XED_OPERAND_REG3:
-	case XED_OPERAND_REG4:
-	case XED_OPERAND_REG5:
-	case XED_OPERAND_REG6:
-	case XED_OPERAND_REG7:
-	case XED_OPERAND_REG8:
-	case XED_OPERAND_BASE0:
-	case XED_OPERAND_BASE1:
+	if (xed_operand_is_register(op_name) || xed_operand_is_memory_addressing_register(op_name))
 		return il.Operand(instruction_index, il.Register(operandSize, (uint32_t)xed_decoded_inst_get_reg(xedd, op_name)));
 
+	switch (op_name)
+	{
 	// Immediates
 	case XED_OPERAND_IMM0:
 	case XED_OPERAND_PTR:
+	case XED_OPERAND_ABSBR:
 	case XED_OPERAND_RELBR:
 		if (xed_decoded_inst_get_immediate_is_signed(xedd))
 			return il.Operand(instruction_index, il.FloatConvert(opLen, il.FloatConstRaw(operandSize, xed_decoded_inst_get_signed_immediate(xedd))));
@@ -312,22 +326,12 @@ static size_t WriteILOperand(LowLevelILFunction& il, const xed_decoded_inst_t* c
 
 	const xed_operand_enum_t op_name = xed_operand_name(xed_inst_operand(xed_decoded_inst_inst(xedd), operand_index));
 
-	switch (op_name)
-	{
 	// Register cases
-	case XED_OPERAND_REG0:
-	case XED_OPERAND_REG1:
-	case XED_OPERAND_REG2:
-	case XED_OPERAND_REG3:
-	case XED_OPERAND_REG4:
-	case XED_OPERAND_REG5:
-	case XED_OPERAND_REG6:
-	case XED_OPERAND_REG7:
-	case XED_OPERAND_REG8:
-	case XED_OPERAND_BASE0:
-	case XED_OPERAND_BASE1:
+	if (xed_operand_is_register(op_name) || xed_operand_is_memory_addressing_register(op_name))
 		return il.Operand(instruction_index, il.SetRegister(sizeToWrite, xed_decoded_inst_get_reg(xedd, op_name), value));
 
+	switch (op_name)
+	{
 	// Memory Accesses
 	case XED_OPERAND_AGEN:
 	case XED_OPERAND_MEM0:
@@ -446,13 +450,38 @@ static void Repeat(
 
 static void CMovFlagCond(const int64_t addr, const xed_decoded_inst_t* xedd, LowLevelILFunction& il, BNLowLevelILFlagCondition flag)
 {
-	// keep the true branch but let the false branch goto doneLabel directly
-	LowLevelILLabel trueLabel, doneLabel;
+	bool isCondFault = false;
+	bool isNdd = xed_decoded_inst_get_attribute(xedd, XED_ATTRIBUTE_APX_NDD);
+
+	switch (xed_decoded_inst_get_iclass(xedd))
+	{
+		case XED_ICLASS_CFCMOVB:
+		case XED_ICLASS_CFCMOVBE:
+		case XED_ICLASS_CFCMOVL:
+		case XED_ICLASS_CFCMOVLE:
+		case XED_ICLASS_CFCMOVNB:
+		case XED_ICLASS_CFCMOVNBE:
+		case XED_ICLASS_CFCMOVNL:
+		case XED_ICLASS_CFCMOVNLE:
+		case XED_ICLASS_CFCMOVNO:
+		case XED_ICLASS_CFCMOVNP:
+		case XED_ICLASS_CFCMOVNS:
+		case XED_ICLASS_CFCMOVNZ:
+		case XED_ICLASS_CFCMOVO:
+		case XED_ICLASS_CFCMOVP:
+		case XED_ICLASS_CFCMOVS:
+		case XED_ICLASS_CFCMOVZ:
+			isCondFault = true;
+		default:
+			break;
+	}
+
+	LowLevelILLabel trueLabel, falseLabel, doneLabel;
 
 	il.AddInstruction(
 		il.If(
 			il.FlagCondition(flag),
-		trueLabel, doneLabel));
+		trueLabel, falseLabel));
 
 	il.MarkLabel(trueLabel);
 
@@ -461,14 +490,68 @@ static void CMovFlagCond(const int64_t addr, const xed_decoded_inst_t* xedd, Low
 			ReadILOperand(il, xedd, addr, 1, 1)));
 
 	il.AddInstruction(il.Goto(doneLabel));
+
+	il.MarkLabel(falseLabel);
+
+	if (isNdd)
+	{
+		il.AddInstruction(
+			WriteILOperand(il, xedd, addr, 0, 0,
+				ReadILOperand(il, xedd, addr, 2, 2)));
+	}
+	else if (isCondFault)
+	{
+		const xed_operand_enum_t op_name = xed_operand_name(xed_inst_operand(xed_decoded_inst_inst(xedd), 0));
+
+		// Register cases
+		if (xed_operand_is_register(op_name))
+		{
+			size_t addrSize = xed_decoded_inst_get_machine_mode_bits(xedd) / 8;
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.Const(addrSize, 0)));
+		}
+		else
+		{
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					ReadILOperand(il, xedd, addr, 1, 1)));
+		}
+	}
+
 	il.MarkLabel(doneLabel);
 }
 
 
 static void CMovFlagGroup(const int64_t addr, const xed_decoded_inst_t* xedd, LowLevelILFunction& il, uint32_t flag)
 {
-	// keep the true branch but let the false branch goto doneLabel directly
-	LowLevelILLabel trueLabel, doneLabel;
+	bool isCondFault = false;
+	bool isNdd = xed_decoded_inst_get_attribute(xedd, XED_ATTRIBUTE_APX_NDD);
+
+	switch (xed_decoded_inst_get_iclass(xedd))
+	{
+		case XED_ICLASS_CFCMOVB:
+		case XED_ICLASS_CFCMOVBE:
+		case XED_ICLASS_CFCMOVL:
+		case XED_ICLASS_CFCMOVLE:
+		case XED_ICLASS_CFCMOVNB:
+		case XED_ICLASS_CFCMOVNBE:
+		case XED_ICLASS_CFCMOVNL:
+		case XED_ICLASS_CFCMOVNLE:
+		case XED_ICLASS_CFCMOVNO:
+		case XED_ICLASS_CFCMOVNP:
+		case XED_ICLASS_CFCMOVNS:
+		case XED_ICLASS_CFCMOVNZ:
+		case XED_ICLASS_CFCMOVO:
+		case XED_ICLASS_CFCMOVP:
+		case XED_ICLASS_CFCMOVS:
+		case XED_ICLASS_CFCMOVZ:
+			isCondFault = true;
+		default:
+			break;
+	}
+
+	LowLevelILLabel trueLabel, falseLabel, doneLabel;
 
 	il.AddInstruction(
 		il.If(
@@ -484,9 +567,121 @@ static void CMovFlagGroup(const int64_t addr, const xed_decoded_inst_t* xedd, Lo
 			ReadILOperand(il, xedd, addr, 1, 1)));
 
 	il.AddInstruction(il.Goto(doneLabel));
+
+	il.MarkLabel(falseLabel);
+
+	if (isNdd)
+	{
+		il.AddInstruction(
+			WriteILOperand(il, xedd, addr, 0, 0,
+				ReadILOperand(il, xedd, addr, 2, 2)));
+	}
+	else if (isCondFault)
+	{
+		const xed_operand_enum_t op_name = xed_operand_name(xed_inst_operand(xed_decoded_inst_inst(xedd), 0));
+
+		if (xed_operand_is_register(op_name) || xed_operand_is_memory_addressing_register(op_name))
+		{
+			size_t addrSize = xed_decoded_inst_get_machine_mode_bits(xedd) / 8;
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.Const(addrSize, 0)));
+		}
+		else
+		{
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					ReadILOperand(il, xedd, addr, 1, 1)));
+		}
+	}
+
 	il.MarkLabel(doneLabel);
 }
 
+static void AssignEvexDfv(const xed_decoded_inst_t* xedd, LowLevelILFunction& il)
+{
+	xed_flag_dfv_t defaultFlagValues;
+	if (!xed_flag_dfv_get_default_flags_values(
+		xed_decoded_inst_get_dfv_reg(xedd), &defaultFlagValues))
+	{
+		// TODO: better error handling
+		il.AddInstruction(il.Undefined());
+		return;
+	}
+
+	il.AddInstruction(
+		il.SetFlag(IL_FLAG_O,
+			il.Const(1, defaultFlagValues.s.of)));
+	il.AddInstruction(
+		il.SetFlag(IL_FLAG_S,
+			il.Const(1, defaultFlagValues.s.sf)));
+	il.AddInstruction(
+		il.SetFlag(IL_FLAG_Z,
+			il.Const(1, defaultFlagValues.s.zf)));
+	il.AddInstruction(
+		il.SetFlag(IL_FLAG_C,
+			il.Const(1, defaultFlagValues.s.cf)));
+	il.AddInstruction(
+		il.SetFlag(IL_FLAG_P,
+			il.Const(1, 0)));
+	il.AddInstruction(
+		il.SetFlag(IL_FLAG_A,
+			il.Const(1, 0)));
+}
+
+
+static void ConditionalCmp(const int64_t addr, const xed_decoded_inst_t* xedd, LowLevelILFunction& il, uint32_t size, ExprId cond)
+{
+	LowLevelILLabel trueLabel, falseLabel, doneLabel;
+
+	il.AddInstruction(
+		il.If(
+			cond,
+			trueLabel, falseLabel
+		)
+	);
+
+	il.MarkLabel(trueLabel);
+
+	il.AddInstruction(
+		il.Sub(size,
+			ReadILOperand(il, xedd, addr, 0, 0),
+			ReadILOperand(il, xedd, addr, 1, 1),
+		IL_FLAGWRITE_ALL));
+	il.AddInstruction(il.Goto(doneLabel));
+
+	il.MarkLabel(falseLabel);
+	AssignEvexDfv(xedd, il);
+
+	il.MarkLabel(doneLabel);
+}
+
+
+static void ConditionalTest(const int64_t addr, const xed_decoded_inst_t* xedd, LowLevelILFunction& il, uint32_t size, ExprId cond)
+{
+	LowLevelILLabel trueLabel, falseLabel, doneLabel;
+
+	il.AddInstruction(
+		il.If(
+			cond,
+			trueLabel, falseLabel
+		)
+	);
+
+	il.MarkLabel(trueLabel);
+
+	il.AddInstruction(
+		il.And(size,
+			ReadILOperand(il, xedd, addr, 0, 0),
+			ReadILOperand(il, xedd, addr, 1, 1),
+		IL_FLAGWRITE_ALL));
+	il.AddInstruction(il.Goto(doneLabel));
+
+	il.MarkLabel(falseLabel);
+	AssignEvexDfv(xedd, il);
+
+	il.MarkLabel(doneLabel);
+}
 
 bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLevelILFunction& il, const xed_decoded_inst_t* const xedd)
 {
@@ -525,6 +720,11 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
     const uint64_t         			immediateOne = xed_decoded_inst_get_unsigned_immediate(xedd);
  	const int64_t     				branchDestination = xed_decoded_inst_get_branch_displacement(xedd) + addr + instLen;
 
+	// Handle the NDD APX isa extension, this will require some classes to be lifted with an alternate operand location.
+	const bool                      newDataDestination = xed_decoded_inst_get_attribute(xedd, XED_ATTRIBUTE_APX_NDD);
+	const bool                      zeroUpper = xed_decoded_inst_is_apx_zu(xedd);
+	const bool                      noFlags = xed_decoded_inst_get_attribute(xedd, XED_ATTRIBUTE_APX_NF);
+
 	auto LiftAsIntrinsic = [& il, xi, xedd, addr, xedd_iForm] () mutable {
 
 		typedef struct
@@ -544,25 +744,13 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 			xed_operand_enum_t op_name = xed_operand_name(op);
 			if (xed_operand_written(op))
 			{
-				switch(op_name)
-				{
-				case XED_OPERAND_REG0:
-				case XED_OPERAND_REG1:
-				case XED_OPERAND_REG2:
-				case XED_OPERAND_REG3:
-				case XED_OPERAND_REG4:
-				case XED_OPERAND_REG5:
-				case XED_OPERAND_REG6:
-				case XED_OPERAND_REG7:
-				case XED_OPERAND_REG8:
-				case XED_OPERAND_BASE0:
-				case XED_OPERAND_BASE1:
+				if (xed_operand_is_register(op_name) || xed_operand_is_memory_addressing_register(op_name))
 				{
 					xed_reg_enum_t r = xed_decoded_inst_get_reg(xedd, op_name);
 					outputs.push_back(RegisterOrFlag::Register(r));
-					break;
 				}
-				default:
+				else
+				{
 					// The intrinsic system can only accept registers or flags as outputs,
 					// since it might be strange to write to an arbitrary ExprId.
 					// In order to handle intrinsics that write to memory, we create a temp IL register and
@@ -577,24 +765,11 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 					memoryOperandWrites.push_back({i, operandWidth});
 					outputs.push_back(RegisterOrFlag::Register(LLIL_TEMP(numTempRegUsed)));
 					numTempRegUsed++;
-					break;
 				}
 			}
 			if (xed_operand_read(op))
 			{
-				switch(op_name)
-				{
-				case XED_OPERAND_REG0:
-				case XED_OPERAND_REG1:
-				case XED_OPERAND_REG2:
-				case XED_OPERAND_REG3:
-				case XED_OPERAND_REG4:
-				case XED_OPERAND_REG5:
-				case XED_OPERAND_REG6:
-				case XED_OPERAND_REG7:
-				case XED_OPERAND_REG8:
-				case XED_OPERAND_BASE0:
-				case XED_OPERAND_BASE1:
+				if (xed_operand_is_register(op_name) || xed_operand_is_memory_addressing_register(op_name))
 				{
 					// XED includes some things that are not actual registers in
 					// xed_reg_enum_t. We'll just omit those special cases here.
@@ -611,9 +786,6 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 					default:
 						break;
 					}
-				}
-				default:
-					break;
 				}
 
 				parameters.push_back(ReadILOperand(il, xedd, addr, i, i));
@@ -635,51 +807,132 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 	case XED_ICLASS_ADC_LOCK: // TODO: Add Lock construct
 	case XED_ICLASS_ADC:
+	{
+		ExprId left, right;
+		size_t opSize = opOneLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			left = ReadILOperand(il, xedd, addr, 0, 0);
+			right = ReadILOperand(il, xedd, addr, 1, 1);
+		}
+		else
+		{
+			// new data destination
+			left = ReadILOperand(il, xedd, addr, 1, 1);
+			right = ReadILOperand(il, xedd, addr, 2, 2);
+			opSize = opTwoLen;
+		}
+
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
-				il.AddCarry(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					ReadILOperand(il, xedd, addr, 1, 1),
-				il.Flag(IL_FLAG_C), IL_FLAGWRITE_ALL)));
+				il.AddCarry(opSize, left, right,
+					il.Flag(IL_FLAG_C), IL_FLAGWRITE_ALL)));
 		break;
+	}
 
 	case XED_ICLASS_ADCX:
+	{
+		ExprId left, right;
+		size_t opSize = opOneLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			left = ReadILOperand(il, xedd, addr, 0, 0);
+			right = ReadILOperand(il, xedd, addr, 1, 1);
+		}
+		else
+		{
+			// new data destination
+			left = ReadILOperand(il, xedd, addr, 1, 1);
+			right = ReadILOperand(il, xedd, addr, 2, 2);
+			opSize = opTwoLen;
+		}
+
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
-				il.AddCarry(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					ReadILOperand(il, xedd, addr, 1, 1),
-				il.Flag(IL_FLAG_C), IL_FLAG_C)));
+				il.AddCarry(opSize, left, right,
+					il.Flag(IL_FLAG_C), IL_FLAG_C)));
 		break;
+	}
 
 	case XED_ICLASS_ADOX:
+	{
+		ExprId left, right;
+		size_t opSize = opOneLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			left = ReadILOperand(il, xedd, addr, 0, 0);
+			right = ReadILOperand(il, xedd, addr, 1, 1);
+		}
+		else
+		{
+			// new data destination
+			left = ReadILOperand(il, xedd, addr, 1, 1);
+			right = ReadILOperand(il, xedd, addr, 2, 2);
+			opSize = opTwoLen;
+		}
+
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
-				il.AddCarry(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					ReadILOperand(il, xedd, addr, 1, 1),
-				il.Flag(IL_FLAG_O), IL_FLAG_O)));
+				il.AddCarry(opSize, left, right,
+					il.Flag(IL_FLAG_O), IL_FLAG_O)));
 		break;
+	}
 
 	case XED_ICLASS_ADD_LOCK: // TODO: Add Lock construct
 	case XED_ICLASS_ADD:
+	{
+		ExprId left, right;
+		size_t opSize = opOneLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			left = ReadILOperand(il, xedd, addr, 0, 0);
+			right = ReadILOperand(il, xedd, addr, 1, 1);
+		}
+		else
+		{
+			// new data destination
+			left = ReadILOperand(il, xedd, addr, 1, 1);
+			right = ReadILOperand(il, xedd, addr, 2, 2);
+			opSize = opTwoLen;
+		}
+
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
-			il.Add(opOneLen,
-				ReadILOperand(il, xedd, addr, 0, 0),
-				ReadILOperand(il, xedd, addr, 1, 1),
-			IL_FLAGWRITE_ALL)));
+			il.Add(opSize, left, right,
+				noFlags ? 0 : IL_FLAGWRITE_ALL)));
 		break;
+	}
 
 	case XED_ICLASS_AND_LOCK: // TODO: Add Lock construct
 	case XED_ICLASS_AND:
+	{
+		ExprId left, right;
+		size_t opSize = opOneLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			left = ReadILOperand(il, xedd, addr, 0, 0);
+			right = ReadILOperand(il, xedd, addr, 1, 1);
+		}
+		else
+		{
+			// new data destination
+			left = ReadILOperand(il, xedd, addr, 1, 1);
+			right = ReadILOperand(il, xedd, addr, 2, 2);
+			opSize = opTwoLen;
+		}
+
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
-				il.And(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					ReadILOperand(il, xedd, addr, 1, 1),
-					IL_FLAGWRITE_ALL)));
+				il.And(opSize, left, right,
+					noFlags ? 0 : IL_FLAGWRITE_ALL)));
 		break;
+	}
+
 	case XED_ICLASS_PAND:
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
@@ -702,34 +955,31 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
 				il.And(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
 					il.Not(
 						opTwoLen,
 						ReadILOperand(il, xedd, addr, 1, 1)
 					),
+					ReadILOperand(il, xedd, addr, 2, 2),
 					IL_FLAGWRITE_ALL)));
 		break;
 	case XED_ICLASS_PANDN:
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
 				il.And(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					il.Not(
-						opTwoLen,
-						ReadILOperand(il, xedd, addr, 1, 1)
-					),
-					0))); // Does not affect flags
+					il.Not(opOneLen, ReadILOperand(il, xedd, addr, 0, 0)),
+					ReadILOperand(il, xedd, addr, 1, 1),
+				0))); // PANDN doesn't modify any flag.
 		break;
 	case XED_ICLASS_VPANDN:
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
 				il.And(opOneLen,
-					ReadILOperand(il, xedd, addr, 1, 1),
 					il.Not(
 						opTwoLen,
-						ReadILOperand(il, xedd, addr, 2, 2)
+						ReadILOperand(il, xedd, addr, 1, 1)
 					),
-				IL_FLAGWRITE_ALL)));
+					ReadILOperand(il, xedd, addr, 2, 2),
+				0)));
 		break;
 
 	case XED_ICLASS_BT:
@@ -1267,83 +1517,160 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 
 	case XED_ICLASS_CMOVO:
+	case XED_ICLASS_CFCMOVO:
 		CMovFlagCond(addr, xedd, il, LLFC_O);
 		break;
 
 	case XED_ICLASS_CMOVNO:
+	case XED_ICLASS_CFCMOVNO:
 		CMovFlagCond(addr, xedd, il, LLFC_NO);
 		break;
 
 	case XED_ICLASS_CMOVB:
 	case XED_ICLASS_FCMOVB:
+	case XED_ICLASS_CFCMOVB:
 		CMovFlagGroup(addr, xedd, il, IL_FLAG_GROUP_LT);
 		break;
 
 	case XED_ICLASS_CMOVNB:
 	case XED_ICLASS_FCMOVNB:
+	case XED_ICLASS_CFCMOVNB:
 		CMovFlagGroup(addr, xedd, il, IL_FLAG_GROUP_GE);
 		break;
 
 	case XED_ICLASS_CMOVZ:
 	case XED_ICLASS_FCMOVE:
+	case XED_ICLASS_CFCMOVZ:
 		CMovFlagGroup(addr, xedd, il, IL_FLAG_GROUP_E);
 		break;
 
 	case XED_ICLASS_CMOVNZ:
 	case XED_ICLASS_FCMOVNE:
+	case XED_ICLASS_CFCMOVNZ:
 		CMovFlagGroup(addr, xedd, il, IL_FLAG_GROUP_NE);
 		break;
 
 	case XED_ICLASS_CMOVBE:
 	case XED_ICLASS_FCMOVBE:
+	case XED_ICLASS_CFCMOVBE:
 		CMovFlagGroup(addr, xedd, il, IL_FLAG_GROUP_LE);
 		break;
 
 	case XED_ICLASS_CMOVNBE:
 	case XED_ICLASS_FCMOVNBE:
+	case XED_ICLASS_CFCMOVNBE:
 		CMovFlagGroup(addr, xedd, il, IL_FLAG_GROUP_GT);
 		break;
 
 	case XED_ICLASS_CMOVS:
+	case XED_ICLASS_CFCMOVS:
 		CMovFlagCond(addr, xedd, il, LLFC_NEG);
 		break;
 
 	case XED_ICLASS_CMOVNS:
+	case XED_ICLASS_CFCMOVNS:
 		CMovFlagCond(addr, xedd, il, LLFC_POS);
 		break;
 
 	case XED_ICLASS_CMOVP:
 	case XED_ICLASS_FCMOVU:
+	case XED_ICLASS_CFCMOVP:
 		CMovFlagGroup(addr, xedd, il, IL_FLAG_GROUP_PE);
 		break;
 
 	case XED_ICLASS_CMOVNP:
 	case XED_ICLASS_FCMOVNU:
+	case XED_ICLASS_CFCMOVNP:
 		CMovFlagGroup(addr, xedd, il, IL_FLAG_GROUP_PO);
 		break;
 
 	case XED_ICLASS_CMOVL:
+	case XED_ICLASS_CFCMOVL:
 		CMovFlagCond(addr, xedd, il, LLFC_SLT);
 		break;
 
 	case XED_ICLASS_CMOVNL:
+	case XED_ICLASS_CFCMOVNL:
 		CMovFlagCond(addr, xedd, il, LLFC_SGE);
 		break;
 
 	case XED_ICLASS_CMOVLE:
+	case XED_ICLASS_CFCMOVLE:
 		CMovFlagCond(addr, xedd, il, LLFC_SLE);
 		break;
 
 	case XED_ICLASS_CMOVNLE:
+	case XED_ICLASS_CFCMOVNLE:
 		CMovFlagCond(addr, xedd, il, LLFC_SGT);
 		break;
 
 	case XED_ICLASS_CMP:
+	case XED_ICLASS_CCMPT:
 		il.AddInstruction(
 			il.Sub(opOneLen,
 				ReadILOperand(il, xedd, addr, 0, 0),
 				ReadILOperand(il, xedd, addr, 1, 1),
 			IL_FLAGWRITE_ALL));
+		break;
+
+	case XED_ICLASS_CCMPO:
+		ConditionalCmp(addr, xedd, il, opOneLen, il.FlagCondition(LLFC_O));
+		break;
+
+	case XED_ICLASS_CCMPNO:
+		ConditionalCmp(addr, xedd, il, opOneLen, il.FlagCondition(LLFC_NO));
+		break;
+
+	case XED_ICLASS_CCMPB:
+		ConditionalCmp(addr, xedd, il, opOneLen, il.FlagGroup(IL_FLAG_GROUP_LT));
+		break;
+
+	case XED_ICLASS_CCMPNB:
+		ConditionalCmp(addr, xedd, il, opOneLen, il.FlagGroup(IL_FLAG_GROUP_GE));
+		break;
+
+	case XED_ICLASS_CCMPZ:
+		ConditionalCmp(addr, xedd, il, opOneLen, il.FlagGroup(IL_FLAG_GROUP_E));
+		break;
+
+	case XED_ICLASS_CCMPNZ:
+		ConditionalCmp(addr, xedd, il, opOneLen, il.FlagGroup(IL_FLAG_GROUP_NE));
+		break;
+
+	case XED_ICLASS_CCMPBE:
+		ConditionalCmp(addr, xedd, il, opOneLen, il.FlagGroup(IL_FLAG_GROUP_LE));
+		break;
+
+	case XED_ICLASS_CCMPNBE:
+		ConditionalCmp(addr, xedd, il, opOneLen, il.FlagGroup(IL_FLAG_GROUP_GT));
+		break;
+
+	case XED_ICLASS_CCMPS:
+		ConditionalCmp(addr, xedd, il, opOneLen, il.FlagCondition(LLFC_NEG));
+		break;
+
+	case XED_ICLASS_CCMPNS:
+		ConditionalCmp(addr, xedd, il, opOneLen, il.FlagCondition(LLFC_POS));
+		break;
+
+	case XED_ICLASS_CCMPL:
+		ConditionalCmp(addr, xedd, il, opOneLen, il.FlagCondition(LLFC_SLT));
+		break;
+
+	case XED_ICLASS_CCMPNL:
+		ConditionalCmp(addr, xedd, il, opOneLen, il.FlagCondition(LLFC_SGE));
+		break;
+
+	case XED_ICLASS_CCMPLE:
+		ConditionalCmp(addr, xedd, il, opOneLen, il.FlagCondition(LLFC_SLE));
+		break;
+
+	case XED_ICLASS_CCMPNLE:
+		ConditionalCmp(addr, xedd, il, opOneLen, il.FlagCondition(LLFC_SGT));
+		break;
+
+	case XED_ICLASS_CCMPF:
+		AssignEvexDfv(xedd, il);
 		break;
 
 	case XED_ICLASS_REPE_CMPSQ:
@@ -1470,17 +1797,34 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 
 	case XED_ICLASS_DEC_LOCK: // TODO: Handle lock prefix
 	case XED_ICLASS_DEC:
+	{
+		ExprId src;
+		size_t opSize = opOneLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			src = ReadILOperand(il, xedd, addr, 0, 0);
+		}
+		else
+		{
+			// new data destination
+			src = ReadILOperand(il, xedd, addr, 1, 1);
+			opSize = opTwoLen;
+		}
+
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
-				il.Sub(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
+				il.Sub(opSize,
+					src,
 					il.Const(opOneLen, 1),
-				IL_FLAGWRITE_NOCARRY)
+				noFlags ? 0 : IL_FLAGWRITE_NOCARRY)
 			)
 		);
 		break;
+	}
 
 	case XED_ICLASS_DIV:
+		// TODO: flags set and handle noFlags?
 		il.AddInstruction(
 			il.SetRegister(opOneLen,
 				LLIL_TEMP(2),
@@ -1610,24 +1954,30 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 
 	case XED_ICLASS_ENTER:
 	{
-		uint32_t baseReg = addrSize == 4 ? XED_REG_EBP : XED_REG_RBP;
-		uint32_t stackReg = addrSize == 4 ? XED_REG_ESP : XED_REG_RSP;
-		if (xed_decoded_inst_get_second_immediate(xedd) != 0)
-		{
-			il.AddInstruction(il.Unimplemented());
-			break;
-		}
+		uint32_t baseReg = GetFramePointer(addrSize);
+		uint32_t stackReg = GetStackPointer(addrSize);
+		uint64_t nestingLevel = xed_decoded_inst_get_second_immediate(xedd) & 0x1f;
 		il.AddInstruction(il.Push(addrSize, il.Register(addrSize, baseReg)));
-		il.AddInstruction(il.SetRegister(addrSize, baseReg, il.Register(addrSize, stackReg)));
+		il.AddInstruction(il.SetRegister(addrSize, LLIL_TEMP(0), il.Register(addrSize, stackReg)));
+		for (uint64_t i = 1; i < nestingLevel; i++)
+		{
+			il.AddInstruction(il.SetRegister(addrSize, baseReg,
+				il.Sub(addrSize, il.Register(addrSize, baseReg), il.Const(addrSize, addrSize))));
+			il.AddInstruction(il.Push(addrSize, il.Load(addrSize, il.Register(addrSize, baseReg))));
+		}
+		if (nestingLevel != 0)
+			il.AddInstruction(il.Push(addrSize, il.Register(addrSize, LLIL_TEMP(0))));
+		il.AddInstruction(il.SetRegister(addrSize, baseReg, il.Register(addrSize, LLIL_TEMP(0))));
 		if (immediateOne)
 			il.AddInstruction(il.SetRegister(addrSize, stackReg,
 				il.Sub(addrSize,
 					il.Register(addrSize, stackReg),
-					il.Const(2, immediateOne))));
+					il.Const(addrSize, immediateOne))));
 		break;
 	}
 
 	case XED_ICLASS_IDIV:
+		// TODO: flags set and handle noFlags?
 		switch (opOneLen)
 		{
 		case 1:
@@ -1765,7 +2115,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 						il.MultDoublePrecSigned(1,
 							il.Register(1, XED_REG_AL),
 							ReadILOperand(il, xedd, addr, 0, 0),
-						IL_FLAGWRITE_CO)));
+							noFlags ? 0 : IL_FLAGWRITE_CO)));
 				break;
 			case 2:
 				il.AddInstruction(
@@ -1775,7 +2125,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 						il.MultDoublePrecSigned(2,
 							il.Register(2, XED_REG_AX),
 							ReadILOperand(il, xedd, addr, 0, 0),
-						IL_FLAGWRITE_CO)));
+							noFlags ? 0 : IL_FLAGWRITE_CO)));
 				break;
 			case 4:
 				il.AddInstruction(
@@ -1785,7 +2135,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 						il.MultDoublePrecSigned(4,
 							il.Register(4, XED_REG_EAX),
 							ReadILOperand(il, xedd, addr, 0, 0),
-						IL_FLAGWRITE_CO)));
+							noFlags ? 0 : IL_FLAGWRITE_CO)));
 				break;
 			case 8:
 				il.AddInstruction(
@@ -1795,7 +2145,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 						il.MultDoublePrecSigned(8,
 							il.Register(8, XED_REG_RAX),
 							ReadILOperand(il, xedd, addr, 0, 0),
-						IL_FLAGWRITE_CO)));
+							noFlags ? 0 : IL_FLAGWRITE_CO)));
 				break;
 			default:
 				il.AddInstruction(il.Undefined());
@@ -1803,40 +2153,75 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 			}
 			break;
 
-  	case XED_IFORM_IMUL_GPRv_GPRv:
-  	case XED_IFORM_IMUL_GPRv_MEMv:
-			il.AddInstruction(
-				WriteILOperand(il, xedd, addr, 0, 0,
-					il.Mult(opOneLen,
-						ReadILOperand(il, xedd, addr, 0, 0),
-						ReadILOperand(il, xedd, addr, 1, 1),
-					IL_FLAGWRITE_CO)));
-			break;
+		case XED_IFORM_IMUL_GPRv_GPRv:
+		case XED_IFORM_IMUL_GPRv_MEMv:
+		{
+			ExprId left, right;
+			if (!newDataDestination)
+			{
+				// nothing special
+				left = ReadILOperand(il, xedd, addr, 0, 0);
+				right = ReadILOperand(il, xedd, addr, 1, 1);
+			}
+			else
+			{
+				// new data destination
+				left = ReadILOperand(il, xedd, addr, 1, 1);
+				right = ReadILOperand(il, xedd, addr, 2, 2);
+			}
 
-  	case XED_IFORM_IMUL_GPRv_GPRv_IMMb:
-  	case XED_IFORM_IMUL_GPRv_GPRv_IMMz:
-  	case XED_IFORM_IMUL_GPRv_MEMv_IMMb:
-  	case XED_IFORM_IMUL_GPRv_MEMv_IMMz:
-		default:
 			il.AddInstruction(
 				WriteILOperand(il, xedd, addr, 0, 0,
-					il.Mult(opOneLen,
-						ReadILOperand(il, xedd, addr, 1, 1),
-						ReadILOperand(il, xedd, addr, 2, 2),
-					IL_FLAGWRITE_CO)));
+					il.Mult(opOneLen, left, right,
+						IL_FLAGWRITE_CO)));
+			break;
+		}
+
+		case XED_IFORM_IMUL_GPRv_GPRv_IMMb:
+		case XED_IFORM_IMUL_GPRv_GPRv_IMMz:
+		case XED_IFORM_IMUL_GPRv_MEMv_IMMb:
+		case XED_IFORM_IMUL_GPRv_MEMv_IMMz:
+		default:
+		{
+			ExprId value = il.Mult(opOneLen,
+				ReadILOperand(il, xedd, addr, 1, 1),
+				ReadILOperand(il, xedd, addr, 2, 2),
+			IL_FLAGWRITE_CO);
+
+			if (zeroUpper && (opOneLen == 1 || opOneLen == 2))
+				value = il.ZeroExtend(8, value);
+
+			il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, value));
+		}
+
 		}
 		break;
 
-
 	case XED_ICLASS_INC_LOCK: // TODO: Handle lock prefix
 	case XED_ICLASS_INC:
+	{
+		ExprId src;
+		size_t opSize = opOneLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			src = ReadILOperand(il, xedd, addr, 0, 0);
+		}
+		else
+		{
+			// new data destination
+			src = ReadILOperand(il, xedd, addr, 1, 1);
+			opSize = opTwoLen;
+		}
+
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
-				il.Add(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					il.Const(opOneLen, 1),
-				IL_FLAGWRITE_NOCARRY)));
+				il.Add(opSize,
+					src,
+					il.Const(opSize, 1),
+					noFlags ? 0 : IL_FLAGWRITE_NOCARRY)));
 		break;
+	}
 
 	case XED_ICLASS_INT:
 		switch (immediateOne)
@@ -1858,6 +2243,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 
 	case XED_ICLASS_JMP:
+	case XED_ICLASS_JMPABS:
 		if (opOne_name == XED_OPERAND_RELBR)
 		{
 			BNLowLevelILLabel* label = il.GetLabelForAddress(arch, branchDestination);
@@ -2187,10 +2573,26 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 	}
 
-	// despite MOVSS and VMOVSS both move floating point values,
-	// the move is the same as an ordinary move
 	case XED_ICLASS_MOVSS:
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, ReadILOperand(il, xedd, addr, 1, 1)));
+		if (xed_operand_is_register(opTwo_name))
+		{
+			// movss xmm, xmm / movss mem, xmm
+			// low 32 bits of dst equals low 32 bits of src xmm reg;
+			// for an xmm dst the upper bits are left unchanged
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.LowPart(4, il.Register(16, regTwo))));
+		}
+		else // movss xmm, m32
+		{
+			// low 32 bits of dst xmm reg equals the 32-bit load;
+			// the high bits are zeroed
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.ZeroExtend(16,
+						il.Load(4,
+							GetILOperandMemoryAddress(il, xedd, addr, 1, 1)))));
+		}
 		break;
 
 	case XED_ICLASS_VMOVSS:
@@ -2606,7 +3008,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 					il.MultDoublePrecUnsigned(1,
 						il.Register(1, XED_REG_AL),
 						ReadILOperand(il, xedd, addr, 0, 0),
-					IL_FLAGWRITE_CO)));
+					noFlags ? 0 : IL_FLAGWRITE_CO)));
 			break;
 		case 2:
 			il.AddInstruction(
@@ -2616,7 +3018,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 					il.MultDoublePrecUnsigned(2,
 						il.Register(2, XED_REG_AX),
 						ReadILOperand(il, xedd, addr, 0, 0),
-					IL_FLAGWRITE_CO)));
+					noFlags ? 0 : IL_FLAGWRITE_CO)));
 			break;
 		case 4:
 			il.AddInstruction(
@@ -2626,7 +3028,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 					il.MultDoublePrecUnsigned(4,
 						il.Register(4, XED_REG_EAX),
 						ReadILOperand(il, xedd, addr, 0, 0),
-					IL_FLAGWRITE_CO)));
+					noFlags ? 0 : IL_FLAGWRITE_CO)));
 			break;
 		case 8:
 			il.AddInstruction(
@@ -2636,7 +3038,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 					il.MultDoublePrecUnsigned(8,
 						il.Register(8, XED_REG_RAX),
 						ReadILOperand(il, xedd, addr, 0, 0),
-					IL_FLAGWRITE_CO)));
+					noFlags ? 0 : IL_FLAGWRITE_CO)));
 			break;
 		default:
 			il.AddInstruction(il.Undefined());
@@ -2646,12 +3048,27 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 
 	case XED_ICLASS_NEG_LOCK: // TODO: Handle lock prefix
 	case XED_ICLASS_NEG:
+	{
+		ExprId src;
+		size_t opSize = opOneLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			src = ReadILOperand(il, xedd, addr, 0, 0);
+		}
+		else
+		{
+			// new data destination
+			src = ReadILOperand(il, xedd, addr, 1, 1);
+			opSize = opTwoLen;
+		}
+
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
-				il.Neg(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
-				IL_FLAGWRITE_ALL)));
+				il.Neg(opSize, src,
+					noFlags ? 0 : IL_FLAGWRITE_ALL)));
 		break;
+	}
 
 	case XED_ICLASS_NOP:
 	case XED_ICLASS_NOP2:
@@ -2691,21 +3108,52 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 
 	case XED_ICLASS_NOT_LOCK: // TODO: Handle lock prefix
 	case XED_ICLASS_NOT:
+	{
+		ExprId src;
+		size_t opSize = opOneLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			src = ReadILOperand(il, xedd, addr, 0, 0);
+		}
+		else
+		{
+			// new data destination
+			src = ReadILOperand(il, xedd, addr, 1, 1);
+			opSize = opTwoLen;
+		}
+
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
-				il.Not(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0))));
+				il.Not(opSize, src)));
 		break;
+	}
 
 	case XED_ICLASS_OR_LOCK: // TODO: Handle lock prefix
 	case XED_ICLASS_OR:
+	{
+		ExprId left, right;
+		size_t opSize = opOneLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			left = ReadILOperand(il, xedd, addr, 0, 0);
+			right = ReadILOperand(il, xedd, addr, 1, 1);
+		}
+		else
+		{
+			// new data destination
+			left = ReadILOperand(il, xedd, addr, 1, 1);
+			right = ReadILOperand(il, xedd, addr, 2, 2);
+			opSize = opTwoLen;
+		}
+
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
-				il.Or(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					ReadILOperand(il, xedd, addr, 1, 1),
-				IL_FLAGWRITE_ALL)));
+				il.Or(opSize, left, right,
+					noFlags ? 0 : IL_FLAGWRITE_ALL)));
 		break;
+	}
 	case XED_ICLASS_POR:
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
@@ -2728,7 +3176,27 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 			0))); // VPOR doesn't modify flags
 		break;
 
+	case XED_ICLASS_POP2:
+	case XED_ICLASS_POP2P:
+		il.AddInstruction(
+			WriteILOperand(il, xedd, addr, 0, 0,
+				il.Pop(8)));
+		il.AddInstruction(
+			WriteILOperand(il, xedd, addr, 1, 1,
+				il.Pop(8)));
+		break;
+
 	case XED_ICLASS_POP:
+	{
+		const unsigned int stackAdjustment = xed_decoded_inst_get_memory_operand_length(xedd, 0);
+		auto expr = il.Pop(stackAdjustment);
+		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
+			opOneLen == stackAdjustment ? expr :
+				il.LowPart(opOneLen, expr)));
+		break;
+	}
+
+	case XED_ICLASS_POPP:
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
 				il.Pop(opOneLen)));
@@ -2859,7 +3327,14 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		);
 		break;
 
+	case XED_ICLASS_PUSH2:
+	case XED_ICLASS_PUSH2P:
+		il.AddInstruction(il.Push(8, ReadILOperand(il, xedd, addr, 0, 0)));
+		il.AddInstruction(il.Push(8, ReadILOperand(il, xedd, addr, 1, 1)));
+		break;
+
 	case XED_ICLASS_PUSH:
+	case XED_ICLASS_PUSHP:
 	{
 		// Whe the stack adjustment is different from the operand one size, zero-extend it. Note, a "push r16" in either
 		// x86 or x64 pushes the 2-byte register onto the stack, and there is no need to extend. See
@@ -2867,37 +3342,166 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		// https://stackoverflow.com/questions/43435764/64-bit-mode-does-not-support-32-bit-push-and-pop-instructions
 		// for more details
 		const unsigned int stackAdjustment = xed_decoded_inst_get_memory_operand_length(xedd, 0);
-		if (opOneLen != stackAdjustment)
-		{
-			il.AddInstruction(
-				il.Push(stackAdjustment,
-					il.ZeroExtend(stackAdjustment,
-						ReadILOperand(il, xedd, addr, 0, 0))));
-		}
-		else
-			il.AddInstruction(
-				il.Push(stackAdjustment,
-					ReadILOperand(il, xedd, addr, 0, 0)));
+		auto expr = ReadILOperand(il, xedd, addr, 0, 0);
+		il.AddInstruction(il.Push(stackAdjustment,
+			opOneLen == stackAdjustment ? expr :
+				il.ZeroExtend(stackAdjustment, expr)));
 		break;
 	}
 
 	case XED_ICLASS_RCL:
-		il.AddInstruction(
-			WriteILOperand(il, xedd, addr, 0, 0,
-				il.RotateLeftCarry(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					ReadILOperand(il, xedd, addr, 1, 1),
-				il.Flag(IL_FLAG_C), IL_FLAGWRITE_ALL)));
-		break;
+	{
+		ExprId left, right;
+		size_t opSize = opOneLen;
+		size_t countSize = opTwoLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			left = ReadILOperand(il, xedd, addr, 0, 0);
+			right = ReadILOperand(il, xedd, addr, 1, 1);
+		}
+		else
+		{
+			// new data destination
+			left = ReadILOperand(il, xedd, addr, 1, 1);
+			right = ReadILOperand(il, xedd, addr, 2, 2);
+			opSize = opTwoLen;
+			countSize = opTreLen;
+		}
 
-	case XED_ICLASS_RCR:
-		il.AddInstruction(
-			WriteILOperand(il, xedd, addr, 0, 0,
-				il.RotateRightCarry(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					ReadILOperand(il, xedd, addr, 1, 1),
-				il.Flag(IL_FLAG_C), IL_FLAGWRITE_ALL)));
+		uint64_t countMask = (opSize == 8) ? 0x3f : 0x1f;
+		xed_operand_enum_t countOperand = newDataDestination ? opTre_name : opTwo_name;
+		bool immediateCount = countOperand == XED_OPERAND_IMM0;
+		uint64_t maskedImmediateCount = immediateOne & countMask;
+		uint64_t effectiveImmediateCount = GetRotateCarryEffectiveCount(opSize, maskedImmediateCount);
+		ExprId maskedCount = immediateCount ?
+			il.Const(countSize, maskedImmediateCount) :
+			il.And(countSize, right, il.Const(countSize, countMask));
+		ExprId effectiveCount = immediateCount ? maskedCount :
+			GetRotateCarryEffectiveCount(il, opSize, countSize, maskedCount);
+		if (immediateCount)
+			effectiveCount = il.Const(countSize, effectiveImmediateCount);
+		if (immediateCount && effectiveImmediateCount == 0)
+		{
+			il.AddInstruction(il.Nop());
+			break;
+		}
+
+		il.AddInstruction(il.SetRegister(opSize, LLIL_TEMP(0), left));
+		if (noFlags)
+		{
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.RotateLeftCarry(opSize, il.Register(opSize, LLIL_TEMP(0)), effectiveCount,
+						il.Flag(IL_FLAG_C))));
+		}
+		else if (immediateCount)
+		{
+			uint32_t flagWriteType = (maskedImmediateCount == 1) ? IL_FLAGWRITE_CO : IL_FLAGWRITE_CUO;
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.RotateLeftCarry(opSize, il.Register(opSize, LLIL_TEMP(0)), effectiveCount,
+						il.Flag(IL_FLAG_C), flagWriteType)));
+		}
+		else
+		{
+			LowLevelILLabel nonZeroCount, singleBitCount, multiBitCount, done;
+			il.AddInstruction(il.If(
+				il.CompareNotEqual(countSize, effectiveCount, il.Const(countSize, 0)), nonZeroCount, done));
+			il.MarkLabel(nonZeroCount);
+			il.AddInstruction(il.SetRegister(1, LLIL_TEMP(1), il.BoolToInt(1, il.Flag(IL_FLAG_C))));
+			ExprId oldCarry = il.CompareNotEqual(1, il.Register(1, LLIL_TEMP(1)), il.Const(1, 0));
+			il.AddInstruction(il.If(
+				il.CompareEqual(countSize, maskedCount, il.Const(countSize, 1)), singleBitCount, multiBitCount));
+			il.MarkLabel(singleBitCount);
+			il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
+				il.RotateLeftCarry(opSize, il.Register(opSize, LLIL_TEMP(0)), il.Const(countSize, 1),
+					oldCarry, IL_FLAGWRITE_CO)));
+			il.AddInstruction(il.Goto(done));
+			il.MarkLabel(multiBitCount);
+			il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
+				il.RotateLeftCarry(opSize, il.Register(opSize, LLIL_TEMP(0)), effectiveCount,
+					oldCarry, IL_FLAGWRITE_CUO)));
+			il.MarkLabel(done);
+		}
 		break;
+	}
+	case XED_ICLASS_RCR:
+	{
+		ExprId left, right;
+		size_t opSize = opOneLen;
+		size_t countSize = opTwoLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			left = ReadILOperand(il, xedd, addr, 0, 0);
+			right = ReadILOperand(il, xedd, addr, 1, 1);
+		}
+		else
+		{
+			// new data destination
+			left = ReadILOperand(il, xedd, addr, 1, 1);
+			right = ReadILOperand(il, xedd, addr, 2, 2);
+			opSize = opTwoLen;
+			countSize = opTreLen;
+		}
+
+		uint64_t countMask = (opSize == 8) ? 0x3f : 0x1f;
+		xed_operand_enum_t countOperand = newDataDestination ? opTre_name : opTwo_name;
+		bool immediateCount = countOperand == XED_OPERAND_IMM0;
+		uint64_t maskedImmediateCount = immediateOne & countMask;
+		uint64_t effectiveImmediateCount = GetRotateCarryEffectiveCount(opSize, maskedImmediateCount);
+		ExprId maskedCount = immediateCount ?
+			il.Const(countSize, maskedImmediateCount) :
+			il.And(countSize, right, il.Const(countSize, countMask));
+		ExprId effectiveCount = immediateCount ?
+			il.Const(countSize, effectiveImmediateCount) :
+			GetRotateCarryEffectiveCount(il, opSize, countSize, maskedCount);
+		if (immediateCount && effectiveImmediateCount == 0)
+		{
+			il.AddInstruction(il.Nop());
+			break;
+		}
+		il.AddInstruction(il.SetRegister(opSize, LLIL_TEMP(0), left));
+		if (noFlags)
+		{
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.RotateRightCarry(opSize, il.Register(opSize, LLIL_TEMP(0)), effectiveCount,
+						il.Flag(IL_FLAG_C))));
+		}
+		else
+		{
+			if (immediateCount)
+			{
+				uint32_t flagWriteType = (maskedImmediateCount == 1) ? IL_FLAGWRITE_CO : IL_FLAGWRITE_CUO;
+				il.AddInstruction(
+					WriteILOperand(il, xedd, addr, 0, 0,
+						il.RotateRightCarry(opSize, il.Register(opSize, LLIL_TEMP(0)), effectiveCount,
+							il.Flag(IL_FLAG_C), flagWriteType)));
+			}
+			else
+			{
+				LowLevelILLabel nonZeroCount, singleBitCount, multiBitCount, done;
+				il.AddInstruction(il.If(
+					il.CompareNotEqual(countSize, effectiveCount, il.Const(countSize, 0)), nonZeroCount, done));
+				il.MarkLabel(nonZeroCount);
+				il.AddInstruction(il.If(
+					il.CompareEqual(countSize, maskedCount, il.Const(countSize, 1)), singleBitCount, multiBitCount));
+				il.MarkLabel(singleBitCount);
+				il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
+					il.RotateRightCarry(opSize, il.Register(opSize, LLIL_TEMP(0)), il.Const(countSize, 1),
+						il.Flag(IL_FLAG_C), IL_FLAGWRITE_CO)));
+				il.AddInstruction(il.Goto(done));
+				il.MarkLabel(multiBitCount);
+				il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
+					il.RotateRightCarry(opSize, il.Register(opSize, LLIL_TEMP(0)), effectiveCount,
+						il.Flag(IL_FLAG_C), IL_FLAGWRITE_CUO)));
+				il.MarkLabel(done);
+			}
+		}
+		break;
+	}
 
 	case XED_ICLASS_RET_NEAR:
 		if ((opOne_name != XED_OPERAND_IMM0) || (immediateOne == 0))
@@ -2917,23 +3521,121 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 
 	case XED_ICLASS_ROL:
-		il.AddInstruction(
-			WriteILOperand(il, xedd, addr, 0, 0,
-				il.RotateLeft(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					ReadILOperand(il, xedd, addr, 1, 1),
-				IL_FLAGWRITE_ALL)));
-		break;
+	{
+		ExprId left, right;
+		size_t opSize = opOneLen;
+		size_t countSize = opTwoLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			left = ReadILOperand(il, xedd, addr, 0, 0);
+			right = ReadILOperand(il, xedd, addr, 1, 1);
+		}
+		else
+		{
+			// new data destination
+			left = ReadILOperand(il, xedd, addr, 1, 1);
+			right = ReadILOperand(il, xedd, addr, 2, 2);
+			opSize = opTwoLen;
+			countSize = opTreLen;
+		}
 
+		uint64_t countMask = (opSize == 8) ? 0x3f : 0x1f;
+		xed_operand_enum_t countOperand = newDataDestination ? opTre_name : opTwo_name;
+		bool immediateCount = countOperand == XED_OPERAND_IMM0;
+		uint64_t maskedImmediateCount = immediateOne & countMask;
+		ExprId maskedCount = immediateCount ?
+			il.Const(countSize, maskedImmediateCount) :
+			il.And(countSize, right, il.Const(countSize, countMask));
+		if (immediateCount && (maskedImmediateCount == 0))
+		{
+			il.AddInstruction(il.Nop());
+			break;
+		}
+
+		if (immediateCount || (noFlags &&
+			(xed_operand_is_register(opOne_name) || xed_operand_is_memory_addressing_register(opOne_name))))
+		{
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.RotateLeft(opSize, left, maskedCount, noFlags ? 0 : IL_FLAGWRITE_CO)));
+		}
+		else if (!noFlags && (xed_operand_is_register(opOne_name) || xed_operand_is_memory_addressing_register(opOne_name)))
+		{
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.RotateLeft(opSize, left, maskedCount, IL_FLAGWRITE_CO)));
+		}
+		else
+		{
+			LowLevelILLabel nonZeroCount, done;
+			il.AddInstruction(il.If(
+				il.CompareNotEqual(countSize, maskedCount, il.Const(countSize, 0)), nonZeroCount, done));
+			il.MarkLabel(nonZeroCount);
+			il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
+				il.RotateLeft(opSize, left, maskedCount, noFlags ? 0 : IL_FLAGWRITE_CO)));
+			il.MarkLabel(done);
+		}
+		break;
+	}
 	case XED_ICLASS_ROR:
-		il.AddInstruction(
-			WriteILOperand(il, xedd, addr, 0, 0,
-				il.RotateRight(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					ReadILOperand(il, xedd, addr, 1, 1),
-				IL_FLAGWRITE_ALL)));
-		break;
+	{
+		ExprId left, right;
+		size_t opSize = opOneLen;
+		size_t countSize = opTwoLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			left = ReadILOperand(il, xedd, addr, 0, 0);
+			right = ReadILOperand(il, xedd, addr, 1, 1);
+		}
+		else
+		{
+			// new data destination
+			left = ReadILOperand(il, xedd, addr, 1, 1);
+			right = ReadILOperand(il, xedd, addr, 2, 2);
+			opSize = opTwoLen;
+			countSize = opTreLen;
+		}
 
+		uint64_t countMask = (opSize == 8) ? 0x3f : 0x1f;
+		xed_operand_enum_t countOperand = newDataDestination ? opTre_name : opTwo_name;
+		bool immediateCount = countOperand == XED_OPERAND_IMM0;
+		uint64_t maskedImmediateCount = immediateOne & countMask;
+		ExprId maskedCount = immediateCount ?
+			il.Const(countSize, maskedImmediateCount) :
+			il.And(countSize, right, il.Const(countSize, countMask));
+		if (immediateCount && (maskedImmediateCount == 0))
+		{
+			il.AddInstruction(il.Nop());
+			break;
+		}
+
+		if (immediateCount || (noFlags &&
+			(xed_operand_is_register(opOne_name) || xed_operand_is_memory_addressing_register(opOne_name))))
+		{
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.RotateRight(opSize, left, maskedCount, noFlags ? 0 : IL_FLAGWRITE_CO)));
+		}
+		else if (!noFlags && (xed_operand_is_register(opOne_name) || xed_operand_is_memory_addressing_register(opOne_name)))
+		{
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.RotateRight(opSize, left, maskedCount, IL_FLAGWRITE_CO)));
+		}
+		else
+		{
+			LowLevelILLabel nonZeroCount, done;
+			il.AddInstruction(il.If(
+				il.CompareNotEqual(countSize, maskedCount, il.Const(countSize, 0)), nonZeroCount, done));
+			il.MarkLabel(nonZeroCount);
+			il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
+				il.RotateRight(opSize, left, maskedCount, noFlags ? 0 : IL_FLAGWRITE_CO)));
+			il.MarkLabel(done);
+		}
+		break;
+	}
 	// there is no ROLX instruciton
 	case XED_ICLASS_RORX:
 		il.AddInstruction(
@@ -2945,13 +3647,71 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 
 	case XED_ICLASS_SAR:
-		il.AddInstruction(
-			WriteILOperand(il, xedd, addr, 0, 0,
-				il.ArithShiftRight(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					ReadILOperand(il, xedd, addr, 1, 1),
-				IL_FLAGWRITE_ALL)));
+	{
+		ExprId left, right;
+		size_t opSize = opOneLen;
+		size_t countSize = opTwoLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			left = ReadILOperand(il, xedd, addr, 0, 0);
+			right = ReadILOperand(il, xedd, addr, 1, 1);
+		}
+		else
+		{
+			// new data destination
+			left = ReadILOperand(il, xedd, addr, 1, 1);
+			right = ReadILOperand(il, xedd, addr, 2, 2);
+			opSize = opTwoLen;
+			countSize = opTreLen;
+		}
+
+		uint64_t countMask = (opSize == 8) ? 0x3f : 0x1f;
+		xed_operand_enum_t countOperand = newDataDestination ? opTre_name : opTwo_name;
+		bool immediateCount = countOperand == XED_OPERAND_IMM0;
+		uint64_t effectiveImmediateCount = immediateOne & countMask;
+		ExprId effectiveCount = immediateCount ?
+			il.Const(countSize, effectiveImmediateCount) :
+			il.And(countSize, right, il.Const(countSize, countMask));
+		if (immediateCount && (effectiveImmediateCount == 0))
+		{
+			il.AddInstruction(il.Nop());
+			break;
+		}
+
+		if (noFlags)
+		{
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.ArithShiftRight(opSize, left, effectiveCount)));
+		}
+		else if (immediateCount)
+		{
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.ArithShiftRight(opSize, left, effectiveCount, IL_FLAGWRITE_ALL)));
+		}
+		else if (xed_operand_is_register(opOne_name) || xed_operand_is_memory_addressing_register(opOne_name))
+		{
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.ArithShiftRight(opSize, left, effectiveCount, IL_FLAGWRITE_ALL)));
+		}
+		else
+		{
+			LowLevelILLabel nonZeroCount, done;
+			il.AddInstruction(il.SetRegister(opSize, LLIL_TEMP(0), left));
+			il.AddInstruction(il.If(
+				il.CompareNotEqual(countSize, effectiveCount, il.Const(countSize, 0)), nonZeroCount, done));
+			il.MarkLabel(nonZeroCount);
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.ArithShiftRight(opSize, il.Register(opSize, LLIL_TEMP(0)), effectiveCount,
+						IL_FLAGWRITE_ALL)));
+			il.MarkLabel(done);
+		}
 		break;
+	}
 
 	case XED_ICLASS_SARX:
 		il.AddInstruction(
@@ -2972,13 +3732,29 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 
 	case XED_ICLASS_SBB_LOCK: // TODO: Handle lock prefix
 	case XED_ICLASS_SBB:
+	{
+		ExprId left, right;
+		size_t opSize = opOneLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			left = ReadILOperand(il, xedd, addr, 0, 0);
+			right = ReadILOperand(il, xedd, addr, 1, 1);
+		}
+		else
+		{
+			// new data destination
+			left = ReadILOperand(il, xedd, addr, 1, 1);
+			right = ReadILOperand(il, xedd, addr, 2, 2);
+			opSize = opTwoLen;
+		}
+
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
-				il.SubBorrow(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					ReadILOperand(il, xedd, addr, 1, 1),
-				il.Flag(IL_FLAG_C), IL_FLAGWRITE_ALL)));
+				il.SubBorrow(opSize, left, right,
+					il.Flag(IL_FLAG_C), IL_FLAGWRITE_ALL)));
 		break;
+	}
 
 	case XED_ICLASS_REPE_SCASB:
 	case XED_ICLASS_REPE_SCASD:
@@ -3041,88 +3817,230 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	}
 
 	case XED_ICLASS_SETO:
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, il.Flag(IL_FLAG_O)));
-		break;
-
 	case XED_ICLASS_SETNO:
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, il.Not(0, il.Flag(IL_FLAG_O))));
-		break;
-
 	case XED_ICLASS_SETB:
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, il.Flag(IL_FLAG_C)));
-		break;
-
 	case XED_ICLASS_SETNB:
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, il.FlagGroup(IL_FLAG_GROUP_GE)));
-		break;
-
 	case XED_ICLASS_SETZ:
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, il.FlagGroup(IL_FLAG_GROUP_E)));
-		break;
-
 	case XED_ICLASS_SETNZ:
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, il.FlagGroup(IL_FLAG_GROUP_NE)));
-		break;
-
 	case XED_ICLASS_SETBE:
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, il.FlagGroup(IL_FLAG_GROUP_LE)));
-		break;
-
 	case XED_ICLASS_SETNBE:
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, il.FlagGroup(IL_FLAG_GROUP_GT)));
-		break;
-
 	case XED_ICLASS_SETS:
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, il.FlagCondition(LLFC_NEG)));
-		break;
-
 	case XED_ICLASS_SETNS:
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, il.FlagCondition(LLFC_POS)));
-		break;
-
 	case XED_ICLASS_SETP:
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, il.FlagGroup(IL_FLAG_GROUP_PE)));
-		break;
-
 	case XED_ICLASS_SETNP:
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, il.FlagGroup(IL_FLAG_GROUP_PO)));
-		break;
-
 	case XED_ICLASS_SETL:
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, il.FlagCondition(LLFC_SLT)));
-		break;
-
 	case XED_ICLASS_SETNL:
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, il.FlagCondition(LLFC_SGE)));
-		break;
-
 	case XED_ICLASS_SETLE:
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, il.FlagCondition(LLFC_SLE)));
-		break;
-
 	case XED_ICLASS_SETNLE:
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, il.FlagCondition(LLFC_SGT)));
+	{
+		ExprId flag;
+		switch (xedd_iClass)
+		{
+		case XED_ICLASS_SETO:
+			flag = il.Flag(IL_FLAG_O);
+			break;
+		case XED_ICLASS_SETNO:
+			flag = il.Not(1, il.Flag(IL_FLAG_O));
+			break;
+		case XED_ICLASS_SETB:
+			flag = il.Flag(IL_FLAG_C);
+			break;
+
+		case XED_ICLASS_SETNB:
+			flag = il.FlagGroup(IL_FLAG_GROUP_GE);
+			break;
+
+		case XED_ICLASS_SETZ:
+			flag = il.FlagGroup(IL_FLAG_GROUP_E);
+			break;
+
+		case XED_ICLASS_SETNZ:
+			flag = il.FlagGroup(IL_FLAG_GROUP_NE);
+			break;
+
+		case XED_ICLASS_SETBE:
+			flag = il.FlagGroup(IL_FLAG_GROUP_LE);
+			break;
+
+		case XED_ICLASS_SETNBE:
+			flag = il.FlagGroup(IL_FLAG_GROUP_GT);
+			break;
+
+		case XED_ICLASS_SETS:
+			flag = il.FlagCondition(LLFC_NEG);
+			break;
+
+		case XED_ICLASS_SETNS:
+			flag = il.FlagCondition(LLFC_POS);
+			break;
+
+		case XED_ICLASS_SETP:
+			flag = il.FlagGroup(IL_FLAG_GROUP_PE);
+			break;
+
+		case XED_ICLASS_SETNP:
+			flag = il.FlagGroup(IL_FLAG_GROUP_PO);
+			break;
+
+		case XED_ICLASS_SETL:
+			flag = il.FlagCondition(LLFC_SLT);
+			break;
+
+		case XED_ICLASS_SETNL:
+			flag = il.FlagCondition(LLFC_SGE);
+			break;
+
+		case XED_ICLASS_SETLE:
+			flag = il.FlagCondition(LLFC_SLE);
+			break;
+
+		case XED_ICLASS_SETNLE:
+			flag = il.FlagCondition(LLFC_SGT);
+			break;
+		default:
+			break;
+		}
+
+		if (zeroUpper && xed_operand_is_register(opOne_name))
+			flag = il.ZeroExtend(8, flag);
+
+		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, flag));
 		break;
+	}
 
 	case XED_ICLASS_SHL:
-		il.AddInstruction(
-			WriteILOperand(il, xedd, addr, 0, 0,
-				il.ShiftLeft(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					ReadILOperand(il, xedd, addr, 1, 1),
-				IL_FLAGWRITE_ALL)));
+	{
+		ExprId left, right;
+		size_t opSize = opOneLen;
+		size_t countSize = opTwoLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			left = ReadILOperand(il, xedd, addr, 0, 0);
+			right = ReadILOperand(il, xedd, addr, 1, 1);
+		}
+		else
+		{
+			// new data destination
+			left = ReadILOperand(il, xedd, addr, 1, 1);
+			right = ReadILOperand(il, xedd, addr, 2, 2);
+			opSize = opTwoLen;
+			countSize = opTreLen;
+		}
+
+		uint64_t countMask = (opSize == 8) ? 0x3f : 0x1f;
+		xed_operand_enum_t countOperand = newDataDestination ? opTre_name : opTwo_name;
+		bool immediateCount = countOperand == XED_OPERAND_IMM0;
+		uint64_t effectiveImmediateCount = immediateOne & countMask;
+		ExprId effectiveCount = immediateCount ?
+			il.Const(countSize, effectiveImmediateCount) :
+			il.And(countSize, right, il.Const(countSize, countMask));
+		if (immediateCount && (effectiveImmediateCount == 0))
+		{
+			il.AddInstruction(il.Nop());
+			break;
+		}
+
+		if (noFlags)
+		{
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.ShiftLeft(opSize, left, effectiveCount)));
+		}
+		else if (immediateCount)
+		{
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.ShiftLeft(opSize, left, effectiveCount, IL_FLAGWRITE_ALL)));
+		}
+		else if (xed_operand_is_register(opOne_name) || xed_operand_is_memory_addressing_register(opOne_name))
+		{
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.ShiftLeft(opSize, left, effectiveCount, IL_FLAGWRITE_ALL)));
+		}
+		else
+		{
+			LowLevelILLabel nonZeroCount, done;
+			il.AddInstruction(il.SetRegister(opSize, LLIL_TEMP(0), left));
+			il.AddInstruction(il.If(
+				il.CompareNotEqual(countSize, effectiveCount, il.Const(countSize, 0)), nonZeroCount, done));
+			il.MarkLabel(nonZeroCount);
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.ShiftLeft(opSize, il.Register(opSize, LLIL_TEMP(0)), effectiveCount, IL_FLAGWRITE_ALL)));
+			il.MarkLabel(done);
+		}
 		break;
+	}
 
 	// This is imprecise since it does NOT move the last shifted bit into CF
-	// the same problem also happens on SHL, SAR
+	// the same problem also happens on SAR
 	case XED_ICLASS_SHR:
-		il.AddInstruction(
-			WriteILOperand(il, xedd, addr, 0, 0,
-				il.LogicalShiftRight(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					ReadILOperand(il, xedd, addr, 1, 1),
-				IL_FLAGWRITE_ALL)));
+	{
+		ExprId left, right;
+		size_t opSize = opOneLen;
+		size_t countSize = opTwoLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			left = ReadILOperand(il, xedd, addr, 0, 0);
+			right = ReadILOperand(il, xedd, addr, 1, 1);
+		}
+		else
+		{
+			// new data destination
+			left = ReadILOperand(il, xedd, addr, 1, 1);
+			right = ReadILOperand(il, xedd, addr, 2, 2);
+			opSize = opTwoLen;
+			countSize = opTreLen;
+		}
+
+		uint64_t countMask = (opSize == 8) ? 0x3f : 0x1f;
+		xed_operand_enum_t countOperand = newDataDestination ? opTre_name : opTwo_name;
+		bool immediateCount = countOperand == XED_OPERAND_IMM0;
+		uint64_t effectiveImmediateCount = immediateOne & countMask;
+		ExprId effectiveCount = immediateCount ?
+			il.Const(countSize, effectiveImmediateCount) :
+			il.And(countSize, right, il.Const(countSize, countMask));
+		if (immediateCount && (effectiveImmediateCount == 0))
+		{
+			il.AddInstruction(il.Nop());
+			break;
+		}
+
+		if (noFlags)
+		{
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.LogicalShiftRight(opSize, left, effectiveCount)));
+		}
+		else if (immediateCount)
+		{
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.LogicalShiftRight(opSize, left, effectiveCount, IL_FLAGWRITE_ALL)));
+		}
+		else if (xed_operand_is_register(opOne_name) || xed_operand_is_memory_addressing_register(opOne_name))
+		{
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.LogicalShiftRight(opSize, left, effectiveCount, IL_FLAGWRITE_ALL)));
+		}
+		else
+		{
+			LowLevelILLabel nonZeroCount, done;
+			il.AddInstruction(il.SetRegister(opSize, LLIL_TEMP(0), left));
+			il.AddInstruction(il.If(
+				il.CompareNotEqual(countSize, effectiveCount, il.Const(countSize, 0)), nonZeroCount, done));
+			il.MarkLabel(nonZeroCount);
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.LogicalShiftRight(opSize, il.Register(opSize, LLIL_TEMP(0)), effectiveCount, IL_FLAGWRITE_ALL)));
+			il.MarkLabel(done);
+		}
 		break;
+	}
 
 	case XED_ICLASS_SHLX:
 		il.AddInstruction(
@@ -3144,54 +4062,138 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 
 	case XED_ICLASS_SHLD:
 	{
+		// TODO: Might need to swap for new data?
 		size_t opSize = opOneLen;
-		size_t mask = opSize == 4 ? 31 : 63;
+		size_t countSize = opTreLen;
+		size_t mask = opSize == 8 ? 0x3f : 0x1f;
 
 		// Shift left double: operand[0] = operand[0]:operand[1] << operand[3]
 		// this since we can't easily operation on a combined register we do it like this
 		// operand[0] = (operand[0] << operand[3]) | (operand[1] >> (63|32 - operand[3]))
-		// One final cevate operand[3] must be masked with 63|32
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
-			il.Or(opSize,
-				il.ShiftLeft(opSize,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					il.And(opSize,
-						il.Const(1, mask),
-						ReadILOperand(il, xedd, addr, 2, 2)),
-					IL_FLAGWRITE_ALL),
-				il.LogicalShiftRight(opSize,
-					ReadILOperand(il, xedd, addr, 1, 1),
-					il.Sub(opSize,
-						il.And(opSize,
-							il.Const(1, mask),
-							ReadILOperand(il, xedd, addr, 2, 2)),
-						il.Const(1, opSize * 8))))));
+		// One final caveat operand[3] must be masked with 63|32
+		ExprId left, right, rawCount;
+		if (!newDataDestination)
+		{
+			// nothing special
+			left = ReadILOperand(il, xedd, addr, 0, 0);
+			right = ReadILOperand(il, xedd, addr, 1, 1);
+			rawCount = ReadILOperand(il, xedd, addr, 2, 2);
+		}
+		else
+		{
+			// new data destination
+			left = ReadILOperand(il, xedd, addr, 1, 1);
+			right = ReadILOperand(il, xedd, addr, 2, 2);
+			countSize = xed_decoded_inst_operand_length_bits(xedd, 3) / 8;
+			rawCount = ReadILOperand(il, xedd, addr, 3, 3);
+		}
+
+		xed_operand_enum_t countOperand = xed_operand_name(xed_inst_operand(xi, newDataDestination ? 3 : 2));
+		bool immediateCount = countOperand == XED_OPERAND_IMM0;
+		uint64_t effectiveImmediateCount = immediateOne & mask;
+		ExprId count = immediateCount ?
+			il.Const(countSize, effectiveImmediateCount) :
+			il.And(countSize, rawCount, il.Const(countSize, mask));
+		if (immediateCount && (effectiveImmediateCount == 0))
+		{
+			il.AddInstruction(il.Nop());
+			break;
+		}
+
+		auto liftShld = [&]() {
+			return WriteILOperand(il, xedd, addr, 0, 0,
+				il.Or(opSize,
+					il.ShiftLeft(opSize, left, count, noFlags ? 0 : IL_FLAGWRITE_CO),
+					il.LogicalShiftRight(opSize,
+						right,
+						il.Sub(countSize, il.Const(countSize, opSize * 8), count)),
+					noFlags ? 0 : IL_FLAGWRITE_PAZS));
+		};
+
+		if (immediateCount)
+			il.AddInstruction(liftShld());
+		else
+		{
+			LowLevelILLabel nonZeroCount, done;
+			il.AddInstruction(il.If(
+				il.CompareNotEqual(countSize, count, il.Const(countSize, 0)), nonZeroCount, done));
+			il.MarkLabel(nonZeroCount);
+			il.AddInstruction(liftShld());
+			il.MarkLabel(done);
+		}
 		break;
 	}
 	case XED_ICLASS_SHRD:
 	{
+		// TODO: Might need to swap for new data?
 		size_t opSize = opOneLen;
-		size_t mask = opSize == 4 ? 31 : 63;
+		size_t countSize = opTreLen;
+		size_t mask = opSize == 8 ? 0x3f : 0x1f;
 
 		// Shift right double: operand[0] = operand[0]:operand[1] >> operand[3]
 		// this since we can't easily operation on a combined register we do it like this
 		// operand[0] = (operand[0] >> operand[3]) | (operand[1] << (63|31 - operand[3]))
-		// One final cevate operand[3] must be masked with 63|31
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
-			il.Or(opSize,
-				il.LogicalShiftRight(opSize,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					il.And(opSize,
-						il.Const(1, mask),
-						ReadILOperand(il, xedd, addr, 2, 2)),
-					IL_FLAGWRITE_ALL),
-				il.ShiftLeft(opSize,
-					ReadILOperand(il, xedd, addr, 1, 1),
-					il.Sub(opSize,
-						il.Const(1, opSize * 8),
-						il.And(opSize,
-							il.Const(1, mask),
-							ReadILOperand(il, xedd, addr, 2, 2)))))));
+		// One final caveat operand[3] must be masked with 63|31
+		ExprId left, right, rawCount;
+		if (!newDataDestination)
+		{
+			// nothing special
+			left = ReadILOperand(il, xedd, addr, 0, 0);
+			right = ReadILOperand(il, xedd, addr, 1, 1);
+			rawCount = ReadILOperand(il, xedd, addr, 2, 2);
+		}
+		else
+		{
+			// new data destination
+			left = ReadILOperand(il, xedd, addr, 1, 1);
+			right = ReadILOperand(il, xedd, addr, 2, 2);
+			countSize = xed_decoded_inst_operand_length_bits(xedd, 3) / 8;
+			rawCount = ReadILOperand(il, xedd, addr, 3, 3);
+		}
+
+		xed_operand_enum_t countOperand = xed_operand_name(xed_inst_operand(xi, newDataDestination ? 3 : 2));
+		bool immediateCount = countOperand == XED_OPERAND_IMM0;
+		uint64_t effectiveImmediateCount = immediateOne & mask;
+		ExprId count = immediateCount ?
+			il.Const(countSize, effectiveImmediateCount) :
+			il.And(countSize, rawCount, il.Const(countSize, mask));
+		if (immediateCount && (effectiveImmediateCount == 0))
+		{
+			il.AddInstruction(il.Nop());
+			break;
+		}
+
+		auto liftShrd = [&](ExprId dest, ExprId shiftCount, uint32_t shiftFlagWrite, uint32_t resultFlagWrite) {
+			return WriteILOperand(il, xedd, addr, 0, 0,
+				il.Or(opSize,
+					il.LogicalShiftRight(opSize, dest, shiftCount, shiftFlagWrite),
+					il.ShiftLeft(opSize, right, il.Sub(countSize, il.Const(countSize, opSize * 8), shiftCount)),
+					resultFlagWrite));
+		};
+
+		if (noFlags)
+			il.AddInstruction(liftShrd(left, count, 0, 0));
+		else if (immediateCount)
+		{
+			uint32_t shiftFlagWrite = (effectiveImmediateCount == 1) ? IL_FLAGWRITE_C : IL_FLAGWRITE_CO;
+			uint32_t resultFlagWrite = (effectiveImmediateCount == 1) ? IL_FLAGWRITE_SHRD1 : IL_FLAGWRITE_PAZS;
+			il.AddInstruction(liftShrd(left, count, shiftFlagWrite, resultFlagWrite));
+		}
+		else
+		{
+			LowLevelILLabel nonZeroCount, singleBitCount, multiBitCount, done;
+			il.AddInstruction(il.If(
+				il.CompareNotEqual(countSize, count, il.Const(countSize, 0)), nonZeroCount, done));
+			il.MarkLabel(nonZeroCount);
+			il.AddInstruction(il.If(
+				il.CompareEqual(countSize, count, il.Const(countSize, 1)), singleBitCount, multiBitCount));
+			il.MarkLabel(singleBitCount);
+			il.AddInstruction(liftShrd(left, il.Const(countSize, 1), IL_FLAGWRITE_C, IL_FLAGWRITE_SHRD1));
+			il.AddInstruction(il.Goto(done));
+			il.MarkLabel(multiBitCount);
+			il.AddInstruction(liftShrd(left, count, IL_FLAGWRITE_CO, IL_FLAGWRITE_PAZS));
+			il.MarkLabel(done);
+		}
 		break;
 	}
 	case XED_ICLASS_STOSB:
@@ -3313,15 +4315,32 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 
 	case XED_ICLASS_SUB_LOCK: // TODO: Handle lock prefix
 	case XED_ICLASS_SUB:
+	{
+		ExprId left, right;
+		size_t opSize = opOneLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			left = ReadILOperand(il, xedd, addr, 0, 0);
+			right = ReadILOperand(il, xedd, addr, 1, 1);
+		}
+		else
+		{
+			// new data destination
+			left = ReadILOperand(il, xedd, addr, 1, 1);
+			right = ReadILOperand(il, xedd, addr, 2, 2);
+			opSize = opTwoLen;
+		}
+
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
-				il.Sub(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					ReadILOperand(il, xedd, addr, 1, 1),
-				IL_FLAGWRITE_ALL)));
+				il.Sub(opSize, left, right,
+					noFlags ? 0 : IL_FLAGWRITE_ALL)));
 		break;
+	}
 
 	case XED_ICLASS_TEST:
+	case XED_ICLASS_CTESTT:
 		il.AddInstruction(
 			il.And(opOneLen,
 				ReadILOperand(il, xedd, addr, 0, 0),
@@ -3332,41 +4351,72 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	case XED_ICLASS_PTEST:
 	case XED_ICLASS_VPTEST:
 		il.AddInstruction(
-			il.SetFlag(IL_FLAG_Z,
-				il.BoolToInt(
-					1,
-					il.CompareEqual(
-						opOneLen,
-						il.And(
-							opOneLen,
-							ReadILOperand(il, xedd, addr, 0, 0),
-							ReadILOperand(il, xedd, addr, 1, 1)
-						),
-						il.Const(opOneLen, 0)
-					)
-				)
-			)
-		);
-		il.AddInstruction(
-			il.SetFlag(IL_FLAG_C,
-				il.BoolToInt(
-					1,
-					il.CompareEqual(
-						opOneLen,
-						il.And(
-							opOneLen,
-							ReadILOperand(il, xedd, addr, 0, 0),
-							il.Not(opTwoLen,
-								ReadILOperand(il, xedd, addr, 1, 1)
-							)
-						),
-						il.Const(opOneLen, 0)
-					)
-				)
-			)
-		);
+			il.And(opOneLen,
+				ReadILOperand(il, xedd, addr, 0, 0),
+				ReadILOperand(il, xedd, addr, 1, 1),
+			IL_FLAGWRITE_PTEST));
 		break;
 
+	case XED_ICLASS_CTESTO:
+		ConditionalTest(addr, xedd, il, opOneLen, il.FlagCondition(LLFC_O));
+		break;
+
+	case XED_ICLASS_CTESTNO:
+		ConditionalTest(addr, xedd, il, opOneLen, il.FlagCondition(LLFC_NO));
+		break;
+
+	case XED_ICLASS_CTESTB:
+		ConditionalTest(addr, xedd, il, opOneLen, il.FlagGroup(IL_FLAG_GROUP_LT));
+		break;
+
+	case XED_ICLASS_CTESTNB:
+		ConditionalTest(addr, xedd, il, opOneLen, il.FlagGroup(IL_FLAG_GROUP_GE));
+		break;
+
+	case XED_ICLASS_CTESTZ:
+		ConditionalTest(addr, xedd, il, opOneLen, il.FlagGroup(IL_FLAG_GROUP_E));
+		break;
+
+	case XED_ICLASS_CTESTNZ:
+		ConditionalTest(addr, xedd, il, opOneLen, il.FlagGroup(IL_FLAG_GROUP_NE));
+		break;
+
+	case XED_ICLASS_CTESTBE:
+		ConditionalTest(addr, xedd, il, opOneLen, il.FlagGroup(IL_FLAG_GROUP_LE));
+		break;
+
+	case XED_ICLASS_CTESTNBE:
+		ConditionalTest(addr, xedd, il, opOneLen, il.FlagGroup(IL_FLAG_GROUP_GT));
+		break;
+
+	case XED_ICLASS_CTESTS:
+		ConditionalTest(addr, xedd, il, opOneLen, il.FlagCondition(LLFC_NEG));
+		break;
+
+	case XED_ICLASS_CTESTNS:
+		ConditionalTest(addr, xedd, il, opOneLen, il.FlagCondition(LLFC_POS));
+		break;
+
+	case XED_ICLASS_CTESTL:
+		ConditionalTest(addr, xedd, il, opOneLen, il.FlagCondition(LLFC_SLT));
+		break;
+
+	case XED_ICLASS_CTESTNL:
+		ConditionalTest(addr, xedd, il, opOneLen, il.FlagCondition(LLFC_SGE));
+		break;
+
+	case XED_ICLASS_CTESTLE:
+		ConditionalTest(addr, xedd, il, opOneLen, il.FlagCondition(LLFC_SLE));
+		break;
+
+	case XED_ICLASS_CTESTNLE:
+		ConditionalTest(addr, xedd, il, opOneLen, il.FlagCondition(LLFC_SGT));
+		break;
+
+	case XED_ICLASS_CTESTF:
+		AssignEvexDfv(xedd, il);
+		break;
+	
 	case XED_ICLASS_XCHG:
 		il.AddInstruction(il.SetRegister(opOneLen, LLIL_TEMP(0), ReadILOperand(il, xedd, addr, 0, 0)));
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, ReadILOperand(il, xedd, addr, 1, 1)));
@@ -3500,13 +4550,30 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 	case XED_ICLASS_XOR_LOCK: // TODO: Handle lock prefix
 	case XED_ICLASS_XOR:
+	{
+		ExprId left, right;
+		size_t opSize = opOneLen;
+		if (!newDataDestination)
+		{
+			// nothing special
+			left = ReadILOperand(il, xedd, addr, 0, 0);
+			right = ReadILOperand(il, xedd, addr, 1, 1);
+		}
+		else
+		{
+			// new data destination
+			left = ReadILOperand(il, xedd, addr, 1, 1);
+			right = ReadILOperand(il, xedd, addr, 2, 2);
+			opSize = opTwoLen;
+		}
+
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
-				il.Xor(opOneLen,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					ReadILOperand(il, xedd, addr, 1, 1),
-				IL_FLAGWRITE_ALL)));
+				il.Xor(opSize, left, right,
+					noFlags ? 0 : IL_FLAGWRITE_ALL)));
 		break;
+	}
+
 	case XED_ICLASS_VPXOR:
 		if (xed_classify_avx512(xedd))
 		{
@@ -4043,13 +5110,13 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 
 	case XED_ICLASS_F2XM1:
-		il.AddInstruction(il.Intrinsic(vector<RegisterOrFlag> { RegisterOrFlag::Register(XED_REG_ST0) },
+		il.AddInstruction(il.Intrinsic(vector<RegisterOrFlag> { RegisterOrFlag::Register(XED_REG_ST0), RegisterOrFlag::Flag(IL_FLAG_C1)},
 			INTRINSIC_F2XM1, vector<ExprId> { il.Register(10, XED_REG_ST0) }, IL_FLAGWRITE_X87RND));
 		break;
 
 	case XED_ICLASS_FBLD:
 		il.AddInstruction(il.SetRegister(2, REG_X87_TOP, il.Sub(2, il.Register(2, REG_X87_TOP), il.Const(2, 1))));
-		il.AddInstruction(il.Intrinsic(vector<RegisterOrFlag> { RegisterOrFlag::Register(XED_REG_ST0) },
+		il.AddInstruction(il.Intrinsic(vector<RegisterOrFlag> { RegisterOrFlag::Register(XED_REG_ST0), RegisterOrFlag::Flag(IL_FLAG_C1) },
 			INTRINSIC_FBLD, vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) }, IL_FLAGWRITE_X87C1Z));
 		break;
 
@@ -4065,25 +5132,25 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 
 	case XED_ICLASS_FSIN:
 		il.AddInstruction(il.Intrinsic(vector<RegisterOrFlag> { RegisterOrFlag::Register(XED_REG_ST0),
-			RegisterOrFlag::Flag(IL_FLAG_C2) }, INTRINSIC_FSIN, vector<ExprId> { il.Register(10, XED_REG_ST0) },
+			RegisterOrFlag::Flag(IL_FLAG_C1), RegisterOrFlag::Flag(IL_FLAG_C2) }, INTRINSIC_FSIN, vector<ExprId> { il.Register(10, XED_REG_ST0) },
 			IL_FLAGWRITE_X87RND));
 		break;
 
 	case XED_ICLASS_FCOS:
 		il.AddInstruction(il.Intrinsic(vector<RegisterOrFlag> { RegisterOrFlag::Register(XED_REG_ST0),
-			RegisterOrFlag::Flag(IL_FLAG_C2) }, INTRINSIC_FCOS, vector<ExprId> { il.Register(10, XED_REG_ST0) },
+			RegisterOrFlag::Flag(IL_FLAG_C1), RegisterOrFlag::Flag(IL_FLAG_C2) }, INTRINSIC_FCOS, vector<ExprId> { il.Register(10, XED_REG_ST0) },
 			IL_FLAGWRITE_X87RND));
 		break;
 
 	case XED_ICLASS_FSINCOS:
 		il.AddInstruction(il.SetRegister(2, REG_X87_TOP, il.Sub(2, il.Register(2, REG_X87_TOP), il.Const(2, 1))));
 		il.AddInstruction(il.Intrinsic(vector<RegisterOrFlag> { RegisterOrFlag::Register(XED_REG_ST1),
-			RegisterOrFlag::Register(XED_REG_ST0), RegisterOrFlag::Flag(IL_FLAG_C2) }, INTRINSIC_FSINCOS,
+			RegisterOrFlag::Register(XED_REG_ST0), RegisterOrFlag::Flag(IL_FLAG_C1), RegisterOrFlag::Flag(IL_FLAG_C2) }, INTRINSIC_FSINCOS,
 			vector<ExprId> { il.Register(10, XED_REG_ST1) }, IL_FLAGWRITE_X87RND));
 		break;
 
 	case XED_ICLASS_FPATAN:
-		il.AddInstruction(il.Intrinsic(vector<RegisterOrFlag> { RegisterOrFlag::Register(XED_REG_ST1) },
+		il.AddInstruction(il.Intrinsic(vector<RegisterOrFlag> { RegisterOrFlag::Register(XED_REG_ST1), RegisterOrFlag::Flag(IL_FLAG_C1) },
 			INTRINSIC_FPATAN, vector<ExprId> { il.Register(10, XED_REG_ST0), il.Register(10, XED_REG_ST1) }, IL_FLAGWRITE_X87RND));
 		il.AddInstruction(il.RegisterStackFreeReg(XED_REG_ST0));
 		il.AddInstruction(il.SetRegister(2, REG_X87_TOP, il.Add(2, il.Register(2, REG_X87_TOP), il.Const(2, 1))));
@@ -4123,7 +5190,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 
 	case XED_ICLASS_FPTAN:
 		il.AddInstruction(il.Intrinsic(vector<RegisterOrFlag> { RegisterOrFlag::Register(XED_REG_ST0),
-			RegisterOrFlag::Flag(IL_FLAG_C2) }, INTRINSIC_FPTAN, vector<ExprId> { il.Register(10, XED_REG_ST0) },
+			RegisterOrFlag::Flag(IL_FLAG_C1), RegisterOrFlag::Flag(IL_FLAG_C2) }, INTRINSIC_FPTAN, vector<ExprId> { il.Register(10, XED_REG_ST0) },
 			IL_FLAGWRITE_X87RND));
 		il.AddInstruction(il.If(il.Flag(IL_FLAG_C2), doneLabel, falseLabel));
 		il.MarkLabel(falseLabel);
@@ -4137,7 +5204,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 
 	case XED_ICLASS_FSCALE:
-		il.AddInstruction(il.Intrinsic(vector<RegisterOrFlag> { RegisterOrFlag::Register(XED_REG_ST0) },
+		il.AddInstruction(il.Intrinsic(vector<RegisterOrFlag> { RegisterOrFlag::Register(XED_REG_ST0), RegisterOrFlag::Flag(IL_FLAG_C1) },
 			INTRINSIC_FSCALE, vector<ExprId> { il.Register(10, XED_REG_ST0), il.Register(10, XED_REG_ST1) },
 			IL_FLAGWRITE_X87RND));
 		break;
@@ -4156,7 +5223,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 
 	case XED_ICLASS_FYL2X:
-		il.AddInstruction(il.Intrinsic(vector<RegisterOrFlag> { RegisterOrFlag::Register(XED_REG_ST1) },
+		il.AddInstruction(il.Intrinsic(vector<RegisterOrFlag> { RegisterOrFlag::Register(XED_REG_ST1), RegisterOrFlag::Flag(IL_FLAG_C1)},
 			INTRINSIC_FYL2X, vector<ExprId> { il.Register(10, XED_REG_ST0), il.Register(10, XED_REG_ST1) },
 			IL_FLAGWRITE_X87RND));
 		il.AddInstruction(il.RegisterStackFreeReg(XED_REG_ST0));
@@ -4164,88 +5231,34 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 
 	case XED_ICLASS_FYL2XP1:
-		il.AddInstruction(il.Intrinsic(vector<RegisterOrFlag> { RegisterOrFlag::Register(XED_REG_ST1) },
+		il.AddInstruction(il.Intrinsic(vector<RegisterOrFlag> { RegisterOrFlag::Register(XED_REG_ST1), RegisterOrFlag::Flag(IL_FLAG_C1)},
 			INTRINSIC_FYL2XP1, vector<ExprId> { il.Register(10, XED_REG_ST0), il.Register(10, XED_REG_ST1) },
 			IL_FLAGWRITE_X87RND));
 		il.AddInstruction(il.RegisterStackFreeReg(XED_REG_ST0));
 		il.AddInstruction(il.SetRegister(2, REG_X87_TOP, il.Add(2, il.Register(2, REG_X87_TOP), il.Const(2, 1))));
 		break;
 
-	case XED_ICLASS_TZCNT:
-	{
-		if (opOneLen == 8)
-			il.AddInstruction(
-				il.Intrinsic(
-					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
-					INTRINSIC_XED_IFORM_TZCNT_GPR64_GPRMEM64,
-					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) } ));
-		else if (opOneLen == 4)
-			il.AddInstruction(
-				il.Intrinsic(
-					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
-					INTRINSIC_XED_IFORM_TZCNT_GPR32_GPRMEM32,
-					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) } ));
-		else
-			il.AddInstruction(
-				il.Intrinsic(
-					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
-					INTRINSIC_XED_IFORM_TZCNT_GPR16_GPRMEM16,
-					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) } ));
-
+	case XED_ICLASS_BSWAP:
+		// BSWAP reverses the bytes of its single register operand in place. x86 leaves the flags
+		// unaffected, matching the native operation.
+		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
+			il.ByteSwap(opOneLen, ReadILOperand(il, xedd, addr, 0, 0))));
 		break;
-	}
+
+	case XED_ICLASS_TZCNT:
+		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
+			il.CountTrailingZeros(opOneLen, ReadILOperand(il, xedd, addr, 1, 1), IL_FLAGWRITE_LZTZCNT)));
+		break;
 
 	case XED_ICLASS_LZCNT:
-	{
-		if (opOneLen == 8)
-			il.AddInstruction(
-				il.Intrinsic(
-					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
-					INTRINSIC_XED_IFORM_LZCNT_GPR64_GPRMEM64,
-					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) }
-				)
-			);
-		else if (opOneLen == 4)
-			il.AddInstruction(
-				il.Intrinsic(
-					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
-					INTRINSIC_XED_IFORM_LZCNT_GPR32_GPRMEM32,
-					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) } ));
-		else
-			il.AddInstruction(
-				il.Intrinsic(
-					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
-					INTRINSIC_XED_IFORM_LZCNT_GPR16_GPRMEM16,
-					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) } ));
-
+		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
+			il.CountLeadingZeros(opOneLen, ReadILOperand(il, xedd, addr, 1, 1), IL_FLAGWRITE_LZTZCNT)));
 		break;
-	}
 
 	case XED_ICLASS_POPCNT:
-	{
-		if (opOneLen == 8)
-			il.AddInstruction(
-				il.Intrinsic(
-					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
-					INTRINSIC_XED_IFORM_POPCNT_GPR64_GPRMEM64,
-					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) }
-				)
-			);
-		else if (opOneLen == 4)
-			il.AddInstruction(
-				il.Intrinsic(
-					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
-					INTRINSIC_XED_IFORM_POPCNT_GPR32_GPRMEM32,
-					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) } ));
-		else
-			il.AddInstruction(
-				il.Intrinsic(
-					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
-					INTRINSIC_XED_IFORM_POPCNT_GPR16_GPRMEM16,
-					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) } ));
-
+		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
+			il.PopulationCount(opOneLen, ReadILOperand(il, xedd, addr, 1, 1), IL_FLAGWRITE_POPCNT)));
 		break;
-	}
 
 	default:
 		LiftAsIntrinsic();

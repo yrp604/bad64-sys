@@ -1,4 +1,4 @@
-// Copyright 2022-2025 Vector 35 Inc.
+// Copyright 2022-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ use crate::PDBParserInstance;
 use binaryninja::architecture::{Architecture, ArchitectureExt, Register, RegisterId};
 use binaryninja::binary_view::BinaryViewBase;
 use binaryninja::confidence::{Conf, MAX_CONFIDENCE, MIN_CONFIDENCE};
-use binaryninja::demangle::demangle_ms;
+use binaryninja::demangle::{demangle_ms_with_config, DemanglerConfig};
 use binaryninja::rc::Ref;
 use binaryninja::types::{FunctionParameter, QualifiedName, StructureBuilder, Type, TypeClass};
 use binaryninja::variable::{Variable, VariableSourceType};
@@ -961,7 +961,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
                     MIN_CONFIDENCE,
                 )),
                 p.name.clone(),
-                p.storage.first().map(|loc| loc.location),
+                p.storage.first().map(|loc| loc.location.into()),
             );
             // Ignore thisptr because it's not technically part of the raw type signature
             if p.name != "this" {
@@ -976,7 +976,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
                     MIN_CONFIDENCE,
                 )),
                 p.name.clone(),
-                p.storage.first().map(|loc| loc.location),
+                p.storage.first().map(|loc| loc.location.into()),
             );
             // Ignore thisptr because it's not technically part of the raw type signature
             if p.name != "this" {
@@ -1035,7 +1035,6 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
             }
         }
 
-        // Now apply the default location for the params from the cc
         let cc = fancy_type
             .contents
             .calling_convention()
@@ -1049,12 +1048,6 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
         });
         self.log(|| format!("Default calling convention: {:?}", self.default_cc));
         self.log(|| format!("Result calling convention: {:?}", cc));
-
-        let locations = cc.contents.variables_for_parameters(&fancy_params, None);
-        for (p, new_location) in fancy_params.iter_mut().zip(locations.into_iter()) {
-            p.location = Some(new_location);
-        }
-
         self.log(|| format!("Final params: {:#x?}", fancy_params));
 
         // Use the new locals we've parsed to make the Real Definitely True function type
@@ -1773,9 +1766,12 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
         raw_name: &String,
         rva: Rva,
     ) -> Result<(Option<Conf<Ref<Type>>>, Option<QualifiedName>)> {
-        let (mut t, mut name) = match demangle_ms(&self.arch, raw_name, true) {
-            Some((name, Some(t))) => (Some(Conf::new(t, DEMANGLE_CONFIDENCE)), name),
-            Some((name, _)) => (None, name),
+        let demangler_config = DemanglerConfig::for_binary_view(self.bv);
+        let (mut t, mut name) = match demangle_ms_with_config(raw_name, &demangler_config) {
+            Some(result) => (
+                result.ty.map(|ty| Conf::new(ty, DEMANGLE_CONFIDENCE)),
+                result.name,
+            ),
             _ => (None, QualifiedName::new(vec![raw_name.clone()])),
         };
 
@@ -1849,8 +1845,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
             for (search_name, search_types) in name_to_type.iter() {
                 if last_name.contains(search_name) {
                     for search_type in search_types {
-                        let qualified_search_type = QualifiedName::from(search_type);
-                        if let Some(ty) = self.named_types.get(&qualified_search_type) {
+                        if let Some(ty) = self.named_types.get(search_type) {
                             // Fallback in case we don't find a specific one
                             t = Some(Conf::new(
                                 Type::named_type_from_type(search_type, ty.as_ref()),
@@ -1865,8 +1860,8 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
                                     self.make_lengthy_type(ty, self.bv.start() + rva.0 as u64)?
                                 {
                                     // See if we have a type with this length
-                                    let lengthy_name: QualifiedName =
-                                        format!("${}$_extraBytes_{}", search_type, length).into();
+                                    let lengthy_name =
+                                        format!("${}$_extraBytes_{}", search_type, length);
 
                                     if let Some(ty) = self.named_types.get(&lengthy_name) {
                                         // Wow!
@@ -1885,54 +1880,17 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
             }
         }
 
-        // VTables have types on their data symbols,
-        if let Some((last, class_name)) = name.split_last() {
-            if last.contains("`vftable'") {
-                let mut vt_name = class_name.with_item("VTable");
-                if last.contains("{for") {
-                    // DerivedClass::`vftable'{for `BaseClass'}
-                    let mut base_name = last.to_owned();
-                    base_name.drain(0..("`vftable'{for `".len()));
-                    base_name.drain((base_name.len() - "'}".len())..(base_name.len()));
-                    // Multiply inherited classes have multiple vtable types
-                    // TODO: Do that
-                    vt_name = QualifiedName::new(vec![base_name, "VTable".to_string()]);
-                }
-
-                vt_name = vt_name
-                    .replace("class ", "")
-                    .replace("struct ", "")
-                    .replace("enum ", "");
-
-                if let Some(ty) = self.named_types.get(&vt_name) {
-                    t = Some(Conf::new(
-                        Type::named_type_from_type(vt_name, ty.as_ref()),
-                        DEMANGLE_CONFIDENCE,
-                    ));
-                } else {
-                    // Sometimes the demangler has trouble with `class Foo` in templates
-                    vt_name = vt_name
-                        .replace("class ", "")
-                        .replace("struct ", "")
-                        .replace("enum ", "");
-
-                    if let Some(ty) = self.named_types.get(&vt_name) {
-                        t = Some(Conf::new(
-                            Type::named_type_from_type(vt_name, ty.as_ref()),
-                            DEMANGLE_CONFIDENCE,
-                        ));
-                    } else {
-                        t = Some(Conf::new(
-                            Type::named_type_from_type(
-                                vt_name,
-                                Type::structure(StructureBuilder::new().finalize().as_ref())
-                                    .as_ref(),
-                            ),
-                            DEMANGLE_CONFIDENCE,
-                        ));
-                    }
-                }
-            }
+        // VTables have types on their data symbols
+        // Format: "ClassName::`vftable'" or "ClassName::`vftable'{for `BaseClass'}"
+        if let Some(vt_name) = parse_vtable_type_name(&name) {
+            let ty =
+                self.named_types.get(&vt_name).cloned().unwrap_or_else(|| {
+                    Type::structure(StructureBuilder::new().finalize().as_ref())
+                });
+            t = Some(Conf::new(
+                Type::named_type_from_type(vt_name, ty.as_ref()),
+                DEMANGLE_CONFIDENCE,
+            ));
         }
 
         if let Some(last_name) = name.last_mut() {
@@ -2038,6 +1996,80 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
             }
             // TODO: Other arches
             _ => None,
+        }
+    }
+}
+
+/// Parse a vtable symbol name and return the parts for the vtable type.
+/// Takes the last element of (e.g., `"ClassName::`vftable'{for `BaseClass'}"`)
+/// and converts it to a vtable type name (e.g., `["ClassName", "BaseClass", "VTable"]`).
+fn parse_vtable_type_name(name: &QualifiedName) -> Option<String> {
+    let (last, qualified_name_base) = name.items.split_last()?;
+    let (class_name, rest) = last.split_once("::`vftable'")?;
+
+    let clean = |s: &str| {
+        s.replace("class ", "")
+            .replace("struct ", "")
+            .replace("enum ", "")
+    };
+
+    let mut parts = qualified_name_base.to_vec();
+    parts.extend(class_name.split("::").map(|s| clean(s)));
+
+    if let Some(base_class) = rest
+        .split_once("{for `")
+        .and_then(|(_, base_start)| base_start.split_once("'}"))
+        .map(|(base, _)| base)
+    {
+        parts = vec![clean(base_class)];
+    }
+
+    // We want only the last class name referenced in "parts", this is because the type we construct
+    // for the vtable will want to use the existing base vt defined in the binary view.
+    Some(format!("{}::VTable", parts.join("::")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// (input_demangled_name, expected_output)
+    #[rustfmt::skip]
+    const VTABLE_TEST_CASES: &[(&str, &[&str])] = &[
+        // Simple vtables
+        ("Base::`vftable'", &["Base", "VTable"]),
+        // Multiple inheritance with {for}
+        ("MultiDerived::`vftable'{for `InterfaceA'}", &["InterfaceA", "VTable"]),
+        // Simple templates
+        ("Container<int32_t>::`vftable'", &["Container<int32_t>", "VTable"]),
+        ("Pair<int32_t,char>::`vftable'", &["Pair<int32_t,char>", "VTable"]),
+        ("FixedArray<int32_t,10>::`vftable'", &["FixedArray<int32_t,10>", "VTable"]),
+        // Namespaced classes
+        ("outer::inner::NamespacedTemplate<int32_t>::`vftable'", &["outer", "inner", "NamespacedTemplate<int32_t>", "VTable"]),
+        // Nested class inside template
+        ("complex::HasNested<int32_t>::Nested::`vftable'", &["complex", "HasNested<int32_t>", "Nested", "VTable"]),
+        // Template with {for} clause
+        ("TemplateMultiDerived<int32_t>::`vftable'{for `TemplateInterfaceA<int32_t>'}", &["TemplateInterfaceA<int32_t>", "VTable"]),
+        ("TemplateDiamond<int32_t>::`vftable'{for `TemplateLeftVirtual<int32_t>'}", &["TemplateLeftVirtual<int32_t>", "VTable"]),
+        // Nested templates - note: "class " prefix gets stripped
+        ("Wrapper<class Container<int32_t> >::`vftable'", &["Wrapper<Container<int32_t> >", "VTable"]),
+        // Class/struct/enum keyword removal
+        ("Wrapper<class Foo>::`vftable'", &["Wrapper<Foo>", "VTable"]),
+        ("Container<struct Bar>::`vftable'", &["Container<Bar>", "VTable"]),
+        ("Holder<enum Baz>::`vftable'", &["Holder<Baz>", "VTable"]),
+    ];
+
+    #[test]
+    fn test_vtable_type_name_parsing() {
+        for (input, expected) in VTABLE_TEST_CASES {
+            let name = QualifiedName::new(vec![input.to_string()]);
+            let result = parse_vtable_type_name(&name);
+            assert_eq!(
+                result,
+                Some(expected.join("::")),
+                "Failed for input: {}",
+                input
+            );
         }
     }
 }

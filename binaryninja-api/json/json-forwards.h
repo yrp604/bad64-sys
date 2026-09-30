@@ -79,6 +79,14 @@ license you like.
 /// to prevent private header inclusion.
 #define JSON_IS_AMALGAMATION
 
+#ifdef BINARYNINJACORE_LIBRARY
+#define JSONCPP_INLINE_NS_BEGIN inline namespace Core {
+#define JSONCPP_INLINE_NS_END }
+#else
+#define JSONCPP_INLINE_NS_BEGIN
+#define JSONCPP_INLINE_NS_END
+#endif
+
 // //////////////////////////////////////////////////////////////////////
 // Beginning of content of file: include/json/config.h
 // //////////////////////////////////////////////////////////////////////
@@ -243,6 +251,7 @@ license you like.
 #endif // if !defined(JSON_IS_AMALGAMATION)
 
 namespace Json {
+JSONCPP_INLINE_NS_BEGIN
 typedef int Int;
 typedef unsigned int UInt;
 #if defined(JSON_NO_INT64)
@@ -280,6 +289,7 @@ typedef UInt64 LargestUInt;
 #define JSONCPP_ISTRINGSTREAM std::istringstream
 #define JSONCPP_ISTREAM std::istream
 #endif // if JSONCPP_USING_SECURE_MEMORY
+JSONCPP_INLINE_NS_END
 } // end namespace Json
 
 #endif // JSON_CONFIG_H_INCLUDED
@@ -310,6 +320,7 @@ typedef UInt64 LargestUInt;
 #endif // if !defined(JSON_IS_AMALGAMATION)
 
 namespace Json {
+JSONCPP_INLINE_NS_BEGIN
 
 // writer.h
 class FastWriter;
@@ -331,6 +342,7 @@ class ValueIteratorBase;
 class ValueIterator;
 class ValueConstIterator;
 
+JSONCPP_INLINE_NS_END
 } // namespace Json
 
 #endif // JSON_FORWARDS_H_INCLUDED

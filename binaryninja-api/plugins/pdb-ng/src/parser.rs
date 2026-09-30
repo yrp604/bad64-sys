@@ -1,4 +1,4 @@
-// Copyright 2022-2025 Vector 35 Inc.
+// Copyright 2022-2026 Vector 35 Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,13 +18,12 @@ use std::fmt::Display;
 use std::sync::OnceLock;
 
 use anyhow::{anyhow, Result};
-use log::{debug, info};
 use pdb::*;
 
 use crate::symbol_parser::{ParsedDataSymbol, ParsedProcedure, ParsedSymbol};
 use crate::type_parser::ParsedType;
 use binaryninja::architecture::{Architecture, CoreArchitecture};
-use binaryninja::binary_view::{BinaryView, BinaryViewExt};
+use binaryninja::binary_view::BinaryView;
 use binaryninja::calling_convention::CoreCallingConvention;
 use binaryninja::confidence::{Conf, MIN_CONFIDENCE};
 use binaryninja::debuginfo::{DebugFunctionInfo, DebugInfo};
@@ -32,8 +31,8 @@ use binaryninja::platform::Platform;
 use binaryninja::rc::Ref;
 use binaryninja::settings::{QueryOptions, Settings};
 use binaryninja::types::{
-    EnumerationBuilder, NamedTypeReference, NamedTypeReferenceClass, QualifiedName,
-    StructureBuilder, StructureType, Type, TypeClass,
+    EnumerationBuilder, NamedTypeReference, NamedTypeReferenceClass, StructureBuilder,
+    StructureType, Type, TypeClass,
 };
 use binaryninja::variable::NamedDataVariableWithType;
 
@@ -69,13 +68,13 @@ pub struct PDBParserInstance<'a, S: Source<'a> + 'a> {
     /// TypeIndex -> ParsedType enum used during parsing
     pub(crate) indexed_types: BTreeMap<TypeIndex, ParsedType>,
     /// QName -> Binja Type for finished types
-    pub(crate) named_types: BTreeMap<QualifiedName, Ref<Type>>,
+    pub(crate) named_types: BTreeMap<String, Ref<Type>>,
     /// Raw (mangled) name -> TypeIndex for resolving forward references
     pub(crate) full_type_indices: BTreeMap<String, TypeIndex>,
     /// Stack of types we're currently parsing
     pub(crate) type_stack: Vec<TypeIndex>,
     /// Stack of parent types we're parsing nested types inside of
-    pub(crate) namespace_stack: QualifiedName,
+    pub(crate) namespace_stack: Vec<String>,
     /// Type Index -> Does it return on the stack
     pub(crate) type_default_returnable: BTreeMap<TypeIndex, bool>,
 
@@ -122,7 +121,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
 
         let default_cc = platform
             .get_default_calling_convention()
-            .expect("Expected default calling convention");
+            .ok_or_else(|| anyhow!("Cannot parse to view with no default calling convention"))?;
 
         let thiscall_cc = Self::find_calling_convention(platform.as_ref(), "thiscall")
             .unwrap_or(default_cc.clone());
@@ -141,7 +140,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
             platform,
             pdb,
             address_map,
-            settings: Settings::new(),
+            settings: Settings::global(),
             settings_query_opts: QueryOptions::new_with_view(bv),
             indexed_types: Default::default(),
             named_types: Default::default(),
@@ -172,7 +171,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
                 .add_type(&name.to_string(), ty.as_ref(), &[]); // TODO : Components
         }
 
-        info!(
+        tracing::info!(
             "PDB found {} types (before resolving NTRs)",
             self.named_types.len()
         );
@@ -198,9 +197,9 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
                 )?;
             }
 
-            info!("PDB found {} types", self.named_types.len());
-            info!("PDB found {} data variables", symbols.len());
-            info!("PDB found {} functions", functions.len());
+            tracing::info!("PDB found {} types", self.named_types.len());
+            tracing::info!("PDB found {} data variables", symbols.len());
+            tracing::info!("PDB found {} functions", functions.len());
 
             let allow_void = self.settings.get_bool_with_opts(
                 "pdb.features.allowVoidGlobals",
@@ -291,9 +290,9 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
     fn collect_name(
         &self,
         name: &NamedTypeReference,
-        unknown_names: &mut HashMap<QualifiedName, NamedTypeReferenceClass>,
+        unknown_names: &mut HashMap<String, NamedTypeReferenceClass>,
     ) {
-        let used_name = name.name();
+        let used_name = name.name().to_string();
         if let Some(&found) = unknown_names.get(&used_name) {
             if found != name.class() {
                 // Interesting case, not sure we care
@@ -314,7 +313,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
     fn collect_names(
         &self,
         ty: &Type,
-        unknown_names: &mut HashMap<QualifiedName, NamedTypeReferenceClass>,
+        unknown_names: &mut HashMap<String, NamedTypeReferenceClass>,
     ) {
         match ty.type_class() {
             TypeClass::StructureTypeClass => {
@@ -366,7 +365,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
             .bv
             .types()
             .iter()
-            .map(|qnat| qnat.name)
+            .map(|qnat| qnat.name.to_string())
             .collect::<HashSet<_>>();
 
         for ty in &self.named_types {
@@ -462,7 +461,7 @@ impl<'a, S: Source<'a> + 'a> PDBParserInstance<'a, S> {
         if *debug_pdb {
             let space = "\t".repeat(self.type_stack.len()) + &"\t".repeat(self.symbol_stack.len());
             let msg = format!("{}", msg());
-            debug!(
+            tracing::debug!(
                 "{}{}",
                 space,
                 msg.replace("\n", &("\n".to_string() + &space))

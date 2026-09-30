@@ -7,11 +7,14 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use thiserror::Error;
 use uuid::Uuid;
+use warp::chunk::{Chunk, ChunkKind};
 use warp::r#type::guid::TypeGUID;
 use warp::r#type::{ComputedType, Type};
+use warp::signature::constraint::ConstraintGUID;
 use warp::signature::function::{Function, FunctionGUID};
 use warp::symbol::Symbol;
 use warp::target::Target;
+use warp::WarpFile;
 
 pub mod disk;
 pub mod memory;
@@ -39,6 +42,8 @@ pub enum ContainerError {
     SearchFailed(String),
     #[error("failed to commit source '{0}': {1}")]
     CommitFailed(SourceId, String),
+    #[error("container error encountered: {0}")]
+    Custom(String),
 }
 
 /// Represents the ID for a single container source.
@@ -224,6 +229,7 @@ pub trait Container: Send + Sync + Display + Debug {
     /// to verify the permissions of the source.
     fn add_source(&mut self, path: SourcePath) -> ContainerResult<SourceId>;
 
+    // TODO: Make interior mutable.
     /// Flush changes made to a source.
     ///
     /// Because writing to a source can require file or network operations, we let the container
@@ -287,16 +293,42 @@ pub trait Container: Send + Sync + Display + Debug {
         functions: &[Function],
     ) -> ContainerResult<()>;
 
+    /// Add the `chunk`s data to the provided `source` if it exists and is writable.
+    fn add_chunk(&mut self, source: &SourceId, chunk: &Chunk) -> ContainerResult<()> {
+        match &chunk.kind {
+            ChunkKind::Signature(sc) => {
+                let functions: Vec<_> = sc.functions().collect();
+                self.add_functions(&chunk.header.target, source, &functions)
+            }
+            ChunkKind::Type(tc) => {
+                let types: Vec<_> = tc.types().collect();
+                self.add_computed_types(source, &types)
+            }
+        }
+    }
+
+    /// Add the `file` data to the provided `source` if it exists and is writable.
+    fn add_file(&mut self, source: &SourceId, file: &WarpFile) -> ContainerResult<()> {
+        for chunk in &file.chunks {
+            self.add_chunk(source, chunk)?;
+        }
+        Ok(())
+    }
+
     /// Fetches WARP information for the associated functions.
     ///
     /// Typically, a container that resides only in memory has nothing to fetch, so the default implementation
     /// will do nothing. This function is blocking, so assume it will take a few seconds for a container
     /// that intends to fetch over the network.
+    ///
+    /// To constrain on the fetched functions, pass a list of [`ConstraintGUID`]s that will be
+    /// used to filter the fetched functions which do not contain at least one of the constraints.
     fn fetch_functions(
-        &mut self,
+        &self,
         _target: &Target,
         _tags: &[SourceTag],
         _functions: &[FunctionGUID],
+        _constraints: &[ConstraintGUID],
     ) -> ContainerResult<()> {
         Ok(())
     }

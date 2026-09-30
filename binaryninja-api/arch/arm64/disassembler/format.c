@@ -70,7 +70,7 @@ const char *get_register_arrspec(Register reg, const InstructionOperand *operand
 
 int get_register_full(Register reg, const InstructionOperand *operand, char *result)
 {
-	strcpy(result, get_register_name(reg));
+	strcpy(result, aarch64_get_register_name(reg));
 	if(result[0] == '\0')
 		return -1;
 
@@ -95,7 +95,7 @@ uint32_t get_implementation_specific(const InstructionOperand *operand, char *ou
 			operand->implspec[4]) >= outBufferSize;
 }
 
-const char *get_operation(const Instruction *inst)
+const char *aarch64_get_operation(const Instruction *inst)
 {
 	return operation_to_str(inst->operation);
 }
@@ -107,7 +107,7 @@ static const char *const ConditionString[] = {
 	"gt", "le", "al", "nv"
 };
 
-const char *get_condition(Condition cond)
+const char *aarch64_get_condition(Condition cond)
 {
 	if (cond < 0 || cond >= END_CONDITION)
 		return NULL;
@@ -122,7 +122,7 @@ static const char *const ShiftString[] = {
 	"uxtb", "msl"
 };
 
-const char *get_shift(ShiftType shift)
+const char *aarch64_get_shift(ShiftType shift)
 {
 	if (shift <= ShiftType_NONE || shift >= ShiftType_END)
 		return NULL;
@@ -156,7 +156,7 @@ static inline uint32_t get_shifted_register(
 				return FAILED_TO_DISASSEMBLE_REGISTER;
 			}
 		}
-		const char *shiftStr = get_shift(operand->shiftType);
+		const char *shiftStr = aarch64_get_shift(operand->shiftType);
 		if (shiftStr == NULL)
 			return FAILED_TO_DISASSEMBLE_OPERAND;
 		snprintf(
@@ -248,7 +248,7 @@ uint32_t get_memory_operand(
 			if (operand->shiftType != ShiftType_NONE)
 			{
 				if (snprintf(extendBuff, sizeof(extendBuff), ", %s%s",
-							get_shift(operand->shiftType), immBuff) >= sizeof(extendBuff))
+							aarch64_get_shift(operand->shiftType), immBuff) >= sizeof(extendBuff))
 				{
 					return FAILED_TO_DISASSEMBLE_OPERAND;
 				}
@@ -371,7 +371,7 @@ uint32_t get_shifted_immediate(const InstructionOperand *instructionOperand, cha
 				return FAILED_TO_DISASSEMBLE_REGISTER;
 			}
 		}
-		const char *shiftStr = get_shift(instructionOperand->shiftType);
+		const char *shiftStr = aarch64_get_shift(instructionOperand->shiftType);
 		if (shiftStr == NULL)
 			return FAILED_TO_DISASSEMBLE_OPERAND;
 		snprintf(
@@ -383,7 +383,8 @@ uint32_t get_shifted_immediate(const InstructionOperand *instructionOperand, cha
 	}
 	if (type == FIMM32)
 	{
-		float f = *(const float*)&instructionOperand->immediate;
+		float f = 0.0f;
+		memcpy(&f, &instructionOperand->immediate, sizeof(float));
 		if (snprintf(outBuffer, outBufferSize, "#%.08f%s", f, shiftBuff) >= outBufferSize)
 			return FAILED_TO_DISASSEMBLE_OPERAND;
 	}
@@ -418,9 +419,9 @@ uint32_t get_sme_tile(const InstructionOperand *operand, char *outBuffer, uint32
 	char base_offset[32] = {'\0'};
 	if(operand->reg[0] != REG_NONE) {
 		if(operand->arrSpec == ARRSPEC_FULL)
-			snprintf(base_offset, sizeof(base_offset), "[%s]", get_register_name(operand->reg[0]));
+			snprintf(base_offset, sizeof(base_offset), "[%s]", aarch64_get_register_name(operand->reg[0]));
 		else
-			snprintf(base_offset, sizeof(base_offset), "[%s, #%" PRIu64 "]", get_register_name(operand->reg[0]), operand->immediate);
+			snprintf(base_offset, sizeof(base_offset), "[%s, #%" PRIu64 "]", aarch64_get_register_name(operand->reg[0]), operand->immediate);
 	}
 
 	char *slice = "";
@@ -450,9 +451,9 @@ uint32_t get_indexed_element(const InstructionOperand *operand, char *outBuffer,
 
 	// <Pn>.<T>[<Wm>{, #<imm>}]
 	if(snprintf(outBuffer, outBufferSize, "%s%s[%s%s]",
-		get_register_name(operand->reg[0]),
+		aarch64_get_register_name(operand->reg[0]),
 		get_arrspec_str_truncated(operand->arrSpec),
-		get_register_name(operand->reg[1]),
+		aarch64_get_register_name(operand->reg[1]),
 		optional_comma_and
 	  ) >= outBufferSize)
 	  	return FAILED_TO_DISASSEMBLE_OPERAND;
@@ -463,7 +464,7 @@ uint32_t get_indexed_element(const InstructionOperand *operand, char *outBuffer,
 uint32_t get_accum_array(const InstructionOperand *operand, char *outBuffer, uint32_t outBufferSize)
 {
 	if(snprintf(outBuffer, outBufferSize, "ZA[%s, #%" PRIu64 "]",
-	  get_register_name(operand->reg[0]), operand->immediate
+	  aarch64_get_register_name(operand->reg[0]), operand->immediate
 	  ) >= outBufferSize)
 		return FAILED_TO_DISASSEMBLE_OPERAND;
 
@@ -483,7 +484,7 @@ int aarch64_disassemble(Instruction *instruction, char *buf, size_t buf_sz)
 		return INVALID_ARGUMENTS;
 
 	memset(operandStrings, 0, sizeof(operandStrings));
-	const char *operation = get_operation(instruction);
+	const char *operation = aarch64_get_operation(instruction);
 	if (operation == NULL)
 		return FAILED_TO_DISASSEMBLE_OPERATION;
 
@@ -496,7 +497,7 @@ int aarch64_disassemble(Instruction *instruction, char *buf, size_t buf_sz)
 		{
 			case CONDITION:
 				if (snprintf(tmpOperandString, sizeof(tmpOperandString), "%s",
-							get_condition((Condition)instruction->operands[i].cond)) >= sizeof(tmpOperandString))
+							aarch64_get_condition((Condition)instruction->operands[i].cond)) >= sizeof(tmpOperandString))
 					return FAILED_TO_DISASSEMBLE_OPERAND;
 				operand = tmpOperandString;
 				break;
@@ -591,7 +592,7 @@ int aarch64_disassemble(Instruction *instruction, char *buf, size_t buf_sz)
 	}
 	memset(buf, 0, buf_sz);
 	if (snprintf(buf, buf_sz, "%s%s%s%s%s%s",
-				get_operation(instruction),
+				aarch64_get_operation(instruction),
 				operandStrings[0],
 				operandStrings[1],
 				operandStrings[2],

@@ -317,12 +317,12 @@ class BINARYNINJAUIAPI UIContextNotification
 
 	/*!
 	    Callback when an action is executed, allowing plugins to intercept and modify
-	    the behavior of the action. Plugins may modify the `action` parameter and
+	    the behavior of the action. Plugins may modify the \c action parameter and
 	    specify new behavior for the action to execute, which will happen immediately
 	    after all registered notifications have been notified.
 
 	    The original behavior (potentially modified by another notification) can be
-	    executed by saving a copy of the value of `action` and calling it from within
+	    executed by saving a copy of the value of \c action and calling it from within
 	    your modified value.
 
 	    \param context
@@ -379,6 +379,35 @@ class BINARYNINJAUIAPI UIContextNotification
 		(void)context;
 		(void)view;
 		(void)menu;
+	}
+
+	/*!
+	    Callback when a token is double-clicked, invoked before the view's default
+	    double-click behavior (navigation, rename dialog, etc.). Lets a plugin handle the
+	    token itself, e.g. the debugger navigating to a variable's runtime address.
+
+	    Notifications are invoked in registration order until one returns true, which
+	    consumes the double-click: no further notifications run and the default behavior is
+	    suppressed. Return false to pass the click on to the other notifications and,
+	    ultimately, the default behavior.
+
+	    \param context Context containing the view
+	    \param frame ViewFrame containing the view
+	    \param view View in which the token was double-clicked
+	    \param location Location at the time of the click
+	    \param token The token that was double-clicked
+	    \return True if handled (suppressing the default behavior), false to pass it on
+	 */
+	virtual bool OnTokenDoubleClicked(
+		UIContext* context, ViewFrame* frame, View* view, const ViewLocation& location,
+		const HighlightTokenState& token)
+	{
+		(void)context;
+		(void)frame;
+		(void)view;
+		(void)location;
+		(void)token;
+		return false;
 	}
 };
 
@@ -560,11 +589,17 @@ public:
 
 	virtual ProjectRef getProject();
 	virtual ProjectStatusWidget* getProjectStatusWidget();
+	/*!
+	    Get the similarity session owned by the active Binary Similarity main tab, or by the current Binary Similarity
+	    sidebar when another main tab is active.
+	    \return Current similarity session, or nullptr if no session has been created
+	 */
+	virtual SimilaritySessionRef getCurrentSimilaritySession();
 
-	virtual bool openFilename(const QString& path, bool openOptions = false);
+	virtual bool openFilename(const QString& path, bool openOptions = false, bool forceContainerBrowser = false);
 	virtual ProjectRef openProject(const QString& path);
 	virtual ViewFrame* openFileContext(FileContext* file, const QString& forcedView = "", bool addTab = true);
-	virtual bool openProjectFile(ProjectFileRef file, ExternalLocationRef loc = nullptr, bool openWithOptions = false);
+	virtual bool openProjectFile(ProjectFileRef file, ExternalLocationRef loc = nullptr, bool openWithOptions = false, bool forceContainerBrowser = false);
 	virtual bool openUrl(const QUrl& url, bool openWithOptions = false);
 	virtual void recreateViewFrames(FileContext* file) = 0;
 	virtual void refreshCurrentViewContents();
@@ -599,6 +634,8 @@ public:
 	void NotifyOnActionExecuted(UIActionHandler* handler, const QString& name, const UIActionContext& ctx, std::function<void(const UIActionContext&)>& action);
 	void NotifyOnActionExecutedImmutable(UIActionHandler* handler, const QString& name, const UIActionContext& ctx);
 	void NotifyOnContextMenuCreated(View* view, Menu& menu);
+	bool NotifyOnTokenDoubleClicked(
+		ViewFrame* frame, View* view, const ViewLocation& location, const HighlightTokenState& token);
 
 	virtual void findAll(const BinaryNinja::FindParameters& params);
 
@@ -629,6 +666,12 @@ public:
 	    \return Name to display for this path
 	 */
 	QString GetNameForPath(const QString& path);
+	/*!
+	    Get the displayed name for a file, resolving container entries within projects
+	    \param metadata FileMetadata whose displayed name you want
+	    \return Name to display for this file
+	 */
+	QString GetNameForPath(FileMetadataRef metadata);
 
 	virtual QWidget* fileContentsLockStatusWidget() = 0;
 
@@ -667,7 +710,7 @@ void BINARYNINJAUIAPI InitUIViews();
 void BINARYNINJAUIAPI InitUIActions();
 
 void BINARYNINJAUIAPI InitUIPlugins();
-void BINARYNINJAUIAPI SetCurrentUIPluginLoadOrder(BNPluginLoadOrder order);
+void BINARYNINJAUIAPI SetCurrentUIPluginLoadOrder(BNPluginLoadPhase order);
 void BINARYNINJAUIAPI AddRequiredUIPluginDependency(const std::string& name);
 void BINARYNINJAUIAPI AddOptionalUIPluginDependency(const std::string& name);
 

@@ -229,6 +229,7 @@ class BINARYNINJAUIAPI SymbolListModel : public QAbstractItemModel, public Binar
 	std::unique_ptr<std::deque<NamedObject>> m_oldCurSyms;
 	NamedObject m_currentSym;
 	std::string m_filter;
+	FilterOptions m_filterOptions;
 	int m_maxWidth = 32;
 
 	std::mutex m_updateMutex;
@@ -290,7 +291,7 @@ class BINARYNINJAUIAPI SymbolListModel : public QAbstractItemModel, public Binar
 	bool hasSymbols() const;
 	int getMaximumWidth() const { return m_maxWidth; }
 
-	void setFilter(const std::string& filter);
+	void setFilter(const std::string& filter, FilterOptions options);
 	void showExportedDataVars(bool show) { m_showExportedDataVars = show; }
 	void showExportedFunctions(bool show) { m_showExportedFunctions = show; }
 	void showLocalFunctions(bool show) { m_showLocalFunctions = show; }
@@ -348,6 +349,7 @@ class BINARYNINJAUIAPI SymbolList : public QListView, public FilterTarget
 	bool m_showLocalDataVars;
 	bool m_showImports;
 	std::string m_filter;
+	FilterOptions m_filterOptions;
 	SymbolListModel::NamedObject m_index;
 	SymbolListModel::NamedObject m_topIndex;
 
@@ -359,9 +361,9 @@ class BINARYNINJAUIAPI SymbolList : public QListView, public FilterTarget
 
 	virtual void scrollToFirstItem() override;
 	virtual void scrollToCurrentItem() override;
-	virtual void selectFirstItem() override;
-	virtual void activateFirstItem() override;
-	virtual void setFilter(const std::string& filter) override;
+	virtual void ensureSelection() override;
+	virtual void activateSelection() override;
+	virtual void setFilter(const std::string& filter, FilterOptions options) override;
 
 	bool hasSymbols();
 
