@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::dwarfdebuginfo::{DebugInfoBuilder, DebugInfoBuilderContext, TypeUID};
+use crate::dwarfdebuginfo::{
+    DebugInfoBuilder, DebugInfoBuilderContext, TypeUID, UNNAMED_FUNCTION_NAME,
+};
 use crate::types::get_type;
 use crate::{helpers::*, ReaderType};
 
 use binaryninja::{
+    confidence::{Conf, MAX_CONFIDENCE},
     rc::*,
     types::{EnumerationBuilder, FunctionParameter, ReferenceType, Type, TypeBuilder},
 };
@@ -173,8 +176,10 @@ pub(crate) fn handle_typedef(
     // This will fail in the case where we have a typedef to a type that doesn't exist (failed to parse, incomplete, etc)
     if let Some(entry_type_offset) = entry_type {
         if let Some(t) = debug_info_builder.get_type(entry_type_offset) {
-            let typedef_type = Type::named_type_from_type(typedef_name, &t.get_type());
-            return (Some(typedef_type), typedef_name != t.name);
+            let target = t.get_type();
+            let renames_target = typedef_name != t.name;
+            let typedef_type = debug_info_builder.typedef_placeholder(typedef_name, &target);
+            return (Some(typedef_type), renames_target);
         }
     }
 
@@ -331,13 +336,31 @@ pub(crate) fn handle_function<R: ReaderType>(
             .get_type(),
         None => Type::void(),
     };
+    let return_type_confidence = if entry_type.is_some() // Real return type
+        // void and we're sure about it
+        || (matches!(entry.attr_value(constants::DW_AT_type), Ok(None))
+            && matches!(entry.attr_value(constants::DW_AT_specification), Ok(None))
+            && matches!(entry.attr_value(constants::DW_AT_abstract_origin), Ok(None)))
+    {
+        MAX_CONFIDENCE
+    } else {
+        0
+    };
 
     // Alias function type in the case that it contains itself
-    let name = debug_info_builder_context
-        .get_name(dwarf, unit, entry)
-        .unwrap_or("_unnamed_func".to_string());
-    let ntr =
-        Type::named_type_from_type(&name, &Type::function(return_type.as_ref(), vec![], false));
+    let (name, ntr) = match debug_info_builder_context.get_name(dwarf, unit, entry) {
+        Some(name) => {
+            let ntr = Type::named_type_from_type(
+                &name,
+                &Type::function(return_type.as_ref(), vec![], false),
+            );
+            (name, ntr)
+        }
+        None => {
+            let ntr = debug_info_builder.unnamed_function_placeholder(return_type.as_ref());
+            (UNNAMED_FUNCTION_NAME.to_string(), ntr)
+        }
+    };
     debug_info_builder.add_type(get_uid(dwarf, unit, entry), name, ntr, false, None);
 
     let mut parameters: Vec<FunctionParameter> = vec![];
@@ -402,7 +425,7 @@ pub(crate) fn handle_function<R: ReaderType>(
     debug_info_builder.remove_type(get_uid(dwarf, unit, entry));
 
     Some(Type::function(
-        return_type.as_ref(),
+        &Conf::new(return_type, return_type_confidence),
         parameters,
         variable_arguments,
     ))

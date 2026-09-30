@@ -166,8 +166,7 @@ fn do_structure_parse<R: ReaderType>(
     // This reference type will be used by any children to grab while we're still building this type
     //  it will also be how any other types refer to this struct
     if let Some(full_name) = &full_name {
-        let ntr =
-            Type::named_type_from_type(full_name, &Type::structure(&structure_builder.finalize()));
+        let ntr = debug_info_builder.structure_placeholder(full_name, structure_type, size);
         debug_info_builder.add_type(
             get_uid(dwarf, unit, entry),
             full_name.to_owned(),
@@ -354,7 +353,7 @@ fn do_structure_parse<R: ReaderType>(
     let finalized_structure = Type::structure(&structure_builder.finalize());
     if let Some(full_name) = full_name {
         debug_info_builder.add_type(
-            get_uid(dwarf, unit, entry) + 1, // TODO : This is super broke (uid + 1 is not guaranteed to be unique)
+            get_uid(dwarf, unit, entry),
             full_name,
             finalized_structure,
             true,
@@ -386,9 +385,12 @@ pub(crate) fn get_type<R: ReaderType>(
         return Some(entry_uid);
     }
 
-    // Don't parse types that are just declarations and not definitions
-    if let Ok(Some(_)) = entry.attr(constants::DW_AT_declaration) {
-        return None;
+    // Subprogram declarations can provide return types for their definitions.
+    // Other declarations do not provide complete type definitions.
+    if entry.tag() != constants::DW_TAG_subprogram {
+        if let Ok(Some(_)) = entry.attr(constants::DW_AT_declaration) {
+            return None;
+        }
     }
 
     let entry_type = if let Some(die_reference) = get_attr_die(
@@ -466,7 +468,7 @@ pub(crate) fn get_type<R: ReaderType>(
         match resolve_specification(dwarf, unit, entry, debug_info_builder_context) {
             DieReference::UnitAndOffset((dwarf, entry_unit, entry_offset))
                 if entry_unit.header.offset() != unit.header.offset()
-                    && entry_offset != entry.offset() =>
+                    || entry_offset != entry.offset() =>
             {
                 let resolved_entry = match entry_unit.entry(entry_offset) {
                     Ok(x) => x,
@@ -497,6 +499,18 @@ pub(crate) fn get_type<R: ReaderType>(
             }
         }
     };
+
+    // A subprogram with no type or inherited declaration returns void. Keep failed
+    // attribute/type resolution distinct from an absent return type.
+    if entry.tag() == constants::DW_TAG_subprogram
+        && entry_type.is_none()
+        && matches!(entry.attr_value(constants::DW_AT_type), Ok(None))
+        && matches!(entry.attr_value(constants::DW_AT_specification), Ok(None))
+        && matches!(entry.attr_value(constants::DW_AT_abstract_origin), Ok(None))
+    {
+        debug_info_builder.add_type(entry_uid, "void".to_string(), Type::void(), false, None);
+        return Some(entry_uid);
+    }
 
     // If this node (and thus all its referenced nodes) has already been processed, just return the offset
     // This check is not redundant because this type might have been processes in the recursive calls above

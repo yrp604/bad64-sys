@@ -672,12 +672,7 @@ bool PEView::Init()
 				m_logger->LogError("Support for PE architecture 'x86_64' is not present");
 				break;
 			case 0xaa64:
-				#ifndef DEMO_EDITION
 				m_logger->LogError("Support for PE architecture 'arm64' is not present");
-				#else
-				m_logger->LogError("Binary Ninja free does not support PE architecture 'arm64'. "
-								   "Purchase Binary Ninja to unlock all features.");
-				#endif
 				break;
 			default:
 				m_logger->LogError("PE architecture '0x%x' is not supported", header.machine);
@@ -2678,6 +2673,67 @@ bool PEView::Init()
 
 	StoreMetadata("SymbolExternalLibraryMapping", m_symExternMappingMetadata, MetadataStoreEphemeral);
 
+	EnumerationBuilder relocTypeBuilder;
+	relocTypeBuilder.AddMemberWithValue("IMAGE_USER_DEFINED", 0xffffffff);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_ABSOLUTE", 0);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_HIGH", 1);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_LOW", 2);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_HIGHLOW", 3);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_HIGHADJ", 4);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_MIPS_JMPADDR", 5);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_ARM_MOV32", 5);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_RISCV_HIGH20", 5);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASE_RESERVED", 6);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_THUMB_MOV32", 7);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_RISCV_LOW12I", 7);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_RISCV_LOW12S", 8);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_MIPS_JMPADDR16", 9);
+	relocTypeBuilder.AddMemberWithValue("IMAGE_REL_BASED_DIR64", 10);
+
+	Ref<Enumeration> relocTypeEnum = relocTypeBuilder.Finalize();
+	Ref<Type> relocTypeType = Type::EnumerationType(relocTypeEnum, 2);
+	QualifiedName relocTypeName = string("Relocation_Type");
+	string relocTypeTypeId = Type::GenerateAutoTypeId("pe", relocTypeName);
+	QualifiedName relocTypeTypeName = DefineType(relocTypeTypeId, relocTypeName, relocTypeType);
+
+	TypeBuilder baseAddressPtrType = TypeBuilder::PointerType(4, Type::VoidType());
+	baseAddressPtrType.SetPointerBase(RelativeToBinaryStartPointerBaseType, 0);
+
+	StructureBuilder imageBaseRelocBuilder;
+	imageBaseRelocBuilder.SetPacked(true);
+	imageBaseRelocBuilder.AddMember(baseAddressPtrType.Finalize(), "virtualAddress");
+	imageBaseRelocBuilder.AddMember(Type::IntegerType(4, false), "sizeOfBlock");
+
+	Ref<Structure> imageBaseRelocStruct = imageBaseRelocBuilder.Finalize();
+	Ref<Type> imageBaseRelocType = Type::StructureType(imageBaseRelocStruct);
+	QualifiedName imageBaseRelocName = string("Image_Base_Relocation");
+	string imageBaseRelocTypeId = Type::GenerateAutoTypeId("pe", imageBaseRelocName);
+	QualifiedName imageBaseRelocTypeName = DefineType(imageBaseRelocTypeId, imageBaseRelocName, imageBaseRelocType);
+
+	StructureBuilder imageRelocBuilder;
+	imageRelocBuilder.SetPacked(true);
+	imageRelocBuilder.AddMemberAtBitOffset(Type::IntegerType(2, false), "offset", 0, 12);
+	imageRelocBuilder.AddMemberAtBitOffset(Type::NamedType(this, relocTypeTypeName), "nativeType", 12, 4);
+
+	Ref<Structure> imageRelocStruct = imageRelocBuilder.Finalize();
+	Ref<Type> imageRelocType = Type::StructureType(imageRelocStruct);
+	QualifiedName imageRelocName = string("Image_Relocation");
+	string imageRelocTypeId = Type::GenerateAutoTypeId("pe", imageRelocName);
+	QualifiedName imageRelocTypeName = DefineType(imageRelocTypeId, imageRelocName, imageRelocType);
+
+	StructureBuilder imageRelocHighAdjBuilder;
+	imageRelocHighAdjBuilder.SetPacked(true);
+	imageRelocHighAdjBuilder.AddMemberAtBitOffset(Type::IntegerType(2, false), "offset", 0, 12);
+	imageRelocHighAdjBuilder.AddMemberAtBitOffset(Type::NamedType(this, relocTypeTypeName), "nativeType", 12, 4);
+	imageRelocHighAdjBuilder.AddMemberAtOffset(Type::IntegerType(2, false), "addend", 2);
+	imageRelocHighAdjBuilder.SetWidth(4);
+
+	Ref<Structure> imageRelocHighAdjStruct = imageRelocHighAdjBuilder.Finalize();
+	Ref<Type> imageRelocHighAdjType = Type::StructureType(imageRelocHighAdjStruct);
+	QualifiedName imageRelocHighAdjName = string("Image_Relocation_HighAdj");
+	string imageRelocHighAdjTypeId = Type::GenerateAutoTypeId("pe", imageRelocHighAdjName);
+	QualifiedName imageRelocHighAdjTypeName = DefineType(imageRelocHighAdjTypeId, imageRelocHighAdjName, imageRelocHighAdjType);
+
 	try
 	{
 		if (m_dataDirs.size() > IMAGE_DIRECTORY_ENTRY_BASERELOC)
@@ -2691,6 +2747,7 @@ bool PEView::Init()
 				if (section->virtualAddress != dir.virtualAddress)
 					dirs.push_back({ section->virtualAddress, section->sizeOfRawData });
 			}
+			size_t dirCount = 0;
 			for (auto& dir : dirs)
 			{
 				if (dir.size == 0 || dir.virtualAddress == 0)
@@ -2710,6 +2767,7 @@ bool PEView::Init()
 						size += baseReloc.SizeOfBlock;
 						continue;
 					}
+					bool anyHighAdj = false; // These prevent us from making a clean array
 					size_t nEntries = (baseReloc.SizeOfBlock - 8) / sizeof(uint16_t);
 					uint16_t* relocEntries = new uint16_t[nEntries];
 					if (relocEntries)
@@ -2723,14 +2781,57 @@ bool PEView::Init()
 							if (!reloc.nativeType) // IMAGE_REL_BASED_ABSOLUTE relocations are skipped/used for padding
 								continue;
 							reloc.address = baseReloc.VirtualAddress + (relocEntries[i] & 0xfff);
-							reloc.size = m_is64 ? 8 : 4;
+							reloc.type = StandardRelocationType;
 							reloc.pcRelative = false;
 							reloc.base = m_imageBase - m_peImageBase;
+							switch (reloc.nativeType)
+							{
+							case 1: // IMAGE_REL_BASED_HIGH
+							case 2: // IMAGE_REL_BASED_LOW
+								reloc.size = 2;
+								break;
+							case 3: // IMAGE_REL_BASED_HIGHLOW
+								reloc.size = 4;
+								break;
+							case 4: // IMAGE_REL_BASED_HIGHADJ consumes the next relocation slot as an addend.
+								if ((i + 1) >= nEntries)
+									continue;
+								reloc.size = 2;
+								reloc.addend = relocEntries[++i];
+								anyHighAdj = true;
+								break;
+							case 7: // IMAGE_REL_BASED_THUMB_MOV32
+								reloc.size = 8;
+								if (header.machine != IMAGE_FILE_MACHINE_ARM64)
+									reloc.type = UnhandledRelocation;
+								break;
+							case 10: // IMAGE_REL_BASED_DIR64
+								reloc.size = 8;
+								break;
+							default:
+								reloc.size = m_is64 ? 8 : 4;
+								reloc.type = UnhandledRelocation;
+								break;
+							}
 							DefineRelocation(m_arch, reloc, 0, reloc.address);
 						}
 						delete[] relocEntries;
 					}
+
+					DefineDataVariable(m_imageBase + dir.virtualAddress + size, Type::NamedType(this, imageBaseRelocTypeName));
+					DefineAutoSymbol(new Symbol(DataSymbol, fmt::format("__reloc_table_header({})", dirCount), m_imageBase + dir.virtualAddress + size, NoBinding));
+
+					if (!anyHighAdj)
+					{
+						DefineDataVariable(m_imageBase + dir.virtualAddress + size + 8, Type::ArrayType(
+							Type::NamedType(this, imageRelocTypeName),
+							nEntries
+						));
+						DefineAutoSymbol(new Symbol(DataSymbol, fmt::format("__reloc_table({})", dirCount), m_imageBase + dir.virtualAddress + size + 8, NoBinding));
+					}
+
 					size += baseReloc.SizeOfBlock;
+					dirCount ++;
 				}
 			}
 		}

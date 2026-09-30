@@ -1263,6 +1263,14 @@ enum Arm64Intrinsic operation_to_intrinsic(int operation)
 	case ARM64_AUTIBZ:
 	case ARM64_AUTIZB:
 		return ARM64_INTRIN_AUTIB;
+	case ARM64_AUTIA171615:
+	case ARM64_AUTIASPPC:
+	case ARM64_AUTIASPPCR:
+		return ARM64_INTRIN_AUTIA2;
+	case ARM64_AUTIB171615:
+	case ARM64_AUTIBSPPC:
+	case ARM64_AUTIBSPPCR:
+		return ARM64_INTRIN_AUTIB2;
 	case ARM64_PACDA:
 	case ARM64_PACDZA:
 		return ARM64_INTRIN_PACDA;
@@ -1283,6 +1291,14 @@ enum Arm64Intrinsic operation_to_intrinsic(int operation)
 	case ARM64_PACIBZ:
 	case ARM64_PACIZB:
 		return ARM64_INTRIN_PACIB;
+	case ARM64_PACIA171615:
+	case ARM64_PACIASPPC:
+	case ARM64_PACNBIASPPC:
+		return ARM64_INTRIN_PACIA2;
+	case ARM64_PACIB171615:
+	case ARM64_PACIBSPPC:
+	case ARM64_PACNBIBSPPC:
+		return ARM64_INTRIN_PACIB2;
 	case ARM64_XPACD:
 		return ARM64_INTRIN_XPACD;
 	case ARM64_XPACI:
@@ -1361,6 +1377,21 @@ bool GetLowLevelILForInstruction(
 	case ARM64_ADDG:
 		il.AddInstruction(il.Intrinsic({RegisterOrFlag::Register(REG_O(operand1))}, ARM64_INTRIN_ADDG,
 			{ILREG_O(operand2), il.Const(REGSZ_O(operand2), IMM_O(operand3)), il.Const(1, IMM_O(operand4))}));
+		break;
+	case ARM64_ADDPT:
+		switch (instr.encoding)
+		{
+		case ENC_ADDPT_Z_P_ZZ_:
+		case ENC_ADDPT_Z_ZZ_:
+			if (!preferIntrinsics())
+				il.AddInstruction(il.Unimplemented());
+			return true;
+		default: break;
+		}
+		// FEAT_CPA checked pointer addition, lifted as if checking is disabled
+		il.AddInstruction(ILSETREG_O(operand1,
+		    il.Add(REGSZ_O(operand1), ILREG_O(operand2),
+		        ReadILOperand(il, operand3, REGSZ_O(operand1)))));
 		break;
 	case ARM64_ADC:
 	case ARM64_ADCS:
@@ -2911,6 +2942,7 @@ bool GetLowLevelILForInstruction(
 		}
 		break;
 	case ARM64_MADD:
+	case ARM64_MADDPT:  // FEAT_CPA checked multiply-add, lifted as if checking is disabled
 		il.AddInstruction(ILSETREG_O(operand1,
 		    ILADDREG_O(operand4, il.Mult(REGSZ_O(operand1), ILREG_O(operand2), ILREG_O(operand3)))));
 		break;
@@ -2937,6 +2969,7 @@ bool GetLowLevelILForInstruction(
 		break;
 	}
 	case ARM64_MSUB:
+	case ARM64_MSUBPT:  // FEAT_CPA checked multiply-subtract, lifted as if checking is disabled
 		il.AddInstruction(ILSETREG_O(
 		    operand1, il.Sub(REGSZ_O(operand1), ILREG_O(operand4),
 		                  il.Mult(REGSZ_O(operand1), ILREG_O(operand2), ILREG_O(operand3)))));
@@ -3065,6 +3098,38 @@ bool GetLowLevelILForInstruction(
 		il.AddInstruction(il.Intrinsic({RegisterOrFlag::Register(REG_X30)},
 		    operation_to_intrinsic(instr.operation), {il.Register(8, REG_X30), il.Register(8, REG_SP)}));
 		break;
+	case ARM64_AUTIA171615:
+	case ARM64_AUTIB171615:
+	case ARM64_PACIA171615:
+	case ARM64_PACIB171615:
+		// x17 is address, x16 and x15 are the modifiers
+		il.AddInstruction(il.Intrinsic({RegisterOrFlag::Register(REG_X17)},
+		    operation_to_intrinsic(instr.operation),
+		    {il.Register(8, REG_X17), il.Register(8, REG_X16), il.Register(8, REG_X15)}));
+		break;
+	case ARM64_PACIASPPC:
+	case ARM64_PACIBSPPC:
+	case ARM64_PACNBIASPPC:
+	case ARM64_PACNBIBSPPC:
+		// x30 is address, sp and this instruction's own address are the modifiers
+		il.AddInstruction(il.Intrinsic({RegisterOrFlag::Register(REG_X30)},
+		    operation_to_intrinsic(instr.operation),
+		    {il.Register(8, REG_X30), il.Register(8, REG_SP), il.ConstPointer(addrSize, addr)}));
+		break;
+	case ARM64_AUTIASPPCR:
+	case ARM64_AUTIBSPPCR:
+		// x30 is address, sp and <Xn> are the modifiers
+		il.AddInstruction(il.Intrinsic({RegisterOrFlag::Register(REG_X30)},
+		    operation_to_intrinsic(instr.operation),
+		    {il.Register(8, REG_X30), il.Register(8, REG_SP), ILREG_O(operand1)}));
+		break;
+	case ARM64_AUTIASPPC:
+	case ARM64_AUTIBSPPC:
+		// x30 is address, sp and <label> (already resolved to pc-offset by the decoder) are the modifiers
+		il.AddInstruction(il.Intrinsic({RegisterOrFlag::Register(REG_X30)},
+		    operation_to_intrinsic(instr.operation),
+		    {il.Register(8, REG_X30), il.Register(8, REG_SP), il.ConstPointer(addrSize, IMM_O(operand1))}));
+		break;
 #else
 	case ARM64_AUTDA:
 	case ARM64_AUTDB:
@@ -3098,6 +3163,18 @@ bool GetLowLevelILForInstruction(
 	case ARM64_AUTIBSP:
 	case ARM64_PACIASP:
 	case ARM64_PACIBSP:
+	case ARM64_AUTIA171615:
+	case ARM64_AUTIB171615:
+	case ARM64_PACIA171615:
+	case ARM64_PACIB171615:
+	case ARM64_AUTIASPPC:
+	case ARM64_AUTIBSPPC:
+	case ARM64_AUTIASPPCR:
+	case ARM64_AUTIBSPPCR:
+	case ARM64_PACIASPPC:
+	case ARM64_PACIBSPPC:
+	case ARM64_PACNBIASPPC:
+	case ARM64_PACNBIBSPPC:
 		il.AddInstruction(il.Nop());
 		ApplyAttributeToLastInstruction(il, SrcInstructionUsesPointerAuth);
 		break;
@@ -3159,6 +3236,15 @@ bool GetLowLevelILForInstruction(
 		break;
 	case ARM64_PSB:
 		il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_PSBCSYNC, {}));
+		break;
+	case ARM64_RETAASPPC:
+	case ARM64_RETABSPPC:
+	case ARM64_RETAASPPCR:
+	case ARM64_RETABSPPCR:
+		// Unlike RET, the operand here is an authentication modifier. These always
+		// return to x30.
+		il.AddInstruction(il.Return(il.Register(8, REG_X30)));
+		ApplyAttributeToLastInstruction(il, SrcInstructionUsesPointerAuth);
 		break;
 	case ARM64_RETAA:
 	case ARM64_RETAB:
@@ -3686,6 +3772,21 @@ bool GetLowLevelILForInstruction(
 		il.AddInstruction(il.Intrinsic({RegisterOrFlag::Register(REG_O(operand1))}, ARM64_INTRIN_SUBG,
 			{ILREG_O(operand2), il.Const(REGSZ_O(operand2), IMM_O(operand3)), il.Const(1, IMM_O(operand4))}));
 		break;
+	case ARM64_SUBPT:
+		switch (instr.encoding)
+		{
+		case ENC_SUBPT_Z_P_ZZ_:
+		case ENC_SUBPT_Z_ZZ_:
+			if (!preferIntrinsics())
+				il.AddInstruction(il.Unimplemented());
+			return true;
+		default: break;
+		}
+		// FEAT_CPA checked pointer subtraction, lifted as if checking is disabled
+		il.AddInstruction(ILSETREG_O(operand1,
+		    il.Sub(REGSZ_O(operand1), ILREG_O(operand2),
+		        ReadILOperand(il, operand3, REGSZ_O(operand1)))));
+		break;
 	case ARM64_SUBP:
 		il.AddInstruction(il.Intrinsic(
 			{RegisterOrFlag::Register(REG_O(operand1))}, ARM64_INTRIN_SUBP, {ILREG_O(operand2), ILREG_O(operand3)}));
@@ -4166,6 +4267,9 @@ bool GetLowLevelILForInstruction(
 		break;
 	case ARM64_CSDB:
 		il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_HINT_CSDB, {}));
+		break;
+	case ARM64_PACM:
+		il.AddInstruction(il.Intrinsic({}, ARM64_INTRIN_HINT_PACM, {}));
 		break;
 	case ARM64_HINT:
 		if ((IMM_O(operand1) & ~0b110) == 0b100000)

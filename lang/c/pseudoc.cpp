@@ -296,7 +296,7 @@ void PseudoCFunction::AppendTwoOperand(const string& operand, const HighLevelILI
 	GetExprTextInternal(leftExpr, emitter, settings, leftPrecedence, false, signedHint);
 
 	auto lessThanZero = [](uint64_t value, uint64_t width) -> bool {
-		return ((1UL << ((width * 8) - 1UL)) & value) != 0;
+		return ((uint64_t(1) << ((width * 8) - uint64_t(1))) & value) != 0;
 	};
 
 	if ((operand == " + ") && (rightExpr.operation == HLIL_CONST) && lessThanZero(rightExpr.GetConstant<HLIL_CONST>(), rightExpr.size) &&
@@ -556,6 +556,15 @@ void PseudoCFunction::AppendFieldTextTokens(const HighLevelILInstruction& instr,
 	const auto fieldDisplayType = GetFieldDisplayType(type, fieldOffset, memberIndex, false);
 	if (type && fieldDisplayType == FieldDisplayOffset)
 	{
+		uint64_t memoryOffset = fieldOffset;
+		if (srcExpr.operation == HLIL_VAR && (type->IsInteger() || type->IsEnumeration() || type->IsFloat())
+			&& GetFunction()->GetArchitecture()->GetEndianness() == BigEndian
+			&& fieldOffset <= type->GetWidth() && instr.size <= type->GetWidth() - fieldOffset)
+		{
+			// Scalar variable field offsets are relative to the least significant byte,
+			// but the pointer expression below addresses bytes in memory order.
+			memoryOffset = type->GetWidth() - fieldOffset - instr.size;
+		}
 		if (!addrOf)
 			tokens.Append(OperationToken, "*");
 		if (!settings || settings->IsOptionSet(ShowTypeCasts))
@@ -576,8 +585,11 @@ void PseudoCFunction::AppendFieldTextTokens(const HighLevelILInstruction& instr,
 		tokens.Append(OperationToken, "&");
 		GetExprTextInternal(srcExpr, tokens, settings, UnaryOperatorPrecedence);
 
-		tokens.Append(OperationToken, " + ");
-		tokens.AppendIntegerTextToken(instr, fieldOffset, instr.size);
+		if (memoryOffset != 0 || fieldOffset == 0)
+		{
+			tokens.Append(OperationToken, " + ");
+			tokens.AppendIntegerTextToken(instr, memoryOffset, instr.size);
+		}
 		tokens.AppendCloseParen();
 
 		char offsetStr[64];
@@ -1530,7 +1542,7 @@ void PseudoCFunction::GetExprTextInternal(const HighLevelILInstruction& instr, H
 					&& (srcExpr.GetLeftExpr() == destExpr))
 				{
 					auto lessThanZero = [](uint64_t value, uint64_t width) -> bool {
-						return ((1UL << ((width * 8) - 1UL)) & value) != 0;
+						return ((uint64_t(1) << ((width * 8) - uint64_t(1))) & value) != 0;
 					};
 					switch (srcExpr.operation)
 					{

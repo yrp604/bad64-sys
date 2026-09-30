@@ -612,7 +612,11 @@ The normal find dialog also exists as a sidebar panel that allows persistent, ta
 
 The search types are available from a drop-down next to the text input field and include:
 
- - Advanced Binary Search: A new search type using the [bv.search](https://api.binary.ninja/binaryninja.binaryview-module.html#binaryninja.binaryview.BinaryView.search) syntax (supporting regular expressions and wildcard hex strings)
+ - Advanced Binary Search: A new search type using the [bv.search](https://api.binary.ninja/binaryninja.binaryview-module.html#binaryninja.binaryview.BinaryView.search) syntax. The mode is auto-detected from the pattern (see [detect_search_mode](https://api.binary.ninja/binaryninja.binaryview-module.html#binaryninja.binaryview.BinaryView.detect_search_mode)):
+    - *FlexHex*: a byte pattern with nibble/byte wildcards, e.g. `5? ?? ?5 ff`
+    - *YARA Hex*: YARA-style hex strings — fixed/bounded jumps (`[n]`, `[n-m]`, capped at 1024 bytes), alternation (`( a | b )`), byte/nibble negation (`~aa`), and an optional outer `{ ... }`, e.g. `{ E8 [2-4] (90 | C3) ~00 }`. Unbounded jumps (`[-]`, `[n-]`) are not supported — use Regex for open-ended matching.
+    - *Regex*: a byte-level regular expression, e.g. `[\x20-\x7E]{10,}`
+    - *Raw String*: a literal string match, used as a fallback when the pattern is not valid FlexHex, YARA Hex, or regex
  - Escaped: Escaped strings such as `OneString\x09\Tabsx09Another`
  - Hex: All values must be valid hex characters such as `ebfffc390` and the bytes will only be searched for in this particular order
  - Raw: A simple string search that matches the exact string as specified
@@ -1238,12 +1242,12 @@ The interactive Python prompt also has several built-in "magic" functions and va
 - `current_variable`: the current selected [`Variable`](https://api.binary.ninja/binaryninja.variable-module.html?highlight=variable#binaryninja.variable.Variable) in a function (Not to be confused with `current_data_var`)
 - `current_project`: the [`Project`](https://api.binary.ninja/binaryninja.project-module.html#binaryninja.project.Project) the current view belongs to (`None` if the file is not in a project)
 - `current_thread`: the [`code.InteractiveConsole`](https://docs.python.org/3/library/code.html#code.InteractiveConsole) backing the scripting console
-- `current_ui_context`: the current [`UIContext`](https://api.binary.ninja/cpp/class_u_i_context.html)
-- `current_ui_view_frame`: the current [`ViewFrame`](https://api.binary.ninja/cpp/class_view_frame.html)
-- `current_ui_view`: the current [`View`](https://api.binary.ninja/cpp/class_view.html)
-- `current_ui_action_handler`: the current [`UIActionHandler`](https://api.binary.ninja/cpp/class_u_i_action_handler.html)
-- `current_ui_view_location`: the current [`ViewLocation`](https://api.binary.ninja/cpp/class_view_location.html)
-- `current_ui_action_context`: the current [`UIActionContext`](https://api.binary.ninja/cpp/struct_u_i_action_context.html)
+- `current_ui_context`: the current [`UIContext`](https://api.binary.ninja/cpp/group__uicontext.html#class_u_i_context)
+- `current_ui_view_frame`: the current [`ViewFrame`](https://api.binary.ninja/cpp/group__viewframe.html#class_view_frame)
+- `current_ui_view`: the current [`View`](https://api.binary.ninja/cpp/group__viewframe.html#class_view)
+- `current_ui_action_handler`: the current [`UIActionHandler`](https://api.binary.ninja/cpp/group__action.html#class_u_i_action_handler)
+- `current_ui_view_location`: the current [`ViewLocation`](https://api.binary.ninja/cpp/group__viewframe.html#class_view_location)
+- `current_ui_action_context`: the current [`UIActionContext`](https://api.binary.ninja/cpp/group__action.html#struct_u_i_action_context)
 - `current_ui_token_state`: the current token state from the UI action context, which backs `current_token` and `current_variable`
 
 ### startup.py
@@ -1301,8 +1305,9 @@ Binary Ninja supports loading PDB files through a built-in PDB loader. It will a
 1. Look in symbol servers defined in the `_NT_SYMBOL_PATH` environment variable, as defined by [Microsoft's documentation](https://learn.microsoft.com/en-us/windows/win32/debug/using-symsrv).
 2. Look for the file at the path specified in the loaded binary. E.g. when `C:\Users\foo\foo.exe` was compiled, it stored `C:\Users\foo\foo.pdb` as metadata inside `foo.exe`, so `C:\Users\foo\foo.pdb` will be loaded if it exists (and matches the GUID).
 3. Look in the same directory as the opened file/BNDB (e.g. If you have opened `C:\foo.exe` or `C:\foo.bndb`, the PDB plugin looks for `C:\foo.pdb`)
-4. Look in the local symbol store. This is the directory specified by `pdb.files.localStoreAbsolute` in the settings, if it exists. Otherwise, this is a folder relative to the Binary Ninja user directory, specified by the `pdb.files.localStoreRelative` setting (and possibly the `BN_USER_DIRECTORY` environment variable). This directory has the structure `<symbol store>\foo.pdb\<guid>\foo.pdb`, equivalent to a regular symbol server.
-5. Attempt to connect and download the PDB from the list of symbol servers specified in setting `pdb.files.symbolServerList`, in order.
+4. If you renamed the file, look for a PDB which has also been renamed. E.g. if you renamed `foo.exe` to `bar.exe`, then search for `bar.pdb` 
+5. Look in the local symbol store. This is the directory specified by `pdb.files.localStoreAbsolute` in the settings, if it exists. Otherwise, this is a folder relative to the Binary Ninja user directory, specified by the `pdb.files.localStoreRelative` setting (and possibly the `BN_USER_DIRECTORY` environment variable). This directory has the structure `<symbol store>\foo.pdb\<guid>\foo.pdb`, equivalent to a regular symbol server.
+6. Attempt to connect and download the PDB from the list of symbol servers specified in setting `pdb.files.symbolServerList`, in order.
 
 If you know the location of the PDB in advance, or it would not be found by any of the above, you can manually point the loader at the file via Open with Options and specifying the path under External Debug Info File (setting name `analysis.debugInfo.external`). If this is done, the previous steps to look up the PDB will not be taken.
 
@@ -1316,7 +1321,7 @@ The PDB loader comes with a couple configuration options which enable and disabl
 * **Expand RTTI Structures (default on)**: This creates structures for RTTI symbols found within a PDB, like RTTI Class Type Information, RTTI Complete Object Locator, RTTI Class Hierarchy Descriptor, etc. No analysis information is currently derived from these structures, but they will have their fields annotated in Linear View.
 * **Generate Virtual Table Structures (default on)**: This generates structures for virtual tables found on classes in the PDB's types. Due to limitations of Binary Ninja's C++ type handling, these virtual table structures are just structures of function pointers, and may have incorrect behavior for types with multiple or virtual inheritance.
 * **Load Global Module Symbols (default on)**: The global module in a PDB contains a list of all the functions with no type information beyond a C++ mangled name. Generally, this information is less accurate than a full symbol type, but stripped PDBs from Microsoft's official PDB server (and ones created via the `/PDBSTRIPPED` link.exe flag) will only have information in this module. In the event that a symbol has both a defined type and a global module mangled name, the defined type will be used.
-* **Cache Downloaded PDBs in Local Store (default on)**: When a PDB is downloaded from a PDB server, or loaded from a file, a copy of it will be saved in the local symbol store (as defined by #4 [above](#loading-pdbs)). This is useful when working with large PDBs that you want to save, but will use extra disk space.
+* **Cache Downloaded PDBs in Local Store (default on)**: When a PDB is downloaded from a PDB server, or loaded from a file, a copy of it will be saved in the local symbol store (as defined by #5 [above](#loading-pdbs)). This is useful when working with large PDBs that you want to save, but will use extra disk space.
 
 ## Launching Binary Ninja from the command line (CLI)
 
