@@ -78,6 +78,22 @@ tests_pac = [
     # retab (example of encoding: RETAB_64E_branch_reg)
     (b'\xFF\x0F\x5F\xD6', 'LLIL_RET(LLIL_REG.q(lr))', ATTR_PTR_AUTH),
 
+    # RETURN FROM SUBROUTINE, WITH POINTER AUTHENTICATION AGAINST SP AND PC (FEAT_PAuth_LR)
+    # the operand is part of the authentication modifier rather than the address returned to, which
+    # is always lr
+    # retaasppc <label> (example of encoding: RETAASPPC_only_miscbranch)
+    (b'\x3F\x00\x00\x55', 'LLIL_RET(LLIL_REG.q(lr))', ATTR_PTR_AUTH),
+    # retabsppc <label> (example of encoding: RETABSPPC_only_miscbranch)
+    (b'\x3F\x00\x20\x55', 'LLIL_RET(LLIL_REG.q(lr))', ATTR_PTR_AUTH),
+    # retaasppcr x3 (example of encoding: RETAASPPCR_64M_branch_reg)
+    (b'\xE3\x0B\x5F\xD6', 'LLIL_RET(LLIL_REG.q(lr))', ATTR_PTR_AUTH),
+    # retabsppcr x12 (example of encoding: RETABSPPCR_64M_branch_reg)
+    (b'\xEC\x0F\x5F\xD6', 'LLIL_RET(LLIL_REG.q(lr))', ATTR_PTR_AUTH),
+
+    # HINT THAT A DIFFERENT POINTER AUTHENTICATION MODIFIER IS IN USE (FEAT_PAuth_LR)
+    # pacm (example of encoding: PACM_HI_hints)
+    (b'\xFF\x24\x03\xD5', 'LLIL_INTRINSIC([],SystemHintOp_PACM,[])'),
+
     # mixed instructions from old tests
     # BLRAA_64P_branch_reg 1101011100111111000010xxxxxxxxxx
     (b'\x14\x0B\x3F\xD7', 'LLIL_CALL(LLIL_REG.q(x24))', ATTR_PTR_AUTH), # blraa x24, x20
@@ -187,6 +203,24 @@ if '#define LIFT_PAC_AS_INTRINSIC 1\n' in open(path_il_h).readlines():
     # xpaci x25 (example of encoding: XPACI_64Z_dp_1src)
     (b'\xF9\x43\xC1\xDA', 'LLIL_INTRINSIC([x25],__xpaci,[LLIL_REG.q(x25)])'),
 
+    # SIGN OR AUTHENTICATE AGAINST TWO MODIFIERS (FEAT_PAuth_LR)
+    # the 171615 forms take x17 as the address and x16 and x15 as the modifiers
+    # the sppcr forms take x30 as the address and sp and <Xn> as the modifiers
+    # the forms whose second modifier is the instruction's own address are position dependent, so
+    # they are in tests_pac_position_dependent instead
+    # pacia171615 (example of encoding: PACIA171615_64LR_dp_1src)
+    (b'\xFE\x8B\xC1\xDA', 'LLIL_INTRINSIC([x17],__pacia2,[LLIL_REG.q(x17),LLIL_REG.q(x16),LLIL_REG.q(x15)])'),
+    # pacib171615 (example of encoding: PACIB171615_64LR_dp_1src)
+    (b'\xFE\x8F\xC1\xDA', 'LLIL_INTRINSIC([x17],__pacib2,[LLIL_REG.q(x17),LLIL_REG.q(x16),LLIL_REG.q(x15)])'),
+    # autia171615 (example of encoding: AUTIA171615_64LR_dp_1src)
+    (b'\xFE\xBB\xC1\xDA', 'LLIL_INTRINSIC([x17],__autia2,[LLIL_REG.q(x17),LLIL_REG.q(x16),LLIL_REG.q(x15)])'),
+    # autib171615 (example of encoding: AUTIB171615_64LR_dp_1src)
+    (b'\xFE\xBF\xC1\xDA', 'LLIL_INTRINSIC([x17],__autib2,[LLIL_REG.q(x17),LLIL_REG.q(x16),LLIL_REG.q(x15)])'),
+    # autiasppcr x5 (example of encoding: AUTIASPPCR_64LRR_dp_1src)
+    (b'\xBE\x90\xC1\xDA', 'LLIL_INTRINSIC([lr],__autia2,[LLIL_REG.q(lr),LLIL_REG.q(sp),LLIL_REG.q(x5)])'),
+    # autibsppcr x9 (example of encoding: AUTIBSPPCR_64LRR_dp_1src)
+    (b'\x3E\x95\xC1\xDA', 'LLIL_INTRINSIC([lr],__autib2,[LLIL_REG.q(lr),LLIL_REG.q(sp),LLIL_REG.q(x9)])'),
+
     # mixed instructions from old tests
     # PACDA_64P_dp_1src 1101101011000001000010xxxxxxxxxx
     (b'\xAC\x0B\xC1\xDA', 'LLIL_INTRINSIC([x12],__pacda,[LLIL_REG.q(x12),LLIL_REG.q(fp)])'), # pacda x12, x29
@@ -237,6 +271,28 @@ if '#define LIFT_PAC_AS_INTRINSIC 1\n' in open(path_il_h).readlines():
     # XPACLRI_HI_hints 11010101000000110010000xxxxxxxxx
     (b'\xFF\x20\x03\xD5', 'LLIL_INTRINSIC([lr],__xpaci,[LLIL_REG.q(lr)])'), # xpaclri
     ])
+
+    # The remaining FEAT_PAuth_LR signing and authenticating instructions take the instruction's own
+    # address as their second modifier, so the address they are lifted at reaches the IL. Each case
+    # gives the address to lift at and the IL that must be produced there, and is appended to
+    # tests_position_dependent below.
+    tests_pac_position_dependent = [
+        # paciasppc (example of encoding: PACIASPPC_64LR_dp_1src)
+        (b'\xFE\xA3\xC1\xDA', 0x1000, 'LLIL_INTRINSIC([lr],__pacia2,[LLIL_REG.q(lr),LLIL_REG.q(sp),LLIL_CONST.q(0x1000)])'),
+        (b'\xFE\xA3\xC1\xDA', 0x2004, 'LLIL_INTRINSIC([lr],__pacia2,[LLIL_REG.q(lr),LLIL_REG.q(sp),LLIL_CONST.q(0x2004)])'),
+        # pacibsppc (example of encoding: PACIBSPPC_64LR_dp_1src)
+        (b'\xFE\xA7\xC1\xDA', 0x1000, 'LLIL_INTRINSIC([lr],__pacib2,[LLIL_REG.q(lr),LLIL_REG.q(sp),LLIL_CONST.q(0x1000)])'),
+        # pacnbiasppc, which signs without setting the branch target (example of encoding: PACNBIASPPC_64LR_dp_1src)
+        (b'\xFE\x83\xC1\xDA', 0x1000, 'LLIL_INTRINSIC([lr],__pacia2,[LLIL_REG.q(lr),LLIL_REG.q(sp),LLIL_CONST.q(0x1000)])'),
+        # pacnbibsppc (example of encoding: PACNBIBSPPC_64LR_dp_1src)
+        (b'\xFE\x87\xC1\xDA', 0x1000, 'LLIL_INTRINSIC([lr],__pacib2,[LLIL_REG.q(lr),LLIL_REG.q(sp),LLIL_CONST.q(0x1000)])'),
+        # autiasppc <label> -- the label is the address minus the encoded offset, here 4
+        # (example of encoding: AUTIASPPC_only_dp_1src_imm)
+        (b'\x3F\x00\x80\xF3', 0x1000, 'LLIL_INTRINSIC([lr],__autia2,[LLIL_REG.q(lr),LLIL_REG.q(sp),LLIL_CONST.q(0xFFC)])'),
+        (b'\x3F\x00\x80\xF3', 0x2004, 'LLIL_INTRINSIC([lr],__autia2,[LLIL_REG.q(lr),LLIL_REG.q(sp),LLIL_CONST.q(0x2000)])'),
+        # autibsppc <label> (example of encoding: AUTIBSPPC_only_dp_1src_imm)
+        (b'\x3F\x00\xA0\xF3', 0x1000, 'LLIL_INTRINSIC([lr],__autib2,[LLIL_REG.q(lr),LLIL_REG.q(sp),LLIL_CONST.q(0xFFC)])'),
+    ]
 # DO NOT LIFT PAC AS INTRINSIC
 else:
     print('testing that select PAC instructions lift to NOP', file=sys.stderr)
@@ -294,7 +350,24 @@ else:
     (b'\xE2\x43\xC1\xDA', 'LLIL_NOP()', ATTR_PTR_AUTH), # xpaci x2
     (b'\xE7\x43\xC1\xDA', 'LLIL_NOP()', ATTR_PTR_AUTH), # xpaci x7
     (b'\xFF\x20\x03\xD5', 'LLIL_NOP()', ATTR_PTR_AUTH), # xpaclri
+    # The FEAT_PAuth_LR sign and authenticate instructions, which take a second modifier.
+    (b'\xFE\x8B\xC1\xDA', 'LLIL_NOP()', ATTR_PTR_AUTH), # pacia171615
+    (b'\xFE\x8F\xC1\xDA', 'LLIL_NOP()', ATTR_PTR_AUTH), # pacib171615
+    (b'\xFE\xBB\xC1\xDA', 'LLIL_NOP()', ATTR_PTR_AUTH), # autia171615
+    (b'\xFE\xBF\xC1\xDA', 'LLIL_NOP()', ATTR_PTR_AUTH), # autib171615
+    (b'\xBE\x90\xC1\xDA', 'LLIL_NOP()', ATTR_PTR_AUTH), # autiasppcr x5
+    (b'\x3E\x95\xC1\xDA', 'LLIL_NOP()', ATTR_PTR_AUTH), # autibsppcr x9
+    (b'\xFE\xA3\xC1\xDA', 'LLIL_NOP()', ATTR_PTR_AUTH), # paciasppc
+    (b'\xFE\xA7\xC1\xDA', 'LLIL_NOP()', ATTR_PTR_AUTH), # pacibsppc
+    (b'\xFE\x83\xC1\xDA', 'LLIL_NOP()', ATTR_PTR_AUTH), # pacnbiasppc
+    (b'\xFE\x87\xC1\xDA', 'LLIL_NOP()', ATTR_PTR_AUTH), # pacnbibsppc
+    (b'\x3F\x00\x80\xF3', 'LLIL_NOP()', ATTR_PTR_AUTH), # autiasppc <label>
+    (b'\x3F\x00\xA0\xF3', 'LLIL_NOP()', ATTR_PTR_AUTH), # autibsppc <label>
     ])
+
+    # Lifted as a NOP none of these carry an address, so they are position independent and are
+    # covered above rather than in tests_position_dependent.
+    tests_pac_position_dependent = []
 
 tests_load_acquire_store_release = [
     # LDAPURB <Wt>, [<Xn|SP>{, #<simm>}]
@@ -12773,6 +12846,41 @@ tests_cssc = [
     (b'\x20\xb8\xe0\x4e', 'LLIL_UNIMPL()'),
 ]
 
+# FEAT_CPA (Checked Pointer Arithmetic). The pointer check these perform only rewrites bits 63:54 of
+# the result, and only when the arithmetic escapes the address bits with SCTLR2_ELx.CPTA/CPTM
+# enabled, so we lift the integer forms as plain arithmetic -- as we do for PAC above. The SVE forms
+# are unlifted, like every other SVE encoding.
+tests_cpa = [
+    # addpt x8, x27, x21, lsl #4                                       ADDPT_64_addsub_pt
+    (b'\x68\x33\x15\x9a',
+     'LLIL_SET_REG.q(x8,LLIL_ADD.q(LLIL_REG.q(x27),LLIL_LSL.q(LLIL_REG.q(x21),LLIL_CONST.b(0x4))))'),
+    # addpt x8, x27, x21                                               ADDPT_64_addsub_pt
+    (b'\x68\x23\x15\x9a', 'LLIL_SET_REG.q(x8,LLIL_ADD.q(LLIL_REG.q(x27),LLIL_REG.q(x21)))'),
+    # addpt x8, sp, x5 (Rn==31 is SP, not XZR)                         ADDPT_64_addsub_pt
+    (b'\xe8\x23\x05\x9a', 'LLIL_SET_REG.q(x8,LLIL_ADD.q(LLIL_REG.q(sp),LLIL_REG.q(x5)))'),
+    # addpt x1, x2, xzr (Rm==31 is XZR, not SP)                        ADDPT_64_addsub_pt
+    (b'\x41\x20\x1f\x9a', 'LLIL_SET_REG.q(x1,LLIL_ADD.q(LLIL_REG.q(x2),LLIL_CONST.q(0x0)))'),
+    # subpt x17, x13, x3, lsl #7                                       SUBPT_64_addsub_pt
+    (b'\xb1\x3d\x03\xda',
+     'LLIL_SET_REG.q(x17,LLIL_SUB.q(LLIL_REG.q(x13),LLIL_LSL.q(LLIL_REG.q(x3),LLIL_CONST.b(0x7))))'),
+    # subpt sp, sp, x5                                                 SUBPT_64_addsub_pt
+    (b'\xff\x23\x05\xda', 'LLIL_SET_REG.q(sp,LLIL_SUB.q(LLIL_REG.q(sp),LLIL_REG.q(x5)))'),
+    # maddpt x3, x2, x1, x4                                            MADDPT_64A_dp_3src
+    (b'\x43\x10\x61\x9b',
+     'LLIL_SET_REG.q(x3,LLIL_ADD.q(LLIL_REG.q(x4),LLIL_MUL.q(LLIL_REG.q(x2),LLIL_REG.q(x1))))'),
+    # msubpt x3, x2, x1, x4                                            MSUBPT_64A_dp_3src
+    (b'\x43\x90\x61\x9b',
+     'LLIL_SET_REG.q(x3,LLIL_SUB.q(LLIL_REG.q(x4),LLIL_MUL.q(LLIL_REG.q(x2),LLIL_REG.q(x1))))'),
+    # addpt z3.d, z2.d, z1.d                                           addpt_z_zz_
+    (b'\x43\x08\xe1\x04', 'LLIL_UNIMPL()'),
+    # subpt z3.d, p1/m, z3.d, z2.d                                     subpt_z_p_zz_
+    (b'\x43\x04\xc5\x04', 'LLIL_UNIMPL()'),
+    # madpt z3.d, z2.d, z4.d                                           madpt_z_zzz_
+    (b'\x83\xd8\xc2\x44', 'LLIL_UNIMPL()'),
+    # mlapt z3.d, z2.d, z1.d                                           mlapt_z_zzz_
+    (b'\x43\xd0\xc1\x44', 'LLIL_UNIMPL()'),
+]
+
 # Apple's vendor-specific instructions, which occupy encoding space that ARM leaves unallocated.
 # See arch/arm64/apple_vendor.cpp.
 tests_apple_vendor = [
@@ -12881,10 +12989,34 @@ disasm_test_cases = [
     # op 17 is the enable/disable pair, whose operand selects between them
     (b'\x20\x12\x20\x00', 'amx_set '),
     (b'\x21\x12\x20\x00', 'amx_clr '),
+
+    # FEAT_PAuth_LR. Most of these lift to a NOP, so their operands only show up here.
+    # the registers each of these works on are fixed by the encoding, leaving no operands to render
+    (b'\xfe\xa3\xc1\xda', 'paciasppc '),
+    (b'\xfe\xa7\xc1\xda', 'pacibsppc '),
+    (b'\xfe\x83\xc1\xda', 'pacnbiasppc '),
+    (b'\xfe\x87\xc1\xda', 'pacnbibsppc '),
+    (b'\xfe\x8b\xc1\xda', 'pacia171615 '),
+    (b'\xfe\x8f\xc1\xda', 'pacib171615 '),
+    (b'\xfe\xbb\xc1\xda', 'autia171615 '),
+    (b'\xfe\xbf\xc1\xda', 'autib171615 '),
+    (b'\xff\x24\x03\xd5', 'pacm    '),
+    # the modifier is a register
+    (b'\xbe\x90\xc1\xda', 'autiasppcr x5'),
+    (b'\x3e\x95\xc1\xda', 'autibsppcr x9'),
+    (b'\xe3\x0b\x5f\xd6', 'retaasppcr x3'),
+    (b'\xec\x0f\x5f\xd6', 'retabsppcr x12'),
+    # the modifier is a label the encoding reaches by subtracting from the address, here by 4, so at
+    # address 0 it is the address just below zero rather than one just above it
+    (b'\x3f\x00\x80\xf3', 'autiasppc 0xfffffffffffffffc'),
+    (b'\x3f\x00\xa0\xf3', 'autibsppc 0xfffffffffffffffc'),
+    (b'\x3f\x00\x00\x55', 'retaasppc 0xfffffffffffffffc'),
+    (b'\x3f\x00\x20\x55', 'retabsppc 0xfffffffffffffffc'),
 ]
 
 test_cases = \
 	tests_apple_vendor + \
+	tests_cpa + \
 	tests_cssc + \
 	tests_shll + \
 	tests_udf + \
@@ -12959,7 +13091,7 @@ tests_position_dependent = [
     (b'\x06\x01\x00\x98', 0x0, 'LLIL_SET_REG.q(x6,LLIL_SX.q(LLIL_LOAD.d(LLIL_CONST.q(0x20))))'),
     (b'\x06\x01\x00\x98', 0x8000, 'LLIL_SET_REG.q(x6,LLIL_SX.q(LLIL_LOAD.d(LLIL_CONST.q(0x8020))))'),
     (b'\x06\x01\x00\x98', 0x8004, 'LLIL_SET_REG.q(x6,LLIL_SX.q(LLIL_LOAD.d(LLIL_CONST.q(0x8024))))'),
-]
+] + tests_pac_position_dependent
 
 # The encodings above, which must not be lifted from the shared view.
 position_dependent_encodings = {data for data, _, _ in tests_position_dependent}

@@ -25,13 +25,13 @@ use binaryninja::{
     platform::Platform,
     rc::*,
     symbol::SymbolType,
-    types::{FunctionParameter, Type},
+    types::{FunctionParameter, StructureBuilder, StructureType, Type, TypeClass},
     variable::NamedVariableWithType,
 };
 
 use gimli::{DebuggingInformationEntry, Dwarf, Unit};
 
-use binaryninja::confidence::Conf;
+use binaryninja::confidence::{Conf, MAX_CONFIDENCE};
 use binaryninja::variable::{Variable, VariableSourceType};
 use indexmap::{map::Values, IndexMap};
 use std::{cmp::Ordering, collections::HashMap, hash::Hash};
@@ -101,17 +101,22 @@ impl FunctionInfoBuilder {
 //////////////////////
 // DebugInfoBuilder
 
+// The name given to a subroutine type that has none of its own.
+pub(crate) const UNNAMED_FUNCTION_NAME: &str = "_unnamed_func";
+
 // TODO : Don't make this pub...fix the value thing
 pub(crate) struct DebugType {
     pub name: String,
     pub ty: Ref<Type>,
+    // Named structures and enums keep their definition for committing and an NTR for uses.
+    pub reference: Option<Ref<Type>>,
     pub commit: bool,
     pub target_type_uid: Option<TypeUID>,
 }
 
 impl DebugType {
     pub fn get_type(&self) -> Ref<Type> {
-        self.ty.clone()
+        self.reference.as_ref().unwrap_or(&self.ty).clone()
     }
 }
 
@@ -218,6 +223,11 @@ pub(crate) struct DebugInfoBuilder {
     types: IndexMap<TypeUID, DebugType>,
     data_variables: HashMap<u64, (Option<String>, TypeUID)>,
     range_data_offsets: iset::IntervalMap<u64, i64>,
+    structure_placeholders: HashMap<(String, StructureType, u64), Ref<Type>>,
+    typedef_placeholders:
+        HashMap<(String, TypeClass, Option<StructureType>, u64, usize), Ref<Type>>,
+    unnamed_function_placeholder: Option<Ref<Type>>,
+    definition_uids_by_name: HashMap<String, TypeUID>,
 }
 
 impl DebugInfoBuilder {
@@ -229,7 +239,71 @@ impl DebugInfoBuilder {
             types: IndexMap::new(),
             data_variables: HashMap::new(),
             range_data_offsets: iset::IntervalMap::new(),
+            structure_placeholders: HashMap::new(),
+            typedef_placeholders: HashMap::new(),
+            unnamed_function_placeholder: None,
+            definition_uids_by_name: HashMap::new(),
         }
+    }
+
+    // A placeholder named type reference carries nothing but its name and the reference class,
+    // width and alignment that its target contributes, so the same declaration appearing in
+    // another compilation unit produces the same placeholder. Debug info repeats the common
+    // typedefs and structures in every unit that includes their header, so building each one once
+    // saves marshalling the name across the API, building the target, and asking the core for a
+    // reference, every time after the first.
+    pub(crate) fn structure_placeholder(
+        &mut self,
+        name: &str,
+        structure_type: StructureType,
+        size: u64,
+    ) -> Ref<Type> {
+        let key = (name.to_string(), structure_type, size);
+        if let Some(existing) = self.structure_placeholders.get(&key) {
+            return existing.clone();
+        }
+
+        let mut structure_builder = StructureBuilder::new();
+        structure_builder
+            .packed(true)
+            .width(size)
+            .structure_type(structure_type);
+        let placeholder =
+            Type::named_type_from_type(name, &Type::structure(&structure_builder.finalize()));
+        self.structure_placeholders.insert(key, placeholder.clone());
+        placeholder
+    }
+
+    pub(crate) fn typedef_placeholder(&mut self, name: &str, target: &Type) -> Ref<Type> {
+        // A structure target gives the reference its class according to whether it is a struct, a
+        // union or a class, so which of those it is has to identify the placeholder as well.
+        let key = (
+            name.to_string(),
+            target.type_class(),
+            target.get_structure().map(|s| s.structure_type()),
+            target.width(),
+            target.alignment(),
+        );
+        if let Some(existing) = self.typedef_placeholders.get(&key) {
+            return existing.clone();
+        }
+
+        let placeholder = Type::named_type_from_type(name, target);
+        self.typedef_placeholders.insert(key, placeholder.clone());
+        placeholder
+    }
+
+    // Function types carry no width or alignment of their own, so every anonymous subroutine
+    // produces the same placeholder whatever it returns.
+    pub(crate) fn unnamed_function_placeholder(&mut self, return_type: &Type) -> Ref<Type> {
+        self.unnamed_function_placeholder
+            .get_or_insert_with(|| {
+                Type::named_type_from_type(
+                    UNNAMED_FUNCTION_NAME,
+                    &Type::function(return_type, vec![], false),
+                )
+            })
+            .clone()
     }
 
     pub(crate) fn set_range_data_offsets(&mut self, offsets: iset::IntervalMap<u64, i64>) {
@@ -363,6 +437,26 @@ impl DebugInfoBuilder {
         self.types.values()
     }
 
+    fn definition_name(&mut self, type_uid: TypeUID, name: String, t: &Ref<Type>) -> String {
+        let mut candidate = name.clone();
+        let mut i = 1;
+        while let Some(&existing_uid) = self.definition_uids_by_name.get(&candidate) {
+            let same_definition = existing_uid == type_uid
+                || self
+                    .types
+                    .get(&existing_uid)
+                    .is_some_and(|existing| existing.ty == *t);
+            if same_definition {
+                return candidate;
+            }
+            candidate = format!("{}_{}", name, i);
+            i += 1;
+        }
+        self.definition_uids_by_name
+            .insert(candidate.clone(), type_uid);
+        candidate
+    }
+
     pub(crate) fn add_type(
         &mut self,
         type_uid: TypeUID,
@@ -371,21 +465,36 @@ impl DebugInfoBuilder {
         commit: bool,
         target_type_uid: Option<TypeUID>,
     ) {
+        let (name, reference) = if commit
+            && matches!(
+                t.type_class(),
+                TypeClass::EnumerationTypeClass | TypeClass::StructureTypeClass
+            ) {
+            let name = self.definition_name(type_uid, name, &t);
+            let reference = self.typedef_placeholder(&name, &t);
+            (name, Some(reference))
+        } else {
+            (name, None)
+        };
+
         if let Some(DebugType {
             name: existing_name,
             ty: existing_type,
-            commit: _,
+            reference: _,
+            commit: existing_commit,
             target_type_uid: _,
         }) = self.types.insert(
             type_uid,
             DebugType {
                 name: name.clone(),
                 ty: t.clone(),
+                reference,
                 commit,
                 target_type_uid,
             },
         ) {
-            if existing_type != t && commit {
+            // Completing a recursive type replaces its temporary, uncommitted reference.
+            if existing_commit && existing_type != t && commit {
                 tracing::warn!("DWARF info contains duplicate type definition. Overwriting type `{}` (named `{:?}`) with `{}` (named `{:?}`)",
                     existing_type,
                     existing_name,
@@ -442,7 +551,7 @@ impl DebugInfoBuilder {
         // Either get the known type or use a 0 confidence void type so we at least get the name applied
         let ty = type_uid
             .and_then(|uid| self.get_type(uid))
-            .map(|t| Conf::new(t.ty.clone(), 128))
+            .map(|t| Conf::new(t.get_type(), 128))
             .unwrap_or_else(|| Conf::new(Type::void(), 0));
 
         let function = &mut self.functions[function_index];
@@ -566,6 +675,17 @@ impl DebugInfoBuilder {
         }
     }
 
+    // What committing a type actually stores. A typedef contributes its target, because its own
+    // type is the self-referential placeholder that stands in for it while its children are built.
+    fn committed_type(&self, debug_type: &DebugType) -> Option<Ref<Type>> {
+        if debug_type.ty.get_named_type_reference().is_none() {
+            return Some(debug_type.ty.clone());
+        }
+
+        let target_uid = debug_type.target_type_uid?;
+        Some(self.get_type(target_uid)?.get_type())
+    }
+
     fn commit_types(&self, debug_info: &mut DebugInfo) {
         let mut type_uids_by_name: HashMap<String, TypeUID> = HashMap::new();
 
@@ -582,6 +702,20 @@ impl DebugInfoBuilder {
                     tracing::error!("Stored type name without storing a type! Please report this error. UID: {}, name: {}", stored_uid, debug_type_name);
                     continue;
                 };
+
+                // This name already describes this definition. Debug info repeats a type in every
+                // compilation unit that includes its header, so committing it again would have the
+                // core walk and re-resolve every named reference in it for no gain.
+                let same_definition = match (
+                    self.committed_type(stored_debug_type),
+                    self.committed_type(debug_type),
+                ) {
+                    (Some(stored), Some(current)) => stored.as_ref() == current.as_ref(),
+                    _ => false,
+                };
+                if same_definition {
+                    continue;
+                }
 
                 let mut skip_adding_type = false;
                 if stored_debug_type.ty != debug_type.ty {
@@ -618,10 +752,11 @@ impl DebugInfoBuilder {
 
             // TODO : Components
             // If it's a typedef resolve one layer down since we'd technically be defining it as a typedef to itself otherwise
-            if let Some(ntr) = debug_type.get_type().get_named_type_reference() {
+            if let Some(ntr) = debug_type.ty.get_named_type_reference() {
                 if let Some(target_uid) = debug_type.target_type_uid {
                     if let Some(target_type) = self.get_type(target_uid) {
                         debug_info.add_type(&debug_type_name, &target_type.get_type(), &[]);
+                        type_uids_by_name.insert(debug_type_name, *debug_type_uid);
                     } else {
                         tracing::error!(
                             "Failed to find typedef {} target for uid {}",
@@ -638,8 +773,8 @@ impl DebugInfoBuilder {
                 }
             } else {
                 debug_info.add_type(&debug_type_name, &debug_type.ty, &[]);
+                type_uids_by_name.insert(debug_type_name, *debug_type_uid);
             }
-            type_uids_by_name.insert(debug_type_name, *debug_type_uid);
         }
     }
 
@@ -647,7 +782,7 @@ impl DebugInfoBuilder {
     fn commit_data_variables(&self, debug_info: &mut DebugInfo) {
         for (&address, (name, type_uid)) in &self.data_variables {
             let data_var_type = match self.get_type(*type_uid) {
-                Some(x) => &x.ty,
+                Some(x) => x.get_type(),
                 None => {
                     tracing::error!("Failed to find type for data variable at {:#x}", address);
                     continue;
@@ -655,7 +790,7 @@ impl DebugInfoBuilder {
             };
             assert!(debug_info.add_data_variable(
                 address,
-                data_var_type,
+                &data_var_type,
                 name.as_deref(),
                 &[] // TODO : Components
             ));
@@ -666,7 +801,8 @@ impl DebugInfoBuilder {
         let return_type = function
             .return_type
             .and_then(|return_type_id| self.get_type(return_type_id))
-            .map(|t| Conf::new(t.ty.clone(), 128))
+            // Have to bump to max confidence or (wrong) auto analysis will take precedence
+            .map(|t| Conf::new(t.get_type(), MAX_CONFIDENCE))
             .unwrap_or_else(|| Conf::new(Type::void(), 0));
 
         let parameters: Vec<FunctionParameter> = function
@@ -678,7 +814,7 @@ impl DebugInfoBuilder {
                         0 => Type::void(),
                         uid => self
                             .get_type(*uid)
-                            .map(|t| t.ty.clone())
+                            .map(|t| t.get_type())
                             .unwrap_or_else(Type::void),
                     };
                     FunctionParameter::new(ty, name.clone(), None)

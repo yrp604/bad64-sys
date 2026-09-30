@@ -31,7 +31,8 @@ The previous tools are used to generate our documentation but are not distribute
 
 * Core
     - [abseil-cpp] ([abseil-cpp license] - Apache 2.0)
-    - [BinExport] ([binexport license] - Apache 2.0) - Google project, [Vector 35 fork]
+    - [BinExport] ([BinExport license] - Apache 2.0) - Google project, [BinExport fork]
+    - [BinDiff] ([BinDiff license] - Apache 2.0) - Google project, [BinDiff fork]
     - [jsoncpp] ([jsoncpp license] - Public Domain / MIT)
     - [llvm] ([llvm license] - BSD-style)
     - [lzf] ([lzf license] - BSD)
@@ -146,8 +147,11 @@ Please note that we offer no support for running Binary Ninja with modified Qt l
 [Bebas Neue]: https://github.com/dharmatype/Bebas-Neue
 [Bebas Neue license]: ../fonts/BebasNeue-LICENSE.txt
 [BinExport]: https://github.com/google/binexport
-[binexport license]: https://github.com/google/binexport/blob/main/LICENSE
-[Vector 35 fork]: https://github.com/Vector35/binexport
+[BinExport license]: https://github.com/google/binexport/blob/main/LICENSE
+[BinExport fork]: https://github.com/Vector35/binexport
+[BinDiff]: https://github.com/google/bindiff
+[BinDiff license]: https://github.com/google/bindiff/blob/main/LICENSE
+[BinDiff fork]: https://github.com/Vector35/google_bindiff
 [capstone]: https://github.com/aquynh/capstone
 [capstone license]: https://github.com/aquynh/capstone/blob/master/LICENSE.TXT
 [breathe license]: https://github.com/michaeljones/breathe/blob/master/LICENSE
@@ -190,7 +194,7 @@ Please note that we offer no support for running Binary Ninja with modified Qt l
 [Noto Color Emoji]: https://github.com/googlefonts/noto-emoji
 [sphinx license]: https://github.com/sphinx-doc/sphinx/blob/master/LICENSE.rst
 [zensical]: https://zensical.org/
-[zensical license]: https://github.com/zensical/zensical/blob/main/LICENSE
+[zensical license]: https://github.com/zensical/zensical/blob/master/LICENSE.md
 [sphinx]: https://www.sphinx-doc.org/en/master/
 [sqlite license]: https://www.sqlite.org/copyright.html
 [sqlite]: https://www.sqlite.org/index.html

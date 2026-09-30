@@ -1,6 +1,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 #define NOMINMAX
 
+#include <algorithm>
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
@@ -23,6 +24,9 @@ using namespace std;
 #define EF_MIPS_ABI2 0x00000020
 #define EF_MIPS_ARCH 0xf0000000
 #define EF_MIPS_ARCH_3 0x20000000
+#define PT_MIPS_ABIFLAGS 0x70000003
+#define SHT_MIPS_ABIFLAGS 0x7000002a
+#define SHT_GNU_ATTRIBUTES 0x6ffffff5
 
 uint32_t bswap32(uint32_t x)
 {
@@ -233,6 +237,7 @@ protected:
 			case MIPS_JR_HB:
 			case MIPS_J:
 			case MIPS_JAL:
+			case MIPS_JALX:
 			case MIPS_JALR:
 			case MIPS_JALR_HB:
 			case MIPS_BC0F:
@@ -241,12 +246,16 @@ protected:
 			case MIPS_BC0TL:
 			case MIPS_BC1F:
 			case MIPS_BC1FL:
+			case MIPS_BC1EQZ:
+			case MIPS_BC1NEZ:
 			case MIPS_BC1T:
 			case MIPS_BC1TL:
 			case MIPS_BC2FL:
 			case MIPS_BC2TL:
 			case MIPS_BC2F:
 			case MIPS_BC2T:
+			case MIPS_BC2EQZ:
+			case MIPS_BC2NEZ:
 			case CNMIPS_BBIT0:
 			case CNMIPS_BBIT032:
 			case CNMIPS_BBIT1:
@@ -297,12 +306,16 @@ protected:
 			case MIPS_BNEL:
 			case MIPS_BC1F:
 			case MIPS_BC1FL:
+			case MIPS_BC1EQZ:
+			case MIPS_BC1NEZ:
 			case MIPS_BC1T:
 			case MIPS_BC1TL:
 			case MIPS_BC2FL:
 			case MIPS_BC2TL:
 			case MIPS_BC2F:
 			case MIPS_BC2T:
+			case MIPS_BC2EQZ:
+			case MIPS_BC2NEZ:
 			case CNMIPS_BBIT0:
 			case CNMIPS_BBIT032:
 			case CNMIPS_BBIT1:
@@ -321,8 +334,6 @@ protected:
 
 		switch (instr.operation)
 		{
-		//case MIPS_JALX: //This case jumps to a different processor mode microMIPS32/MIPS32/MIPS16e
-		//	break;
 		//Branch/jump and link immediate
 		case MIPS_BAL:
 			if (instr.operands[0].immediate != addr + 8)
@@ -332,6 +343,9 @@ protected:
 			break;
 
 		case MIPS_JAL:
+		case MIPS_JALX:
+			// TODO: Associate JALX with the appropriate microMIPS or MIPS16e
+			// target architecture once either alternate ISA mode is supported.
 			result.AddBranch(CallDestination, instr.operands[0].immediate, nullptr, hasBranchDelay);
 			break;
 
@@ -406,6 +420,15 @@ protected:
 		case MIPS_BC2F:
 		case MIPS_BC2T:
 			result.AddBranch(TrueBranch, instr.operands[0].immediate, nullptr, hasBranchDelay);
+			//need to jump over the branch delay slot and current instruction
+			result.AddBranch(FalseBranch, addr + 8, nullptr, hasBranchDelay);
+			break;
+
+		case MIPS_BC1EQZ:
+		case MIPS_BC1NEZ:
+		case MIPS_BC2EQZ:
+		case MIPS_BC2NEZ:
+			result.AddBranch(TrueBranch, instr.operands[1].immediate, nullptr, hasBranchDelay);
 			//need to jump over the branch delay slot and current instruction
 			result.AddBranch(FalseBranch, addr + 8, nullptr, hasBranchDelay);
 			break;
@@ -582,21 +605,43 @@ public:
 				nop = il.Nop();
 				il.AddInstruction(nop);
 
+				size_t delayStart = il.GetInstructionCount();
 				GetLowLevelILForInstruction(this, addr + instr.size, il, secondInstr, GetAddressSize(), m_decomposeFlags, m_version);
 
 				LowLevelILInstruction delayed;
 				uint32_t clobbered = BN_INVALID_REGISTER;
+				uint32_t clobberedHigh = BN_INVALID_REGISTER;
 				size_t instrIdx = il.GetInstructionCount();
-				if (instrIdx != 0)
+				for (size_t i = instrIdx; i > delayStart; i--)
 				{
-					// FIXME: this assumes that the instruction in the delay slot
-					// only changed registers in the last IL instruction that it
-					// added -- strictly speaking we should be starting from the
-					// first instruction that could have been added and follow all
-					// paths to the end of that instruction.
-					delayed = il.GetInstruction(instrIdx - 1);
-					if ((delayed.operation == LLIL_SET_REG) && (delayed.address == (addr + instr.size)))
+					// Conditional moves can end in control flow after the register write.
+					// FIXME: only the last register write (or register pair) is tracked.
+					delayed = il.GetInstruction(i - 1);
+					if (delayed.address != (addr + instr.size))
+						continue;
+					if (delayed.operation == LLIL_SET_REG)
+					{
 						clobbered = delayed.GetDestRegister<LLIL_SET_REG>();
+						break;
+					}
+					if (delayed.operation == LLIL_SET_REG_SPLIT)
+					{
+						clobbered = delayed.GetLowRegister<LLIL_SET_REG_SPLIT>();
+						clobberedHigh = delayed.GetHighRegister<LLIL_SET_REG_SPLIT>();
+						break;
+					}
+					if (delayed.operation == LLIL_INTRINSIC)
+					{
+						for (auto output : delayed.GetOutputRegisterOrFlagList<LLIL_INTRINSIC>())
+						{
+							if (output.isFlag || LLIL_REG_IS_TEMP(output.index))
+								continue;
+							clobbered = output.index;
+							break;
+						}
+						if (clobbered != BN_INVALID_REGISTER)
+							break;
+					}
 				}
 
 				il.SetCurrentAddress(this, addr);
@@ -614,21 +659,36 @@ public:
 
 				if (clobbered != BN_INVALID_REGISTER)
 				{
-					// FIXME: this approach will break with any of the REG_SPLIT operations as well
-					// any use of partial registers -- this approach needs to be expanded substantially
-					// to be correct in the general case. also, it uses LLIL_TEMP(1) for the simple reason
-					// that the mips lifter only uses LLIL_TEMP(0) at the moment.
+					// FIXME: register aliases and partial writes still need general handling.
+					bool split = clobberedHigh != BN_INVALID_REGISTER;
+					// Intrinsics have no expression size. Preserve the old architectural
+					// register, even when the intrinsic returns a narrower value.
+					size_t savedSize = delayed.operation == LLIL_INTRINSIC ? GetRegisterInfo(clobbered).size :
+						delayed.size * (split ? 2 : 1);
 					LowLevelILInstruction lifted = il.GetInstruction(instrIdx);
-					if ((lifted.operation == LLIL_IF || lifted.operation == LLIL_CALL) && (lifted.address == addr))
+					if ((lifted.operation == LLIL_IF || lifted.operation == LLIL_CALL || lifted.operation == LLIL_JUMP ||
+						lifted.operation == LLIL_RET || lifted.operation == LLIL_TAILCALL) && (lifted.address == addr))
 					{
 						bool replace = false;
+						// Allocate after lifting the slot and branch to avoid their temporaries.
+						uint32_t savedReg = LLIL_TEMP(max(1u, il.GetTemporaryRegisterCount()));
 
 						lifted.VisitExprs([&](const LowLevelILInstruction& expr) -> bool {
-							if (expr.operation == LLIL_REG && expr.GetSourceRegister<LLIL_REG>() == clobbered)
+							if (expr.operation == LLIL_REG &&
+								(expr.GetSourceRegister<LLIL_REG>() == clobbered ||
+								 expr.GetSourceRegister<LLIL_REG>() == clobberedHigh))
 							{
 								// Replace all reads from the clobbered register to a temp register
 								// that we're going to set (by replacing the earlier nop we added)
-								il.ReplaceExpr(expr.exprIndex, il.Register(expr.size, LLIL_TEMP(1)));
+								ExprId saved = il.Register(expr.size, savedReg);
+								if (split)
+								{
+									saved = il.Register(savedSize, savedReg);
+									if (expr.GetSourceRegister<LLIL_REG>() == clobberedHigh)
+										saved = il.LogicalShiftRight(savedSize, saved, il.Const(1, delayed.size * 8));
+									saved = il.LowPart(expr.size, saved);
+								}
+								il.ReplaceExpr(expr.exprIndex, saved);
 								replace = true;
 							}
 							return true;
@@ -640,7 +700,9 @@ public:
 							// instruction we added at the beginning with an assignment to the temp
 							// register we rewrote in the LLIL_IF condition expression
 							il.SetCurrentAddress(this, addr + instr.size);
-							il.ReplaceExpr(nop, il.SetRegister(delayed.size, LLIL_TEMP(1), il.Register(delayed.size, delayed.GetDestRegister<LLIL_SET_REG>())));
+							ExprId original = split ? il.RegisterSplit(delayed.size, clobberedHigh, clobbered) :
+								il.Register(savedSize, clobbered);
+							il.ReplaceExpr(nop, il.SetRegister(savedSize, savedReg, original));
 							il.SetCurrentAddress(this, addr);
 						}
 					}
@@ -1066,12 +1128,68 @@ public:
 				return "moveFromCoprocessor2";
 			case MIPS_INTRIN_MFC_UNIMPLEMENTED:
 				return "moveFromCoprocessorUnimplemented";
+			case MIPS_INTRIN_CFC1:
+				return "moveControlWordFromCoprocessor1";
+			case MIPS_INTRIN_CFC2:
+				return "moveControlWordFromCoprocessor2";
+			case MIPS_INTRIN_COP2:
+				return "coprocessor2Operation";
+			case MIPS_INTRIN_CTC1:
+				return "moveControlWordToCoprocessor1";
+			case MIPS_INTRIN_CTC2:
+				return "moveControlWordToCoprocessor2";
+			case MIPS_INTRIN_MFHC0:
+				return "moveHighWordFromCoprocessor0";
+			case MIPS_INTRIN_MFHC2:
+				return "moveHighWordFromCoprocessor2";
+			case MIPS_INTRIN_MOV_PS:
+				return "_mov_ps";
+			case MIPS_INTRIN_MOVF_PS:
+				return "_movf_ps";
+			case MIPS_INTRIN_MOVT_PS:
+				return "_movt_ps";
+			case MIPS_INTRIN_MSUB_PS:
+				return "_msub_ps";
+			case MIPS_INTRIN_MTHC0:
+				return "moveHighWordToCoprocessor0";
+			case MIPS_INTRIN_MTHC2:
+				return "moveHighWordToCoprocessor2";
+			case MIPS_INTRIN_NEG_PS:
+				return "_neg_ps";
+			case MIPS_INTRIN_NMADD_PS:
+				return "_nmadd_ps";
+			case MIPS_INTRIN_NMSUB_PS:
+				return "_nmsub_ps";
+			case MIPS_INTRIN_RDPGPR:
+				return "readGPRFromPreviousShadowSet";
+			case MIPS_INTRIN_WRPGPR:
+				return "writeGPRToPreviousShadowSet";
+			case MIPS_INTRIN_SUB_PS:
+				return "_sub_ps";
+			case MIPS_INTRIN_ADD_PS:
+				return "_add_ps";
+			case MIPS_INTRIN_MUL_PS:
+				return "_mul_ps";
+			case MIPS_INTRIN_ABS_PS:
+				return "_abs_ps";
+			case MIPS_INTRIN_ROUND_W_S:
+				return "_round_w_s";
+			case MIPS_INTRIN_ROUND_W_D:
+				return "_round_w_d";
+			case MIPS_INTRIN_ROUND_L_S:
+				return "_round_l_s";
+			case MIPS_INTRIN_ROUND_L_D:
+				return "_round_l_d";
 			case MIPS_INTRIN_MTC0:
 				return "moveToCoprocessor0";
 			case MIPS_INTRIN_MTC2:
 				return "moveToCoprocessor2";
 			case MIPS_INTRIN_MTC_UNIMPLEMENTED:
 				return "moveToCoprocessorUnimplemented";
+			case MIPS_INTRIN_MTC1_UNPREDICTABLE_HIGH_WORD:
+				return "_mtc1UnpredictableHighWord";
+			case MIPS_INTRIN_MADD_PS:
+				return "_madd_ps";
 			case MIPS_INTRIN_DMFC0:
 				return "moveDwordFromCoprocessor0";
 			case MIPS_INTRIN_DMFC2:
@@ -1191,8 +1309,36 @@ public:
 			MIPS_INTRIN_DSHD,
 			MIPS_INTRIN_MFC0,
 			MIPS_INTRIN_MFC_UNIMPLEMENTED,
+			MIPS_INTRIN_CFC1,
+			MIPS_INTRIN_CFC2,
+			MIPS_INTRIN_COP2,
+			MIPS_INTRIN_CTC1,
+			MIPS_INTRIN_CTC2,
+			MIPS_INTRIN_MFHC0,
+			MIPS_INTRIN_MFHC2,
+			MIPS_INTRIN_MOV_PS,
+			MIPS_INTRIN_MOVF_PS,
+			MIPS_INTRIN_MOVT_PS,
+			MIPS_INTRIN_MSUB_PS,
+			MIPS_INTRIN_MTHC0,
+			MIPS_INTRIN_MTHC2,
+			MIPS_INTRIN_NEG_PS,
+			MIPS_INTRIN_NMADD_PS,
+			MIPS_INTRIN_NMSUB_PS,
+			MIPS_INTRIN_RDPGPR,
+			MIPS_INTRIN_WRPGPR,
+			MIPS_INTRIN_SUB_PS,
+			MIPS_INTRIN_ADD_PS,
+			MIPS_INTRIN_MUL_PS,
+			MIPS_INTRIN_ABS_PS,
+			MIPS_INTRIN_ROUND_W_S,
+			MIPS_INTRIN_ROUND_W_D,
+			MIPS_INTRIN_ROUND_L_S,
+			MIPS_INTRIN_ROUND_L_D,
 			MIPS_INTRIN_MTC0,
 			MIPS_INTRIN_MTC_UNIMPLEMENTED,
+			MIPS_INTRIN_MTC1_UNPREDICTABLE_HIGH_WORD,
+			MIPS_INTRIN_MADD_PS,
 			MIPS_INTRIN_DMFC0,
 			MIPS_INTRIN_DMFC_UNIMPLEMENTED,
 			MIPS_INTRIN_DMTC0,
@@ -1264,6 +1410,100 @@ public:
 				return {
 					NameAndType("register", Type::IntegerType(4, false)),
 				};
+			case MIPS_INTRIN_CFC1:
+				return {
+					NameAndType("controlRegister", Type::IntegerType(4, false)),
+				};
+			case MIPS_INTRIN_CFC2:
+				return {
+					NameAndType("implementation", Type::IntegerType(2, false)),
+				};
+			case MIPS_INTRIN_COP2:
+				return {
+					NameAndType("cofun", Type::IntegerType(4, false)),
+				};
+			case MIPS_INTRIN_CTC1:
+				return {
+					NameAndType("controlRegister", Type::IntegerType(4, false)),
+					NameAndType("value", Type::IntegerType(4, false)),
+				};
+			case MIPS_INTRIN_CTC2:
+				return {
+					NameAndType("implementation", Type::IntegerType(2, false)),
+					NameAndType("value", Type::IntegerType(4, false)),
+				};
+			case MIPS_INTRIN_MFHC0:
+				return {
+					NameAndType("register", Type::IntegerType(4, false)),
+					NameAndType("selector", Type::IntegerType(4, false)),
+				};
+			case MIPS_INTRIN_MFHC2:
+				return {
+					NameAndType("implementation", Type::IntegerType(2, false)),
+				};
+			case MIPS_INTRIN_MOV_PS:
+				return {
+					NameAndType("value", Type::IntegerType(8, false)),
+				};
+			case MIPS_INTRIN_MOVF_PS:
+			case MIPS_INTRIN_MOVT_PS:
+				return {
+					NameAndType("oldFd", Type::IntegerType(8, false)),
+					NameAndType("fs", Type::IntegerType(8, false)),
+					NameAndType("fccLow", Type::BoolType()),
+					NameAndType("fccHigh", Type::BoolType()),
+				};
+			case MIPS_INTRIN_MSUB_PS:
+				return {
+					NameAndType("fr", Type::IntegerType(8, false)),
+					NameAndType("fs", Type::IntegerType(8, false)),
+					NameAndType("ft", Type::IntegerType(8, false)),
+				};
+			case MIPS_INTRIN_MTHC0:
+				return {
+					NameAndType("register", Type::IntegerType(4, false)),
+					NameAndType("selector", Type::IntegerType(4, false)),
+					NameAndType("value", Type::IntegerType(4, false)),
+				};
+			case MIPS_INTRIN_MTHC2:
+				return {
+					NameAndType("implementation", Type::IntegerType(2, false)),
+					NameAndType("value", Type::IntegerType(4, false)),
+				};
+			case MIPS_INTRIN_NEG_PS:
+			case MIPS_INTRIN_ABS_PS:
+				return {
+					NameAndType("value", Type::IntegerType(8, false)),
+				};
+			case MIPS_INTRIN_NMADD_PS:
+			case MIPS_INTRIN_NMSUB_PS:
+				return {
+					NameAndType("fr", Type::IntegerType(8, false)),
+					NameAndType("fs", Type::IntegerType(8, false)),
+					NameAndType("ft", Type::IntegerType(8, false)),
+				};
+			case MIPS_INTRIN_RDPGPR:
+				return {
+					NameAndType("register", Type::IntegerType(4, false)),
+				};
+			case MIPS_INTRIN_WRPGPR:
+				return {
+					NameAndType("register", Type::IntegerType(4, false)),
+					NameAndType("value", Type::IntegerType(m_bits == 64 ? 8 : 4, false)),
+				};
+			case MIPS_INTRIN_SUB_PS:
+			case MIPS_INTRIN_ADD_PS:
+			case MIPS_INTRIN_MUL_PS:
+				return {
+					NameAndType("fs", Type::IntegerType(8, false)),
+					NameAndType("ft", Type::IntegerType(8, false)),
+				};
+			case MIPS_INTRIN_ROUND_W_S:
+			case MIPS_INTRIN_ROUND_L_S:
+				return {NameAndType("fs", Type::FloatType(4))};
+			case MIPS_INTRIN_ROUND_W_D:
+			case MIPS_INTRIN_ROUND_L_D:
+				return {NameAndType("fs", Type::FloatType(8))};
 			case MIPS_INTRIN_MFC_UNIMPLEMENTED:
 				return {
 					NameAndType("coprocessor", Type::IntegerType(4, false)),
@@ -1303,6 +1543,12 @@ public:
 					NameAndType("register", Type::IntegerType(4, false)),
 					NameAndType("selector", Type::IntegerType(4, false)),
 					NameAndType("value", Type::IntegerType(8, false)),
+				};
+			case MIPS_INTRIN_MADD_PS:
+				return {
+					NameAndType("fr", Type::IntegerType(8, false)),
+					NameAndType("fs", Type::IntegerType(8, false)),
+					NameAndType("ft", Type::IntegerType(8, false)),
 				};
 			case MIPS_INTRIN_SYNC:
 				return {
@@ -1446,10 +1692,35 @@ public:
 				return {Type::IntegerType(8, false)};
 			case MIPS_INTRIN_MFC0:
 			case MIPS_INTRIN_MFC_UNIMPLEMENTED:
+			case MIPS_INTRIN_CFC1:
+			case MIPS_INTRIN_CFC2:
+			case MIPS_INTRIN_MFHC0:
+			case MIPS_INTRIN_MFHC2:
+			case MIPS_INTRIN_MTC1_UNPREDICTABLE_HIGH_WORD:
 				return {Type::IntegerType(4, false)};
 			case MIPS_INTRIN_DMFC0:
 			case MIPS_INTRIN_DMFC_UNIMPLEMENTED:
+			case MIPS_INTRIN_MADD_PS:
+			case MIPS_INTRIN_MOV_PS:
+			case MIPS_INTRIN_MOVF_PS:
+			case MIPS_INTRIN_MOVT_PS:
+			case MIPS_INTRIN_MSUB_PS:
+			case MIPS_INTRIN_NEG_PS:
+			case MIPS_INTRIN_NMADD_PS:
+			case MIPS_INTRIN_NMSUB_PS:
+			case MIPS_INTRIN_SUB_PS:
+			case MIPS_INTRIN_ADD_PS:
+			case MIPS_INTRIN_MUL_PS:
+			case MIPS_INTRIN_ABS_PS:
 				return {Type::IntegerType(8, false)};
+			case MIPS_INTRIN_ROUND_W_S:
+			case MIPS_INTRIN_ROUND_W_D:
+				return {Type::IntegerType(4, true)};
+			case MIPS_INTRIN_ROUND_L_S:
+			case MIPS_INTRIN_ROUND_L_D:
+				return {Type::IntegerType(8, true)};
+			case MIPS_INTRIN_RDPGPR:
+				return {Type::IntegerType(m_bits == 64 ? 8 : 4, false)};
 			case MIPS_INTRIN_HWR0:
 			case MIPS_INTRIN_HWR1:
 			case MIPS_INTRIN_HWR2:
@@ -2735,10 +3006,13 @@ public:
 	}
 };
 
+// Both o32 ABIs use a shared argument area: four GPR words followed by the
+// stack, with 64-bit scalars aligned to even word slots. Soft-float values use
+// the GPRs too; the hard-float subclass enables FPRs for leading FP arguments.
 class MipsO32CallingConvention: public CallingConvention
 {
 public:
-	MipsO32CallingConvention(Architecture* arch): CallingConvention(arch, "o32")
+	MipsO32CallingConvention(Architecture* arch, const std::string& name = "o32"): CallingConvention(arch, name)
 	{
 	}
 
@@ -2750,6 +3024,11 @@ public:
 	virtual uint32_t GetHighIntegerReturnValueRegister() override
 	{
 		return REG_V1;
+	}
+
+	virtual std::optional<Variable> GetReturnedIndirectReturnValuePointer() override
+	{
+		return Variable::Register(REG_V0);
 	}
 
 	virtual vector<uint32_t> GetIntegerArgumentRegisters() override
@@ -2794,7 +3073,265 @@ public:
 		}
 		return result;
 	}
+
+	virtual bool IsReturnTypeRegisterCompatible(BinaryView* view, Type* type) override
+	{
+		Ref<Type> valueType = type;
+		if (view && valueType && valueType->IsNamedTypeRefer())
+			valueType = valueType->DerefNamedTypeReference(view);
+		// o32 returns even small aggregates through a hidden pointer in a0.
+		if (valueType && (valueType->IsStructure() || valueType->IsArray()))
+			return false;
+		if (valueType && valueType->IsFloat())
+			return valueType->GetWidth() == 4 || valueType->GetWidth() == 8;
+		return DefaultIsReturnTypeRegisterCompatible(valueType);
+	}
+
+	virtual bool IsArgumentTypeRegisterCompatible(BinaryView* view, Type* type) override
+	{
+		Ref<Type> valueType = type;
+		if (view && valueType && valueType->IsNamedTypeRefer())
+			valueType = valueType->DerefNamedTypeReference(view);
+		if (valueType && (valueType->IsFloat() || valueType->IsInteger() || valueType->IsEnumeration()))
+			return valueType->GetWidth() <= 8;
+		return DefaultIsArgumentTypeRegisterCompatible(valueType);
+	}
+
+	virtual bool AreStackArgumentsNaturallyAligned() override
+	{
+		return true;
+	}
+
+	virtual ValueLocation GetReturnValueLocation(BinaryView* view, const ReturnValue& returnValue) override
+	{
+		Ref<Type> type = returnValue.type.GetValue();
+		if (!type || type->IsVoid())
+			return ValueLocation();
+
+		if (type->GetClass() == NamedTypeReferenceClass)
+		{
+			if (!view)
+				return GetDefaultReturnValueLocation(view, returnValue);
+
+			type = type->DerefNamedTypeReference(view);
+			if (!type || type->GetClass() == NamedTypeReferenceClass)
+				return GetDefaultReturnValueLocation(view, returnValue);
+		}
+
+		if (type->IsFloat() && GetFloatReturnValueRegister() != BN_INVALID_REGISTER)
+		{
+			if (type->GetWidth() == 4)
+				return ValueLocation(Variable::Register(FPREG_F0));
+			if (type->GetWidth() == 8)
+			{
+				return ValueLocation({
+					{Variable::Register(FPREG_F0), 0, 4},
+					{Variable::Register(FPREG_F1), 4, 4}
+				});
+			}
+		}
+		else if (GetArchitecture()->GetEndianness() == BigEndian && type->GetWidth() == 8
+			&& (type->IsInteger() || type->IsEnumeration() || type->IsFloat()))
+		{
+			return ValueLocation({
+				{Variable::Register(REG_V0), 4, 4},
+				{Variable::Register(REG_V1), 0, 4}
+			});
+		}
+
+		return GetDefaultReturnValueLocation(view, returnValue);
+	}
+
+	virtual vector<ValueLocation> GetParameterLocations(BinaryView* view, const std::optional<ValueLocation>& returnValue,
+		const vector<FunctionParameter>& params,
+		const std::optional<std::set<uint32_t>>& permittedRegs = std::nullopt) override
+	{
+		const uint32_t integerRegisters[] = { REG_A0, REG_A1, REG_A2, REG_A3 };
+		const uint32_t floatRegisters[][2] = {
+			{ FPREG_F12, FPREG_F13 },
+			{ FPREG_F14, FPREG_F15 }
+		};
+
+		vector<ValueLocation> result;
+		result.reserve(params.size());
+
+		uint64_t argumentOffset = 0;
+		uint64_t stackOffset = 16;
+		bool argumentRegistersAvailable = true;
+		bool leadingFloatArguments = !GetFloatArgumentRegisters().empty();
+		size_t leadingFloatCount = 0;
+
+		if (returnValue.has_value() && returnValue->indirect)
+		{
+			argumentOffset = 4;
+			leadingFloatArguments = false;
+		}
+
+		for (const auto& param : params)
+		{
+			Ref<Type> type = param.type.GetValue();
+			if (view && type && type->IsNamedTypeRefer())
+				type = type->DerefNamedTypeReference(view);
+			uint64_t width = type ? type->GetWidth() : 4;
+			bool indirect = param.locationSource == PassByReferenceLocationSource;
+			if (indirect)
+				width = 4;
+
+			uint64_t alignment = indirect ? 4 : (type ? type->GetAlignment() : 4);
+			if (alignment < 4)
+				alignment = 4;
+			if (alignment > 8)
+				alignment = 8;
+			if (argumentOffset % alignment != 0)
+				argumentOffset += alignment - (argumentOffset % alignment);
+
+			uint64_t passedWidth = std::max<uint64_t>(width, 4);
+			if (passedWidth % 4 != 0)
+				passedWidth += 4 - (passedWidth % 4);
+
+			bool isFloat = type && type->IsFloat() && !indirect;
+			bool useFloatRegister = leadingFloatArguments && leadingFloatCount < 2 && isFloat
+				&& (width == 4 || width == 8);
+
+			if (param.locationSource == CustomLocationSource)
+			{
+				result.push_back(param.location);
+			}
+			else if (useFloatRegister)
+			{
+				const size_t registerCount = width / 4;
+				bool registersPermitted = argumentRegistersAvailable;
+				for (size_t i = 0; i < registerCount; i++)
+				{
+					if (permittedRegs.has_value() && !permittedRegs->contains(floatRegisters[leadingFloatCount][i]))
+						registersPermitted = false;
+				}
+
+				if (registersPermitted)
+				{
+					if (registerCount == 1)
+						result.emplace_back(Variable::Register(floatRegisters[leadingFloatCount][0]));
+					else
+					{
+						result.emplace_back(ValueLocation({
+							{Variable::Register(floatRegisters[leadingFloatCount][0]), 0, 4},
+							{Variable::Register(floatRegisters[leadingFloatCount][1]), 4, 4}
+						}));
+					}
+				}
+				else
+				{
+					if (stackOffset % alignment != 0)
+						stackOffset += alignment - (stackOffset % alignment);
+					result.emplace_back(Variable::StackOffset(stackOffset));
+					stackOffset += passedWidth;
+					argumentRegistersAvailable = false;
+				}
+			}
+			else
+			{
+				vector<ValueLocationComponent> components;
+				bool registersPermitted = argumentRegistersAvailable;
+				// Scalar component offsets count from the least significant byte. Big-endian
+				// o32 passes the high word first in GPRs and on the stack, while aggregates
+				// retain their memory-order field offsets. FPR pairs are handled separately.
+				bool reverseScalarWords = GetArchitecture()->GetEndianness() == BigEndian && !indirect
+					&& type && (type->IsInteger() || type->IsFloat() || type->IsEnumeration() || type->IsBool());
+				for (uint64_t offset = 0; offset < passedWidth; offset += 4)
+				{
+					uint64_t componentOffset = argumentOffset + offset;
+					uint64_t componentSize = std::min<uint64_t>(4, width > offset ? width - offset : 4);
+					uint64_t valueOffset = reverseScalarWords && width > 4 ? width - offset - componentSize : offset;
+					if (componentOffset < 16)
+					{
+						uint32_t reg = integerRegisters[componentOffset / 4];
+						if (permittedRegs.has_value() && !permittedRegs->contains(reg))
+							registersPermitted = false;
+						components.emplace_back(Variable::Register(reg), valueOffset, componentSize);
+					}
+					else
+					{
+						// Narrow scalar arguments occupy the low bytes of a word.
+						uint64_t padding = reverseScalarWords && width < 4 ? 4 - width : 0;
+						components.emplace_back(Variable::StackOffset(componentOffset + padding), valueOffset, componentSize);
+					}
+				}
+
+				if (!registersPermitted)
+				{
+					if (stackOffset % alignment != 0)
+						stackOffset += alignment - (stackOffset % alignment);
+					uint64_t padding = reverseScalarWords && width < 4 ? 4 - width : 0;
+					result.emplace_back(Variable::StackOffset(stackOffset + padding), indirect);
+					stackOffset += passedWidth;
+					argumentRegistersAvailable = false;
+				}
+				else if (components.size() == 1)
+					result.emplace_back(components[0].variable, indirect);
+				else
+					result.emplace_back(std::move(components), indirect);
+			}
+
+			argumentOffset += passedWidth;
+			stackOffset = std::max(stackOffset, argumentOffset);
+			if (useFloatRegister)
+				leadingFloatCount++;
+			else
+				leadingFloatArguments = false;
+		}
+
+		return result;
+	}
 };
+
+// o32 maps arguments through a shared, naturally aligned four-word argument area. Only the first two
+// leading floating-point arguments use FPRs, so the default independent register allocators cannot model it.
+class MipsO32HardFloatCallingConvention: public MipsO32CallingConvention
+{
+public:
+	MipsO32HardFloatCallingConvention(Architecture* arch): MipsO32CallingConvention(arch, "o32-hard-float")
+	{
+	}
+
+	virtual vector<uint32_t> GetFloatArgumentRegisters() override
+	{
+		return vector<uint32_t>{ FPREG_F12, FPREG_F14 };
+	}
+
+	virtual bool AreArgumentRegistersSharedIndex() override
+	{
+		return true;
+	}
+
+	virtual uint32_t GetFloatReturnValueRegister() override
+	{
+		return FPREG_F0;
+	}
+
+	virtual vector<uint32_t> GetCallerSavedRegisters() override
+	{
+		vector<uint32_t> result = MipsO32CallingConvention::GetCallerSavedRegisters();
+		const uint32_t floatRegisters[] = {
+			FPREG_F0, FPREG_F1, FPREG_F2, FPREG_F3, FPREG_F4, FPREG_F5, FPREG_F6, FPREG_F7,
+			FPREG_F8, FPREG_F9, FPREG_F10, FPREG_F11, FPREG_F12, FPREG_F13, FPREG_F14, FPREG_F15,
+			FPREG_F16, FPREG_F17, FPREG_F18, FPREG_F19
+		};
+		result.insert(result.end(), std::begin(floatRegisters), std::end(floatRegisters));
+		return result;
+	}
+
+	virtual vector<uint32_t> GetCalleeSavedRegisters() override
+	{
+		vector<uint32_t> result = MipsO32CallingConvention::GetCalleeSavedRegisters();
+		const uint32_t floatRegisters[] = {
+			FPREG_F20, FPREG_F21, FPREG_F22, FPREG_F23, FPREG_F24, FPREG_F25,
+			FPREG_F26, FPREG_F27, FPREG_F28, FPREG_F29, FPREG_F30, FPREG_F31
+		};
+		result.insert(result.end(), std::begin(floatRegisters), std::end(floatRegisters));
+		return result;
+	}
+};
+
 
 class MipsPS2CallingConvention: public CallingConvention
 {
@@ -2872,8 +3409,15 @@ public:
 		if (!type || type->IsVoid())
 			return ValueLocation();
 
-		if (type->GetClass() == NamedTypeReferenceClass && type->GetWidth() == 0)
-			return GetDefaultReturnValueLocation(view, returnValue);
+		if (type->GetClass() == NamedTypeReferenceClass)
+		{
+			if (!view)
+				return GetDefaultReturnValueLocation(view, returnValue);
+
+			type = type->DerefNamedTypeReference(view);
+			if (!type || type->GetClass() == NamedTypeReferenceClass)
+				return GetDefaultReturnValueLocation(view, returnValue);
+		}
 
 		const size_t width = type->GetWidth();
 
@@ -3503,10 +4047,8 @@ public:
 				uint32_t ahl = ((inst & 0xffff) << 16) + immediate;
 
 				// ((AHL + S) – (short)(AHL + S)) >> 16
-				dest32[0] = swap((uint32_t)(
-					(inst & ~0xffff) |
-					(((ahl + target) - (short)(ahl + target)) >> 16)
-				));
+				uint32_t hi = ((ahl + target) - (short)(ahl + target)) >> 16;
+				dest32[0] = swap((inst & ~0xffff) | (hi & 0xffff));
 			}
 			else
 			{
@@ -3701,6 +4243,171 @@ static void InitMipsSettings()
 }
 
 
+static optional<uint64_t> ReadMipsGnuFpAbi(BinaryReader& reader, uint64_t end)
+{
+	// GNU attributes use the ARM attribute container format, with ULEB128 tags and values.
+	auto readULEB = [&](uint64_t limit) -> uint64_t {
+		uint64_t value = 0;
+		for (unsigned shift = 0; shift < 64 && reader.GetOffset() < limit; shift += 7)
+		{
+			uint8_t byte = reader.Read8();
+			if (shift == 63 && (byte & 0x7e))
+				throw ReadException();
+			value |= uint64_t(byte & 0x7f) << shift;
+			if (!(byte & 0x80))
+				return value;
+		}
+		throw ReadException();
+	};
+	auto readString = [&](uint64_t limit) -> string {
+		string value;
+		while (reader.GetOffset() < limit)
+		{
+			char ch = reader.Read8();
+			if (!ch)
+				return value;
+			value += ch;
+		}
+		throw ReadException();
+	};
+
+	if (reader.GetOffset() == end || reader.Read8() != 'A')
+		return {};
+	while (end - reader.GetOffset() >= 4)
+	{
+		uint64_t vendorStart = reader.GetOffset();
+		uint32_t size = reader.Read32();
+		if (size < 5 || size > end - vendorStart)
+			return {};
+		uint64_t vendorEnd = vendorStart + size;
+		if (readString(vendorEnd) == "gnu")
+		{
+			while (reader.GetOffset() < vendorEnd)
+			{
+				uint64_t tagStart = reader.GetOffset();
+				uint64_t tag = readULEB(vendorEnd);
+				if (vendorEnd - reader.GetOffset() < 4)
+					return {};
+				uint32_t tagSize = reader.Read32();
+				if (tagSize < reader.GetOffset() - tagStart || tagSize > vendorEnd - tagStart)
+					return {};
+				uint64_t tagEnd = tagStart + tagSize;
+				if (tag == 1) // Tag_File: section/symbol attributes do not select the file ABI.
+				{
+					while (reader.GetOffset() < tagEnd)
+					{
+						uint64_t attr = readULEB(tagEnd);
+						if (attr == 4) // Tag_GNU_MIPS_ABI_FP
+							return readULEB(tagEnd);
+						if (!(attr & 1))
+							readULEB(tagEnd);
+						if ((attr & 1) || attr == 32) // Tag_compatibility has both an integer and a string.
+							readString(tagEnd);
+					}
+				}
+				reader.Seek(tagEnd);
+			}
+		}
+		reader.Seek(vendorEnd);
+	}
+	return {};
+}
+
+
+static bool ElfMips32UsesHardFloat(BinaryView* view, BNEndianness endianness)
+{
+	BinaryReader reader(view, endianness);
+	optional<uint64_t> fpAbi;
+	try
+	{
+		// Read the ELF32 tables directly: recognition runs before an ELF view exists.
+		reader.Seek(28);
+		uint32_t programOffset = reader.Read32();
+		uint32_t sectionOffset = reader.Read32();
+		reader.Seek(42);
+		uint16_t programSize = reader.Read16();
+		uint16_t programCount = reader.Read16();
+		uint16_t sectionSize = reader.Read16();
+		uint16_t sectionCount = reader.Read16();
+		uint64_t fileSize = view->GetLength();
+		auto readAbiFlags = [&](uint64_t offset, uint64_t size) -> optional<uint64_t> {
+			if (size < 24 || offset > fileSize || size > fileSize - offset)
+				return {};
+			reader.Seek(offset);
+			if (reader.Read16() != 0) // Elf_MIPS_ABIFlags_v0
+				return {};
+			reader.Seek(offset + 7);
+			return reader.Read8(); // fp_abi
+		};
+
+		// PT_MIPS_ABIFLAGS also works for files with stripped section headers.
+		if (programSize == 32 && programOffset <= fileSize
+			&& uint64_t(programCount) * programSize <= fileSize - programOffset)
+		{
+			for (uint32_t i = 0; i < programCount; ++i)
+			{
+				uint64_t entry = programOffset + uint64_t(i) * programSize;
+				reader.Seek(entry);
+				if (reader.Read32() != PT_MIPS_ABIFLAGS)
+					continue;
+				uint32_t offset = reader.Read32();
+				reader.Seek(entry + 16);
+				uint32_t size = reader.Read32();
+				fpAbi = readAbiFlags(offset, size);
+				if (fpAbi)
+					break;
+			}
+		}
+
+		optional<uint64_t> gnuFpAbi;
+		if (!fpAbi && sectionSize == 40 && sectionOffset <= fileSize
+			&& uint64_t(sectionCount) * sectionSize <= fileSize - sectionOffset)
+		{
+			for (uint32_t i = 0; i < sectionCount; ++i)
+			{
+				uint64_t entry = sectionOffset + uint64_t(i) * sectionSize;
+				reader.Seek(entry + 4);
+				uint32_t type = reader.Read32();
+				if (type != SHT_MIPS_ABIFLAGS && type != SHT_GNU_ATTRIBUTES)
+					continue;
+				reader.Seek(entry + 16);
+				uint32_t offset = reader.Read32();
+				uint32_t size = reader.Read32();
+				if (offset > fileSize || size > fileSize - offset)
+					continue;
+				if (type == SHT_MIPS_ABIFLAGS)
+				{
+					fpAbi = readAbiFlags(offset, size);
+					if (fpAbi)
+						break;
+				}
+				else
+				{
+					reader.Seek(offset);
+					try
+					{
+						gnuFpAbi = ReadMipsGnuFpAbi(reader, uint64_t(offset) + size);
+					}
+					catch (ReadException&)
+					{
+						// A malformed GNU attribute must not hide a later ABI flags section.
+					}
+				}
+			}
+		}
+		if (!fpAbi)
+			fpAbi = gnuFpAbi;
+	}
+	catch (ReadException&)
+	{
+		return false;
+	}
+
+	// ANY (0), SOFT (3), and unknown values retain the existing soft-float default.
+	return fpAbi && (*fpAbi == 1 || *fpAbi == 2 || (*fpAbi >= 4 && *fpAbi <= 7));
+}
+
+
 static Ref<Platform> ElfFlagsRecognize(BinaryView* view, Metadata* metadata)
 {
 	Ref<Metadata> abiMetadata = metadata->Get("EI_OSABI");
@@ -3754,6 +4461,10 @@ static Ref<Platform> ElfFlagsRecognize(BinaryView* view, Metadata* metadata)
 	if ((flagsValue & EF_MIPS_ARCH) == EF_MIPS_ARCH_3)
 		return Platform::GetByName(endianness == BigEndian ? "linux-mips3" : "linux-mipsel3");
 
+	Ref<Metadata> classMetadata = metadata->Get("EI_CLASS");
+	if (classMetadata && classMetadata->IsUnsignedInteger() && classMetadata->GetUnsignedInteger() == 1
+		&& ElfMips32UsesHardFloat(view, endianness))
+		return Platform::GetByName(endianness == BigEndian ? "linux-mips-hf" : "linux-mipsel-hf");
 	return nullptr;
 }
 
@@ -3799,6 +4510,8 @@ extern "C"
 		/* calling conventions */
 		MipsO32CallingConvention* o32LE = new MipsO32CallingConvention(mipsel);
 		MipsO32CallingConvention* o32BE = new MipsO32CallingConvention(mipseb);
+		MipsO32HardFloatCallingConvention* o32HardFloatLE = new MipsO32HardFloatCallingConvention(mipsel);
+		MipsO32HardFloatCallingConvention* o32HardFloatBE = new MipsO32HardFloatCallingConvention(mipseb);
 		MipsN64CallingConvention* n32LE = new MipsN64CallingConvention(mips64el, "n32");
 		MipsN64CallingConvention* n32BE = new MipsN64CallingConvention(mips64eb, "n32");
 		MipsN64CallingConvention* n64LE = new MipsN64CallingConvention(mips64el);
@@ -3812,6 +4525,8 @@ extern "C"
 		mipseb->SetDefaultCallingConvention(o32BE);
 		mipsel->RegisterCallingConvention(o32LE);
 		mipsel->SetDefaultCallingConvention(o32LE);
+		mipseb->RegisterCallingConvention(o32HardFloatBE);
+		mipsel->RegisterCallingConvention(o32HardFloatLE);
 		mips3->RegisterCallingConvention(o32BE);
 		mips3->SetDefaultCallingConvention(o32BE);
 		mips3el->RegisterCallingConvention(o32LE);

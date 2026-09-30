@@ -9976,24 +9976,30 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 		return result.value
 
 	class QueueGenerator:
+		_done = object()
+
 		def __init__(self, t: threading.Thread, results: queue.Queue):
 			self.thread = t
 			self.results = results
+			self._finished = False
 			t.start()
 
 		def __iter__(self):
 			return self
 
 		def __next__(self):
-			while True:
-				try:
-					return self.results.get(timeout=0.1)
-				except queue.Empty:
-					if not self.thread.is_alive():
-						try:
-							return self.results.get_nowait()
-						except queue.Empty:
-							raise StopIteration
+			if self._finished:
+				raise StopIteration
+			result = self.results.get()
+			if result is self._done:
+				# Mark exhausted and re-post the sentinel so that any
+				# subsequent __next__ call (including one already blocked in
+				# another thread) also observes completion instead of blocking
+				# forever waiting on a queue the worker will never write to again.
+				self._finished = True
+				self.results.put(self._done)
+				raise StopIteration
+			return result
 
 	@overload
 	def find_all_data(
@@ -10067,11 +10073,15 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 			    ctypes.c_bool, ctypes.c_void_p, ctypes.c_ulonglong, ctypes.POINTER(core.BNDataBuffer)
 			)(lambda ctxt, addr, match: results.put((addr, databuffer.DataBuffer(handle=match))) or True)
 
-			t = threading.Thread(
-			    target=lambda: core.BNFindAllDataWithProgress(
-			        self.handle, start, end, buf.handle, flags, None, progress_func_obj, None, match_callback_obj
-			    )
-			)
+			def worker():
+				try:
+					core.BNFindAllDataWithProgress(
+					    self.handle, start, end, buf.handle, flags, None, progress_func_obj, None, match_callback_obj
+					)
+				finally:
+					results.put(self.QueueGenerator._done)
+
+			t = threading.Thread(target=worker)
 
 			return self.QueueGenerator(t, results)
 
@@ -10182,12 +10192,16 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 			    or True
 			)
 
-			t = threading.Thread(
-			    target=lambda: core.BNFindAllTextWithProgress(
-			        self.handle, start, end, text, settings.handle, flags, graph_type, None, progress_func_obj, None,
-			        match_callback_obj
-			    )
-			)
+			def worker():
+				try:
+					core.BNFindAllTextWithProgress(
+					    self.handle, start, end, text, settings.handle, flags, graph_type, None, progress_func_obj, None,
+					    match_callback_obj
+					)
+				finally:
+					results.put(self.QueueGenerator._done)
+
+			t = threading.Thread(target=worker)
 
 			return self.QueueGenerator(t, results)
 
@@ -10273,24 +10287,30 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 			    ctypes.c_bool, ctypes.c_void_p, ctypes.c_ulonglong, ctypes.POINTER(core.BNLinearDisassemblyLine)
 			)(lambda ctxt, addr, line: results.put((addr, self._LinearDisassemblyLine_convertor(line))) or True)
 
-			t = threading.Thread(
-			    target=lambda: core.BNFindAllConstantWithProgress(
-			        self.handle, start, end, constant, settings.handle, graph_type, None, progress_func_obj, None,
-			        match_callback_obj
-			    )
-			)
+			def worker():
+				try:
+					core.BNFindAllConstantWithProgress(
+					    self.handle, start, end, constant, settings.handle, graph_type, None, progress_func_obj, None,
+					    match_callback_obj
+					)
+				finally:
+					results.put(self.QueueGenerator._done)
+
+			t = threading.Thread(target=worker)
 
 			return self.QueueGenerator(t, results)
 
 	def search(self, pattern: str, start: Optional[int] = None, end: Optional[int] = None, raw: bool = False, ignore_case: bool = False, overlap: bool = False, align: int = 1,
-		limit: Optional[int] = None, progress_callback: Optional[ProgressFuncType] = None, match_callback: Optional[DataMatchCallbackType] = None) -> QueueGenerator:
+		limit: Optional[int] = None, progress_callback: Optional[ProgressFuncType] = None, match_callback: Optional[DataMatchCallbackType] = None,
+		mode: Optional[str] = None) -> QueueGenerator:
 		r"""
 		Searches for matches of the specified ``pattern`` within this BinaryView with an optionally provided address range specified by ``start`` and ``end``.
 		This is the API used by the advanced binary search UI option. The pattern is interpreted as one of:
 
 			- ``"FlexHex"``: a sequence of byte tokens drawn from ``[0-9a-fA-F?]``, where ``??`` (or a whitespace-separated lone ``?``) is a full-byte wildcard and ``?X`` / ``X?`` matches a single nibble. Whitespace between byte tokens is optional, but a lone ``?`` must be whitespace-separated (so ``c3 ? 55`` is valid; ``c3?55`` is not).
+			- ``"YARA Hex"``: a superset of FlexHex that accepts YARA-style hex strings — fixed jumps ``[n]``, bounded jumps ``[n-m]`` (both capped at 1024 bytes), alternation ``( a | b | c )``, byte/nibble negation ``~aa`` / ``~?a`` / ``~a?``, and an optional outer ``{ ... }``. Tried when the pattern contains a YARA structural character (``[``, ``(``, ``~``, or wrapping braces) *and* parses as a valid YARA hex string. Those characters are not exclusive to YARA — a pattern that contains one but is not valid YARA (for example the regex character class ``[0-9]+``) falls through to Regex. Unbounded jumps ``[-]`` / ``[n-]`` are not supported — use Regex mode for open-ended matching.
 			- ``"Regex"``: a byte-level regular expression.
-			- ``"Raw String"``: a literal string match. Used when ``raw=True``, or as a fallback when the pattern is neither valid FlexHex nor a valid regex.
+			- ``"Raw String"``: a literal string match. Used when ``raw=True``, or as a fallback when the pattern is neither valid FlexHex, YARA Hex, nor a valid regex.
 
 		Use :py:meth:`detect_search_mode` to check which mode would be selected for a given pattern.
 
@@ -10310,6 +10330,12 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 		:param callback match_callback: A function that gets called when a match is found. The callback takes two parameters: \
 			the address of the match, and the actual DataBuffer that satisfies the search. This function can return a boolean \
 			value that decides whether the search should continue or stop.
+		:param str mode: Force a specific parser for the pattern. One of ``"auto"`` (default — runs the FlexHex → YARA Hex → \
+			Regex → Raw String cascade), ``"flexhex"``, ``"yara"``, ``"regex"``, or ``"raw"``. When set to an explicit mode, \
+			a pattern that fails that mode's parser raises an error rather than silently falling through to another mode. \
+			Explicit ``"yara"`` accepts any valid YARA hex string, including a bare rule body such as ``47 4e 55`` without \
+			the wrapping braces (unlike auto-detect, which only tries YARA for patterns containing a YARA-specific token). \
+			Useful for reproducible scripted searches and for surfacing parse errors that auto-detect would hide.
 
 		:return: A generator object that yields the offset and matched DataBuffer for each match found.
 		:rtype: QueueGenerator
@@ -10342,6 +10368,8 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 			"overlap": overlap,
 			"align": align
 		}
+		if mode is not None:
+			query["searchType"] = mode
 
 		if progress_callback:
 			progress_callback_obj = ctypes.CFUNCTYPE(
@@ -10368,27 +10396,43 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 
 		match_callback_obj = ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_ulonglong, ctypes.POINTER(core.BNDataBuffer))(internal_match_callback)
 		results = queue.Queue()
-		t = threading.Thread(target=lambda: core.BNSearch(self.handle, json.dumps(query), None, progress_callback_obj, None, match_callback_obj))
+
+		def worker():
+			try:
+				core.BNSearch(self.handle, json.dumps(query), None, progress_callback_obj, None, match_callback_obj)
+			finally:
+				results.put(self.QueueGenerator._done)
+
+		t = threading.Thread(target=worker)
 		return self.QueueGenerator(t, results)
 
 	@staticmethod
-	def detect_search_mode(pattern: str, raw: bool = False) -> str:
+	def detect_search_mode(pattern: str, raw: bool = False, mode: Optional[str] = None) -> str:
 		"""
 		Detects the search mode that would be used by :py:meth:`search` for the given pattern.
 
 		The mode is one of:
 
 			- ``"FlexHex"``: a sequence of byte tokens drawn from ``[0-9a-fA-F?]``, where ``??`` (or a whitespace-separated lone ``?``) is a full-byte wildcard and ``?X`` / ``X?`` matches a single nibble. Whitespace between byte tokens is optional, but a lone ``?`` must be whitespace-separated (so ``c3 ? 55`` is valid; ``c3?55`` is not).
+			- ``"YARA Hex"``: a superset of FlexHex that accepts YARA-style hex strings — fixed jumps ``[n]``, bounded jumps ``[n-m]`` (both capped at 1024 bytes), alternation ``( a | b | c )``, byte/nibble negation ``~aa`` / ``~?a`` / ``~a?``, and an optional outer ``{ ... }``. Tried when the pattern contains a YARA structural character (``[``, ``(``, ``~``, or wrapping braces) *and* parses as a valid YARA hex string. Those characters are not exclusive to YARA — a pattern that contains one but is not valid YARA (for example the regex character class ``[0-9]+``) falls through to Regex. Unbounded jumps ``[-]`` / ``[n-]`` are not supported — use Regex mode for open-ended matching.
 			- ``"Regex"``: a byte-level regular expression.
-			- ``"Raw String"``: a literal string match. Returned when ``raw=True``, or as a fallback when the pattern is neither valid FlexHex nor a valid regex.
+			- ``"Raw String"``: a literal string match. Returned when ``raw=True``, or as a fallback when the pattern is neither valid FlexHex, YARA Hex, nor a valid regex.
+
+		When ``mode`` is set to a specific parser (``"flexhex"``, ``"yara"``, ``"regex"``, or ``"raw"``), the return value
+		is either the resolved mode name or a string starting with ``"Error: "`` if the chosen mode rejects the pattern.
+		Explicit ``"yara"`` accepts any valid YARA hex string, including a bare rule body such as ``47 4e 55`` without the
+		wrapping braces, whereas auto-detect only tries YARA for patterns containing a YARA-specific token.
 
 		:param str pattern: The search pattern to analyze.
 		:param bool raw: Whether to interpret the pattern as a raw string (default: False).
-		:return: The detected search mode: ``"FlexHex"``, ``"Regex"``, or ``"Raw String"``.
+		:param str mode: Force a specific parser. One of ``"auto"`` (default), ``"flexhex"``, ``"yara"``, ``"regex"``, or ``"raw"``.
+		:return: The detected search mode, or ``"Error: ..."`` if an explicit ``mode`` rejected the pattern.
 		:rtype: str
 		"""
-		query = json.dumps({"pattern": pattern, "raw": raw})
-		result = core.BNDetectSearchMode(query)
+		query: dict = {"pattern": pattern, "raw": raw}
+		if mode is not None:
+			query["searchType"] = mode
+		result = core.BNDetectSearchMode(json.dumps(query))
 		return result
 
 	def reanalyze(self) -> None:

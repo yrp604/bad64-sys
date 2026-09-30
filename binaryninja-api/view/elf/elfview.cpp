@@ -777,12 +777,7 @@ bool ElfView::Init()
 			m_logger->LogError("Support for ELF architecture 'x86_64' is not present");
 			break;
 		case 183:
-			#ifndef DEMO_EDITION
 			m_logger->LogError("Support for ELF architecture 'arm64' is not present");
-			#else
-			m_logger->LogError("Binary Ninja free does not support ELF architecture 'arm64'. "
-							   "Purchase Binary Ninja to unlock all features.");
-			#endif
 			break;
 		default:
 			m_logger->LogError("ELF architecture %d is not supported", m_commonHeader.arch);
@@ -2631,9 +2626,10 @@ void ElfView::DefineElfSymbol(BNSymbolType type, const string& incomingName, uin
 				typeRef = demangledType;
 		}
 
-		if (!typeRef && m_arch && (m_arch->GetName() == "hexagon" || m_arch->GetName() == "tms320c6x"))
+		if (!typeRef && m_arch && (m_arch->GetName() == "hexagon" || m_arch->GetName() == "tms320c6x"
+			|| (type == FunctionSymbol && (m_arch->GetName() == "mips32" || m_arch->GetName() == "mipsel32"))))
 		{
-			// Apply platform types for statically linked Hexagon and TMS320C6x binaries
+			// Apply platform types to static runtime helpers, even without a shared-library dependency.
 			typeRef = GetDefaultPlatform()->GetFunctionByName(rawName);
 		}
 
